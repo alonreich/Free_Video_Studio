@@ -8,8 +8,7 @@ using FreeVideoStudio.Core.Media;
 namespace FreeVideoStudio.Core.Infrastructure;
 
 /// <summary>
-/// REBRAND_02 — removes what the previous product brand left on disk once it is provably no
-/// longer needed, so an updated machine ends up with ONLY Free Video Studio folders.
+/// REBRAND_02 / LEGACYKEEP_01 — rescues previous-brand renders while preserving legacy user data.
 ///
 /// <para>
 /// REBRAND_01 (<see cref="AppDataPaths"/>) and UPGRADE_04 (<see cref="UserDataUpgrade"/>) migrate
@@ -17,13 +16,12 @@ namespace FreeVideoStudio.Core.Infrastructure;
 /// normal UI launch (never inside a deployment helper, never with the development override):
 /// </para>
 /// <list type="number">
-///   <item><b>Legacy temp roots</b> (<c>%TEMP%\&lt;legacy temp names&gt;</c>) are scratch space.
+///   <item><b>Legacy temp roots</b> (<c>%TEMP%\&lt;legacy temp names&gt;</c>) may contain referenced user media.
 ///   Rescued renders (<c>*-RECOVERED-*.mp4</c>, RESCUE_01) are user work and are MOVED into the
 ///   current temp root first, renamed to <see cref="OutputFileNaming.MainRecoveredPrefix"/>
-///   (Merger rescues keep <see cref="OutputFileNaming.MergerRecoveredPrefix"/>). The rest is deleted.</item>
-///   <item><b>Legacy per-user roots</b> under %LOCALAPPDATA% and %APPDATA% are deleted only when
-///   the current root exists AND every legacy file already exists at the same relative path in
-///   the current root. One missing file keeps the whole legacy root for the next launch.</item>
+///   (Merger rescues keep <see cref="OutputFileNaming.MergerRecoveredPrefix"/>). All remaining files are retained (LEGACYKEEP_01).</item>
+///   <item><b>Legacy per-user roots</b> under %LOCALAPPDATA% and %APPDATA% are retained automatically, including conflicting versions and paths referenced by old projects.
+///   Only an explicit uninstall or manual cleanup may remove them (LEGACYKEEP_01).</item>
 /// </list>
 ///
 /// <para>
@@ -74,7 +72,7 @@ public static class LegacyResidueSweep
                 CoreLogger.Info("Rebrand", $"REBRAND_02 — legacy residue sweep postponed: {result.SkippedReason}.");
             else if (result.RescuedRendersMoved + result.LegacyRootsRemoved + result.LegacyRootsKept > 0)
                 CoreLogger.Info("Rebrand",
-                    $"REBRAND_02 — legacy residue sweep: moved {result.RescuedRendersMoved} rescued render(s), removed {result.LegacyRootsRemoved} legacy folder(s), kept {result.LegacyRootsKept} for the next launch.");
+                    $"REBRAND_02 — legacy residue sweep: moved {result.RescuedRendersMoved} rescued render(s), removed {result.LegacyRootsRemoved} legacy folder(s), kept {result.LegacyRootsKept} to preserve user data.");
             return result;
         }
         catch (Exception ex)
@@ -102,21 +100,17 @@ public static class LegacyResidueSweep
         {
             if (!Directory.Exists(legacyTemp) || SamePath(legacyTemp, currentTempRoot)) continue;
             string[]? rescues = SafeEnumerateFiles(legacyTemp, "*-RECOVERED-*.mp4");
-            bool allRescued = rescues != null;
             foreach (string file in rescues ?? [])
             {
                 if (MoveRescuedRender(file, currentTempRoot)) moved++;
-                else allRescued = false;
             }
-            if (allRescued && TryDeleteTree(legacyTemp)) removed++;
-            else kept++;
+            kept++;
         }
 
         foreach ((string legacy, string current) in legacyUserRoots)
         {
             if (!Directory.Exists(legacy) || SamePath(legacy, current)) continue;
-            if (Directory.Exists(current) && IsFullyMirrored(legacy, current) && TryDeleteTree(legacy)) removed++;
-            else kept++;
+            kept++;
         }
 
         return new SweepResult(moved, removed, kept, null);
@@ -203,18 +197,6 @@ public static class LegacyResidueSweep
         }
     }
 
-    internal static bool IsFullyMirrored(string legacyRoot, string currentRoot)
-    {
-        string[]? files = SafeEnumerateFiles(legacyRoot, "*", SearchOption.AllDirectories);
-        if (files == null) return false;
-        foreach (string file in files)
-        {
-            string relative = Path.GetRelativePath(legacyRoot, file);
-            if (!File.Exists(Path.Combine(currentRoot, relative))) return false;
-        }
-        return true;
-    }
-
     /// <summary>Null means "could not be read completely" — callers then keep the folder.</summary>
     private static string[]? SafeEnumerateFiles(string root, string pattern, SearchOption option = SearchOption.TopDirectoryOnly)
     {
@@ -223,24 +205,6 @@ public static class LegacyResidueSweep
         {
             CoreLogger.Swallowed(ex);
             return null;
-        }
-    }
-
-    private static bool TryDeleteTree(string path)
-    {
-        try
-        {
-            var info = new DirectoryInfo(path);
-            if (info.Attributes.HasFlag(FileAttributes.ReparsePoint)) return false;
-            foreach (FileInfo f in info.EnumerateFiles("*", SearchOption.AllDirectories))
-                if (f.Attributes.HasFlag(FileAttributes.ReadOnly)) f.Attributes &= ~FileAttributes.ReadOnly;
-            Directory.Delete(path, recursive: true);
-            return true;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            CoreLogger.Fail("Rebrand", $"REBRAND_02 — a legacy folder could not be removed yet ({ex.Message}); retrying next launch.");
-            return false;
         }
     }
 

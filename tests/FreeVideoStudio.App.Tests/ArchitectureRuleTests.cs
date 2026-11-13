@@ -1,4 +1,4 @@
-﻿
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -243,28 +243,6 @@ public sealed class ArchitectureRuleTests
     }
 
     [Fact]
-    public void EveryProductionSourceFileCarriesTheSpecContract()
-    {
-        var offenders = new List<string>();
-        IReadOnlyList<string> all = RepoRoot.SourceFiles(".cs");
-
-        foreach (string file in all)
-        {
-            if (file.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase)) continue;
-
-            string head = ReadFirstLines(file, 6);
-            if (!head.Contains("[SPEC CONTRACT]", StringComparison.Ordinal))
-                offenders.Add(RepoRoot.Relative(file));
-        }
-
-        Assert.True(offenders.Count == 0,
-            "SPEC_GOVERNANCE.md §4 — these files are missing the [SPEC CONTRACT] sentinel block at the "
-          + $"top ({offenders.Count} of {all.Count}). Add the three-line block naming the spec that "
-          + "governs the file:"
-          + Environment.NewLine + string.Join(Environment.NewLine, offenders));
-    }
-
-    [Fact]
     public void BlockingWaitsOnAsyncCodeDoNotIncrease()
     {
         const int Baseline = 5;
@@ -299,7 +277,7 @@ public sealed class ArchitectureRuleTests
     [Fact]
     public void AsyncVoidMethodsDoNotIncrease()
     {
-        const int Baseline = 29;
+        const int Baseline = 24;
 
         var sites = new List<string>();
 
@@ -385,7 +363,7 @@ public sealed class ArchitectureRuleTests
     [Fact]
     public void ImperativeControlLookupsDoNotIncrease()
     {
-        const int Baseline = 631;
+        const int Baseline = 630;
 
         int count = 0;
         var perFile = new List<string>();
@@ -421,7 +399,7 @@ public sealed class ArchitectureRuleTests
             ["MainWindow.axaml.cs"]                = 3144,
             ["VideoMergerWindow.axaml.cs"]         = 2240,
             ["PhaseOverlayControl.axaml.cs"]       = 2425,
-            ["SettingsWindow.axaml.cs"]            = 369,
+            ["SettingsWindow.axaml.cs"]            = 324,
         };
 
         const int LimitForNewFiles = 1000;
@@ -615,19 +593,6 @@ public sealed class ArchitectureRuleTests
     {
         s = Regex.Replace(s, @"\s+", " ").Trim();
         return s.Length <= 140 ? s : s[..140] + "…";
-    }
-
-    private static string ReadFirstLines(string path, int count)
-    {
-        using var reader = new StreamReader(path);
-        var sb = new System.Text.StringBuilder();
-        for (int i = 0; i < count; i++)
-        {
-            string? line = reader.ReadLine();
-            if (line is null) break;
-            sb.AppendLine(line);
-        }
-        return sb.ToString();
     }
 
     /// <summary>

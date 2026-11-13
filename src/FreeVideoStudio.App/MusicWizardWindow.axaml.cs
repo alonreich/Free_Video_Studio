@@ -560,7 +560,6 @@ public partial class MusicWizardWindow : Window
     }
     private void SharedInit()
     {
-        if (FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.Defaults.RememberMusicVolumes)
         {
             try
             {
@@ -2699,7 +2698,6 @@ public partial class MusicWizardWindow : Window
 
     private void SaveWizardVolumes()
     {
-        if (!FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.Defaults.RememberMusicVolumes) return;
         try
         {
             var updates = new System.Text.Json.Nodes.JsonObject();
@@ -3430,6 +3428,7 @@ public partial class MusicWizardWindow : Window
 
     protected override async void OnClosing(Avalonia.Controls.WindowClosingEventArgs e)
     {
+        CancelAiAutoFit();
         CancelAudioAnalysis();
         CancelMusicScan();
         CancelPhase3Load();
@@ -3455,6 +3454,7 @@ public partial class MusicWizardWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        CancelAiAutoFit();
         CancelSilenceAnalysis();
         DeleteSongWaveCache();
 

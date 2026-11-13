@@ -41,4 +41,17 @@ public sealed class AiCommentaryCloseTests
         string ai = Src("GranularSpeedEditorWindow.AiCommentary.cs");
         Assert.Contains("\"APPLY (incl. commentary)\"", ai);
     }
+
+    [Fact]
+    public void MergeModeCommentary_ChecksEffectivePath_AndMapsTimestamps()
+    {
+        string ai = Src("GranularSpeedEditorWindow.AiCommentary.cs");
+        Assert.Contains("!File.Exists(effectiveVideoPath)", ai);
+        Assert.Contains("mergeClip.ToSourceUs", ai);
+        Assert.Contains("finalTrack = generatedTrack with { Lines = remappedLines };", ai);
+
+        string lane = Src("GranularSpeedEditorWindow.CaptionsLane.cs");
+        Assert.Contains("!File.Exists(videoPath)", lane);
+        Assert.Contains("clip.ToSourceUs", lane);
+    }
 }

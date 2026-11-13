@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -35,6 +35,7 @@ public partial class VideoMergerWindow
 {
     private MergedTimeline _timeline = MergedTimeline.Empty;
     private List<double> _timelineIntroTags = new();
+    private readonly Dictionary<string, (double DurationSec, double IntroSec)> _knownClipTiming = new(StringComparer.OrdinalIgnoreCase);
     private bool _timelineReady;
     private int _timelineVersion;
     private Task _timelineBuildTask = Task.CompletedTask;
@@ -109,7 +110,7 @@ public partial class VideoMergerWindow
         _ = _videoHost?.IpcClient?.SetPropertyAsync("pause", "yes");
         try
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+            Services.ShellLauncher.Launch(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
             RuntimeLog.Info("MERGER", $"Opened {System.IO.Path.GetFileName(path)} in the default video app.");
         }
         catch (Exception ex)
@@ -165,6 +166,13 @@ public partial class VideoMergerWindow
         _timeline = built;
         _timelineIntroTags = introTags;
         _timelineReady = built.Clips.Count > 0 && built.Clips.All(c => c.LengthSec > 0);
+        for (int i = 0; i < built.Clips.Count; i++)
+        {
+            var c = built.Clips[i];
+            double intro = i < introTags.Count ? introTags[i] : c.RemovedIntroSec;
+            double dur = c.ContentEndSec;
+            _knownClipTiming[c.Path] = (dur, intro);
+        }
 
         _playClip = _playPath == null ? -1 : built.Clips.ToList().FindIndex(c => SameVideoPath(c.Path, _playPath));
         if (_playClip < 0) _playPath = null;
@@ -205,6 +213,7 @@ public partial class VideoMergerWindow
         NoteEdlChanged();
         ScheduleLaneRefresh();
         UpdateMergerGranularButton();
+        RedrawTimelineSelection();
     }
 
     /// <summary>The timeline describes exactly the queue on screen, in order.</summary>
@@ -256,6 +265,7 @@ public partial class VideoMergerWindow
     {
         CaptureEdlNow(flush: false);
         worker.Edl = CurrentEdl;
+        worker.CaptionTrack = CurrentEdl.Captions ?? _captionTrack;
 
         if (!TimelineMatchesQueue())
         {

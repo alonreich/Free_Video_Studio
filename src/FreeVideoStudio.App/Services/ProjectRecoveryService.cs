@@ -36,24 +36,10 @@ namespace FreeVideoStudio.App.Services;
 public sealed class ProjectRecoveryService
 {
     private readonly RecoveryManager _recovery;
-    private Func<ProjectDocument>? _captureCurrentDocument;
-    private Func<JsonObject?>? _captureTransientMetadata;
 
     public ProjectRecoveryService(ApplicationPaths? paths = null)
     {
         _recovery = new RecoveryManager(paths ?? ApplicationPaths.CreateDefault());
-    }
-
-    /// <summary>
-    /// RECOVERYDOC_05 — wires the ONE canonical capture. Called once at composition (MainWindow)
-    /// with ProjectSession.Capture(forExplicitSave: false) so a recovery autosave is the SAME
-    /// projection the normal project save uses. Without a wired source there is deliberately NO
-    /// writer: nothing can silently fall back to a second state model that drifts from the document.
-    /// </summary>
-    public void WireDocumentSource(Func<ProjectDocument> captureDocument, Func<JsonObject?>? captureTransient)
-    {
-        _captureCurrentDocument = captureDocument ?? throw new ArgumentNullException(nameof(captureDocument));
-        _captureTransientMetadata = captureTransient;
     }
 
     /// <summary>
@@ -68,18 +54,6 @@ public sealed class ProjectRecoveryService
             _recovery.SaveState(state);
         else
             _recovery.SaveStateAsync(state);
-    }
-
-    /// <summary>
-    /// Persists the CURRENT live session through the wired canonical capture. Used by paths that
-    /// hold no window reference; a no-op when no source was wired, never a hand-built payload.
-    /// </summary>
-    public void SaveCurrentState(bool sync = false)
-    {
-        if (_captureCurrentDocument is not { } capture) return;
-        ProjectDocument document = capture();
-        if (!RecoveryEnvelope.HasContent(document)) return;
-        SaveState(document, _captureTransientMetadata?.Invoke(), sync);
     }
 
     /// <summary>

@@ -87,6 +87,9 @@ public sealed class AppServices
     /// <summary>Native save/open dialogs plus their directory memory (INJSEAM_04).</summary>
     public IFilePickerService FilePicker { get; }
 
+    /// <summary>SETTINGSDI_01 — everything the Settings window and its view-model depend on.</summary>
+    public SettingsWindowServices SettingsWindow { get; }
+
     private AppServices(
         ApplicationPaths paths,
         IClock clock,
@@ -94,7 +97,8 @@ public sealed class AppServices
         IUserNotifier notifier,
         IFaultSink faults,
         IProjectStore projects,
-        IFilePickerService filePicker)
+        IFilePickerService filePicker,
+        SettingsWindowServices settingsWindow)
     {
         Paths = paths;
         Clock = clock;
@@ -103,6 +107,7 @@ public sealed class AppServices
         Faults = faults;
         Projects = projects;
         FilePicker = filePicker;
+        SettingsWindow = settingsWindow;
     }
 
     /// <summary>
@@ -136,7 +141,8 @@ public sealed class AppServices
             notifier:   notifier,
             faults:     faults,
             projects:   FileProjectStore.Instance,
-            filePicker: new StorageProviderFilePicker(windows, faults));
+            filePicker: new StorageProviderFilePicker(windows, faults),
+            settingsWindow: SettingsWindowServices.CreateDefault(paths));
 
         Core.Abstractions.Faults.Install(faults);
 
@@ -155,9 +161,11 @@ public sealed class AppServices
         IUserNotifier notifier,
         IFaultSink faults,
         IProjectStore projects,
-        IFilePickerService filePicker)
+        IFilePickerService filePicker,
+        SettingsWindowServices? settingsWindow = null)
     {
-        _current = new AppServices(paths, clock, windows, notifier, faults, projects, filePicker);
+        _current = new AppServices(paths, clock, windows, notifier, faults, projects, filePicker,
+            settingsWindow ?? SettingsWindowServices.CreateDefault(paths));
 
         Core.Abstractions.Faults.ResetForTests();
         Core.Abstractions.Faults.Install(faults);

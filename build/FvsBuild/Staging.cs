@@ -38,18 +38,19 @@ internal static class Staging
 
     private static readonly string[] StarterMp3 =
     [
-        "Bonnie Tyler - Holding Out For A Hero.mp3",
-        "Cool Dance Background Music (No CopyRights).mp3",
+        "!_Inspirational Music - The Travelling Symphony by SavfkMusic (No CopyRight).mp3",
+        "!_Inspirational Music - The Travelling Symphony by SavfkMusic (No CopyRight).txt",
+        "!_System Recall - Aftertune (No CopyRights).mp3",
+        "!_System Recall - Aftertune (No CopyRights).txt",
     ];
 
     private static readonly string[] StarterMeme =
     [
-        "What the fuck am I doing here (Robert Deniro) - Landscape.mp4",
-        "What the fuck am I doing here (Robert Deniro) - Portrait.mp4",
-        "Donald Trump - He Died like a Dog.mp4",
-        "I will find you and I will kill you.mp4",
-        "Terminated.png",
-        "What The Fuck.jpg",
+        "Countdown - Landscape.mp4",
+        "Countdown - Portrait.mp4",
+        "Quick Flash - Portrait.mp4",
+        "Sunset Gradient.png",
+        "Test Card.jpg",
         "oopsie.png",
     ];
 
@@ -212,19 +213,31 @@ internal static class Staging
     }
 
     /// <summary>Step 2.5/2.6: stages backend codecs, the mpv frontend and the starter media next to the staged app.</summary>
-    public static bool StageDependencies(BuildLog log)
+    public static bool StageDependencies(BuildLog log, string? destination = null)
     {
-        log.Info("[NativeAOT] 2.5 Copying binaries to staging...");
+        string stagingRoot = destination ?? StagingDir;
+        var expected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (destination != null) RejectStagingLinks(stagingRoot);
+        bool StageFile(string source, string folder)
+        {
+            string target = Path.GetFullPath(Path.Combine(folder, Path.GetFileName(source)));
+            expected.Add(target);
+            if (!File.Exists(source)) return false;
+            if (destination != null && File.Exists(target) && SameContent(source, target)) return true;
+            return CopyTo(source, folder);
+        }
+        log.Info(destination == null ? "[NativeAOT] 2.5 Copying binaries to staging..."
+            : "[DEV] Verifying native binaries; copying only missing or changed content...");
         foreach (string group in new[] { "backend", "frontend" })
         {
-            Directory.CreateDirectory(Path.Combine(StagingDir, group));
+            Directory.CreateDirectory(Path.Combine(stagingRoot, group));
         }
 
         List<string> missing = [];
 
         foreach (string file in BackendExact)
         {
-            if (!CopyTo($@".\binaries\{file}", Path.Combine(StagingDir, "backend")))
+            if (!StageFile($@".\binaries\{file}", Path.Combine(stagingRoot, "backend")))
             {
                 missing.Add($@"binaries\{file}");
             }
@@ -241,34 +254,35 @@ internal static class Staging
             }
             foreach (string match in matches)
             {
-                CopyTo(match, Path.Combine(StagingDir, "backend"));
+                if (!StageFile(match, Path.Combine(stagingRoot, "backend"))) missing.Add(match);
             }
         }
 
         foreach (string file in FrontendExact)
         {
-            if (!CopyTo($@".\binaries\{file}", Path.Combine(StagingDir, "frontend")))
+            if (!StageFile($@".\binaries\{file}", Path.Combine(stagingRoot, "frontend")))
             {
                 missing.Add($@"binaries\{file}");
             }
         }
 
-        log.Info("[NativeAOT] 2.6 Copying starter media to staging...");
-        string starterRoot = Path.Combine(StagingDir, "starter");
+        log.Info(destination == null ? "[NativeAOT] 2.6 Copying starter media to staging..."
+            : "[DEV] Verifying starter media; copying only missing or changed content...");
+        string starterRoot = Path.Combine(stagingRoot, "starter");
         foreach (string folder in new[] { "mp3", "meme" })
         {
             Directory.CreateDirectory(Path.Combine(starterRoot, folder));
         }
         foreach (string file in StarterMp3)
         {
-            if (!CopyTo($@".\mp3\{file}", Path.Combine(starterRoot, "mp3")))
+            if (!StageFile($@".\mp3\{file}", Path.Combine(starterRoot, "mp3")))
             {
                 missing.Add($@"mp3\{file}");
             }
         }
         foreach (string file in StarterMeme)
         {
-            if (!CopyTo($@".\meme\{file}", Path.Combine(starterRoot, "meme")))
+            if (!StageFile($@".\meme\{file}", Path.Combine(starterRoot, "meme")))
             {
                 missing.Add($@"meme\{file}");
             }
@@ -283,7 +297,40 @@ internal static class Staging
             log.Error("ERROR: the installer would be incomplete. Fix the inputs above and rebuild.");
             return false;
         }
+        if (destination != null)
+        {
+            foreach (string group in new[] { "backend", "frontend", "starter" })
+                foreach (string file in Directory.EnumerateFiles(Path.Combine(stagingRoot, group), "*", SearchOption.AllDirectories))
+                    if (!expected.Contains(Path.GetFullPath(file))) File.Delete(file);
+        }
         return true;
+    }
+
+    private static bool SameContent(string source, string target)
+    {
+        if (new FileInfo(source).Length != new FileInfo(target).Length) return false;
+        using var input = File.OpenRead(source);
+        using var output = File.OpenRead(target);
+        return System.Security.Cryptography.SHA256.HashData(input).AsSpan()
+            .SequenceEqual(System.Security.Cryptography.SHA256.HashData(output));
+    }
+
+    private static void RejectStagingLinks(string root)
+    {
+        for (DirectoryInfo? ancestor = new(Path.GetFullPath(root)); ancestor != null; ancestor = ancestor.Parent)
+            if (ancestor.Exists && (ancestor.Attributes & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("Refusing linked staging path: " + ancestor.FullName);
+        if (!Directory.Exists(root)) return;
+        var pending = new Stack<string>();
+        pending.Push(root);
+        while (pending.Count > 0)
+            foreach (string entry in Directory.EnumerateFileSystemEntries(pending.Pop()))
+            {
+                FileAttributes attributes = File.GetAttributes(entry);
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                    throw new IOException("Refusing linked staging entry: " + entry);
+                if ((attributes & FileAttributes.Directory) != 0) pending.Push(entry);
+            }
     }
 
     /// <summary>
@@ -327,7 +374,7 @@ internal static class Staging
     }
 
     /// <summary>
-    /// Verifies .\compiled contains EXACTLY FreeVideoStudio-Setup.exe (MANDATE #2, NODROPPER_01).
+    /// Verifies .\compiled contains EXACTLY FreeVideoStudio.exe (MANDATE #2, NODROPPER_01).
     /// Strays are removed, then reported as a failure - same as the old
     /// :PURGE_COMPILED_EXTRAS + :VALIDATE_COMPILED_OUTPUT pair.
     /// </summary>

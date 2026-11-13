@@ -1,4 +1,4 @@
-<div align="center">
+﻿<div align="center">
 
 <img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=000000,FF0055,8A2BE2,000000&height=280&section=header&text=Free%20Video%20Studio&fontSize=65&fontAlignY=38&desc=GPU-Accelerated%20Gaming%20Montage%20Pipeline&descAlignY=58&descAlign=50&fontColor=ffffff&animation=fadeIn" width="100%" />
 
@@ -7,13 +7,13 @@
   <a href="https://avaloniaui.net/"><img src="https://img.shields.io/badge/Avalonia_UI-11.x-purple?style=for-the-badge&logo=avalonia&logoColor=white" alt="Avalonia UI" /></a>
   <a href="https://ffmpeg.org/"><img src="https://img.shields.io/badge/FFmpeg-GPU_Accelerated-007808?style=for-the-badge&logo=ffmpeg&logoColor=white" alt="FFmpeg Backend" /></a>
   <a href="#"><img src="https://img.shields.io/badge/Compiled-NativeAOT-000000?style=for-the-badge&logo=c&logoColor=white" alt="NativeAOT" /></a>
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="License" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg?style=for-the-badge" alt="License: GPL-3.0" /></a>
 </p>
 
 <h3 align="center">⚡ High-Performance, Ultra-Specialized NLE Engineered for Automated Gaming Content Creation.</h3>
 
 <h2 align="center">
-  <a href="https://github.com/alonreich/Free_Video_Studio/releases/latest/download/FreeVideoStudio-Setup.exe">⬇️ DOWNLOAD LATEST INSTALLER (.EXE) ⬇️</a>
+  <a href="https://github.com/alonreich/Free_Video_Studio/releases/latest/download/FreeVideoStudio.exe">⬇️ DOWNLOAD LATEST INSTALLER (.EXE) ⬇️</a>
 </h2>
 
 <p align="center">
@@ -108,14 +108,22 @@ cd Free_Video_Studio
 .\build.cmd
 ```
 
-> **💡 Pro Tip:** Development watch mode (Hot Reload) is available via `.\dev.cmd` for rapid UI iteration without rebuilding the entire AOT binary. The final installer will be located in `.\compiled\FreeVideoStudio-Setup.exe` (building it needs the free Inno Setup 6.3+: `winget install JRSoftware.InnoSetup`).
+> **💡 Pro Tip:** Development watch mode (Hot Reload) is available via `.\dev.cmd` for rapid UI iteration without rebuilding the entire AOT binary. The final installer will be located in `.\compiled\FreeVideoStudio.exe` (building it needs the free Inno Setup 6.3+: `winget install JRSoftware.InnoSetup`).
 
 ---
 
 ## 🛡️ License & Maintainer
 
 Engineered with passion and precision by **[alonreich](https://github.com/alonreich)**.  
-Released under the **MIT License**.
+Released under the **[GNU General Public License v3.0](LICENSE)**. Bundled third-party components and their licences: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## 🔏 Code signing policy
+
+See **[Code signing policy](CODE_SIGNING_POLICY.md)**.
+
+## 🔒 Privacy
+
+No accounts, no analytics, no telemetry. The app only goes online for update checks you allowed, downloads you start, and AI features that use your own key. Details: **[Privacy policy](PRIVACY.md)**.
 
 <div align="center">
   <br>

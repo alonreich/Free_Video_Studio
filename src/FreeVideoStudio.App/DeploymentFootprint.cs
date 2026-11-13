@@ -67,26 +67,25 @@ internal static class DeploymentFootprint
     /// is user data the update transaction itself moves (UserDataUpgrade), and the worker must never run
     /// from inside a folder the update renames. Scratch only — the uninstaller always removes it.
     /// </summary>
-    public static readonly string UpdatesRoot = Path.Combine(
+    public static string UpdatesRoot => FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.DirectoryFor("updates") ?? Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         FreeVideoStudio.Core.Infrastructure.ApplicationPaths.AppDirectoryName + "Updates");
 
     /// <summary>NOTEMPEXEC_01 — one sub-folder per release tag (DLRESUME_01 resumes inside it).</summary>
-    public static readonly string UpdateDownloadsRoot = Path.Combine(UpdatesRoot, "Downloads");
+    public static string UpdateDownloadsRoot => Path.Combine(UpdatesRoot, "Downloads");
 
     /// <summary>NOTEMPEXEC_01 / UPGRADEUX_06 — one sub-folder per install run, holding the worker copy.</summary>
-    public static readonly string UpdateStageRoot = Path.Combine(UpdatesRoot, "Stage");
+    public static string UpdateStageRoot => Path.Combine(UpdatesRoot, "Stage");
 
     /// <summary>NOTEMPEXEC_01 — the %TEMP% folders used before; still accepted (old updaters) and swept.</summary>
-    public static readonly string LegacyUpdateDownloadsRoot = Path.Combine(Path.GetTempPath(), "FVS_AutoUpdate");
-    public static readonly string LegacyUpdateStageRoot = Path.Combine(Path.GetTempPath(), "FVS_Upgrade");
+    public static readonly string LegacyUpdateDownloadsRoot = Path.Combine(FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.SystemTempRoot, "FVS_AutoUpdate");
+    public static readonly string LegacyUpdateStageRoot = Path.Combine(FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.SystemTempRoot, "FVS_Upgrade");
 
     /// <summary>NOSPACE_01 — the spaced scratch folder used before this change.</summary>
     public static readonly string LegacyTempAppFolder = Path.Combine(TempRoot, DisplayName);
-    public static readonly string DeploymentTempRoot = Path.Combine(TempAppFolder, "Lifecycle");
     public static readonly string InstallReportPath = Path.Combine(TempRoot, "FreeVideoStudio.log");
 
-    public static string TempRoot => Path.Combine(Path.GetTempPath(),
+    public static string TempRoot => Path.Combine(FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.SystemTempRoot,
         string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(FreeVideoStudio.Core.Infrastructure.ApplicationPaths.ProgramDataRootOverrideEnvironmentVariable))
             ? "FreeVideoStudio" : "FreeVideoStudio_DEV");
 
@@ -94,7 +93,10 @@ internal static class DeploymentFootprint
     [
         "FreeVideoStudio",
         "FreeVideoStudio.App",
-        "Uninstall"
+        "Uninstall",
+        "ffmpeg",
+        "ffprobe",
+        "mpv"
     ];
 
     public static readonly string[] ShortcutFileNames =
@@ -237,11 +239,6 @@ internal static class DeploymentFootprint
         yield return Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup);
         yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), @"Microsoft\Windows\Start Menu\Programs\Startup");
         yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Microsoft\Windows\Start Menu\Programs\Startup");
-    }
-
-    public static (RegistryHive Hive, RegistryView View, string SubKeyPath) GetCanonicalUninstallRegistryTarget()
-    {
-        return (RegistryHive.LocalMachine, RegistryView.Registry64, UninstallKeyPath);
     }
 
     public static IEnumerable<(RegistryHive Hive, RegistryView View, string SubKeyPath)> GetUninstallRegistryPurgeTargets()

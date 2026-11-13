@@ -28,7 +28,6 @@
 .vs/
 .vscode/
 Old_Code/
-TestResults/
 Thumbs.db
 [Bb]in/
 [Oo]bj/
@@ -44,7 +43,6 @@ old_code/
 packages/
 src/FreeVideoStudio.App/payload.zip
 temp_staging/
-tests/MediaPipelineChecks/artifacts/
 
 # SECRETSCAN_01 — credentials never enter git (also enforced by tests/FreeVideoStudio.App.Tests/SecretLeakTests.cs)
 *.pfx
@@ -53,3 +51,10 @@ tests/MediaPipelineChecks/artifacts/
 *.key.pem
 *.password.txt
 settings.json.corrupt-*.bak
+
+# Generated dev diagnostics. TESTOUT_01: logs/ is the ONLY test-output folder (logs/<Suite>_Results/).
+/.devlogs/
+/.dev-run/
+/.dev-run.lock
+/tests/.test-run.lock
+/logs/

@@ -260,6 +260,8 @@ public partial class GranularSpeedEditorWindow : Window
     private const double FreezeMarkerHeadWidthPx = 52.0;
     private bool _isCurrentlyFrozen = false;
     private DateTime _freezeStartTime;
+    /// <summary>FREEZESFX_02 — the freeze's slow-motion sound in this preview (the player is paused during a hold).</summary>
+    private readonly Services.FreezeSoundPreview _freezeSound = new();
     private bool _isFreezeCameraSelected = false;
     private int _draggingSegmentIndex = -1;
     private enum SegDragMode { None, Move, ResizeStart, ResizeEnd }
@@ -967,6 +969,7 @@ public partial class GranularSpeedEditorWindow : Window
         if (_isCurrentlyFrozen)
         {
             _isCurrentlyFrozen = false;
+            _freezeSound.Stop();
             _holdCaretOutSec = null;
             if (_videoHost?.IpcClient != null) _ = _videoHost.IpcClient.SetPropertyAsync("pause", "no");
             return;
@@ -1698,6 +1701,7 @@ public partial class GranularSpeedEditorWindow : Window
         _applyGranularBtn = acceptBtn;
         if (acceptBtn != null) acceptBtn.Click += async (s, e) => {
             RuntimeLog.Info("UI", "User clicked Accept in Granular Speed Editor.");
+            if (!await PrepareApplyWithAiTrackingAsync()) return;
             if (!await PrepareApplyWithCommentaryAsync()) return;
             if (_zoomModeActive && _hasZoomBox && _edit.SelectedSegmentIndex >= 0 && _edit.SelectedSegmentIndex < _edit.Segments.Count && !_edit.Segments[_edit.SelectedSegmentIndex].ZoomW.HasValue)
             {
@@ -1831,6 +1835,7 @@ public partial class GranularSpeedEditorWindow : Window
                 btn.Click += (_, _) =>
                 {
                     _edit.SelectedFreezePresetS = val;
+                    RememberEditorChoice(d => Math.Abs(d.DefaultFreezeDurationS - val) > 0.001, d => d.DefaultFreezeDurationS = val);
 
                     _freezePulseTimer?.Stop();
 
@@ -1863,6 +1868,12 @@ public partial class GranularSpeedEditorWindow : Window
             {
                 if (_edit.FreezeTimeMs < 0)
                 {
+                    if (_edit.SelectedFreezePresetS < 0)
+                    {
+                        double wanted = Infrastructure.SettingsManager.Instance.Defaults.DefaultFreezeDurationS;
+                        if (wanted > 0)
+                            _edit.SelectedFreezePresetS = presetValues.OrderBy(v => Math.Abs(v - wanted)).First();
+                    }
                     bool promptPreset = (_edit.SelectedFreezePresetS < 0);
 
                     if (promptPreset)
@@ -2426,6 +2437,7 @@ public partial class GranularSpeedEditorWindow : Window
         }
 
         _isCurrentlyFrozen = false;
+        _freezeSound.Stop();
         _holdCaretOutSec = null;
         _freezeArmed = true;
         _ = _videoHost.IpcClient.SetPropertyAsync("pause", "yes");
@@ -3828,6 +3840,21 @@ public partial class GranularSpeedEditorWindow : Window
 
     private bool _syncingZoomChecks;
 
+    /// <summary>
+    /// SETEDITORMEMORY_01 — the Speed Editor remembers the zoom style and the freeze length the user
+    /// picked last (they were Settings › Editing options; now the editor itself is the setting).
+    /// A failed write is logged and never interrupts editing.
+    /// </summary>
+    private static void RememberEditorChoice(Func<Infrastructure.DefaultValues, bool> differs, Action<Infrastructure.DefaultValues> write)
+    {
+        try
+        {
+            if (!differs(Infrastructure.SettingsManager.Instance.Defaults)) return;
+            Infrastructure.SettingsManager.Update(s => write(s.Defaults));
+        }
+        catch (Exception ex) { FreeVideoStudio.App.RuntimeLog.Swallowed(ex); }
+    }
+
     /// <summary>true when the user has selected the SLOW (gradual) zoom ramp; false = INSTANT.</summary>
     private bool ZoomSlowSelected => SlowZoomCheckCtl?.IsChecked == true;
 
@@ -3843,6 +3870,7 @@ public partial class GranularSpeedEditorWindow : Window
         slowCb.IsChecked = slow;
         instCb.IsChecked = !slow;
         _syncingZoomChecks = false;
+        RememberEditorChoice(d => d.DefaultZoomSlow != slow, d => d.DefaultZoomSlow = slow);
 
         if (_edit.SelectedSegmentIndex >= 0 && _edit.SelectedSegmentIndex < _edit.Segments.Count)
         {
@@ -4162,7 +4190,8 @@ public partial class GranularSpeedEditorWindow : Window
         }
 
         var result = FreeVideoStudio.Core.Media.ZoomPreviewSimulator.Compute(
-            _edit.Segments, tSec, durSec, _edit.IsMobileFormat, psw, psh);
+            _edit.Segments, tSec, durSec, _edit.IsMobileFormat, psw, psh,
+            trimStartSec: _edit.TrimStartMs / 1000.0);
 
         if (!result.HasCrop) { ClearLiveZoomCrop(); return; }
         if (result.Crop == _lastLiveCrop) return;
@@ -5026,6 +5055,7 @@ public partial class GranularSpeedEditorWindow : Window
                 _isCurrentlyFrozen = true;
                 _freezeArmed = false;
                 _freezeStartTime = DateTime.UtcNow;
+                _freezeSound.Play(_edit.FreezeDurationS, FreeVideoStudio.Core.Media.MpvIpcClient.GlobalMasterVolume / 100.0);
                 _ = _videoHost.IpcClient.SetPropertyAsync("pause", "yes");
                 _ = _videoHost.IpcClient.SetPropertyAsync("time-pos", (_edit.FreezeTimeMs / 1000.0).ToString(System.Globalization.CultureInfo.InvariantCulture));
                 _memePreview?.NotifySeek();
@@ -5911,6 +5941,8 @@ public partial class GranularSpeedEditorWindow : Window
         e.Cancel = true;
         if (_editorClosing) return;
         _editorClosing = true;
+        CancelAiTracking();
+        CancelAiCommentary();
         _isSeeking = false;
         _nextSeekTarget = null;
         _seekFlushTimer?.Stop();
@@ -5943,6 +5975,9 @@ public partial class GranularSpeedEditorWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _freezeSound.Dispose();
+        CancelAiTracking();
+        CancelAiCommentary();
         ParkHistoryForReopen();
 
         _granularRecoveryTimer?.Stop();

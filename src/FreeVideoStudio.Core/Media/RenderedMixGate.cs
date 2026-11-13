@@ -161,13 +161,19 @@ public static class PreviewMixPolicy
         if (ChangesTempo(baseSpeed)) return true;
         if (segmentSpeeds != null)
             foreach (double s in segmentSpeeds)
-                if (ChangesTempo(s)) return true;
+                if (ChangesTempo(s) || IsFreeze(s)) return true;
         return false;
     }
 
     /// <summary>
+    /// FREEZESFX_01 — a freeze (0x) carries the synthesised slow-motion sound (and dips the music), which
+    /// the live player cannot produce, so the preview plays the rendered mix like the export.
+    /// </summary>
+    public static bool IsFreeze(double speed) => Math.Abs(speed) <= 0.001;
+
+    /// <summary>
     /// True when the export runs a tempo filter for this rate (TEMPO_01). A freeze (0x) has no tempo: its
-    /// audio is synthesised silence.
+    /// audio is synthesised (FREEZESFX_01).
     /// </summary>
     public static bool ChangesTempo(double speed) =>
         Math.Abs(speed) > 0.001 && AudioTempoFilterBuilder.EngineFor(speed, rubberbandAvailable: true) != AudioTempoEngine.None;

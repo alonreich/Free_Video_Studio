@@ -1,7 +1,8 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.Runtime.InteropServices;
-using System.Text;
+using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FreeVideoStudio.Core.Infrastructure;
@@ -27,7 +28,9 @@ public class MpvIpcClient : IDisposable
     private Thread? _eventLoopThread;
     private CancellationTokenSource? _cts;
     private bool _ownsHandle;
-    private bool _disposed;
+    private volatile bool _disposed;
+    private readonly object _nativeReadGate = new();
+    private readonly MpvCommandQueue _commands;
 
     private volatile bool _isPaused;
     private volatile bool _isEof;
@@ -106,6 +109,22 @@ public class MpvIpcClient : IDisposable
     private volatile bool _seekInProgress;
     private bool _seekObserved;
     private string? _pendingSeekCommand;
+    private ulong _activeSeekId;
+    private long _activeSeekSession;
+    private bool _activeSeekAccepted, _seekRestartObserved;
+    private ulong _probeSeekId;
+    private long _seekStartedAt, _commandStartedAt;
+    private ulong _commandId;
+    private long _session;
+    private bool _mediaReady;
+    private ulong _pauseRequestId;
+    private bool _observedPause;
+    private volatile bool _requiresReload;
+    private ulong _nextProbeId = 1UL << 63;
+    private ulong _seekStateReply, _seekPositionReply;
+    private const ulong RecoveryStopReply = ulong.MaxValue;
+    internal static readonly TimeSpan NativeWorkTimeout = TimeSpan.FromSeconds(10);
+    public event Action<string>? PlaybackFaulted;
 
     /// <summary>True from seek submission until mpv has finished seeking, including paused seeks.</summary>
     public bool IsSeeking => _seekInProgress;
@@ -113,6 +132,17 @@ public class MpvIpcClient : IDisposable
     public bool IsPaused { get => _isPaused; private set => _isPaused = value; }
     /// <summary>Thread-safe EOF state (updated by event loop, read by UI).</summary>
     public bool IsEof { get => _isEof; private set => _isEof = value; }
+
+    internal bool IsSimulatedForTesting { get; set; }
+
+    internal void SetStateForTesting(double currentTime, double duration, bool isPaused, bool isEof)
+    {
+        IsSimulatedForTesting = true;
+        CurrentTime = Math.Max(0, currentTime);
+        Duration = Math.Max(0, duration);
+        IsPaused = isPaused;
+        IsEof = isEof;
+    }
 
     /// <summary>
     /// THROTTLE_01 — true while ANY live <see cref="MpvIpcClient"/> has a file loaded and is
@@ -182,7 +212,7 @@ public class MpvIpcClient : IDisposable
     /// Wraps an existing mpv handle (created by MpvVideoView / OpenGL path).
     /// The caller retains ownership of the handle lifecycle.
     /// </summary>
-    public MpvIpcClient(nint mpvHandle)
+    public MpvIpcClient(nint mpvHandle) : this()
     {
         _mpvHandle = mpvHandle;
         _ownsHandle = false;
@@ -196,6 +226,7 @@ public class MpvIpcClient : IDisposable
     /// </summary>
     public MpvIpcClient()
     {
+        _commands = new MpvCommandQueue(OnCommandFinished);
         _mpvHandle = nint.Zero;
         _ownsHandle = false;
     }
@@ -282,7 +313,9 @@ public class MpvIpcClient : IDisposable
             {
                 try
                 {
-                    MpvWrapper.MpvEvent ev = MpvWrapper.WaitEvent(_mpvHandle, 0.2);
+                    PumpCommand();
+                    CheckNativeWorkTimeout();
+                    MpvWrapper.MpvEvent ev = MpvWrapper.WaitEvent(_mpvHandle, 0.02);
 
                     if (token.IsCancellationRequested || _disposed) break;
 
@@ -295,27 +328,41 @@ public class MpvIpcClient : IDisposable
                         case MpvWrapper.MpvEventId.Seek:
                             lock (_seekGate)
                             {
-                                _seekInProgress = true;
-                                _seekObserved = true;
+                                if (_activeSeekId != 0 && _activeSeekSession == _session)
+                                    _seekObserved = true;
                             }
                             break;
 
                         case MpvWrapper.MpvEventId.PlaybackRestart:
-                            CompleteSeek(cancelled: false);
+                            lock (_seekGate) _seekRestartObserved = _activeSeekId != 0;
+                            ProbeSeekCompletion();
                             break;
 
+                        case MpvWrapper.MpvEventId.CommandReply:
+                        case MpvWrapper.MpvEventId.GetPropertyReply:
+                            HandleReply(ev);
+                            break;
+
+                        case MpvWrapper.MpvEventId.StartFile:
+                            _mediaReady = false;
+                            break;
+                        case MpvWrapper.MpvEventId.FileLoaded:
+                            _mediaReady = true;
+                            break;
                         case MpvWrapper.MpvEventId.EndFile:
-                            CompleteSeek(cancelled: true);
+                            if (_mediaReady) CompleteSeek(cancelled: true);
+                            _mediaReady = false;
                             break;
 
                         case MpvWrapper.MpvEventId.Shutdown:
                             return;
                     }
 
-                    if (++widthCounter >= 20)
+                    ProbeSeekCompletion();
+                    if (++widthCounter >= 100)
                     {
                         widthCounter = 0;
-                        PollDimensions();
+                        _ = PollDimensionsAsync();
                     }
                 }
                 catch (Exception swallowed2)
@@ -326,8 +373,136 @@ public class MpvIpcClient : IDisposable
         }
         finally
         {
+            _commands.Close(_disposed ? MpvCommandStatus.Disposed : MpvCommandStatus.Unavailable);
+            CompleteSeek(cancelled: true);
             _eventLoopExited = true;
         }
+    }
+
+    private void PumpCommand()
+    {
+        MpvCommandQueue.Request? request;
+        lock (_seekGate)
+        {
+            if (_disposed || _requiresReload) return;
+            request = _commands.Take(_activeSeekId != 0);
+            if (request == null) return;
+            _commandId = request.Id;
+            _commandStartedAt = Stopwatch.GetTimestamp();
+            if (request.IsSeek)
+            {
+                _activeSeekId = request.Id;
+                _activeSeekSession = request.Session;
+                _seekStartedAt = _commandStartedAt;
+                _seekObserved = _seekRestartObserved = _activeSeekAccepted = false;
+                _probeSeekId = 0;
+            }
+        }
+        int error = request.ReadProperty is { } property
+            ? MpvWrapper.mpv_get_property_async(_mpvHandle, request.Id, property, MpvWrapper.MpvFormat.String)
+            : MpvWrapper.CommandAsync(_mpvHandle, request.Id, request.Arguments);
+        if (error < 0) _commands.Complete(request.Id, new(MpvCommandStatus.Rejected, error));
+    }
+
+    private void HandleReply(MpvWrapper.MpvEvent ev)
+    {
+        string? value = null;
+        if (ev.EventId == MpvWrapper.MpvEventId.GetPropertyReply && ev.Error >= 0)
+        {
+            var property = MpvWrapper.ReadEventProperty(ev);
+            if (property.Format == MpvWrapper.MpvFormat.String && property.Data != 0)
+                value = Marshal.PtrToStringUTF8(Marshal.ReadIntPtr(property.Data));
+        }
+        if (ev.ReplyUserdata == RecoveryStopReply)
+        {
+            if (ev.Error >= 0) CompleteSeek(cancelled: true);
+            else CoreLogger.Fail("MPV", $"Recovery stop rejected ({ev.Error}); player must be recreated.");
+            return;
+        }
+        if (ev.ReplyUserdata >= (1UL << 63))
+        {
+            lock (_seekGate)
+            {
+                if (ev.ReplyUserdata != _seekStateReply && ev.ReplyUserdata != _seekPositionReply) return;
+                if (_probeSeekId == 0 || _probeSeekId != _activeSeekId || _activeSeekSession != _session)
+                { _probeSeekId = 0; return; }
+                if (ev.ReplyUserdata == _seekStateReply && ev.Error >= 0 && value == "no")
+                {
+                    _seekPositionReply = ++_nextProbeId;
+                    int error = MpvWrapper.mpv_get_property_async(_mpvHandle, _seekPositionReply, "time-pos", MpvWrapper.MpvFormat.String);
+                    if (error < 0) _probeSeekId = 0;
+                    return;
+                }
+                if (ev.ReplyUserdata != _seekPositionReply || ev.Error < 0 ||
+                    !double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double position))
+                { _probeSeekId = 0; return; }
+                CurrentTime = Math.Max(0, position);
+            }
+            CompleteSeek(cancelled: false);
+            return;
+        }
+        _commands.Complete(ev.ReplyUserdata,
+            new(ev.Error < 0 ? MpvCommandStatus.Rejected : MpvCommandStatus.Accepted, ev.Error, value));
+    }
+
+    private void ProbeSeekCompletion()
+    {
+        lock (_seekGate)
+        {
+            if (_requiresReload || _disposed || _activeSeekId == 0 || _probeSeekId != 0 ||
+                !_activeSeekAccepted || !_seekObserved || !_seekRestartObserved || _activeSeekSession != _session) return;
+            _probeSeekId = _activeSeekId;
+            _seekStateReply = ++_nextProbeId;
+            if (MpvWrapper.mpv_get_property_async(_mpvHandle, _seekStateReply, "seeking", MpvWrapper.MpvFormat.String) < 0)
+                _probeSeekId = 0;
+        }
+    }
+
+    private void OnCommandFinished(MpvCommandQueue.Request request, MpvCommandResult result)
+    {
+        bool cancelSeek = false;
+        lock (_seekGate)
+        {
+            if (_commandId == request.Id) _commandId = 0;
+            if (request.Id == _pauseRequestId)
+            {
+                _pauseRequestId = 0;
+                if (!result.Succeeded) IsPaused = _observedPause;
+            }
+            if (request.IsSeek && request.Id == _activeSeekId)
+            {
+                _activeSeekAccepted = result.Succeeded;
+                cancelSeek = result.Status == MpvCommandStatus.Rejected;
+            }
+            if (result.Succeeded && request.Arguments[0] is "stop" or "loadfile")
+            {
+                cancelSeek = true;
+                _mediaReady = false;
+                if (request.Arguments[0] == "stop") Duration = 0;
+            }
+            if (_activeSeekId == 0) _seekInProgress = _commands.HasSeeks;
+        }
+        if (cancelSeek) CompleteSeek(cancelled: true);
+        if (result.Status is MpvCommandStatus.Rejected or MpvCommandStatus.QueueFull)
+            CoreLogger.Warn("MPV", $"{request.Arguments[0]}: {result.Status} ({result.NativeError}).");
+        UpdatePlaybackContribution();
+    }
+
+    private void CheckNativeWorkTimeout()
+    {
+        lock (_seekGate)
+        {
+            if (_requiresReload || _disposed) return;
+            bool overdue = (_commandId != 0 && Stopwatch.GetElapsedTime(_commandStartedAt) > NativeWorkTimeout) ||
+                (_activeSeekId != 0 && Stopwatch.GetElapsedTime(_seekStartedAt) > NativeWorkTimeout);
+            if (!overdue) return;
+            _requiresReload = true;
+            _commands.Close(MpvCommandStatus.TimedOut);
+        }
+        int error = MpvWrapper.CommandAsync(_mpvHandle, RecoveryStopReply, ["stop"]);
+        string message = "Preview command/seek timed out; stopping the player. Reopen the preview to recover.";
+        CoreLogger.Fail("MPV", message + (error < 0 ? $" Stop rejected ({error})." : ""));
+        PlaybackFaulted?.Invoke(message);
     }
 
     private void CompleteSeek(bool cancelled)
@@ -335,18 +510,13 @@ public class MpvIpcClient : IDisposable
         bool notify;
         lock (_seekGate)
         {
-            if (!_seekInProgress) return;
-            if (!cancelled)
-            {
-                if (!_seekObserved || GetPropertyString("seeking") != "no") return;
-                if (double.TryParse(GetPropertyString("time-pos"), NumberStyles.Float,
-                        CultureInfo.InvariantCulture, out double position))
-                    CurrentTime = Math.Max(0, position);
-            }
-            notify = _seekInProgress;
-            _pendingSeekCommand = null;
-            _seekObserved = false;
-            _seekInProgress = false;
+            if (!cancelled && (_activeSeekSession != _session || !_activeSeekAccepted || !_seekObserved)) return;
+            bool wasSeeking = _seekInProgress;
+            _activeSeekId = _probeSeekId = 0;
+            _seekObserved = _seekRestartObserved = _activeSeekAccepted = false;
+            _seekInProgress = _commands.HasSeeks;
+            if (!_seekInProgress) _pendingSeekCommand = null;
+            notify = wasSeeking && !_seekInProgress;
         }
         if (notify) SeekCompleted?.Invoke();
     }
@@ -376,6 +546,8 @@ public class MpvIpcClient : IDisposable
 
             case "pause":
                 bool paused = value > 0.5;
+                _observedPause = paused;
+                if (_pauseRequestId != 0) break;
                 if (paused != IsPaused)
                 {
                     IsPaused = paused;
@@ -390,7 +562,7 @@ public class MpvIpcClient : IDisposable
                 break;
 
             case "eof-reached":
-                IsEof = value > 0.5;
+                IsEof = value > 0.5 && !_seekInProgress && _pauseRequestId == 0;
                 UpdatePlaybackContribution();
                 break;
 
@@ -403,19 +575,14 @@ public class MpvIpcClient : IDisposable
     /// <summary>
     /// Lazily reads width/height from the native handle (infrequent).
     /// </summary>
-    private void PollDimensions()
+    private async Task PollDimensionsAsync()
     {
-        if (_mpvHandle == nint.Zero) return;
-
-        string? wStr = GetPropertyString("width");
-        if (int.TryParse(wStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out int w))
-            VideoWidth = w;
-
-        string? hStr = GetPropertyString("height");
-        if (int.TryParse(hStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out int h))
-            VideoHeight = h;
+        if (_disposed || _requiresReload) return;
+        var width = await GetPropertyStringAsync("width").ConfigureAwait(false);
+        var height = await GetPropertyStringAsync("height").ConfigureAwait(false);
+        if (int.TryParse(width.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int w)) VideoWidth = w;
+        if (int.TryParse(height.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int h)) VideoHeight = h;
     }
-
 
     /// <summary>
     /// Reads an mpv property as a UTF-8 string via
@@ -423,137 +590,95 @@ public class MpvIpcClient : IDisposable
     /// </summary>
     public string? GetPropertyString(string name)
     {
-        if (_mpvHandle == nint.Zero) return null;
-
-        nint ptr = MpvWrapper.mpv_get_property_string(_mpvHandle, name);
-        if (ptr == nint.Zero) return null;
-
-        string? result = Marshal.PtrToStringUTF8(ptr);
-        MpvWrapper.mpv_free(ptr);
-        return result;
+        lock (_nativeReadGate)
+        {
+            if (_disposed || _mpvHandle == nint.Zero) return null;
+            return MpvWrapper.GetPropertyString(_mpvHandle, name);
+        }
     }
 
+    public Task<MpvCommandResult> GetPropertyStringAsync(string name) =>
+        Enqueue(["get", name], readProperty: name);
 
-    /// <summary>
-    /// Sends a command to mpv via <c>mpv_command_string</c>.
-    /// Arguments are joined with spaces. Numeric values use InvariantCulture.
-    /// String arguments containing spaces or backslashes are automatically
-    /// quoted and escaped for the mpv command-string parser.
-    /// </summary>
-    public Task SendCommandAsync(params object[] args)
+    /// <summary>MPVQUEUE_01 — bounded ordered admission. No native function runs on this caller.</summary>
+    public Task<MpvCommandResult> SendCommandAsync(params object[] args)
     {
-        if (_mpvHandle == nint.Zero || args.Length == 0)
-            return Task.CompletedTask;
-
-        var sb = new StringBuilder();
-        for (int i = 0; i < args.Length; i++)
-        {
-            if (i > 0)
-                sb.Append(' ');
-
-            string str = args[i] switch
-            {
-                double d => d.ToString(CultureInfo.InvariantCulture),
-                float f  => f.ToString(CultureInfo.InvariantCulture),
-                decimal dec => dec.ToString(CultureInfo.InvariantCulture),
-                _        => args[i].ToString() ?? string.Empty
-            };
-
-            if (i > 0 && NeedsMpvQuoting(str))
-            {
-                sb.Append(QuoteForMpv(str));
-            }
-            else
-            {
-                sb.Append(str);
-            }
-        }
-
-        string command = sb.ToString();
-        if (args[0].ToString() == "seek")
-        {
-            int result;
-            lock (_seekGate)
-            {
-                bool absolute = args.Length > 2 && args[2].ToString()!.Contains("absolute", StringComparison.Ordinal);
-                if (absolute && _seekInProgress && _pendingSeekCommand == command)
-                    return Task.CompletedTask;
-                _pendingSeekCommand = command;
-                _seekInProgress = true;
-                _seekObserved = false;
-                IsEof = false;
-                result = MpvWrapper.mpv_command_string(_mpvHandle, command);
-            }
-            if (result < 0)
-            {
-                CompleteSeek(cancelled: true);
-                CoreLogger.Warn("MPV", $"Seek command rejected ({result}).");
-            }
-        }
-        else MpvWrapper.mpv_command_string(_mpvHandle, command);
-
-        return Task.CompletedTask;
+        if (args.Length == 0) return Task.FromResult(new MpvCommandResult(MpvCommandStatus.Rejected));
+        string[] argv = args.Select(a => a is IFormattable f
+            ? f.ToString(null, CultureInfo.InvariantCulture) ?? string.Empty : a?.ToString() ?? string.Empty).ToArray();
+        return Enqueue(argv);
     }
 
-
-    /// <summary>
-    /// ISSUE_15 — true when an argument cannot be pasted into an mpv command string as-is.
-    ///
-    /// WHAT WAS WRONG: the old test was <c>str.Contains(' ') || str.Contains('\\')</c>, and the
-    /// escaping was a bare <c>Replace("\\", "\\\\")</c>. A DOUBLE QUOTE in a filename was
-    /// therefore neither a reason to quote nor something that got escaped, so a file such as
-    /// <c>My "best" clip.mp4</c> produced a command mpv could not parse. mpv reports nothing
-    /// useful for a malformed command string, so the preview (or the added audio track) simply
-    /// did nothing, with no error anywhere. Every FFmpeg call in the suite was hardened against
-    /// exactly this class of filename; the player commands were missed.
-    ///
-    /// A <c>#</c> starts a comment in mpv's parser and a leading/trailing space would be eaten,
-    /// so those are covered too. An empty argument must be quoted or it disappears entirely.
-    /// </summary>
-    private static bool NeedsMpvQuoting(string s)
+    private Task<MpvCommandResult> Enqueue(string[] args, string? readProperty = null)
     {
-        if (s.Length == 0) return true;
-        foreach (char c in s)
+        lock (_seekGate)
         {
-            if (c is ' ' or '\t' or '\\' or '"' or '\'' or '#' or '\r' or '\n') return true;
-        }
-        return false;
-    }
+            if (_disposed || _requiresReload)
+                return Task.FromResult(new MpvCommandResult(_disposed ? MpvCommandStatus.Disposed : MpvCommandStatus.Unavailable));
 
-    /// <summary>
-    /// ISSUE_15 — wraps an argument in mpv's double-quoted string syntax, escaping the two
-    /// characters that are special INSIDE such a string: the backslash and the double quote.
-    /// Order matters — backslashes must be doubled first, otherwise the backslashes introduced
-    /// while escaping the quotes would themselves be doubled.
-    /// </summary>
-    private static string QuoteForMpv(string s)
-    {
-        return "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
-    }
-
-    /// <summary>
-    /// Sets an mpv string property via <c>mpv_set_property_string</c>.
-    /// </summary>
-        public Task SetPropertyAsync(string name, string value)
-    {
-        if (_mpvHandle != nint.Zero)
-        {
-            if (name == "pause" && value == "no" && Duration > 0 && Math.Abs(CurrentTime - Duration) < 0.2)
+            if (_mpvHandle == 0)
             {
-                MpvWrapper.mpv_command_string(_mpvHandle, "seek 0 absolute");
-                CurrentTime = 0;
+                if (IsSimulatedForTesting)
+                {
+                    if (args.Length > 2 && args[0] == "set" && args[1] == "pause")
+                    {
+                        IsPaused = args[2] == "yes";
+                        if (!IsPaused) IsEof = false;
+                    }
+                    else if (args.Length > 1 && args[0] == "seek" && double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double target))
+                    {
+                        CurrentTime = Math.Max(0, target);
+                        IsEof = false;
+                    }
+                    return Task.FromResult(new MpvCommandResult(MpvCommandStatus.Accepted));
+                }
+                return Task.FromResult(new MpvCommandResult(MpvCommandStatus.Unavailable));
             }
 
-            MpvWrapper.mpv_set_property_string(_mpvHandle, name, value);
 
-            if (name == "pause")
+            bool seek = readProperty == null && args[0] == "seek";
+            bool absolute = seek && args.Length > 2 && args[2].Contains("absolute", StringComparison.Ordinal);
+            string key = string.Join("\0", args);
+            if (absolute && _seekInProgress && _pendingSeekCommand == key)
+                return Task.FromResult(new MpvCommandResult(MpvCommandStatus.Accepted));
+            if (readProperty == null && args[0] is "stop" or "loadfile")
             {
-                IsPaused = value == "yes";
-
-                if (value == "no") IsEof = false;
+                ++_session;
+                _commands.CancelPendingSeeks();
             }
+            var request = _commands.Enqueue(new MpvCommandQueue.Request
+            {
+                Arguments = args, ReadProperty = readProperty, Session = _session,
+                CoalesceKey = absolute ? "absolute-seek" : args[0] == "set" && args.Length > 2 ? "set:" + args[1] : null
+            });
+            if (request.Admitted)
+            {
+                if (seek)
+                {
+                    _pendingSeekCommand = key;
+                    _seekInProgress = true;
+                    IsEof = false;
+                }
+                if (args[0] == "set" && args.Length > 2 && args[1] == "pause")
+                {
+                    _pauseRequestId = request.Id;
+                    IsPaused = args[2] == "yes";
+                    if (!IsPaused) IsEof = false;
+                }
+            }
+            return request.Task;
         }
-        return Task.CompletedTask;
+    }
+
+    /// <summary>Sets a property on the same ordered queue as seeks and file loads.</summary>
+    public Task<MpvCommandResult> SetPropertyAsync(string name, string value)
+    {
+        lock (_seekGate)
+        {
+            if (name == "pause" && value == "no" && IsEof && !_seekInProgress && (Duration <= 0 || CurrentTime >= Duration - 0.05))
+                _ = SendCommandAsync("seek", 0, "absolute");
+            return Enqueue(["set", name, value]);
+        }
     }
 
     /// <summary>
@@ -564,59 +689,40 @@ public class MpvIpcClient : IDisposable
         SetPropertyDoubleAsync("volume", PlayerMpvVolume(balanceLinear));
 
     /// <summary>Sets a raw mpv double property using invariant number formatting.</summary>
-    public Task SetPropertyDoubleAsync(string name, double value)
-    {
-        if (_mpvHandle != nint.Zero)
-            MpvWrapper.mpv_set_property_string(
-                _mpvHandle, name,
-                value.ToString(CultureInfo.InvariantCulture));
-        return Task.CompletedTask;
-    }
-
+    public Task<MpvCommandResult> SetPropertyDoubleAsync(string name, double value) =>
+        SetPropertyAsync(name, value.ToString("R", CultureInfo.InvariantCulture));
 
     /// <summary>
     /// Loads a media file into the mpv player.
     /// Sets the <c>start</c> property BEFORE issuing <c>loadfile</c>
     /// (per project IPC rule: start must be set independently).
     /// </summary>
-    public Task LoadFileAsync(string path, double? startTime = null)
+    public Task<MpvCommandResult> LoadFileAsync(string path, double? startTime = null)
     {
-        if (_mpvHandle == nint.Zero)
-            return Task.CompletedTask;
-
-        MpvWrapper.SetStartPosition(_mpvHandle, startTime ?? 0);
-
-        MpvWrapper.LoadFile(_mpvHandle, path);
-
-        MpvWrapper.SetPause(_mpvHandle, false);
-
-        return Task.CompletedTask;
+        lock (_seekGate)
+        {
+            Task<MpvCommandResult> start = SetPropertyDoubleAsync("start", startTime ?? 0);
+            Task<MpvCommandResult> load = SendCommandAsync("loadfile", path);
+            Task<MpvCommandResult> play = SetPropertyAsync("pause", "no");
+            return LoadResultAsync(start, load, play);
+        }
     }
 
-    /// <summary>
-    /// AICAPTION_EXPORT_01 — loads an ASS subtitle script file into mpv for live preview.
-    /// </summary>
-    public Task AddSubtitlesAsync(string path, bool select = true)
+    private static async Task<MpvCommandResult> LoadResultAsync(params Task<MpvCommandResult>[] operations)
     {
-        if (_mpvHandle == nint.Zero)
-            return Task.CompletedTask;
-
-        MpvWrapper.AddSubtitles(_mpvHandle, path, select);
-        return Task.CompletedTask;
+        MpvCommandResult result = new(MpvCommandStatus.Accepted);
+        foreach (var task in operations)
+        {
+            var next = await task.ConfigureAwait(false);
+            if (!next.Succeeded && result.Succeeded) result = next;
+        }
+        return result;
     }
 
-    /// <summary>
-    /// AICAPTION_EXPORT_01 — removes subtitle tracks from mpv preview.
-    /// </summary>
-    public Task RemoveSubtitlesAsync()
-    {
-        if (_mpvHandle == nint.Zero)
-            return Task.CompletedTask;
-
-        MpvWrapper.RemoveSubtitles(_mpvHandle);
-        return Task.CompletedTask;
-    }
-
+    /// <summary>AICAPTION_EXPORT_01 — ordered subtitle commands use argv, preserving paths verbatim.</summary>
+    public Task<MpvCommandResult> AddSubtitlesAsync(string path, bool select = true) =>
+        SendCommandAsync("sub-add", path, select ? "select" : "auto");
+    public Task<MpvCommandResult> RemoveSubtitlesAsync() => SendCommandAsync("sub-remove");
 
     /// <summary>
     /// ISSUE_13 — set by <see cref="EventLoopWorker"/>'s finally block. This is the ONLY reliable
@@ -629,6 +735,7 @@ public class MpvIpcClient : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _commands.Close(MpvCommandStatus.Disposed);
 
         UpdatePlaybackContribution();
 
@@ -677,11 +784,10 @@ public class MpvIpcClient : IDisposable
             MpvWrapper.UnobserveProperty(_mpvHandle, _fpsObsId);
         }
 
-        if (_ownsHandle && _mpvHandle != nint.Zero)
+        lock (_nativeReadGate)
         {
-            MpvWrapper.SafeDestroy(ref _mpvHandle);
+            if (_ownsHandle && _mpvHandle != nint.Zero) MpvWrapper.SafeDestroy(ref _mpvHandle);
+            _mpvHandle = nint.Zero;
         }
-
-        _mpvHandle = nint.Zero;
     }
 }

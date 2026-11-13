@@ -204,7 +204,7 @@ public partial class MainWindow
             take.StartProjectSec = timeline.PreviewSourceToOutputSeconds(take.Take.StartSec * 1000.0) + take.Take.OutputOffsetSec;
 
             double voiceTime = editedTime - take.StartProjectSec;
-            take.Reader.Volume = (float)MpvIpcClient.MasterLinearGain;
+            take.Reader.Volume = VoiceOverLevel.PreviewGain(take.Take.Gain, MpvIpcClient.MasterLinearGain);
             bool shouldPlayVoice = !PreviewMixActive && !isPaused && !videoEnded && voiceTime >= 0 && voiceTime <= take.Reader.TotalTime.TotalSeconds;
 
             try

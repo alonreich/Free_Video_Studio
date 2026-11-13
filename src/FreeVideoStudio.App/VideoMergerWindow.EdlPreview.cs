@@ -86,7 +86,7 @@ public partial class VideoMergerWindow
     {
         var ipc = _videoHost?.IpcClient;
         if (ipc == null || _timeline.Clips.Count == 0) return false;
-        string url = MergeEditorSource.Build(_timeline.Composite).MpvUrl;
+        var (url, audioStream) = MergeEditorSource.PreviewUrl(_timeline.Composite, ClipHasAudio, PreviewSilencePath());
         if (url == _edlUrl) return false;
 
         bool hadEdl = _edlUrl != null;
@@ -106,18 +106,20 @@ public partial class VideoMergerWindow
         _pendingMiddleSeekPath = null;
         _autoAdvanceArmed = false;
 
-        _ = LoadEdlAsync(ipc, url, at, playNow);
+        _ = LoadEdlAsync(ipc, url, at, playNow, audioStream);
         RuntimeLog.Info("MERGER", $"Preview: merge loaded as one EDL ({_timeline.Clips.Count} clip(s), {_timeline.TotalSec:F3}s) at {at:F3}s, {(playNow ? "playing" : "paused")}.");
         return true;
     }
 
-    private async System.Threading.Tasks.Task LoadEdlAsync(MpvIpcClient ipc, string url, double at, bool play)
+    private async System.Threading.Tasks.Task LoadEdlAsync(MpvIpcClient ipc, string url, double at, bool play, bool audioStream)
     {
         try
         {
+            await ipc.SetPropertyAsync("gapless-audio", "yes");
             await ipc.SetPropertyAsync("hr-seek", "yes");
             await ipc.SetPropertyAsync("mute", _previewMuted ? "yes" : "no");
             await ipc.LoadFileAsync(url, at);
+            if (audioStream) await SelectAudioStreamAsync(ipc, url);
             await ipc.SetPropertyAsync("pause", play ? "no" : "yes");
         }
         catch (Exception ex)
@@ -125,6 +127,36 @@ public partial class VideoMergerWindow
             RuntimeLog.WarnThrottled("MERGER", $"Preview could not load the merge: {ex.Message}");
             RuntimeLog.Swallowed(ex);
         }
+    }
+
+    /// <summary>MERGEPREVIEW_SILENT_01 — false only when the analysis KNOWS the clip has no sound track.</summary>
+    private static bool ClipHasAudio(string path) => !MergeClipAnalyzer.TryGetCompleted(path, out var info) || info.HasAudio;
+
+    private static System.Threading.Tasks.Task<string?>? _silenceTask;
+
+    /// <summary>The silent file for soundless clips once it exists (made on first need; the URL is rebuilt every tick, so it is picked up when ready).</summary>
+    private string? PreviewSilencePath()
+    {
+        if (_timeline.Clips.All(c => ClipHasAudio(c.Path))) return null;
+        _silenceTask ??= MergeEditorSource.EnsureSilenceFileAsync(
+            FreeVideoStudio.Core.Infrastructure.BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries"),
+            System.IO.Path.Combine(FreeVideoStudio.Core.Infrastructure.ApplicationPaths.CreateDefault().TempDirectory, "preview-silence"));
+        return _silenceTask.IsCompletedSuccessfully ? _silenceTask.Result : null;
+    }
+
+    /// <summary>MERGEPREVIEW_SILENT_01 — plays the audio-only stream (its track is listed once the EDL opened).</summary>
+    private async System.Threading.Tasks.Task SelectAudioStreamAsync(MpvIpcClient ipc, string url)
+    {
+        for (int i = 0; i < 40 && url == _edlUrl; i++)
+        {
+            if (MergeEditorSource.SilentStreamAudioTrack(ipc.GetPropertyString("track-list")) is int aid)
+            {
+                if (aid > 1) await ipc.SetPropertyAsync("aid", aid.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                return;
+            }
+            await System.Threading.Tasks.Task.Delay(50);
+        }
+        RuntimeLog.WarnThrottled("MERGER", "Preview: the audio-only stream for soundless clips did not appear; playing the first stream's audio.");
     }
 
     /// <summary>Where the playhead is, expressed on the NEW layout (same file, same source second).</summary>

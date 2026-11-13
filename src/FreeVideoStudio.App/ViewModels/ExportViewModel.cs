@@ -22,11 +22,7 @@ public sealed class ExportViewModel : ViewModelBase
     private string _hardwareStatusColor = "#00783C";
     private bool _isRdpWarningVisible;
     private bool _isRdpGpuBlocked;
-    private bool _isExporting;
-    private int _progressPercentage;
-    private int _phaseCurrent;
     private string _phaseTitle = "";
-    private int _phaseProgress;
     private string _statusText = "Ready";
     private string _estimatedFileSizeText = "—";
     private string _estimatedFileSizeDescription = "Estimated size of the finished video, including sound.";
@@ -85,34 +81,10 @@ public sealed class ExportViewModel : ViewModelBase
         set => SetProperty(ref _isRdpGpuBlocked, value);
     }
 
-    public bool IsExporting
-    {
-        get => _isExporting;
-        set => SetProperty(ref _isExporting, value);
-    }
-
-    public int ProgressPercentage
-    {
-        get => _progressPercentage;
-        set => SetProperty(ref _progressPercentage, value);
-    }
-
-    public int PhaseCurrent
-    {
-        get => _phaseCurrent;
-        set => SetProperty(ref _phaseCurrent, value);
-    }
-
     public string PhaseTitle
     {
         get => _phaseTitle;
         set => SetProperty(ref _phaseTitle, value);
-    }
-
-    public int PhaseProgress
-    {
-        get => _phaseProgress;
-        set => SetProperty(ref _phaseProgress, value);
     }
 
     public string StatusText
@@ -125,7 +97,7 @@ public sealed class ExportViewModel : ViewModelBase
     public string ResolveHardwareMode()
     {
         return ExportEncoderStrategy.Resolve(
-            SettingsManager.Instance.VideoEncoderOverride,
+            SettingsManager.Instance.VideoEncoderOverride.ToString(),
             _hardwareMode,
             ResolveFfmpegPath());
     }

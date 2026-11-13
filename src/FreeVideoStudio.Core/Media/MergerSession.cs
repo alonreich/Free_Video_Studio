@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
@@ -114,20 +114,6 @@ public sealed class ClipIdList
             if (i >= 0 && i < _ids.Count) result.Add(_ids[i]);
         return result;
     }
-
-    /// <summary>QUEUEOCCURRENCE_01 — Resolves <paramref name="ids"/> to their current row indices; returns null if any id is missing.</summary>
-    public List<int>? ResolveIndices(IEnumerable<Guid> ids)
-    {
-        var result = new List<int>();
-        foreach (var id in ids)
-        {
-            int idx = IndexOf(id);
-            if (idx < 0) return null;
-            result.Add(idx);
-        }
-        result.Sort();
-        return result;
-    }
 }
 
 /// <summary>
@@ -221,6 +207,8 @@ public sealed record MergerUiState
     public string? ThumbPath { get; init; }
     public double ThumbSourceSec { get; init; }
     public MergerMusicState? Music { get; init; }
+    public CaptionTrack? Captions { get; init; }
+    public bool ClearCaptions { get; init; } = false;
 }
 
 /// <summary>What the window has to do to restore a saved edit list.</summary>
@@ -325,6 +313,7 @@ public static class MergerSession
             BaseSpeed = s.BaseSpeed > 0 && double.IsFinite(s.BaseSpeed) ? s.BaseSpeed : 1.0,
             Thumbnail = thumb,
             Music = music,
+            Captions = s.ClearCaptions ? null : (s.Captions ?? previous?.Captions),
         };
     }
 
@@ -463,6 +452,12 @@ public static class MergerSession
             if (prev.Music is null) return ("add music", null);
             if (next.Music is null) return ("remove music", null);
             return ("change music", null);
+        }
+        if (!Equals(prev.Captions, next.Captions))
+        {
+            if (prev.Captions is null) return ("add captions", null);
+            if (next.Captions is null) return ("remove captions", null);
+            return ("edit captions", null);
         }
         if (prev.BaseSpeed != next.BaseSpeed) return ("change speed", "speed");
         return ("edit clip", null);

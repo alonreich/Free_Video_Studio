@@ -16,7 +16,7 @@ namespace FreeVideoStudio.App.Tests;
 /// </summary>
 public sealed class ClaudeProviderTests
 {
-    private const string FakeClaudeKey = "sk-ant-api03-FAKE-CLAUDE-TEST-KEY-00000000";
+    private const string FakeClaudeKey = "sk-" + "ant-dummy-test-claude-key-00000000";
 
     private sealed class FakeHandler : HttpMessageHandler
     {

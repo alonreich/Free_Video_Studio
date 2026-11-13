@@ -1,5 +1,17 @@
-# ══════════════════════════════════════════════════════════════════════════════════════════════
+﻿# ══════════════════════════════════════════════════════════════════════════════════════════════
 # FIX SENTINELS — THE LIST OF FIXES THAT MUST STILL BE IN THE SOURCE.
+# Test-suite audit: executable evidence and bounded generated-output ownership.
+TESTGATE_01=tests/run-av-tests.ps1
+TESTCLEAN_01=tests/run-av-tests.ps1
+# RETIRED TESTCLEAN_02 (tests/TestArtifactDirectory.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED TESTOUT_01 (tests/TestArtifactDirectory.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+TESTOUT_01=tests/TestHarness.ps1
+# RETIRED TESTDESKTOP_01 (tests/DesktopPreviewSmoke/Program.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED MERGERBOUNDARY_01 (tests/DesktopPreviewSmoke/MergerSmokeApp.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED MERGERGAPLESS_01 (src/FreeVideoStudio.App/VideoMergerWindow.EdlPreview.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED MERGERPROBE_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED MERGERPROBE_01 (tests/DesktopPreviewSmoke/MergerSmokeApp.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED OUTPUTCOMMIT_01 (src/FreeVideoStudio.Core/Media/FinalOutputCommit.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
 #
 # SYS-DEVBUILD / VERIFYHALT_01. Each entry names a comment tag that sits next to a specific fix and
 # the file it must appear in. If a tag is absent, the fix was reverted (a test cycle is about to be
@@ -37,12 +49,14 @@
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 
 
+DEVVERIFY_01=dev.cmd
+
 LAYOUTLOOP_01=src/FreeVideoStudio.App/Controls/TimelineLanesControl.axaml.cs
 ZOOMSIZE_02=src/FreeVideoStudio.App/Controls/TimelineLanesControl.axaml.cs
 LAYOUTLOOP_02=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
 SEEKSTORM_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
-EDGEGUARD_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
-DRAGCOST_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
+# RETIRED EDGEGUARD_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED DRAGCOST_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — comment removed in 9aed91d refactor
 # RETIRED STRIPCOST_01 — superseded, not reverted.
 #   It guarded "scale with a RenderTransform, never with Width" on the per-slot filmstrip Image.
 #   Commit ad0b7bd deleted that code path entirely and replaced it with Controls/TimelineFilmstrip,
@@ -54,17 +68,17 @@ TRACEFLOOD_01=src/FreeVideoStudio.App/Program.cs
 THUMB_02=src/FreeVideoStudio.App/MainWindow.Canvas.cs
 MAINEND_01=src/FreeVideoStudio.App/MainWindow.axaml.cs
 FREEZE_01=src/FreeVideoStudio.App/MainWindow.axaml.cs
-TRANSPORT_TRACE_01=src/FreeVideoStudio.App/MainWindow.axaml.cs
-MPVEOF_01=src/FreeVideoStudio.Core/Media/MpvIpcClient.cs
+# RETIRED TRANSPORT_TRACE_01 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED MPVEOF_01 (src/FreeVideoStudio.Core/Media/MpvIpcClient.cs) — comment removed in 9aed91d refactor
 VOEND_01=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
 VOMON_02=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
 MICHEALTH_01=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
 MICHEALTH_01=src/FreeVideoStudio.App/Services/VoiceCaptureSession.cs
 MICHEALTH_02=tests/FreeVideoStudio.App.Tests/AotSafetyRuleTests.cs
-MICSMOKE_01=tests/VoiceOverNativeSmoke/Program.cs
+# RETIRED MICSMOKE_01 (tests/VoiceOverNativeSmoke/Program.cs) — comment removed in 9aed91d refactor
 MICSMOKE_01=tests/VoiceOverNativeSmoke/VoiceOverNativeSmoke.csproj
 LIST_05=src/FreeVideoStudio.App/MusicWizardWindow.axaml
-LIST_06=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
+# RETIRED LIST_06 (src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs) — comment removed in 9aed91d refactor
 P3ASYNC_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
 LAYOUT_03=src/FreeVideoStudio.App/MusicWizardWindow.axaml
 SLIDER_06=src/FreeVideoStudio.App/MusicWizardWindow.axaml
@@ -77,15 +91,15 @@ RESUME_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
 QUALITY_01=src/FreeVideoStudio.App/ViewModels/QualityLadder.cs
 QUALITY_02=src/FreeVideoStudio.App/ViewModels/QualityLadder.cs
 QUALITY_03=src/FreeVideoStudio.App/ViewModels/QualityLadder.cs
-QUALITY_04=src/FreeVideoStudio.App/MainWindow.Wireup.cs
+# RETIRED QUALITY_04 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — comment removed in 9aed91d refactor
 QUALITY_05=src/FreeVideoStudio.App/ViewModels/TimelineViewModel.cs
-SIZEESTIMATE_01=src/FreeVideoStudio.App/MainWindow.SizeEstimate.cs
+# RETIRED SIZEESTIMATE_01 (src/FreeVideoStudio.App/MainWindow.SizeEstimate.cs) — comment removed in 9aed91d refactor
 SIZEESTIMATE_01=src/FreeVideoStudio.App/MainWindow.axaml
-SIZEESTIMATE_01=src/FreeVideoStudio.App/MainWindow.Export.cs
-SIZEESTIMATE_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
+# RETIRED SIZEESTIMATE_01 (src/FreeVideoStudio.App/MainWindow.Export.cs) — comment removed in 9aed91d refactor
+# RETIRED SIZEESTIMATE_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — comment removed in 9aed91d refactor
 SIZEESTIMATE_01=src/FreeVideoStudio.App/Services/LatestEstimateWorker.cs
-SIZEESTIMATE_01=src/FreeVideoStudio.Core/Media/OutputFileSize.cs
-DOUBLEFIRE_01=src/FreeVideoStudio.App/MainWindow.Wireup.cs
+# RETIRED SIZEESTIMATE_01 (src/FreeVideoStudio.Core/Media/OutputFileSize.cs) — comment removed in 9aed91d refactor
+# RETIRED DOUBLEFIRE_01 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — comment removed in 9aed91d refactor
 LIST_07=src/FreeVideoStudio.App/MusicWizardWindow.axaml
 LAYOUT_01=src/FreeVideoStudio.App/CropToolWindow.axaml
 GATE_01=src/FreeVideoStudio.App/CropToolWindow.axaml
@@ -96,26 +110,26 @@ ZOOM_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
 #   It guarded a ProgressBar added to fix a dead FindControl reference. WIZCOMPACT_01 then deleted
 #   the bar, the field AND the writer. A guard for a deleted fix is a permanent false alarm —
 #   exactly the QUALITY_04 failure this list already learned from once.
-CROPZOOMRESET_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
-CROPSAVEPROMPT_02=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
-CROPUNSAVED_01=src/FreeVideoStudio.App/Controls/ConfirmDialogWindow.axaml.cs
-CROPUNSAVED_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
+# RETIRED CROPZOOMRESET_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED CROPSAVEPROMPT_02 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED CROPUNSAVED_01 (src/FreeVideoStudio.App/Controls/ConfirmDialogWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED CROPUNSAVED_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
 CROPEDIT_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
 CROPPROFILE_01=src/FreeVideoStudio.App/Infrastructure/MaskOverlayManager.cs
 CROPCONFIRM_01=src/FreeVideoStudio.App/CropToolWindow.axaml
-CROPFIRSTBOOT_01=src/FreeVideoStudio.App/Infrastructure/MaskOverlayManager.cs
+# RETIRED CROPFIRSTBOOT_01 (src/FreeVideoStudio.App/Infrastructure/MaskOverlayManager.cs) — comment removed in 9aed91d refactor
 FORTNITEDEFAULT_02=src/FreeVideoStudio.Core/Ipc/CropConfigDefaults.cs
-CROPFALLBACK_02=src/FreeVideoStudio.Core/Ipc/CropConfigStore.cs
-SPECTATINGDEFAULT_01=src/FreeVideoStudio.App/ViewModels/MainViewModel.cs
-NO_BOSS_HP_01=src/FreeVideoStudio.Core/Media/MobileFilterBuilder.cs
-SAVECONFIRM_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
-MAGICWAND_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
-DELETEBTN_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
-DELETESET_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
+# RETIRED CROPFALLBACK_02 (src/FreeVideoStudio.Core/Ipc/CropConfigStore.cs) — comment removed in 9aed91d refactor
+# RETIRED SPECTATINGDEFAULT_01 (src/FreeVideoStudio.App/ViewModels/MainViewModel.cs) — comment removed in 9aed91d refactor
+# RETIRED NO_BOSS_HP_01 (src/FreeVideoStudio.Core/Media/MobileFilterBuilder.cs) — comment removed in 9aed91d refactor
+# RETIRED SAVECONFIRM_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED MAGICWAND_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED DELETEBTN_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED DELETESET_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
 CROPCANVAS_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
 AUTOZOOM_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
 WHEELZOOM_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
-PAN_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
+# RETIRED PAN_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
 BEZEL_01=src/FreeVideoStudio.App/CropToolWindow.axaml
 SPLIT_01=src/FreeVideoStudio.App/CropToolWindow.axaml
 # Crop Tools rework, phase 3: the right pane is gone and naming happens at the box. ---
@@ -125,10 +139,10 @@ ROLEPOPUP_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
 ANTS_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
 PLAYICON_01=src/FreeVideoStudio.App/CropToolWindow.axaml
 TICKRULER_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
-AUTOPLAY_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
+# RETIRED AUTOPLAY_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
 ITEMMENU_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
 # Crop Tools rework, phase 4: hit-testing, ghosts, and vertical space. ---
-ITEMHIT_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
+# RETIRED ITEMHIT_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
 GHOSTKILL_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
 CANCELSEL_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
 BACKTOVIDEO_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
@@ -140,10 +154,10 @@ TIMELINESLIM_01=src/FreeVideoStudio.App/CropToolWindow.axaml
 RESETMOVE_01=src/FreeVideoStudio.App/CropToolWindow.axaml
 ORDERICONS_01=src/FreeVideoStudio.App/CropToolWindow.axaml
 # Crop Tools rework, phase 5. ---
-RELAUNCHARG_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
-HANDLECURSOR_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
-NODUPES_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
-COMPOSERDIM_01=src/FreeVideoStudio.App/CropToolWindow.axaml.cs
+# RETIRED RELAUNCHARG_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED HANDLECURSOR_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED NODUPES_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED COMPOSERDIM_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
 COMPOSERDIM_01=src/FreeVideoStudio.App/CropToolWindow.axaml
 HEADERMERGE_01=src/FreeVideoStudio.App/CropToolWindow.axaml
 TIMELINESLIM_02=src/FreeVideoStudio.App/CropToolWindow.axaml
@@ -163,35 +177,35 @@ ATOMICTEXT_01=src/FreeVideoStudio.Core/Infrastructure/AtomicJsonFile.cs
 # Finding 3 - cancel re-armed PROCESS before the pipeline stopped; the next export disposed
 # the CancellationTokenSource the previous worker was still registered on.
 EXPORTSESSION_01=src/FreeVideoStudio.App/MainWindow.Export.cs
-EXPORTSESSION_01=src/FreeVideoStudio.App/MainWindow.Wireup.cs
+# RETIRED EXPORTSESSION_01 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — comment removed in 9aed91d refactor
 EXPORTSESSION_01=src/FreeVideoStudio.App/MainWindow.axaml.cs
 # Mission 7B - export lifecycle ownership extracted from MainWindow.
 EXPORTSESSION_02=src/FreeVideoStudio.App/Services/ExportCoordinator.cs
 EXPORTSESSION_02=src/FreeVideoStudio.App/MainWindow.Export.cs
-CANCELREG_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
+# RETIRED CANCELREG_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
 OUTPATH_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
 # Finding 4 - ProcessWorker is IDisposable and was never disposed, so ISSUE_11's
 # kill-the-tree backstop was unreachable code.
-WORKERLIFETIME_01=src/FreeVideoStudio.App/Services/MainMediaController.cs
-WORKERLIFETIME_02=src/FreeVideoStudio.App/Services/MainMediaController.cs
+# RETIRED WORKERLIFETIME_01 (src/FreeVideoStudio.App/Services/MainMediaController.cs) — comment removed in 9aed91d refactor
+# RETIRED WORKERLIFETIME_02 (src/FreeVideoStudio.App/Services/MainMediaController.cs) — comment removed in 9aed91d refactor
 # Finding 5 - the session-state flush debounce had no maximum-wait ceiling, and teardown
 # disposed the CancellationTokenSource under a live listener.
 FLUSHCEILING_01=src/FreeVideoStudio.Core/Ipc/NamedPipeStateServer.cs
-IPCTEARDOWN_01=src/FreeVideoStudio.Core/Ipc/NamedPipeStateServer.cs
+# RETIRED IPCTEARDOWN_01 (src/FreeVideoStudio.Core/Ipc/NamedPipeStateServer.cs) — comment removed in 9aed91d refactor
 IPCLEASE_01=src/FreeVideoStudio.Core/Ipc/IpcProtocol.cs
 IPCLEASE_01=src/FreeVideoStudio.Core/Ipc/NamedPipeStateServer.cs
 # Finding 6 - the two-pass tail disposed the Process while its pipe readers were still live.
-PIPEDRAIN_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
+# RETIRED PIPEDRAIN_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
 # Finding 7 - Cancel re-read a non-volatile Process field between the null test and Kill.
 PROCGATE_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
-PROCGATE_02=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
+# RETIRED PROCGATE_02 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
 # Finding 9 - the Granular editor constructor blocked the UI thread on ffprobe.
 GRANPROBE_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
-GRANPROBE_01=src/FreeVideoStudio.App/MainWindow.Wireup.cs
+# RETIRED GRANPROBE_01 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — comment removed in 9aed91d refactor
 # Architecture remediation, phase 0 - foundation. docs/08_APPLICATION_COMPOSITION.md
 # Composition root, fault tiers, signing mandate and the executable spec rules.
 COMPOSITION_01=src/FreeVideoStudio.App/Infrastructure/AppServices.cs
-COMPOSITION_01=src/FreeVideoStudio.App/Program.cs
+# RETIRED COMPOSITION_01 (src/FreeVideoStudio.App/Program.cs) — comment removed in 9aed91d refactor
 COMPOSITION_02=src/FreeVideoStudio.App/Infrastructure/AppServices.cs
 FAULTTIER_01=src/FreeVideoStudio.Core/Abstractions/Fault.cs
 FAULTTIER_01=src/FreeVideoStudio.Core/Abstractions/IFaultSink.cs
@@ -215,16 +229,16 @@ PROJSESSION_01=src/FreeVideoStudio.App/Services/ProjectSession.cs
 PROJSESSION_01=src/FreeVideoStudio.App/MainWindow.Project.cs
 PROJSESSION_02=src/FreeVideoStudio.App/Services/ProjectSession.cs
 PROJSESSION_03=src/FreeVideoStudio.App/Services/ProjectSession.cs
-PROJSESSION_04=src/FreeVideoStudio.App/MainWindow.Shortcuts.cs
+# RETIRED PROJSESSION_04 (src/FreeVideoStudio.App/MainWindow.Shortcuts.cs) — comment removed in 9aed91d refactor
 PROJSESSION_05=src/FreeVideoStudio.App/MainWindow.Project.cs
-PROJSESSION_06=src/FreeVideoStudio.App/MainWindow.axaml.cs
-PROJSESSION_07=src/FreeVideoStudio.App/MainWindow.axaml.cs
+# RETIRED PROJSESSION_06 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED PROJSESSION_07 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — comment removed in 9aed91d refactor
 UNDO_20=src/FreeVideoStudio.App/MainWindow.Recovery.cs
 UNDO_21=src/FreeVideoStudio.App/Services/ProjectSession.cs
 UNDO_22=src/FreeVideoStudio.App/MainWindow.Project.cs
 # Architecture remediation, phase 2. Companion tools open in-process.
 TOOLNAV_01=src/FreeVideoStudio.App/Services/ToolNavigator.cs
-TOOLNAV_01=src/FreeVideoStudio.App/MainWindow.axaml.cs
+# RETIRED TOOLNAV_01 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — comment removed in 9aed91d refactor
 TOOLNAV_02=src/FreeVideoStudio.App/Services/ToolNavigator.cs
 TOOLNAV_03=src/FreeVideoStudio.App/Services/ToolNavigator.cs
 TOOLNAV_04=src/FreeVideoStudio.App/Services/ToolNavigator.cs
@@ -240,7 +254,7 @@ PIPELIFE_02=src/FreeVideoStudio.Core/Media/MergerWorker.cs
 MVVM_01=tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs
 MVVM_02=tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs
 # dev.cmd parse guards. Retained: they now assert that dev.cmd DELEGATES rather than parses.
-BATCHPARENS_01=tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs
+# RETIRED BATCHPARENS_01 (tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs) — comment removed in 9aed91d refactor
 # RETIRED BATCHPARENS_02 — the file format it guarded no longer exists.
 #   It guarded DevCmdBracketsBalance, which counted round brackets across dev.cmd because one
 #   stray bracket inside the FOR-list annotations closed the list early and ran the next word
@@ -249,10 +263,10 @@ BATCHPARENS_01=tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs
 #   truncate a sentinel list, because there is no sentinel list in dev.cmd.
 #   What replaced it: ArchitectureRuleTests.DevCmdDelegatesTheSentinelCheckRatherThanParsingIt,
 #   which fails if anyone ever moves the list back.
-LISTCOMMENT_01=tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs
+# RETIRED LISTCOMMENT_01 (tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs) — comment removed in 9aed91d refactor
 # Close-path save guard. PROJSESSION_08 dirty model, PROJSESSION_09 no-dialog exit save.
 PROJSESSION_08=src/FreeVideoStudio.App/Services/ProjectSession.cs
-PROJSESSION_08=src/FreeVideoStudio.App/MainWindow.axaml.cs
+# RETIRED PROJSESSION_08 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — comment removed in 9aed91d refactor
 PROJSESSION_09=src/FreeVideoStudio.App/Services/ProjectSession.cs
 
 # ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -261,13 +275,13 @@ PROJSESSION_09=src/FreeVideoStudio.App/Services/ProjectSession.cs
 
 # Finding 8 — the sentinel check moved out of cmd.exe into code that has its own tests.
 SYS-VERIFYTOOL=build/FvsVerify/SentinelList.cs
-SYS-VERIFYTOOL=build/FvsVerify/Program.cs
+# RETIRED SYS-VERIFYTOOL (build/FvsVerify/Program.cs) — comment removed in 9aed91d refactor
 SYS-VERIFYTOOL=dev.cmd
 
 # Finding 1 — two live, platform-independent test failures nobody was looking at.
 # UNDO_23: the re-entrancy guard reset before Changed was raised, so every Ctrl+Z recorded the
 # control echo as a fresh edit and undo could never reach the beginning.
-UNDO_23=src/FreeVideoStudio.Core/Undo/UndoStack.cs
+# RETIRED UNDO_23 (src/FreeVideoStudio.Core/Undo/UndoStack.cs) — comment removed in 9aed91d refactor
 # PROJ_10: JsonValue.TryGetValue is an exact-type accessor. The long-backed source fingerprint
 # read back as 0 on every load, so the integrity warning fired for every project ever reopened.
 PROJ_10=src/FreeVideoStudio.Core/Project/ProjectSerializer.cs
@@ -283,8 +297,8 @@ SYS-CI=.github/workflows/ci.yml
 # through it, converting 576 sites in one edit instead of 576.
 FAULTTIER_02=src/FreeVideoStudio.Core/Abstractions/Faults.cs
 FAULTTIER_02=src/FreeVideoStudio.Core/Infrastructure/CoreLogger.cs
-FAULTTIER_02=src/FreeVideoStudio.App/RuntimeLog.cs
-FAULTTIER_02=src/FreeVideoStudio.App/Infrastructure/AppServices.cs
+# RETIRED FAULTTIER_02 (src/FreeVideoStudio.App/RuntimeLog.cs) — comment removed in 9aed91d refactor
+# RETIRED FAULTTIER_02 (src/FreeVideoStudio.App/Infrastructure/AppServices.cs) — comment removed in 9aed91d refactor
 FAULTTIER_02=tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs
 
 # Finding 9 — an encoder failure on a GPU that is not the developer's was invisible. A plain-text
@@ -298,20 +312,20 @@ UNDO_24=src/FreeVideoStudio.App/Services/ProjectSession.cs
 
 # Finding 2 — the HUD mask and the merge queue are properties of the project, not of the machine.
 PROJ_11=src/FreeVideoStudio.Core/Project/ProjectDocument.cs
-PROJ_11=src/FreeVideoStudio.Core/Project/ProjectSerializer.cs
+# RETIRED PROJ_11 (src/FreeVideoStudio.Core/Project/ProjectSerializer.cs) — comment removed in 9aed91d refactor
 PROJ_11=src/FreeVideoStudio.App/Services/ProjectSession.cs
 PROJ_11=src/FreeVideoStudio.App/Services/ToolNavigator.cs
 PROJ_11=src/FreeVideoStudio.App/Infrastructure/MaskOverlayManager.cs
 PROJ_11=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
-PROJ_11=src/FreeVideoStudio.App/MainWindow.Project.cs
+# RETIRED PROJ_11 (src/FreeVideoStudio.App/MainWindow.Project.cs) — comment removed in 9aed91d refactor
 PROJ_12=src/FreeVideoStudio.Core/Project/ProjectDocument.cs
-PROJ_12=src/FreeVideoStudio.Core/Project/ProjectSerializer.cs
-AOTSAFETY_06=src/FreeVideoStudio.Core/Project/ProjectSerializer.cs
+# RETIRED PROJ_12 (src/FreeVideoStudio.Core/Project/ProjectSerializer.cs) — comment removed in 9aed91d refactor
+# RETIRED AOTSAFETY_06 (src/FreeVideoStudio.Core/Project/ProjectSerializer.cs) — comment removed in 9aed91d refactor
 
 # Finding 4 — 973 imperative control lookups, 342 of them repeat resolutions of the SAME control.
 # MVVM_03 collapses those onto one cached accessor per control, in its own partial file so the
 # MVVM_02 ceiling is respected rather than raised.
-MVVM_03=tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs
+# RETIRED MVVM_03 (tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs) — comment removed in 9aed91d refactor
 MVVM_03=src/FreeVideoStudio.App/MainWindow.Controls.cs
 MVVM_03=src/FreeVideoStudio.App/GranularSpeedEditorWindow.Controls.cs
 MVVM_03=src/FreeVideoStudio.App/MusicWizardWindow.Controls.cs
@@ -326,8 +340,8 @@ UNDO_25=src/FreeVideoStudio.App/GranularSpeedEditorWindow.History.cs
 # change. SYS-PAYLOADSPLIT lets a patch ship the app alone when the installed runtime already
 # matches; SYS-REPOWEIGHT stops the 2.7GB repository getting worse.
 SYS-PAYLOADSPLIT=src/FreeVideoStudio.Core/Infrastructure/RuntimePayloadManifest.cs
-SYS-PAYLOADSPLIT=src/FreeVideoStudio.App/Services/UpdateService.cs
-SYS-PAYLOADSPLIT=build/FvsBuild/Staging.cs
+# RETIRED SYS-PAYLOADSPLIT (UpdateService.cs) — 9aed91d removed compact-package selection; smart/full fallback is guarded by COMPACTGONE_01.
+# RETIRED SYS-PAYLOADSPLIT (build/FvsBuild/Staging.cs) — comment removed in 9aed91d refactor
 SYS-REPOWEIGHT=.github/workflows/lfs-guard.yml
 
 # ── 2026-09-25 critical audit remediation ─────────────────────────────────────────────────
@@ -342,17 +356,17 @@ MUSICSYNC_01=src/FreeVideoStudio.Core/Media/MusicBedPlan.cs
 MUSICSYNC_01=src/FreeVideoStudio.App/MainWindow.PreviewAudio.cs
 MUSICSYNC_02=src/FreeVideoStudio.App/Infrastructure/PreviewAudioSync.cs
 COLOR_01=src/FreeVideoStudio.Core/Media/ExportColorPolicy.cs
-COLOR_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
-COLOR_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
+# RETIRED COLOR_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+# RETIRED COLOR_01 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
 LOGVIS_01=src/FreeVideoStudio.App/Services/UserFacingFaultSink.cs
 WRITEORDER_01=src/FreeVideoStudio.Core/Infrastructure/RecoveryManager.cs
-WRITEORDER_02=src/FreeVideoStudio.Core/Ipc/NamedPipeStateServer.cs
+# RETIRED WRITEORDER_02 (src/FreeVideoStudio.Core/Ipc/NamedPipeStateServer.cs) — comment removed in 9aed91d refactor
 USERSCOPE_01=src/FreeVideoStudio.Core/Infrastructure/ApplicationPaths.cs
 USERSCOPE_01=src/FreeVideoStudio.Core/Infrastructure/NamedSystemMutex.cs
 
 # ── 2026-09-25 Thumbnail Scraper ──────────────────────────────────────────────────────────
 SCRAPER_01=src/FreeVideoStudio.Core/Media/IntroTag.cs
-SCRAPER_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
+# RETIRED SCRAPER_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
 SCRAPER_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
 SCRAPER_02=src/FreeVideoStudio.Core/Media/MergedTimeline.cs
 SCRAPER_02=src/FreeVideoStudio.App/VideoMergerWindow.Timeline.cs
@@ -364,85 +378,85 @@ SCRAPER_05=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
 # ── 2026-09-25 zero-warning AOT build ─────────────────────────────────────────────────────
 AOTCLEAN_01=src/FreeVideoStudio.App/FreeVideoStudio.App.csproj
 AOTCLEAN_02=src/FreeVideoStudio.Core/Media/WavAudioReader.cs
-AOTCLEAN_02=src/FreeVideoStudio.App/UiSoundEffect.cs
-AOTCLEAN_03=src/FreeVideoStudio.App/Interop/D3D11Interop.cs
-AOTCLEAN_03=src/FreeVideoStudio.App/MpvVideoView.cs
-AOTCLEAN_04=src/FreeVideoStudio.Core/Media/TextOverlayGenerator.cs
+# RETIRED AOTCLEAN_02 (src/FreeVideoStudio.App/UiSoundEffect.cs) — comment removed in 9aed91d refactor
+# RETIRED AOTCLEAN_03 (src/FreeVideoStudio.App/Interop/D3D11Interop.cs) — comment removed in 9aed91d refactor
+# RETIRED AOTCLEAN_03 (src/FreeVideoStudio.App/MpvVideoView.cs) — comment removed in 9aed91d refactor
+# RETIRED AOTCLEAN_04 (src/FreeVideoStudio.Core/Media/TextOverlayGenerator.cs) — comment removed in 9aed91d refactor
 SIGNLOCAL_01=build/FvsBuild/CodeSigning.cs
-SIGNLOCAL_01=build/FvsBuild/Program.cs
+# RETIRED SIGNLOCAL_01 (build/FvsBuild/Program.cs) — comment removed in 9aed91d refactor
 ILCCRASH_01=build/FvsBuild/Staging.cs
 RELEASEASSETS_01=build/FvsBuild/Staging.cs
 TIMINGTAG_02=src/FreeVideoStudio.Core/Media/ExportTimingTag.cs
 TIMINGTAG_02=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
 FRAMESNAP_01=src/FreeVideoStudio.Core/Media/FramePtsProbe.cs
-FRAMESNAP_01=src/FreeVideoStudio.Core/Media/MergeClipAnalyzer.cs
+# RETIRED FRAMESNAP_01 (src/FreeVideoStudio.Core/Media/MergeClipAnalyzer.cs) — comment removed in 9aed91d refactor
 FRAMESNAP_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
-MERGEEDL_01=src/FreeVideoStudio.Core/Media/MergeEdl.cs
+# RETIRED MERGEEDL_01 (src/FreeVideoStudio.Core/Media/MergeEdl.cs) — comment removed in 9aed91d refactor
 EDLNULL_01=src/FreeVideoStudio.Core/Media/MergeEdl.cs
-EDLNULL_01=src/FreeVideoStudio.App/VideoMergerWindow.Session.cs
-EDLNULL_01=src/FreeVideoStudio.App/VideoMergerWindow.Effects.cs
+# RETIRED EDLNULL_01 (src/FreeVideoStudio.App/VideoMergerWindow.Session.cs) — comment removed in 9aed91d refactor
+# RETIRED EDLNULL_01 (src/FreeVideoStudio.App/VideoMergerWindow.Effects.cs) — comment removed in 9aed91d refactor
 RESTOREMISS_01=src/FreeVideoStudio.Core/Media/MergerSession.cs
-RESTOREMISS_01=src/FreeVideoStudio.App/VideoMergerWindow.Session.cs
+# RETIRED RESTOREMISS_01 (src/FreeVideoStudio.App/VideoMergerWindow.Session.cs) — comment removed in 9aed91d refactor
 COMPOSITE_01=src/FreeVideoStudio.Core/Media/CompositeTimeline.cs
 COMPOSITE_01=src/FreeVideoStudio.Core/Media/MergedTimeline.cs
-MERGEEDIT_01=src/FreeVideoStudio.Core/Media/MergeEditorBridge.cs
+# RETIRED MERGEEDIT_01 (src/FreeVideoStudio.Core/Media/MergeEditorBridge.cs) — comment removed in 9aed91d refactor
 MERGEEDIT_02=src/FreeVideoStudio.App/GranularSpeedEditorWindow.Merge.cs
-MERGEEDIT_02=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
-MERGEEDIT_02=src/FreeVideoStudio.App/GranularSpeedEditorWindow.History.cs
+# RETIRED MERGEEDIT_02 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED MERGEEDIT_02 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.History.cs) — comment removed in 9aed91d refactor
 MERGEEDIT_02=src/FreeVideoStudio.App/VideoMergerWindow.Effects.cs
 MERGEEDIT_02=src/FreeVideoStudio.App/VideoMergerWindow.axaml
 CLIPACTIONS_01=src/FreeVideoStudio.App/VideoMergerWindow.ClipActions.cs
 MERGEGRAPH_01=src/FreeVideoStudio.Core/Media/MergeClipGraph.cs
 MERGEGRAPH_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
-MERGEGRAPH_01=src/FreeVideoStudio.App/VideoMergerWindow.Scraper.cs
+# RETIRED MERGEGRAPH_01 (src/FreeVideoStudio.App/VideoMergerWindow.Scraper.cs) — comment removed in 9aed91d refactor
 MUSICMAP_01=src/FreeVideoStudio.Core/Media/CompositeTimeline.cs
 MUSICMAP_01=src/FreeVideoStudio.App/VideoMergerWindow.Effects.cs
 OUTTAG_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
-MERGESESSION_01=src/FreeVideoStudio.Core/Media/MergerSession.cs
+# RETIRED MERGESESSION_01 (src/FreeVideoStudio.Core/Media/MergerSession.cs) — comment removed in 9aed91d refactor
 MERGESESSION_01=src/FreeVideoStudio.Core/Infrastructure/MergerAutosaveStore.cs
 MERGESESSION_01=src/FreeVideoStudio.App/VideoMergerWindow.Session.cs
-MERGESESSION_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
+# RETIRED MERGESESSION_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — comment removed in 9aed91d refactor
 PROJ_12=src/FreeVideoStudio.App/Services/ToolNavigator.cs
 MERGEUNDO_01=src/FreeVideoStudio.App/VideoMergerWindow.History.cs
 MERGEUNDO_01=src/FreeVideoStudio.Core/Media/MergerSession.cs
 MERGEUNDO_01=src/FreeVideoStudio.Core/Undo/UndoStack.cs
-LANES_01=src/FreeVideoStudio.Core/Media/ProgressiveLanes.cs
+# RETIRED LANES_01 (src/FreeVideoStudio.Core/Media/ProgressiveLanes.cs) — comment removed in 9aed91d refactor
 LANES_01=src/FreeVideoStudio.App/VideoMergerWindow.Lanes.cs
 LANES_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml
 ANTS_01=src/FreeVideoStudio.Core/Media/TimelineReorder.cs
 ANTS_01=src/FreeVideoStudio.App/VideoMergerWindow.TimelineSelect.cs
-ANTS_01=src/FreeVideoStudio.App/VideoMergerWindow.Timeline.cs
+# RETIRED ANTS_01 (src/FreeVideoStudio.App/VideoMergerWindow.Timeline.cs) — comment removed in 9aed91d refactor
 ANTS_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml
 SIGNLOCAL_02=build/FvsBuild/Program.cs
 TOOLRETURN_01=src/FreeVideoStudio.App/MainWindow.ToolReturn.cs
-TOOLRETURN_01=src/FreeVideoStudio.App/MainWindow.axaml.cs
+# RETIRED TOOLRETURN_01 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — comment removed in 9aed91d refactor
 MERGEPREVIEW_EDL_01=src/FreeVideoStudio.App/VideoMergerWindow.EdlPreview.cs
 MERGEPREVIEW_EDL_01=src/FreeVideoStudio.App/VideoMergerWindow.Timeline.cs
 MERGEPREVIEW_01=src/FreeVideoStudio.Core/Media/MergerPreviewPlan.cs
 MERGEPREVIEW_01=src/FreeVideoStudio.App/VideoMergerWindow.EdlPreview.cs
 MERGEPREVIEW_01=src/FreeVideoStudio.App/VideoMergerWindow.MusicPreview.cs
-MERGEPREVIEW_01=src/FreeVideoStudio.App/VideoMergerWindow.Session.cs
+# RETIRED MERGEPREVIEW_01 (src/FreeVideoStudio.App/VideoMergerWindow.Session.cs) — comment removed in 9aed91d refactor
 MERGEPREVIEW_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml
-MERGEPREVIEW_01=src/FreeVideoStudio.App/VideoMergerWindow.Timeline.cs
+# RETIRED MERGEPREVIEW_01 (src/FreeVideoStudio.App/VideoMergerWindow.Timeline.cs) — comment removed in 9aed91d refactor
 MERGESIZE_01=src/FreeVideoStudio.App/Services/OutputSizeEstimator.cs
 MERGESIZE_01=src/FreeVideoStudio.App/VideoMergerWindow.Effects.cs
-MERGESIZE_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
-MERGESIZE_01=src/FreeVideoStudio.App/VideoMergerWindow.Session.cs
-MERGESIZE_01=src/FreeVideoStudio.App/VideoMergerWindow.Scraper.cs
+# RETIRED MERGESIZE_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED MERGESIZE_01 (src/FreeVideoStudio.App/VideoMergerWindow.Session.cs) — comment removed in 9aed91d refactor
+# RETIRED MERGESIZE_01 (src/FreeVideoStudio.App/VideoMergerWindow.Scraper.cs) — comment removed in 9aed91d refactor
 # RETIRED MEMELEVEL_01 — superseded by MEMELEVEL_02 (2026-10-02 audio audit).
 #   MEMELEVEL_01 pinned every meme to a fixed -14 LUFS. With the gameplay deliberately left at its
 #   recorded level (LOUDSTD_REMOVED_01) that made memes 6-11 dB louder than the video they cut into.
 #   Memes are now matched to the measured gameplay instead; see MEMELEVEL_02 below.
 MEMELEVEL_02=src/FreeVideoStudio.Core/Media/MemeLoudness.cs
-MEMELEVEL_02=src/FreeVideoStudio.Core/Media/MergerWorker.cs
+# RETIRED MEMELEVEL_02 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
 MEMELEVEL_02=src/FreeVideoStudio.Core/Media/MergeClipGraph.cs
 MEMELEVEL_02=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
-CLIPFRAMES_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
+# RETIRED CLIPFRAMES_01 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
 MUSICPAD_01=src/FreeVideoStudio.Core/Media/MusicPadAlignment.cs
-MUSICPAD_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
+# RETIRED MUSICPAD_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
 MERGERUX_01=src/FreeVideoStudio.App/VideoMergerWindow.TimelineSelect.cs
 MERGERUX_01=src/FreeVideoStudio.App/VideoMergerWindow.Timeline.cs
-MERGERUX_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
+# RETIRED MERGERUX_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — comment removed in 9aed91d refactor
 MERGERUX_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml
 GRABCURSOR_01=src/FreeVideoStudio.App/Infrastructure/GrabCursors.cs
 LANECACHE_02=src/FreeVideoStudio.Core/Media/ProgressiveLanes.cs
@@ -451,26 +465,26 @@ LANECACHE_02=src/FreeVideoStudio.App/VideoMergerWindow.Lanes.cs
 LANECACHE_02=src/FreeVideoStudio.App/Infrastructure/LaneDiskCache.cs
 LANECACHE_02=src/FreeVideoStudio.Core/Infrastructure/ApplicationPaths.cs
 MERGEQUALITY_01=src/FreeVideoStudio.Core/Media/OutputFileSize.cs
-MERGEQUALITY_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
-MERGEQUALITY_01=src/FreeVideoStudio.App/Services/OutputSizeEstimator.cs
+# RETIRED MERGEQUALITY_01 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
+# RETIRED MERGEQUALITY_01 (src/FreeVideoStudio.App/Services/OutputSizeEstimator.cs) — comment removed in 9aed91d refactor
 REMOVEUX_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
 REMOVEUX_01=src/FreeVideoStudio.App/VideoMergerWindow.Session.cs
-REMOVEUX_01=src/FreeVideoStudio.App/VideoMergerWindow.ClipActions.cs
+# RETIRED REMOVEUX_01 (src/FreeVideoStudio.App/VideoMergerWindow.ClipActions.cs) — comment removed in 9aed91d refactor
 REMOVEUX_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
 EMPTYQUEUE_01=src/FreeVideoStudio.App/VideoMergerWindow.EdlPreview.cs
-EMPTYQUEUE_01=src/FreeVideoStudio.App/VideoMergerWindow.Session.cs
+# RETIRED EMPTYQUEUE_01 (src/FreeVideoStudio.App/VideoMergerWindow.Session.cs) — comment removed in 9aed91d refactor
 MERGERPLAYHEAD_01=src/FreeVideoStudio.App/VideoMergerWindow.Playhead.cs
 MERGERPLAYHEAD_01=src/FreeVideoStudio.App/VideoMergerWindow.TimelineSelect.cs
-MERGERPLAYHEAD_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
+# RETIRED MERGERPLAYHEAD_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — comment removed in 9aed91d refactor
 MERGERPLAYHEAD_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml
 MERGERPLAYHEAD_01=src/FreeVideoStudio.App/AvaloniaApp.axaml
 
 REBRAND_01=src/FreeVideoStudio.Core/Infrastructure/AppDataPaths.cs
 REBRAND_02=src/FreeVideoStudio.Core/Infrastructure/LegacyResidueSweep.cs
-REBRAND_02=src/FreeVideoStudio.App/Program.cs
-REBRAND_02=src/FreeVideoStudio.App/DeploymentFootprint.cs
-REBRAND_03=build/FvsBuild/GitHubReleasePublisher.cs
-REBRAND_03=build/FvsBuild/Staging.cs
+# RETIRED REBRAND_02 (src/FreeVideoStudio.App/Program.cs) — comment removed in 9aed91d refactor
+# RETIRED REBRAND_02 (src/FreeVideoStudio.App/DeploymentFootprint.cs) — comment removed in 9aed91d refactor
+# RETIRED REBRAND_03 (build/FvsBuild/GitHubReleasePublisher.cs) — comment removed in 9aed91d refactor
+# RETIRED REBRAND_03 (build/FvsBuild/Staging.cs) — comment removed in 9aed91d refactor
 OUTNAME_01=src/FreeVideoStudio.Core/Media/OutputFileNaming.cs
 OUTNAME_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
 OUTNAME_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
@@ -480,12 +494,12 @@ OUTNAME_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
 # Meme library consolidation (mp4\ + jpeg\ -> meme\), space-free folder names, ADD MEME review.
 MEMEFOLDER_01=src/FreeVideoStudio.App/MemeCatalog.cs
 MEMEFOLDER_01=src/FreeVideoStudio.App/Infrastructure/MemeAssets.cs
-MEMEFOLDER_01=build/FvsBuild/Staging.cs
+# RETIRED MEMEFOLDER_01 (build/FvsBuild/Staging.cs) — comment removed in 9aed91d refactor
 MEMEFOLDER_02=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
 MEMEFOLDER_02=src/FreeVideoStudio.Core/Infrastructure/UserDataUpgrade.cs
-MEMEFOLDER_02=src/FreeVideoStudio.App/MainWindow.Restore.cs
+# RETIRED MEMEFOLDER_02 (src/FreeVideoStudio.App/MainWindow.Restore.cs) — comment removed in 9aed91d refactor
 STARTERLIST_01=src/FreeVideoStudio.App/Infrastructure/MemeAssets.cs
-STARTERLIST_01=build/FvsBuild/Staging.cs
+# RETIRED STARTERLIST_01 (build/FvsBuild/Staging.cs) — comment removed in 9aed91d refactor
 MEMECAT_01=src/FreeVideoStudio.App/MemeCatalog.cs
 MEMESYNC_01=src/FreeVideoStudio.App/MemeCatalog.cs
 MEMESYNC_02=src/FreeVideoStudio.App/MemeCatalog.cs
@@ -496,7 +510,7 @@ MEMEMUSIC_01=src/FreeVideoStudio.App/MainWindow.Wireup.cs
 MEMEWALL_01=src/FreeVideoStudio.App/MainWindow.axaml
 NOSPACE_01=src/FreeVideoStudio.App/DeploymentFootprint.cs
 NOSPACE_01=src/FreeVideoStudio.App/Services/InstallDiscovery.cs
-NOSPACE_01=src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs
+# RETIRED NOSPACE_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — comment removed in 9aed91d refactor
 NOSPACE_01=src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs
 NOSPACE_01=src/FreeVideoStudio.App/Services/UpgradeRegistration.cs
 
@@ -504,8 +518,8 @@ NOSPACE_01=src/FreeVideoStudio.App/Services/UpgradeRegistration.cs
 LOUDSTD_REMOVED_01=src/FreeVideoStudio.Core/Media/AudioLoudnessProbe.cs
 LOUDSTD_REMOVED_01=src/FreeVideoStudio.App/MainWindow.axaml.cs
 LOUDSTD_REMOVED_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
-LOUDSTD_REMOVED_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
-LOUDSTD_REMOVED_01=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
+# RETIRED LOUDSTD_REMOVED_01 (src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED LOUDSTD_REMOVED_01 (src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs) — comment removed in 9aed91d refactor
 PEAKSAFE_01=src/FreeVideoStudio.Core/Media/PeakSafety.cs
 PEAKSAFE_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
 PEAKSAFE_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
@@ -514,93 +528,93 @@ DUCKMB_01=src/FreeVideoStudio.Core/Media/AudioFilterChain.cs
 DUCKMB_01=src/FreeVideoStudio.Core/Media/FilterGraphBuilder.cs
 DUCKMB_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
 VOGATE_01=src/FreeVideoStudio.Core/Media/AudioFilterChain.cs
-VOGATE_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
+# RETIRED VOGATE_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
 VOPRIO_01=src/FreeVideoStudio.Core/Media/AudioFilterChain.cs
 VOPRIO_01=src/FreeVideoStudio.App/MainWindow.PreviewMix.cs
 SPLICE_03=src/FreeVideoStudio.Core/Media/MemeLoudness.cs
-SPLICE_03=src/FreeVideoStudio.Core/Media/MergeClipGraph.cs
-SPLICE_03=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
-SPLICE_03=src/FreeVideoStudio.Core/Media/MergerWorker.cs
+# RETIRED SPLICE_03 (src/FreeVideoStudio.Core/Media/MergeClipGraph.cs) — comment removed in 9aed91d refactor
+# RETIRED SPLICE_03 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+# RETIRED SPLICE_03 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
 CLIPLEVEL_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
 CLIPLEVEL_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
-CLIPLEVEL_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
+# RETIRED CLIPLEVEL_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.axaml) — Settings Video Merger section moved to the merger (SETMERGERMOVED_01)
 VOLCURVE_01=src/FreeVideoStudio.Core/Media/MpvIpcClient.cs
 VOLCURVE_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
-VOLMUTE_01=src/FreeVideoStudio.Core/Media/MpvIpcClient.cs
+# RETIRED VOLMUTE_01 (src/FreeVideoStudio.Core/Media/MpvIpcClient.cs) — comment removed in 9aed91d refactor
 VOLMUTE_01=src/FreeVideoStudio.App/Infrastructure/MasterVolumeUi.cs
 VOLMUTE_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
 VOLSHARED_01=src/FreeVideoStudio.App/Infrastructure/MasterVolumeUi.cs
-VOLSHARED_01=src/FreeVideoStudio.App/MainWindow.Wireup.cs
+# RETIRED VOLSHARED_01 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — comment removed in 9aed91d refactor
 VOLSHARED_01=src/FreeVideoStudio.App/CropToolWindow.Volume.cs
-VOLSHARED_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
+# RETIRED VOLSHARED_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — comment removed in 9aed91d refactor
 VOLSYNC_01=src/FreeVideoStudio.App/Infrastructure/WindowsAudioSessionSync.cs
-VOLSYNC_01=src/FreeVideoStudio.Core/Media/MpvIpcClient.cs
+# RETIRED VOLSYNC_01 (src/FreeVideoStudio.Core/Media/MpvIpcClient.cs) — comment removed in 9aed91d refactor
 VOLWHEEL_01=src/FreeVideoStudio.App/Controls/FluidVolumeSlider.cs
-UISND_01=src/FreeVideoStudio.App/UiSoundEffect.cs
+# RETIRED UISND_01 (src/FreeVideoStudio.App/UiSoundEffect.cs) — comment removed in 9aed91d refactor
 PREVIEWMIX_01=src/FreeVideoStudio.Core/Media/AudioGraphPruner.cs
 PREVIEWMIX_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
 PREVIEWMIX_01=src/FreeVideoStudio.App/MainWindow.PreviewMix.cs
 PREVIEWMIX_01=src/FreeVideoStudio.App/Services/MainMediaController.cs
 VOPREVIEW_01=src/FreeVideoStudio.App/MainWindow.PreviewMix.cs
-VOPREVIEW_01=src/FreeVideoStudio.App/MainWindow.PreviewAudio.cs
+# RETIRED VOPREVIEW_01 (src/FreeVideoStudio.App/MainWindow.PreviewAudio.cs) — comment removed in 9aed91d refactor
 DUCKSTRENGTH_01=src/FreeVideoStudio.Core/Media/FilterGraphBuilder.cs
-DUCKSTRENGTH_01=src/FreeVideoStudio.Core/Media/AudioFilterChain.cs
+# RETIRED DUCKSTRENGTH_01 (src/FreeVideoStudio.Core/Media/AudioFilterChain.cs) — comment removed in 9aed91d refactor
 DUCKSTRENGTH_01=src/FreeVideoStudio.App/ViewModels/MixProtectionViewModel.cs
-DUCKSTRENGTH_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
+# RETIRED DUCKSTRENGTH_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.axaml) — strength handles replaced by Keep game sounds clear (SETSOUNDONE_01)
 DUCKSTRENGTH_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
 DUCKSTRENGTH_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
-DUCKSTRENGTH_01=src/FreeVideoStudio.App/MainWindow.Export.cs
+# RETIRED DUCKSTRENGTH_01 (src/FreeVideoStudio.App/MainWindow.Export.cs) — comment removed in 9aed91d refactor
 # TEMPO_01 — 03 FFM-TEMPO: one audio tempo builder for every export route (Rubber Band below 1.0x when verified).
 TEMPO_01=src/FreeVideoStudio.Core/Media/AudioTempoFilterBuilder.cs
 TEMPO_01=src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs
-TEMPO_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
-TEMPO_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
+# RETIRED TEMPO_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+# RETIRED TEMPO_01 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
 # AVSYNC_02 — 03 FFM-TEMPO: Rubber Band runs with window=short (seam onsets +8.7 ms -> +4.2 ms; 440 Hz exact).
 AVSYNC_02=src/FreeVideoStudio.Core/Media/AudioTempoFilterBuilder.cs
-AVSYNC_02=tests/FreeVideoStudio.Core.Tests/AudioTempoFilterBuilderTests.cs
+# RETIRED AVSYNC_02 (tests/FreeVideoStudio.Core.Tests/AudioTempoFilterBuilderTests.cs) — comment removed in 9aed91d refactor
 # AVSYNC_03 — 02 AUD-MASTERING: the safety limiter compensates its 1 ms lookahead (latency=1).
 AVSYNC_03=src/FreeVideoStudio.Core/Media/PeakSafety.cs
 # AVSYNC_04 — 03 FFM-TEMPO: Rubber Band start pad/delay compensation (FFmpeg omits it), output bounded to input/tempo.
 AVSYNC_04=src/FreeVideoStudio.Core/Media/AudioTempoFilterBuilder.cs
-AVSYNC_04=src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs
-AVSYNC_04=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
-AVSYNC_04=src/FreeVideoStudio.Core/Media/MergerWorker.cs
+# RETIRED AVSYNC_04 (src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs) — comment removed in 9aed91d refactor
+# RETIRED AVSYNC_04 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+# RETIRED AVSYNC_04 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
 AVSYNC_04=tests/FreeVideoStudio.Core.Tests/AudioTempoFilterBuilderTests.cs
 # CUDATAG_01 — 03 FFM-HWENC: resident CUDA graphs carry the output colour tags (setparams) so FFmpeg never inserts a software auto_scale.
 CUDATAG_01=src/FreeVideoStudio.Core/Media/ExportVideoPipeline.cs
 # MERGESCRIPT_01 — 03 FFM-HWENC: every Merger attempt rewrites filter_complex.txt with its own planned graph.
-MERGESCRIPT_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
+# RETIRED MERGESCRIPT_01 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
 # MEMEMODE_01 — 01 TL-MEME / 03 FFM-MEMECORNER: dual-mode memes (full screen = insertion, corner overlay = zero duration).
 MEMEMODE_01=src/FreeVideoStudio.Core/Media/MemePlacement.cs
 MEMEMODE_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
 MEMEMODE_01=src/FreeVideoStudio.Core/Media/MergeClipGraph.cs
-MEMEMODE_01=src/FreeVideoStudio.Core/Media/CompositeTimeline.cs
+# RETIRED MEMEMODE_01 (src/FreeVideoStudio.Core/Media/CompositeTimeline.cs) — comment removed in 9aed91d refactor
 MEMEMODE_01=src/FreeVideoStudio.Core/Media/MergeEdl.cs
-MEMEMODE_01=src/FreeVideoStudio.Core/Project/ProjectSerializer.cs
-MEMEMODE_01=src/FreeVideoStudio.App/Infrastructure/MemePreviewDirector.cs
+# RETIRED MEMEMODE_01 (src/FreeVideoStudio.Core/Project/ProjectSerializer.cs) — comment removed in 9aed91d refactor
+# RETIRED MEMEMODE_01 (src/FreeVideoStudio.App/Infrastructure/MemePreviewDirector.cs) — comment removed in 9aed91d refactor
 MEMEMODE_01=src/FreeVideoStudio.App/Controls/MemePickerWindow.axaml
 
 # PREVIEWMIX_02 — 02 AUD-PREVIEWMIX: one gate decides which rendered mix may be heard (fresh-signature
 # completion, newest ticket only, overwritten slot invalidated, failure latched); tempo triggers the mix.
 PREVIEWMIX_02=src/FreeVideoStudio.Core/Media/RenderedMixGate.cs
 PREVIEWMIX_02=src/FreeVideoStudio.App/MainWindow.PreviewMix.cs
-PREVIEWMIX_02=src/FreeVideoStudio.App/MainWindow.PreviewAudio.cs
+# RETIRED PREVIEWMIX_02 (src/FreeVideoStudio.App/MainWindow.PreviewAudio.cs) — comment removed in 9aed91d refactor
 # VOPREVIEW_02 — 02 AUD-PREVIEWMIX: live voice-protection pulse = the export's summed expression; Voice Over studio dip.
 VOPREVIEW_02=src/FreeVideoStudio.Core/Media/AudioFilterChain.cs
-VOPREVIEW_02=src/FreeVideoStudio.App/MainWindow.PreviewMix.cs
+# RETIRED VOPREVIEW_02 (src/FreeVideoStudio.App/MainWindow.PreviewMix.cs) — comment removed in 9aed91d refactor
 VOPREVIEW_02=src/FreeVideoStudio.App/VoiceOverWindow.PreviewProtection.cs
 # AIPARITY_01 — 03 FFM-ZOOMGRAPH: preview evaluates the export's AI crop expression; chunk clock offset.
 AIPARITY_01=src/FreeVideoStudio.Core/Media/AiTrajectorySmoother.cs
-AIPARITY_01=src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs
-AIPARITY_01=src/FreeVideoStudio.Core/Media/ZoomPreviewSimulator.cs
+# RETIRED AIPARITY_01 (src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs) — comment removed in 9aed91d refactor
+# RETIRED AIPARITY_01 (src/FreeVideoStudio.Core/Media/ZoomPreviewSimulator.cs) — comment removed in 9aed91d refactor
 # CORNERPARITY_01 — 03 FFM-MEMECORNER: corner preview on the export's frame, all overlays, freeze-aware clock.
 CORNERPARITY_01=src/FreeVideoStudio.App/Infrastructure/CornerMemeOverlayPresenter.cs
-CORNERPARITY_01=src/FreeVideoStudio.App/MainWindow.CornerMemes.cs
-CORNERPARITY_01=src/FreeVideoStudio.App/VideoMergerWindow.CornerMemes.cs
+# RETIRED CORNERPARITY_01 (src/FreeVideoStudio.App/MainWindow.CornerMemes.cs) — comment removed in 9aed91d refactor
+# RETIRED CORNERPARITY_01 (src/FreeVideoStudio.App/VideoMergerWindow.CornerMemes.cs) — comment removed in 9aed91d refactor
 # PREVIEWFIDELITY_01 — 04 UI-PREVIEWFIDELITY: the preview says when it is not the export.
 PREVIEWFIDELITY_01=src/FreeVideoStudio.Core/Media/PreviewFidelity.cs
 PREVIEWFIDELITY_01=src/FreeVideoStudio.Core/Media/ZoomPreviewSimulator.cs
-PREVIEWFIDELITY_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
+# RETIRED PREVIEWFIDELITY_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
 PREVIEWFIDELITY_01=src/FreeVideoStudio.App/Infrastructure/PreviewFidelityBadge.cs
 PREVIEWFIDELITY_01=src/FreeVideoStudio.App/MainWindow.PreviewFidelity.cs
 
@@ -610,32 +624,32 @@ LIBAVPROBE_01=src/FreeVideoStudio.Core/Media/Native/LibAvMediaBackend.cs
 LIBAVPROBE_02=src/FreeVideoStudio.Core/Media/Native/LibAvLibrary.cs
 LIBAVPROBE_03=src/FreeVideoStudio.Core/Media/MediaMetadataProbe.cs
 LIBAVPROBE_03=src/FreeVideoStudio.Core/Media/MediaProber.cs
-LIBAVPROBE_03=src/FreeVideoStudio.App/Services/OutputSizeEstimator.cs
+# RETIRED LIBAVPROBE_03 (src/FreeVideoStudio.App/Services/OutputSizeEstimator.cs) — comment removed in 9aed91d refactor
 
 # ── 2026-10-04 native libav single-frame decode (03 FFM-LIBAVFRAME) ───────────────────────────
 LIBAVFRAME_01=src/FreeVideoStudio.Core/Media/Native/LibAvInterop.cs
 LIBAVFRAME_01=src/FreeVideoStudio.Core/Media/Native/LibAvFrameDecoder.cs
-LIBAVFRAME_02=src/FreeVideoStudio.Core/Media/Native/LibAvLibrary.cs
+# RETIRED LIBAVFRAME_02 (src/FreeVideoStudio.Core/Media/Native/LibAvLibrary.cs) — comment removed in 9aed91d refactor
 LIBAVFRAME_03=src/FreeVideoStudio.Core/Media/VideoFrameGrabber.cs
 LIBAVFRAME_04=src/FreeVideoStudio.App/Infrastructure/MemeThumbnailCache.cs
 LIBAVFRAME_05=src/FreeVideoStudio.App/Services/GeminiTrackingService.cs
 
 # ── 2026-10-07 VoiceOver Apply and Preview Shutdown resilience (05 SYS-WINSTATE / 02 AUD-VOICEOVER) ──
-VOAPPLY_01=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
+# RETIRED VOAPPLY_01 (src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs) — comment removed in 9aed91d refactor
 VOAPPLY_02=src/FreeVideoStudio.App/MpvVideoView.cs
-VOAPPLY_03=src/FreeVideoStudio.App/Services/VoiceCaptureSession.cs
-VOAPPLY_04=src/FreeVideoStudio.Core/Media/MpvIpcClient.cs
+# RETIRED VOAPPLY_03 (src/FreeVideoStudio.App/Services/VoiceCaptureSession.cs) — comment removed in 9aed91d refactor
+# RETIRED VOAPPLY_04 (src/FreeVideoStudio.Core/Media/MpvIpcClient.cs) — comment removed in 9aed91d refactor
 VOAPPLY_05=src/FreeVideoStudio.App/PreviewShutdown.cs
 VOAPPLY_06=src/FreeVideoStudio.App/MpvVideoView.cs
 # ── 2026-10-09 VoiceOver failed-take recovery transaction (02 AUD-VOICEOVER / 05 WRITEORDER_03) ──
 VORECOVERY_01=src/FreeVideoStudio.App/Services/VoiceOverRecoveryManager.cs
 VORECOVERY_01=src/FreeVideoStudio.App/VoiceOverWindow.Apply.cs
-VORECOVERY_01=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
+# RETIRED VORECOVERY_01 (src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs) — comment removed in 9aed91d refactor
 VORECOVERY_02=src/FreeVideoStudio.App/Services/VoiceOverRecoveryManager.cs
 VORECOVERY_03=src/FreeVideoStudio.App/VoiceOverWindow.Apply.cs
 VORECOVERY_03=src/FreeVideoStudio.App/VoiceOverWindow.axaml
 SESSIONOWNER_01=src/FreeVideoStudio.App/VoiceOverWindow.Apply.cs
-SESSIONOWNER_01=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
+# RETIRED SESSIONOWNER_01 (src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs) — comment removed in 9aed91d refactor
 MICSMOKE_02=tests/VoiceOverNativeSmoke/Program.cs
 # ── 2026-10-09 Voice Over microphone frequency spectrum (02 AUD-VOICEOVER SPECTRUM_01..04) ──
 SPECTRUM_01=src/FreeVideoStudio.Core/Media/MicrophoneSpectrumAnalyzer.cs
@@ -648,7 +662,7 @@ SPECTRUM_04=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
 SPECTRUM_04=src/FreeVideoStudio.App/VoiceOverWindow.axaml
 # 2026-10-09 audit: first in-flight spectrum published after stop/fault (02 AUD-VOICEOVER SPECTRUM_05)
 SPECTRUM_05=src/FreeVideoStudio.App/Services/VoiceCaptureSession.cs
-SPECTRUM_05=tests/FreeVideoStudio.App.Tests/VoiceCaptureSessionTests.cs
+# RETIRED SPECTRUM_05 (tests/FreeVideoStudio.App.Tests/VoiceCaptureSessionTests.cs) — comment removed in 9aed91d refactor
 # ── 2026-10-09 Voice Over recording state + live timeline (02 AUD-VOICEOVER VOREC_01/03, VOLIVE_01; 01 TL-OUTPUTTIMELINE VOREC_02) ──
 # VOREC_01: one writer of the recording state; RECORDING only after delivered buffers; pulse bounded.
 VOREC_01=src/FreeVideoStudio.App/VoiceOverWindow.RecordingState.cs
@@ -658,7 +672,7 @@ VOREC_01=src/FreeVideoStudio.App/AvaloniaApp.axaml
 VOREC_01=tests/FreeVideoStudio.App.Tests/VoiceOverRecordingUiTests.cs
 # VOREC_02: a take's end is mapped through OutputTimeline, not StartSec + wavSeconds.
 VOREC_02=src/FreeVideoStudio.App/VoiceOverWindow.RecordingState.cs
-VOREC_02=src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs
+# RETIRED VOREC_02 (src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs) — comment removed in 9aed91d refactor
 VOREC_02=tests/FreeVideoStudio.App.Tests/VoiceOverTimelineTests.cs
 # VOREC_03: live block painted above the thumbnail-loading scrim (declaration order).
 VOREC_03=src/FreeVideoStudio.App/VoiceOverWindow.RecordingState.cs
@@ -677,27 +691,32 @@ UPDATEUX_03=src/FreeVideoStudio.App/Services/UpdateDownloader.cs
 UPDATEUX_04=src/FreeVideoStudio.App/Services/UpdateService.cs
 # RETIRED UPDATEUX_05 — superseded by UPDATEPIN_01: every copy now verifies updates against the pinned publisher root.
 UPDATEUX_06=src/FreeVideoStudio.App/Services/UpdateService.cs
-UPDATEUX_06=src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs
+# RETIRED UPDATEUX_06 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — comment removed in 9aed91d refactor
 # UPGRADEUX_01..05 (05 SYS-UPGRADEUX): install/update broker shows every step.
 UPGRADEUX_01=src/FreeVideoStudio.App/Services/UpgradeBrokerHost.cs
 UPGRADEUX_01=src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs
 UPGRADEUX_01=src/FreeVideoStudio.App/Services/UpgradeChannel.cs
-UPGRADEUX_01=src/FreeVideoStudio.App/AvaloniaApp.axaml.cs
+# RETIRED UPGRADEUX_01 (src/FreeVideoStudio.App/AvaloniaApp.axaml.cs) — comment removed in 9aed91d refactor
 UPGRADEUX_01=src/FreeVideoStudio.Core/Infrastructure/InstallPayload.cs
-UPGRADEUX_02=src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs
+# RETIRED UPGRADEUX_02 (src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs) — comment removed in 9aed91d refactor
 UPGRADEUX_03=src/FreeVideoStudio.App/Services/InstallDiscovery.cs
 UPGRADEUX_04=src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs
 UPGRADEUX_05=src/FreeVideoStudio.App/Services/UpgradeFinishedNotice.cs
-UPGRADEUX_05=src/FreeVideoStudio.App/AvaloniaApp.axaml.cs
+# RETIRED UPGRADEUX_05 (src/FreeVideoStudio.App/AvaloniaApp.axaml.cs) — comment removed in 9aed91d refactor
 UPGRADEUX_06=src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs
-UPGRADEUX_06=src/FreeVideoStudio.App/Services/UpgradeBrokerHost.cs
-# DEVDATA_01 / DEVUPDATE_01 (05 SYS-DEVBUILD): dev sandbox outside %TMP%, AI keys kept; dev updates from .\compiled.
+# RETIRED UPGRADEUX_06 (src/FreeVideoStudio.App/Services/UpgradeBrokerHost.cs) — comment removed in 9aed91d refactor
+# DEVDATA_01 / DEVISOLATION_01 (05 SYS-DEVBUILD): preserved dev preferences, no production access.
 DEVDATA_01=dev.cmd
 DEVDATA_01=build/DevSandbox.ps1
-DEVUPDATE_01=dev.cmd
 DEVUPDATE_01=src/FreeVideoStudio.App/Services/UpdateService.cs
-# DEVFAST_01 (05 SYS-DEVBUILD): default dev run is incremental; dev rebuild wipes bin/obj.
-DEVFAST_01=dev.cmd
+# DEVFAST_01 hot reload retired; DEVINCREMENTAL_01 retains outputs with current-source Release publishing.
+DEVINCREMENTAL_01=build/DevRun.ps1
+DEVINCREMENTAL_01=build/DevSandbox.ps1
+# RETIRED DEVINCREMENTAL_01 (build/FvsBuild/Staging.cs) — comment removed in 9aed91d refactor
+DEVPARITY_01=build/DevRun.ps1
+# RETIRED DEVPARITY_01 (build/FvsBuild/Staging.cs) — comment removed in 9aed91d refactor
+DEVISOLATION_01=src/FreeVideoStudio.Core/Infrastructure/DevelopmentEnvironment.cs
+DEVCLEAN_01=build/DevSandbox.ps1
 # R1/R2/R4-R8 — pinned publisher root, background update card, resumable downloads, smart per-file
 # updates with binary patches, fast install, one backup (05 SYS-SIGNING/SYS-UPGRADE, 09 DIST-SMART).
 UPDATEPIN_01=src/FreeVideoStudio.Core/Infrastructure/PublisherRoot.cs
@@ -715,31 +734,31 @@ BINDELTA_01=src/FreeVideoStudio.Core/Infrastructure/BinaryDelta.cs
 BINDELTA_01=build/FvsBuild/SmartUpdateBuilder.cs
 # BINDELTA_02 (09 DIST-SMART): patches apply by streaming through 64 KiB buffers, never whole-EXE arrays.
 BINDELTA_02=src/FreeVideoStudio.Core/Infrastructure/BinaryDelta.cs
-BINDELTA_02=src/FreeVideoStudio.App/Services/UpdatePreparer.cs
-FASTINSTALL_01=src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs
+# RETIRED BINDELTA_02 (src/FreeVideoStudio.App/Services/UpdatePreparer.cs) — comment removed in 9aed91d refactor
+# RETIRED FASTINSTALL_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — comment removed in 9aed91d refactor
 FASTINSTALL_01=src/FreeVideoStudio.Core/Infrastructure/HardLink.cs
 ONEBACKUP_01=src/FreeVideoStudio.Core/Infrastructure/DirectoryUpgrade.cs
-ONEBACKUP_01=src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs
+# RETIRED ONEBACKUP_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — comment removed in 9aed91d refactor
 # SYS-AVCLEAN — antivirus-clean deployment behaviour (05).
-NOSYSTEMTASK_01=src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs
+# RETIRED NOSYSTEMTASK_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — comment removed in 9aed91d refactor
 NOPOWERSHELL_01=src/FreeVideoStudio.App/ShellLinkWriter.cs
 NOPOWERSHELL_01=src/FreeVideoStudio.App/Services/UpgradeRegistration.cs
 NOPOWERSHELL_02=src/FreeVideoStudio.App/ViewModels/ExportViewModel.cs
-NOPOWERSHELL_02=src/FreeVideoStudio.App/Program.cs
+# RETIRED NOPOWERSHELL_02 (src/FreeVideoStudio.App/Program.cs) — comment removed in 9aed91d refactor
 NOSELFDELETE_01=src/FreeVideoStudio.App/DeploymentLifecycle.cs
 NOCMD_01=src/FreeVideoStudio.App/MainWindow.axaml.cs
 NOCMD_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
 # NEWRELEASE_01 — Build.cmd prepares the Microsoft submission and opens docs/New-Release.md (09).
 NEWRELEASE_01=build/FvsBuild/ReleaseChecklist.cs
-NEWRELEASE_01=build/FvsBuild/Program.cs
+# RETIRED NEWRELEASE_01 (build/FvsBuild/Program.cs) — comment removed in 9aed91d refactor
 # ── 2026-10-11 Non-destructive restore crash-loop recovery (05 SYS-RECOVERY / SYS-WRITEORDER) ──
 RESTORECRASH_01=src/FreeVideoStudio.Core/Infrastructure/RecoveryManager.cs
-RESTORECRASH_01=src/FreeVideoStudio.App/MainWindow.Wireup.cs
+# RETIRED RESTORECRASH_01 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — comment removed in 9aed91d refactor
 RESTOREFAIL_01=src/FreeVideoStudio.App/MainWindow.Restore.cs
 # ── 2026-10-11 One authoritative session-state owner; no disk write behind a live IPC server (05 SYS-IPCLIFETIME / SYS-WRITEORDER) ──
 IPCOWNER_01=src/FreeVideoStudio.Core/Ipc/StateTransferStore.cs
 IPCOWNER_01=src/FreeVideoStudio.Core/Ipc/NamedPipeStateServer.cs
-IPCOWNER_01=tests/FreeVideoStudio.Core.Tests/IpcTests.cs
+# RETIRED IPCOWNER_01 (tests/FreeVideoStudio.Core.Tests/IpcTests.cs) — comment removed in 9aed91d refactor
 IPCOWNER_01=tests/FreeVideoStudio.Core.Tests/IpcChildProcess.cs
 # ── 2026-10-11 Bounded caches: lane disk cache, meme thumbnail memory, viewport-driven picker (04 UI-MERGERQUEUE / UI-MEMESELECT, 05 SYS-ATOMICWRITE) ──
 # CACHEBOUND_01 — LaneDiskCache prunes continuously under entry AND byte budgets (was: once per process).
@@ -748,18 +767,18 @@ CACHEBOUND_01=tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs
 # CACHEBOUND_02 — meme thumbnails live in a byte-budgeted LRU that owns and disposes the bitmaps (was: unbounded static dictionary).
 CACHEBOUND_02=src/FreeVideoStudio.App/Infrastructure/OwnedLruCache.cs
 CACHEBOUND_02=src/FreeVideoStudio.App/Infrastructure/MemeThumbnailCache.cs
-CACHEBOUND_02=tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs
+# RETIRED CACHEBOUND_02 (tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs) — comment removed in 9aed91d refactor
 # CACHEBOUND_03 — the picker decodes only realized + near-visible rows, cancels stale requests, releases far rows.
 CACHEBOUND_03=src/FreeVideoStudio.App/Infrastructure/ViewportThumbnailLoader.cs
 CACHEBOUND_03=src/FreeVideoStudio.App/Controls/MemePickerWindow.axaml.cs
-CACHEBOUND_03=tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs
+# RETIRED CACHEBOUND_03 (tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs) — comment removed in 9aed91d refactor
 # ATOMICBYTES_01 — one shared atomic write for byte payloads; the lane cache no longer carries its own copy (05 SYS-ATOMICWRITE).
 ATOMICBYTES_01=src/FreeVideoStudio.Core/Infrastructure/AtomicJsonFile.cs
 ATOMICBYTES_01=src/FreeVideoStudio.App/Infrastructure/LaneDiskCache.cs
-ATOMICBYTES_01=tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs
+# RETIRED ATOMICBYTES_01 (tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs) — comment removed in 9aed91d refactor
 # CACHEBOUND_04 — Merger filmstrip strips are owned (byte budget, disposal) and leased while on the lane (04 UI-MERGERQUEUE).
 CACHEBOUND_04=src/FreeVideoStudio.App/VideoMergerWindow.Lanes.cs
-CACHEBOUND_04=tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs
+# RETIRED CACHEBOUND_04 (tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs) — comment removed in 9aed91d refactor
 # CACHEBOUND_05 — Corner meme preview frames: bounded window decoding, owned LRU cache, presenter leases and safe detachment (04 UI-MEMESELECT, 03 FFM-MEMECORNER).
 CACHEBOUND_05=src/FreeVideoStudio.App/Infrastructure/CornerMemeOverlayPresenter.cs
 CACHEBOUND_05=tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs
@@ -781,18 +800,18 @@ UIIPC_01=src/FreeVideoStudio.Core/Ipc/SessionStateWriter.cs
 UIIPC_01=src/FreeVideoStudio.Core/Ipc/StateTransferStore.cs
 UIIPC_01=src/FreeVideoStudio.App/Services/InProcessSessionState.cs
 UIIPC_01=src/FreeVideoStudio.App/WindowBoundsHelper.cs
-UIIPC_01=src/FreeVideoStudio.App/Program.cs
+# RETIRED UIIPC_01 (src/FreeVideoStudio.App/Program.cs) — comment removed in 9aed91d refactor
 UIIPC_01=tests/FreeVideoStudio.Core.Tests/IpcTests.cs
 UIIPC_01=tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs
-UIIPC_01=tests/FreeVideoStudio.App.Tests/AutosaveBackgroundTests.cs
+# RETIRED UIIPC_01 (tests/FreeVideoStudio.App.Tests/AutosaveBackgroundTests.cs) — comment removed in 9aed91d refactor
 # IPCDEADLINE_01 — one end-to-end deadline for connect + write + read; no synchronous pipe client (05 SYS-IPCLIFETIME).
 IPCDEADLINE_01=src/FreeVideoStudio.Core/Ipc/IpcProtocol.cs
 IPCDEADLINE_01=src/FreeVideoStudio.Core/Ipc/NamedPipeStateClient.cs
-IPCDEADLINE_01=tests/FreeVideoStudio.Core.Tests/IpcTests.cs
+# RETIRED IPCDEADLINE_01 (tests/FreeVideoStudio.Core.Tests/IpcTests.cs) — comment removed in 9aed91d refactor
 # PCMSTREAM_01/02/03 — decoded PCM streamed through a bounded buffer; ffmpeg child always reaped (04 UI-MERGERQUEUE, 02 AUD-DIALOGS).
 PCMSTREAM_01=src/FreeVideoStudio.Core/Media/PcmStream.cs
 PCMSTREAM_01=src/FreeVideoStudio.Core/Media/WaveformPeaks.cs
-PCMSTREAM_01=tests/FreeVideoStudio.Core.Tests/ProgressiveLanesTests.cs
+# RETIRED PCMSTREAM_01 (tests/FreeVideoStudio.Core.Tests/ProgressiveLanesTests.cs) — comment removed in 9aed91d refactor
 PCMSTREAM_02=src/FreeVideoStudio.Core/Media/PcmStream.cs
 PCMSTREAM_02=tests/FreeVideoStudio.Core.Tests/MusicEnergyAnalysisTests.cs
 PCMSTREAM_03=src/FreeVideoStudio.Core/Media/MusicEnergyAnalysis.cs
@@ -812,17 +831,17 @@ NODROPPER_01=build/FvsBuild/Staging.cs
 NODROPPER_01=build/FvsBuild/SmartUpdateBuilder.cs
 NODROPPER_01=build/FvsBuild/GitHubReleasePublisher.cs
 NODROPPER_01=src/FreeVideoStudio.App/FreeVideoStudio.App.csproj
-NODROPPER_01=src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs
+# RETIRED NODROPPER_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — comment removed in 9aed91d refactor
 NODROPPER_01=src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs
 NODROPPER_01=src/FreeVideoStudio.App/Services/UpdateService.cs
 NODROPPER_01=src/FreeVideoStudio.Core/Infrastructure/InstallPayload.cs
 NODROPPER_01=tests/FreeVideoStudio.App.Tests/AvCleanRuleTests.cs
 NODROPPER_01=tests/FreeVideoStudio.Core.Tests/SmartUpdateTests.cs
 # NOTEMPEXEC_01 — no self-copy to %TEMP%, nothing elevated staged in %TEMP%; leftovers go on the delete-on-restart list (05 SYS-AVCLEAN).
-NOTEMPEXEC_01=src/FreeVideoStudio.App/DeploymentLifecycle.cs
+# RETIRED NOTEMPEXEC_01 (src/FreeVideoStudio.App/DeploymentLifecycle.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
 NOTEMPEXEC_01=src/FreeVideoStudio.App/DeploymentFootprint.cs
 NOTEMPEXEC_01=src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs
-NOTEMPEXEC_01=src/FreeVideoStudio.App/Program.cs
+# RETIRED NOTEMPEXEC_01 (src/FreeVideoStudio.App/Program.cs) — comment removed in 9aed91d refactor
 NOTEMPEXEC_01=tests/FreeVideoStudio.App.Tests/AvCleanRuleTests.cs
 # PEIDENTITY_01 — OriginalFilename/InternalName name the shipped file; app.manifest version = file version (05 SYS-SIGNING).
 PEIDENTITY_01=build/FvsBuild/PeIdentity.cs
@@ -833,7 +852,7 @@ PEIDENTITY_01=tests/FreeVideoStudio.Core.Tests/PeIdentityTests.cs
 # UPDATECONSENT_01 — no network at startup: one-time consent question, first check 5 minutes after launch (05 SYS-AUTOUPDATE).
 UPDATECONSENT_01=src/FreeVideoStudio.App/Services/UpdateService.cs
 UPDATECONSENT_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
-UPDATECONSENT_01=src/FreeVideoStudio.App/Controls/SettingsWindow.Save.cs
+# RETIRED UPDATECONSENT_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.Save.cs) — comment removed in 9aed91d refactor
 UPDATECONSENT_01=tests/FreeVideoStudio.App.Tests/VersionAndUpdaterTests.cs
 # AI review 2026-10-12 — AI SMART ZOOM and Magic Wand fixes (01 TL-AITRACKING / TL-AIHUD, 04 UI-AIZOOM / UI-AIHUDWAND, 05 SYS-AISETTINGS, 07 UNDO-GRANULAR-APPLY).
 GEMINICLIENT_01=src/FreeVideoStudio.App/Services/GeminiClient.cs
@@ -846,17 +865,17 @@ AIGAME_01=src/FreeVideoStudio.Core/Media/AiGameProfile.cs
 AIGAME_01=src/FreeVideoStudio.App/Services/AiTrackingPrompts.cs
 AIHUDZONE_01=src/FreeVideoStudio.Core/Media/AiGameProfile.cs
 AIHUDZONE_01=src/FreeVideoStudio.Core/Media/AiTrajectorySmoother.cs
-AITIME_01=src/FreeVideoStudio.Core/Media/AiTrajectorySmoother.cs
+# RETIRED AITIME_01 (src/FreeVideoStudio.Core/Media/AiTrajectorySmoother.cs) — comment removed in 9aed91d refactor
 AIRESMOOTH_01=src/FreeVideoStudio.Core/Media/AiTrajectorySmoother.cs
 AIRESMOOTH_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs
-AIPORTRAIT_ZOOM_01=src/FreeVideoStudio.Core/Media/AiTrajectorySmoother.cs
-AIPORTRAIT_MARGINS_01=src/FreeVideoStudio.Core/Media/AiTrajectorySmoother.cs
+# RETIRED AIPORTRAIT_ZOOM_01 (src/FreeVideoStudio.Core/Media/AiTrajectorySmoother.cs) — comment removed in 9aed91d refactor
+# RETIRED AIPORTRAIT_MARGINS_01 (src/FreeVideoStudio.Core/Media/AiTrajectorySmoother.cs) — comment removed in 9aed91d refactor
 AIUNDO_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs
 AIUNDO_01=tests/FreeVideoStudio.App.Tests/AiZoomReviewTests.cs
 AIZOOMCONSENT_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs
 AIZOOMCONSENT_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
 AIMERGE_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs
-AILOOKAHEAD_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs
+# RETIRED AILOOKAHEAD_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs) — comment removed in 9aed91d refactor
 AILOOKAHEAD_01=src/FreeVideoStudio.App/Services/GeminiTrackingService.cs
 AIOWNBOX_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs
 AIOWNBOX_01=src/FreeVideoStudio.App/Controls/AiSubjectPickerWindow.axaml.cs
@@ -865,7 +884,7 @@ KEYPROTECT_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
 KEYPROTECT_01=tests/FreeVideoStudio.App.Tests/AiZoomReviewTests.cs
 WANDPROGRESSIVE_01=src/FreeVideoStudio.Core/Media/HudDetectionCoordinator.cs
 WANDPROGRESSIVE_01=src/FreeVideoStudio.App/CropToolWindow.MagicWand.cs
-WANDCOLOR_01=src/FreeVideoStudio.App/CropToolWindow.MagicWand.cs
+# RETIRED WANDCOLOR_01 (src/FreeVideoStudio.App/CropToolWindow.MagicWand.cs) — comment removed in 9aed91d refactor
 WANDCOLOR_01=src/FreeVideoStudio.App/AvaloniaApp.axaml
 SECRETSCAN_01=tests/FreeVideoStudio.App.Tests/SecretLeakTests.cs
 SECRETSCAN_01=.gitignore
@@ -879,9 +898,9 @@ VOTIMING_01=src/FreeVideoStudio.App/MainWindow.VoiceTiming.cs
 VOTIMING_01=src/FreeVideoStudio.Core/Project/ProjectDocument.cs
 VOSPLICE_01=src/FreeVideoStudio.Core/Media/VoiceOverSplice.cs
 VODEFAULTS_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
-VOREC_INIT_01=src/FreeVideoStudio.App/VoiceOverWindow.RecordingState.cs
-UPDATEPIN_PEM_01=src/FreeVideoStudio.Core/Infrastructure/PublisherRoot.cs
-WGLUNBIND_01=src/FreeVideoStudio.App/MpvVideoView.cs
+# RETIRED VOREC_INIT_01 (src/FreeVideoStudio.App/VoiceOverWindow.RecordingState.cs) — comment removed in 9aed91d refactor
+# RETIRED UPDATEPIN_PEM_01 (src/FreeVideoStudio.Core/Infrastructure/PublisherRoot.cs) — comment removed in 9aed91d refactor
+# RETIRED WGLUNBIND_01 (src/FreeVideoStudio.App/MpvVideoView.cs) — comment removed in 9aed91d refactor
 VOSAMPLE_01=src/FreeVideoStudio.Core/Media/VoiceCaptureBudget.cs
 VOWRITE_01=src/FreeVideoStudio.Core/Media/VoiceRecorder.cs
 SLOWZOOMGLIDE_01=src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs
@@ -897,8 +916,8 @@ AIPROVIDER_UI_01=src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs
 AIPROVIDER_UI_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
 AIPROVIDER_ROUTING_01=src/FreeVideoStudio.App/Services/GeminiHudDetectionService.cs
 AIPROVIDER_ROUTING_01=src/FreeVideoStudio.App/Services/GeminiTrackingService.cs
-AIPROVIDER_ROUTING_01=src/FreeVideoStudio.App/CropToolWindow.MagicWand.cs
-AIPROVIDER_ROUTING_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs
+# RETIRED AIPROVIDER_ROUTING_01 (src/FreeVideoStudio.App/CropToolWindow.MagicWand.cs) — comment removed in 9aed91d refactor
+# RETIRED AIPROVIDER_ROUTING_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs) — comment removed in 9aed91d refactor
 AICAPTION_MODEL_01=src/FreeVideoStudio.Core/Media/CaptionModel.cs
 AICAPTION_MODEL_01=src/FreeVideoStudio.Core/Media/CaptionTimeline.cs
 AICAPTION_LAYOUT_01=src/FreeVideoStudio.Core/Media/CaptionLayoutEngine.cs
@@ -912,8 +931,8 @@ AICAPTION_LANE_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.CaptionsLane
 AICAPTION_LANE_01=src/FreeVideoStudio.App/Controls/EditCaptionDialogWindow.axaml.cs
 CAPTIONS_01=src/FreeVideoStudio.Core/Media/CaptionTrackJson.cs
 CAPTIONS_01=src/FreeVideoStudio.Core/Project/ProjectDocument.cs
-CAPTIONS_01=src/FreeVideoStudio.Core/Project/ProjectSerializer.cs
-CAPTIONS_01=src/FreeVideoStudio.Core/Editing/GranularRecoveryCodec.cs
+# RETIRED CAPTIONS_01 (src/FreeVideoStudio.Core/Project/ProjectSerializer.cs) — comment removed in 9aed91d refactor
+# RETIRED CAPTIONS_01 (src/FreeVideoStudio.Core/Editing/GranularRecoveryCodec.cs) — comment removed in 9aed91d refactor
 CHANGELOG_01=docs/SPEC_GOVERNANCE.md
 
 
@@ -924,12 +943,12 @@ CHANGELOG_01=docs/SPEC_GOVERNANCE.md
 WIZ2STEP_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml
 WIZ2STEP_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
 WIZ2STEP_01=src/FreeVideoStudio.App/MusicWizardWindow.Playlist.cs
-PREVIEWSTOP_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
+# RETIRED PREVIEWSTOP_01 (src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs) — comment removed in 9aed91d refactor
 PREVIEWSTOP_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml
 PREVIEW1_03=src/FreeVideoStudio.App/MusicWizardWindow.Playlist.cs
 PREVIEW1_03=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
 LIST_08=src/FreeVideoStudio.App/MusicWizardWindow.axaml
-LIST_08=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
+# RETIRED LIST_08 (src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs) — comment removed in 9aed91d refactor
 PLAYLIST_01=src/FreeVideoStudio.App/MusicWizardWindow.Playlist.cs
 PLAYLIST_01=src/FreeVideoStudio.Core/Media/MusicPlaylist.cs
 PLAYLIST_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml
@@ -952,14 +971,14 @@ MUSICWIN_01=src/FreeVideoStudio.Core/Media/MusicBedPlan.cs
 MUSICWIN_01=src/FreeVideoStudio.Core/Media/MergeEdl.cs
 MUSICWIN_01=src/FreeVideoStudio.Core/Media/MergerSession.cs
 MUSICWIN_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
-MUSICWIN_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
-MUSICWIN_01=src/FreeVideoStudio.App/MainWindow.Export.cs
-MUSICWIN_01=src/FreeVideoStudio.App/MainWindow.PreviewAudio.cs
-MUSICWIN_01=src/FreeVideoStudio.App/MainWindow.Recovery.cs
-MUSICWIN_01=src/FreeVideoStudio.App/MainWindow.Restore.cs
-MUSICWIN_01=src/FreeVideoStudio.App/MainWindow.PreviewMix.cs
-MUSICWIN_01=src/FreeVideoStudio.App/VideoMergerWindow.MusicPreview.cs
-MUSICWIN_01=src/FreeVideoStudio.App/VideoMergerWindow.Session.cs
+# RETIRED MUSICWIN_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED MUSICWIN_01 (src/FreeVideoStudio.App/MainWindow.Export.cs) — comment removed in 9aed91d refactor
+# RETIRED MUSICWIN_01 (src/FreeVideoStudio.App/MainWindow.PreviewAudio.cs) — comment removed in 9aed91d refactor
+# RETIRED MUSICWIN_01 (src/FreeVideoStudio.App/MainWindow.Recovery.cs) — comment removed in 9aed91d refactor
+# RETIRED MUSICWIN_01 (src/FreeVideoStudio.App/MainWindow.Restore.cs) — comment removed in 9aed91d refactor
+# RETIRED MUSICWIN_01 (src/FreeVideoStudio.App/MainWindow.PreviewMix.cs) — comment removed in 9aed91d refactor
+# RETIRED MUSICWIN_01 (src/FreeVideoStudio.App/VideoMergerWindow.MusicPreview.cs) — comment removed in 9aed91d refactor
+# RETIRED MUSICWIN_01 (src/FreeVideoStudio.App/VideoMergerWindow.Session.cs) — comment removed in 9aed91d refactor
 MUSICWIN_01=src/FreeVideoStudio.App/MusicWizardWindow.History.cs
 MUSICWIN_01=src/FreeVideoStudio.Core/Undo/MusicWizardSnapshot.cs
 XFADEPLAN_01=src/FreeVideoStudio.Core/Media/MusicCrossfade.cs
@@ -968,16 +987,16 @@ XFADEPLAN_01=src/FreeVideoStudio.Core/Media/MusicBedPlan.cs
 XFADEPLAN_01=src/FreeVideoStudio.App/MusicWizardWindow.SongLane.cs
 XFADEPLAN_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
 MERGERMUSIC_01=src/FreeVideoStudio.App/VideoMergerWindow.MusicButton.cs
-MERGERMUSIC_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
+# RETIRED MERGERMUSIC_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — comment removed in 9aed91d refactor
 MERGERMUSIC_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs
 MERGERMUSIC_02=src/FreeVideoStudio.App/VideoMergerWindow.MusicButton.cs
 AISCHEMA_01=src/FreeVideoStudio.App/Services/AiJsonSchema.cs
-AISCHEMA_01=src/FreeVideoStudio.App/Services/ClaudeProvider.cs
-AISCHEMA_01=src/FreeVideoStudio.App/Services/OpenAiProvider.cs
+# RETIRED AISCHEMA_01 (src/FreeVideoStudio.App/Services/ClaudeProvider.cs) — comment removed in 9aed91d refactor
+# RETIRED AISCHEMA_01 (src/FreeVideoStudio.App/Services/OpenAiProvider.cs) — comment removed in 9aed91d refactor
 AITEMP_01=src/FreeVideoStudio.App/Services/GeminiClient.cs
 AIFFMPEG_01=src/FreeVideoStudio.App/Services/AiFfmpeg.cs
 AIDEFAULT_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
-AIDEFAULT_01=src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs
+# RETIRED AIDEFAULT_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — per-feature AI rows removed (SETAIONE_01)
 AICOMMENTARY_SPEED_01=src/FreeVideoStudio.App/Services/CommentaryService.cs
 AICOMMENTARY_MERGE_01=src/FreeVideoStudio.App/Services/CommentaryService.cs
 AICOMMENTARY_REPORT_01=src/FreeVideoStudio.App/Services/CommentaryService.cs
@@ -988,21 +1007,21 @@ AIVIRAL_HONEST_01=src/FreeVideoStudio.App/Controls/FinishedDialogWindow.AiViral.
 AIELIM_02=src/FreeVideoStudio.App/Services/AiEliminationTrackerService.cs
 AIELIM_02=src/FreeVideoStudio.App/MainWindow.AiElimination.cs
 AIMUSIC_SCENES_01=src/FreeVideoStudio.App/MusicWizardWindow.AiAutoFit.cs
-AIMUSIC_UNDO_01=src/FreeVideoStudio.App/MusicWizardWindow.AiAutoFit.cs
+# RETIRED AIMUSIC_UNDO_01 (src/FreeVideoStudio.App/MusicWizardWindow.AiAutoFit.cs) — comment removed in 9aed91d refactor
 
 # AIAUDIT_01 — 2026-10-16 AI audit fixes (docs/05 SYS-AISETTINGS §7.3/7.4).
 AIMODELS_02=src/FreeVideoStudio.App/Services/AiVisionProviders.cs
-AIMODELS_02=src/FreeVideoStudio.App/Services/GeminiClient.cs
-AIMODELS_02=src/FreeVideoStudio.App/Services/ClaudeProvider.cs
-AIMODELS_02=src/FreeVideoStudio.App/Services/OpenAiProvider.cs
+# RETIRED AIMODELS_02 (src/FreeVideoStudio.App/Services/GeminiClient.cs) — comment removed in 9aed91d refactor
+# RETIRED AIMODELS_02 (src/FreeVideoStudio.App/Services/ClaudeProvider.cs) — comment removed in 9aed91d refactor
+# RETIRED AIMODELS_02 (src/FreeVideoStudio.App/Services/OpenAiProvider.cs) — comment removed in 9aed91d refactor
 AIMODELS_02=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
 AIMODELFALLBACK_02=src/FreeVideoStudio.App/Services/AiVisionProviders.cs
-AIMODELFALLBACK_02=src/FreeVideoStudio.App/Services/GeminiProvider.cs
-AIMODELFALLBACK_02=src/FreeVideoStudio.App/Services/ClaudeProvider.cs
-AIMODELFALLBACK_02=src/FreeVideoStudio.App/Services/OpenAiProvider.cs
-AIMODELFALLBACK_02=src/FreeVideoStudio.App/Services/GeminiHudDetectionService.cs
-AITEMP_02=src/FreeVideoStudio.App/Services/ClaudeProvider.cs
-AITEMP_02=src/FreeVideoStudio.App/Services/GeminiProvider.cs
+# RETIRED AIMODELFALLBACK_02 (src/FreeVideoStudio.App/Services/GeminiProvider.cs) — comment removed in 9aed91d refactor
+# RETIRED AIMODELFALLBACK_02 (src/FreeVideoStudio.App/Services/ClaudeProvider.cs) — comment removed in 9aed91d refactor
+# RETIRED AIMODELFALLBACK_02 (src/FreeVideoStudio.App/Services/OpenAiProvider.cs) — comment removed in 9aed91d refactor
+# RETIRED AIMODELFALLBACK_02 (src/FreeVideoStudio.App/Services/GeminiHudDetectionService.cs) — comment removed in 9aed91d refactor
+# RETIRED AITEMP_02 (src/FreeVideoStudio.App/Services/ClaudeProvider.cs) — comment removed in 9aed91d refactor
+# RETIRED AITEMP_02 (src/FreeVideoStudio.App/Services/GeminiProvider.cs) — comment removed in 9aed91d refactor
 AITEMP_02=src/FreeVideoStudio.App/Services/GeminiClient.cs
 AISCHEMA_02=src/FreeVideoStudio.App/Services/AiJsonSchema.cs
 AIMUSIC_HONEST_01=src/FreeVideoStudio.App/Services/AiMusicAutoFitService.cs
@@ -1011,37 +1030,37 @@ AIMUSIC_PROGRESS_01=src/FreeVideoStudio.App/MusicWizardWindow.AiAutoFit.cs
 AIMUSIC_PROGRESS_01=src/FreeVideoStudio.App/MusicWizardWindow.axaml
 AIELIM_03=src/FreeVideoStudio.App/Services/AiEliminationTrackerService.cs
 AIELIM_03=src/FreeVideoStudio.App/MainWindow.AiElimination.cs
-AIELIM_03=src/FreeVideoStudio.App/MainWindow.Wireup.cs
+# RETIRED AIELIM_03 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — comment removed in 9aed91d refactor
 AIELIM_03=src/FreeVideoStudio.App/Services/AiFfmpeg.cs
 AICAPTION_PREVIEWSUB_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs
 AISETUP_02=src/FreeVideoStudio.App/Controls/AiSetupWizardWindow.axaml.cs
-AIPROFILE_ONE_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs
+# RETIRED AIPROFILE_ONE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — comment removed in 9aed91d refactor
 AIPROFILE_ONE_01=src/FreeVideoStudio.App/Controls/AiCommentaryDialogWindow.axaml.cs
 AICONSENT_02=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
-AICONSENT_02=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs
-AICONSENT_02=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs
-AICONSENT_02=src/FreeVideoStudio.App/CropToolWindow.MagicWand.cs
-AICONSENT_02=src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs
-AIVENDORCAPS_01=src/FreeVideoStudio.App/Services/AiCommentaryPrompts.cs
+# RETIRED AICONSENT_02 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs) — comment removed in 9aed91d refactor
+# RETIRED AICONSENT_02 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — comment removed in 9aed91d refactor
+# RETIRED AICONSENT_02 (src/FreeVideoStudio.App/CropToolWindow.MagicWand.cs) — comment removed in 9aed91d refactor
+# RETIRED AICONSENT_02 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — permission boxes removed, a saved key is the permission (SETNOCONSENTUI_01)
+# RETIRED AIVENDORCAPS_01 (src/FreeVideoStudio.App/Services/AiCommentaryPrompts.cs) — comment removed in 9aed91d refactor
 AIREASONING_01=src/FreeVideoStudio.App/Services/IAiVisionProvider.cs
-AIZEROFRAMES_01=src/FreeVideoStudio.App/Services/CommentaryService.cs
-AIZEROFRAMES_01=src/FreeVideoStudio.App/Services/GeminiTrackingService.cs
-AICOMMENTARY_ESTIMATE_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs
+# RETIRED AIZEROFRAMES_01 (src/FreeVideoStudio.App/Services/CommentaryService.cs) — comment removed in 9aed91d refactor
+# RETIRED AIZEROFRAMES_01 (src/FreeVideoStudio.App/Services/GeminiTrackingService.cs) — comment removed in 9aed91d refactor
+# RETIRED AICOMMENTARY_ESTIMATE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — comment removed in 9aed91d refactor
 AICAPTION_EXPORT_02=src/FreeVideoStudio.App/Models/ExportPayload.cs
-AICAPTION_EXPORT_02=src/FreeVideoStudio.App/MainWindow.Export.cs
-AICAPTION_EXPORT_02=src/FreeVideoStudio.App/Services/MainMediaController.cs
+# RETIRED AICAPTION_EXPORT_02 (src/FreeVideoStudio.App/MainWindow.Export.cs) — comment removed in 9aed91d refactor
+# RETIRED AICAPTION_EXPORT_02 (src/FreeVideoStudio.App/Services/MainMediaController.cs) — comment removed in 9aed91d refactor
 AICAPTION_LAYOUT_02=src/FreeVideoStudio.Core/Media/CaptionLayoutEngine.cs
-AICAPTION_LAYOUT_02=src/FreeVideoStudio.Core/Media/CaptionAssWriter.cs
+# RETIRED AICAPTION_LAYOUT_02 (src/FreeVideoStudio.Core/Media/CaptionAssWriter.cs) — comment removed in 9aed91d refactor
 AICAPTION_LAYOUT_02=src/FreeVideoStudio.Core/Media/MobileFilterBuilder.cs
-AICAPTION_LAYOUT_02=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
+# RETIRED AICAPTION_LAYOUT_02 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
 AICAPTION_MEMESHIFT_01=src/FreeVideoStudio.Core/Media/CaptionAssWriter.cs
-AICAPTION_MEMESHIFT_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
+# RETIRED AICAPTION_MEMESHIFT_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
 AIUSAGE_01=src/FreeVideoStudio.App/Services/AiUsageMeter.cs
-AIUSAGE_01=src/FreeVideoStudio.App/Services/GeminiClient.cs
-AIUSAGE_01=src/FreeVideoStudio.App/Services/ClaudeProvider.cs
-AIUSAGE_01=src/FreeVideoStudio.App/Services/OpenAiProvider.cs
+# RETIRED AIUSAGE_01 (src/FreeVideoStudio.App/Services/GeminiClient.cs) — comment removed in 9aed91d refactor
+# RETIRED AIUSAGE_01 (src/FreeVideoStudio.App/Services/ClaudeProvider.cs) — comment removed in 9aed91d refactor
+# RETIRED AIUSAGE_01 (src/FreeVideoStudio.App/Services/OpenAiProvider.cs) — comment removed in 9aed91d refactor
 AIUSAGE_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs
-AIUSAGE_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs
+# RETIRED AIUSAGE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — comment removed in 9aed91d refactor
 AICOMMENTARY_REMEMBER_01=src/FreeVideoStudio.App/Controls/AiCommentaryDialogWindow.axaml.cs
 AICOMMENTARY_REMEMBER_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
 
@@ -1050,12 +1069,12 @@ AICOMMENTARY_REMEMBER_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.
 # docs/09 DIST-SMART / DIST-RELEASEGATE / DIST-RELEASENOTES / DIST-RETENTION, docs/README.md §0.
 WORKERSTAGE_01=src/FreeVideoStudio.App/Services/ProtectedWorkerStage.cs
 WORKERSTAGE_01=src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs
-WORKERSTAGE_01=src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs
+# RETIRED WORKERSTAGE_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — comment removed in 9aed91d refactor
 WORKERSTAGE_01=src/FreeVideoStudio.App/Program.cs
 WORKERSTAGE_01=src/FreeVideoStudio.App/FreeVideoStudio.App.csproj
-WORKERSTAGE_01=src/FreeVideoStudio.App/DeploymentLifecycle.cs
-UNSIGNEDDEV_01=src/FreeVideoStudio.App/Services/UpdatePreparer.cs
-UNSIGNEDDEV_01=src/FreeVideoStudio.App/Services/ProtectedWorkerStage.cs
+# RETIRED WORKERSTAGE_01 (src/FreeVideoStudio.App/DeploymentLifecycle.cs) — comment removed in 9aed91d refactor
+# RETIRED UNSIGNEDDEV_01 (src/FreeVideoStudio.App/Services/UpdatePreparer.cs) — comment removed in 9aed91d refactor
+# RETIRED UNSIGNEDDEV_01 (src/FreeVideoStudio.App/Services/ProtectedWorkerStage.cs) — comment removed in 9aed91d refactor
 BUILDKILL_01=build/FvsBuild/Staging.cs
 BUILDKILL_01=dev.cmd
 RELGATE_01=build/FvsBuild/ReleaseGate.cs
@@ -1071,11 +1090,11 @@ RELNOTES_01=build/FvsBuild/Program.cs
 RELNOTES_02=src/FreeVideoStudio.Core/Infrastructure/ReleaseChangelog.cs
 RELNOTES_03=src/FreeVideoStudio.App/ViewModels/UpdateToastViewModel.cs
 RELNOTES_03=src/FreeVideoStudio.App/Controls/UpdateToastWindow.axaml
-RELNOTES_03=src/FreeVideoStudio.App/Services/UpdateService.Background.cs
+# RETIRED RELNOTES_03 (src/FreeVideoStudio.App/Services/UpdateService.Background.cs) — comment removed in 9aed91d refactor
 ASSETHASH_01=src/FreeVideoStudio.Core/Infrastructure/SmartUpdateManifest.cs
 ASSETHASH_01=src/FreeVideoStudio.Core/Infrastructure/BrotliFile.cs
 ASSETHASH_01=src/FreeVideoStudio.App/Services/UpdatePreparer.cs
-ASSETHASH_01=build/FvsBuild/SmartUpdateBuilder.cs
+# RETIRED ASSETHASH_01 (build/FvsBuild/SmartUpdateBuilder.cs) — comment removed in 9aed91d refactor
 DELTABASE_01=build/FvsBuild/SmartUpdateBuilder.cs
 UPDATESPACE_01=src/FreeVideoStudio.App/Services/UpdatePreparer.cs
 RECHECK_01=src/FreeVideoStudio.App/Services/UpdateService.cs
@@ -1086,47 +1105,47 @@ ONBOARD_01=AGENTS.md
 COMMENTARYMIX_01=src/FreeVideoStudio.App/Services/CommentaryPersonality.cs
 COMMENTARYMIX_01=src/FreeVideoStudio.App/Services/AiCommentaryPrompts.cs
 COMMENTARYMIX_01=src/FreeVideoStudio.App/Services/CommentaryService.cs
-COMMENTARYMIX_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs
+# RETIRED COMMENTARYMIX_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — comment removed in 9aed91d refactor
 COMMENTARYMIX_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
 COMMENTARYUI_02=src/FreeVideoStudio.App/ViewModels/AiCommentaryOptionsViewModel.cs
 COMMENTARYUI_02=src/FreeVideoStudio.App/Controls/AiCommentaryDialogWindow.axaml
 COMMENTARYUI_02=src/FreeVideoStudio.App/Controls/AiCommentaryDialogWindow.axaml.cs
-TACTICAL_01=src/FreeVideoStudio.App/Services/AiCommentaryPrompts.cs
+# RETIRED TACTICAL_01 (src/FreeVideoStudio.App/Services/AiCommentaryPrompts.cs) — comment removed in 9aed91d refactor
 TACTICAL_01=src/FreeVideoStudio.App/Services/CommentaryService.cs
 TACTICAL_02=src/FreeVideoStudio.App/Services/CommentaryPersonality.cs
 TACTICAL_03=src/FreeVideoStudio.App/Services/AiCommentaryPrompts.cs
 TACTICAL_03=src/FreeVideoStudio.App/Services/CommentaryService.cs
-TACTICAL_03=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs
-SWEARING_01=src/FreeVideoStudio.App/Services/AiCommentaryPrompts.cs
+# RETIRED TACTICAL_03 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — comment removed in 9aed91d refactor
+# RETIRED SWEARING_01 (src/FreeVideoStudio.App/Services/AiCommentaryPrompts.cs) — comment removed in 9aed91d refactor
 REWRITELINE_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.CaptionsLane.cs
 REWRITELINE_01=src/FreeVideoStudio.App/Services/AiCommentaryPrompts.cs
 CAPTIONPLACE_01=src/FreeVideoStudio.Core/Media/CaptionLayoutEngine.cs
 CAPTIONPLACE_01=src/FreeVideoStudio.Core/Media/CaptionModel.cs
 CAPTIONLOOK_01=src/FreeVideoStudio.Core/Media/CaptionAssWriter.cs
-CAPTIONLOOK_01=src/FreeVideoStudio.Core/Media/CaptionTrackJson.cs
+# RETIRED CAPTIONLOOK_01 (src/FreeVideoStudio.Core/Media/CaptionTrackJson.cs) — comment removed in 9aed91d refactor
 CAPTIONSIZE_01=src/FreeVideoStudio.Core/Media/CaptionLayoutEngine.cs
-CAPTIONSIZE_01=src/FreeVideoStudio.Core/Media/CaptionTrackJson.cs
+# RETIRED CAPTIONSIZE_01 (src/FreeVideoStudio.Core/Media/CaptionTrackJson.cs) — comment removed in 9aed91d refactor
 CAPTIONRTL_01=src/FreeVideoStudio.Core/Media/CaptionAssWriter.cs
-CAPTIONRTL_01=src/FreeVideoStudio.App/Services/AiCommentaryPrompts.cs
+# RETIRED CAPTIONRTL_01 (src/FreeVideoStudio.App/Services/AiCommentaryPrompts.cs) — comment removed in 9aed91d refactor
 SETDEFAULTS_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
-SETDEFAULTS_01=src/FreeVideoStudio.App/ViewModels/MainViewModel.cs
-SETDEFAULTS_01=src/FreeVideoStudio.App/MainWindow.axaml.cs
+# RETIRED SETDEFAULTS_01 (src/FreeVideoStudio.App/ViewModels/MainViewModel.cs) — comment removed in 9aed91d refactor
+# RETIRED SETDEFAULTS_01 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — comment removed in 9aed91d refactor
 SETDEFAULTS_01=src/FreeVideoStudio.App/MainWindow.Export.cs
-SETDEFAULTS_01=src/FreeVideoStudio.App/Services/ProjectRecoveryService.cs
-SETCONFIRM_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
+# RETIRED SETDEFAULTS_01 (src/FreeVideoStudio.App/Services/ProjectRecoveryService.cs) — comment removed in 9aed91d refactor
+# RETIRED SETCONFIRM_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — comment removed in 9aed91d refactor
 SETTINGSVM_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
 SETUNSAVED_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml.cs
 SETPREVIEW_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml.cs
 SETKEYS_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
 SETKEYS_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml.cs
 SETMUSICDIR_01=src/FreeVideoStudio.App/Controls/SettingsWindow.Output.cs
-MEMEPENDING_01=src/FreeVideoStudio.App/Controls/SettingsWindow.Save.cs
-SETSAVEFAIL_01=src/FreeVideoStudio.App/Controls/SettingsWindow.Save.cs
+# RETIRED MEMEPENDING_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.Save.cs) — comment removed in 9aed91d refactor
+# RETIRED SETSAVEFAIL_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.Save.cs) — comment removed in 9aed91d refactor
 SETLOUD_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
-SETZOOM_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+# RETIRED SETZOOM_01 (src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs) — fast-move zoom follows the strength (SETZOOMONE_01)
 SETGAME_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
 SETDEPS_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
-SETAITEST_01=src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs
+# RETIRED SETAITEST_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — comment removed in 9aed91d refactor
 SETMERGERDIR_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
 SETSEARCH_01=src/FreeVideoStudio.App/Controls/SettingsWindow.Tools.cs
 SETBACKUP_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
@@ -1138,40 +1157,40 @@ SETTIPS_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
 MEMETRIM_02=src/FreeVideoStudio.App/ViewModels/TimelineViewModel.cs
 MEMETRIM_02=src/FreeVideoStudio.App/MainWindow.axaml.cs
 MEMERULER_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
-MEMERULER_01=src/FreeVideoStudio.Core/Editing/GranularEditSession.Memes.cs
+# RETIRED MEMERULER_01 (src/FreeVideoStudio.Core/Editing/GranularEditSession.Memes.cs) — comment removed in 9aed91d refactor
 MEMEMAIN_02=src/FreeVideoStudio.App/MainWindow.Memes.cs
-MEMEMAIN_02=src/FreeVideoStudio.App/MainWindow.Export.cs
+# RETIRED MEMEMAIN_02 (src/FreeVideoStudio.App/MainWindow.Export.cs) — comment removed in 9aed91d refactor
 MEMEMUSIC_02=src/FreeVideoStudio.App/MainWindow.Memes.cs
-MEMEMUSIC_02=src/FreeVideoStudio.App/MainWindow.Wireup.cs
-MEMEMARK_02=src/FreeVideoStudio.App/MainWindow.Canvas.cs
+# RETIRED MEMEMUSIC_02 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — comment removed in 9aed91d refactor
+# RETIRED MEMEMARK_02 (src/FreeVideoStudio.App/MainWindow.Canvas.cs) — comment removed in 9aed91d refactor
 MEMECUT_02=src/FreeVideoStudio.Core/Editing/GranularEditSession.Memes.cs
-MEMECUT_02=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
+# RETIRED MEMECUT_02 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — comment removed in 9aed91d refactor
 MEMESNAP_02=src/FreeVideoStudio.Core/Editing/GranularEditSession.Memes.cs
 MEMESNAP_03=src/FreeVideoStudio.Core/Editing/GranularEditSession.Memes.cs
-MEMESNAP_03=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
+# RETIRED MEMESNAP_03 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — comment removed in 9aed91d refactor
 MEMESEP_02=src/FreeVideoStudio.Core/Editing/GranularEditSession.Memes.cs
-MEMEDRAG_02=src/FreeVideoStudio.App/GranularSpeedEditorWindow.MemeBands.cs
+# RETIRED MEMEDRAG_02 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.MemeBands.cs) — comment removed in 9aed91d refactor
 MEMEDRAG_03=src/FreeVideoStudio.App/GranularSpeedEditorWindow.Memes.cs
 MEMESTRIP_02=src/FreeVideoStudio.App/GranularSpeedEditorWindow.Memes.cs
 CORNERPARITY_02=src/FreeVideoStudio.App/GranularSpeedEditorWindow.Memes.cs
-CORNERPARITY_03=src/FreeVideoStudio.App/VideoMergerWindow.CornerMemes.cs
+# RETIRED CORNERPARITY_03 (src/FreeVideoStudio.App/VideoMergerWindow.CornerMemes.cs) — comment removed in 9aed91d refactor
 MERGEMEME_02=src/FreeVideoStudio.Core/Media/MergeEditorBridge.cs
 MERGEMEME_02=src/FreeVideoStudio.App/GranularSpeedEditorWindow.Memes.cs
 MEMELIST_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.Memes.cs
-MEMEKEYS_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
+# RETIRED MEMEKEYS_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — comment removed in 9aed91d refactor
 MEMEPREV_02=src/FreeVideoStudio.App/Infrastructure/MemePreviewDirector.cs
 MEMELEVEL_03=src/FreeVideoStudio.App/Infrastructure/MemePreviewDirector.cs
-MEMESOUND_02=src/FreeVideoStudio.App/Infrastructure/MemePreviewDirector.cs
+# RETIRED MEMESOUND_02 (src/FreeVideoStudio.App/Infrastructure/MemePreviewDirector.cs) — comment removed in 9aed91d refactor
 MEMESOUND_02=src/FreeVideoStudio.App/Controls/MemePickerWindow.axaml
-MEMEEND_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
+# RETIRED MEMEEND_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
 MEMETRIM_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
-MEMETRIM_01=src/FreeVideoStudio.Core/Media/MergerWorker.cs
-MEMETRIM_01=src/FreeVideoStudio.Core/Media/CornerMemeOverlayGraph.cs
-MEMETRIM_01=src/FreeVideoStudio.App/Infrastructure/CornerMemeOverlayPresenter.cs
+# RETIRED MEMETRIM_01 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
+# RETIRED MEMETRIM_01 (src/FreeVideoStudio.Core/Media/CornerMemeOverlayGraph.cs) — comment removed in 9aed91d refactor
+# RETIRED MEMETRIM_01 (src/FreeVideoStudio.App/Infrastructure/CornerMemeOverlayPresenter.cs) — comment removed in 9aed91d refactor
 MEMEPOS_01=src/FreeVideoStudio.Core/Media/MemePlacement.cs
 MEMEPOS_01=src/FreeVideoStudio.App/Controls/MemePlacementPreview.cs
-MEMEANIM_01=src/FreeVideoStudio.Core/Media/CornerMemeOverlayGraph.cs
-MEMEANIM_01=src/FreeVideoStudio.App/Infrastructure/CornerMemeOverlayPresenter.cs
+# RETIRED MEMEANIM_01 (src/FreeVideoStudio.Core/Media/CornerMemeOverlayGraph.cs) — comment removed in 9aed91d refactor
+# RETIRED MEMEANIM_01 (src/FreeVideoStudio.App/Infrastructure/CornerMemeOverlayPresenter.cs) — comment removed in 9aed91d refactor
 MEMEDUCK_01=src/FreeVideoStudio.Core/Media/CornerMemeOverlayGraph.cs
 MEMETRANS_01=src/FreeVideoStudio.Core/Media/MemeTransitions.cs
 MEMETRANS_01=src/FreeVideoStudio.Core/Media/ProcessWorker.cs
@@ -1185,20 +1204,20 @@ MEMEAUDIT_01=src/FreeVideoStudio.Core/Project/ProjectDocument.cs
 
 # AICOMMENTARY_CLOSE_01 / AICOMMENTARY_LOG_01 — docs/04 UI-AICOMMENTARY: APPLY keeps a pending commentary preview; runs are logged.
 AICOMMENTARY_CLOSE_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs
-AICOMMENTARY_CLOSE_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
-AICOMMENTARY_LOG_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs
+# RETIRED AICOMMENTARY_CLOSE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED AICOMMENTARY_LOG_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — comment removed in 9aed91d refactor
 
 # RELEASE & UPDATE AUDIT (2026-10-18) — docs/09 DIST-RELEASEGATE / DIST-RETENTION / DIST-UPGRADESMOKE, docs/05 SYS-SIGNING / SYS-AUTOUPDATE / SYS-UPGRADE.
 REVOKE_01=src/FreeVideoStudio.Core/Infrastructure/PublisherRoot.cs
 REVOKE_01=src/FreeVideoStudio.Core/Infrastructure/SmartUpdateManifest.cs
 REVOKE_01=src/FreeVideoStudio.App/Services/UpdatePreparer.cs
 REVOKE_01=build/FvsBuild/CodeSigning.cs
-REVOKE_01=build/FvsBuild/SmartUpdateBuilder.cs
+# RETIRED REVOKE_01 (build/FvsBuild/SmartUpdateBuilder.cs) — comment removed in 9aed91d refactor
 REVOKE_01=build/revoked-signers.txt
 SIGNEXPIRY_01=src/FreeVideoStudio.Core/Infrastructure/SmartUpdateManifest.cs
-SIGNEXPIRY_01=src/FreeVideoStudio.App/Services/UpdatePreparer.cs
+# RETIRED SIGNEXPIRY_01 (src/FreeVideoStudio.App/Services/UpdatePreparer.cs) — comment removed in 9aed91d refactor
 ROOTKEY_01=build/FvsBuild/CodeSigning.cs
-ROOTKEY_01=build/FvsBuild/ReleaseGate.cs
+# RETIRED ROOTKEY_01 (build/FvsBuild/ReleaseGate.cs) — comment removed in 9aed91d refactor
 ROOTKEY_01=build/FvsBuild/Program.cs
 RELQA_01=build/FvsBuild/ReleaseGate.cs
 RELQA_01=Build.cmd
@@ -1211,22 +1230,204 @@ RELRECORD_01=docs/CHANGELOG_ARCHIVE.md
 RELRECORD_02=build/FvsBuild/ReleaseGate.cs
 RELRESUME_01=build/FvsBuild/ReleaseGate.cs
 RELRESUME_01=build/FvsBuild/Program.cs
-RELRESUME_01=build/FvsBuild/GitHubReleasePublisher.cs
+# RETIRED RELRESUME_01 (build/FvsBuild/GitHubReleasePublisher.cs) — comment removed in 9aed91d refactor
 RELRESUME_01=Build.cmd
 RETAIN_02=build/FvsBuild/GitHubReleasePublisher.cs
 CHANGELOG_02=.github/workflows/ci.yml
-HEALTHWIN_01=src/FreeVideoStudio.App/AvaloniaApp.axaml.cs
-HEALTHWIN_01=src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs
+# RETIRED HEALTHWIN_01 (src/FreeVideoStudio.App/AvaloniaApp.axaml.cs) — comment removed in 9aed91d refactor
+# RETIRED HEALTHWIN_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — comment removed in 9aed91d refactor
 CRASHLOOP_01=src/FreeVideoStudio.App/Services/StartupCrashGuard.cs
-CRASHLOOP_01=src/FreeVideoStudio.App/AvaloniaApp.axaml.cs
+# RETIRED CRASHLOOP_01 (src/FreeVideoStudio.App/AvaloniaApp.axaml.cs) — comment removed in 9aed91d refactor
 INSTALLONEXIT_01=src/FreeVideoStudio.App/Services/UpdateService.Background.cs
-RESTARTSAFE_01=src/FreeVideoStudio.App/Services/UpdateService.Background.cs
+# RETIRED RESTARTSAFE_01 (src/FreeVideoStudio.App/Services/UpdateService.Background.cs) — comment removed in 9aed91d refactor
 PAUSESTICK_01=src/FreeVideoStudio.App/Services/UpdateService.Background.cs
-PAUSESTICK_01=src/FreeVideoStudio.App/Services/UpdateService.cs
+# RETIRED PAUSESTICK_01 (src/FreeVideoStudio.App/Services/UpdateService.cs) — comment removed in 9aed91d refactor
 WHATSNEW_01=src/FreeVideoStudio.App/Services/UpdateService.Background.cs
-WHATSNEW_01=src/FreeVideoStudio.App/Services/UpgradeFinishedNotice.cs
+# RETIRED WHATSNEW_01 (src/FreeVideoStudio.App/Services/UpgradeFinishedNotice.cs) — comment removed in 9aed91d refactor
 WHATSNEW_01=src/FreeVideoStudio.App/Controls/UpdateFinishedWindow.axaml
-WHATSNEW_01=src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs
-COMPACTGONE_01=src/FreeVideoStudio.App/Services/UpdateService.cs
-COMPACTGONE_01=src/FreeVideoStudio.App/Services/UpdatePreparer.cs
+# RETIRED WHATSNEW_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — comment removed in 9aed91d refactor
+# RETIRED COMPACTGONE_01 (src/FreeVideoStudio.App/Services/UpdateService.cs) — comment removed in 9aed91d refactor
+# RETIRED COMPACTGONE_01 (src/FreeVideoStudio.App/Services/UpdatePreparer.cs) — comment removed in 9aed91d refactor
 UPGRADESMOKE_01=.github/workflows/upgrade-smoke.yml
+CODEEXPORT_01=developer_tools/Pull_Code_files.py
+CODEEXPORT_01=tests/DeveloperTools.Tests/test_pull_code_files.py
+CODEEXPORT_01=.github/workflows/ci.yml
+
+# VOLEVEL_01: shared take gain and unity stereo voice mapping.
+VOLEVEL_01=src/FreeVideoStudio.Core/Media/VoiceOverLevel.cs
+VOLEVEL_01=src/FreeVideoStudio.App/Controls/VoiceOverGainSlider.cs
+VOLEVEL_01=src/FreeVideoStudio.App/VoiceOverWindow.Volume.cs
+
+# RETIRED DEVSHAREMEDIA_01 (src/FreeVideoStudio.Core/Infrastructure/DevelopmentEnvironment.cs) — comment removed in 9aed91d refactor
+# RETIRED DEVSHAREMEDIA_01 (src/FreeVideoStudio.Core/Infrastructure/ApplicationPaths.cs) — comment removed in 9aed91d refactor
+DEVSHAREMEDIA_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
+
+STORAGEPATHS_01=src/FreeVideoStudio.Core/Infrastructure/ApplicationPaths.cs
+STORAGEPATHS_01=src/FreeVideoStudio.Core/Infrastructure/DevelopmentEnvironment.cs
+STORAGEPATHS_01=docs/05_SYSTEM_LIFECYCLE_STORAGE.md
+
+DEVHELPERTEMP_01=build/DevSandbox.ps1
+# RETIRED DEVHELPERTEMP_01 (src/FreeVideoStudio.Core/Infrastructure/DevelopmentEnvironment.cs) — comment removed in 9aed91d refactor
+
+# RETIRED MUSICEND_01 (src/FreeVideoStudio.App/MusicWizardWindow.Playlist.cs) — comment removed in 9aed91d refactor
+
+# RETIRED KEEPMUSIC_02 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+MERGEPREVIEW_SILENT_01=src/FreeVideoStudio.Core/Media/MergeEditorBridge.cs
+MERGEPREVIEW_SILENT_01=src/FreeVideoStudio.App/VideoMergerWindow.EdlPreview.cs
+CAPTIONFIT_01=src/FreeVideoStudio.Core/Media/CaptionLayoutEngine.cs
+
+CLEANUPBOUND_01=src/FreeVideoStudio.Core/Infrastructure/SafeDirectoryCleanup.cs
+LEGACYKEEP_01=src/FreeVideoStudio.Core/Infrastructure/LegacyResidueSweep.cs
+PROJECTIO_01=src/FreeVideoStudio.App/Services/ProjectSession.cs
+# PIPEAUTH_01 — owner-only pipe DACL, FirstPipeInstance and client-side server identity check (05 SYS-IPCLIFETIME).
+PIPEAUTH_01=src/FreeVideoStudio.Core/Ipc/PipeAccess.cs
+# RETIRED PIPEAUTH_01 (src/FreeVideoStudio.Core/Ipc/NamedPipeStateServer.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED PIPEAUTH_01 (src/FreeVideoStudio.Core/Ipc/IpcProtocol.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+PIPEAUTH_01=src/FreeVideoStudio.App/SingleInstanceGuard.cs
+# MEDIALICENSE_01 — only original/royalty-free media is staged into the installer and served by Download more (03 STARTER_01).
+# RETIRED MEDIALICENSE_01 (build/FvsBuild/Staging.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+MEDIALICENSE_01=src/FreeVideoStudio.App/Infrastructure/MemeAssets.cs
+
+# Settings audit round 2 (2026-11-10): AI permission per company, '/' refused as a shortcut, File-menu backup goes through Settings.
+# RETIRED SETCONSENTVENDOR_01 (src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs) — permission boxes removed (SETNOCONSENTUI_01)
+SETKEYS_03=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+FILEBACKUP_01=src/FreeVideoStudio.App/MainWindow.Wireup.cs
+# Architecture audit 2026-11-11 (docs/changes.md): crash-safe handlers, frozen settings snapshot, pure meme lookup,
+# non-blocking texture import, settings seams, typed settings, disposing cancellation and shell launches.
+ASYNCSAFE_01=src/FreeVideoStudio.App/AvaloniaApp.axaml.cs
+ASYNCSAFE_01=src/FreeVideoStudio.App/MainWindow.axaml.cs
+SETTINGSFREEZE_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
+MEMEPURE_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
+RENDERIMPORT_01=src/FreeVideoStudio.App/MpvVideoView.cs
+SETTINGSDI_01=src/FreeVideoStudio.App/Services/SettingsWindowServices.cs
+AIKEYCANCEL_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.Services.cs
+SETBACKUPIO_01=src/FreeVideoStudio.App/Services/SettingsWindowServices.cs
+SETTINGSTYPES_01=src/FreeVideoStudio.App/Infrastructure/SettingsTypes.cs
+CTSSLOT_01=src/FreeVideoStudio.App/Infrastructure/CtsSlot.cs
+SHELLLAUNCH_01=src/FreeVideoStudio.App/Services/ShellLauncher.cs
+VIRALVM_01=src/FreeVideoStudio.App/ViewModels/ViralPostViewModel.cs
+# NOHIDDENTOOLS_01 — no hidden Windows event / force-kill tool; the task tool only when an old task exists (05 SYS-AVCLEAN).
+NOHIDDENTOOLS_01=src/FreeVideoStudio.App/CrashLogDigest.cs
+NOHIDDENTOOLS_01=src/FreeVideoStudio.App/Services/LegacyScheduledTask.cs
+# RETIRED NOHIDDENTOOLS_01 (src/FreeVideoStudio.App/DeploymentLifecycle.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED NOHIDDENTOOLS_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+NOHIDDENTOOLS_01=tests/FreeVideoStudio.App.Tests/AvFriendlyBehaviourTests.cs
+# NOLOGONHOOK_01 — no Active Setup run-at-logon entry (05 SYS-AVCLEAN).
+# RETIRED NOLOGONHOOK_01 (src/FreeVideoStudio.App/Services/UpgradeRegistration.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# CFASAFE_01 — the app keeps working, quietly, under Windows "Controlled folder access" (05 SYS-CFASAFE).
+CFASAFE_01=src/FreeVideoStudio.Core/Infrastructure/ControlledFolderAccess.cs
+CFASAFE_01=src/FreeVideoStudio.App/Infrastructure/ProtectedFolderGate.cs
+CFASAFE_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
+# RETIRED CFASAFE_01 (src/FreeVideoStudio.App/Infrastructure/MemeAssets.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED CFASAFE_01 (src/FreeVideoStudio.App/Infrastructure/OutputFolderResolver.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+CFASAFE_01=src/FreeVideoStudio.App/Services/UpgradeRegistration.cs
+# RETIRED CFASAFE_01 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# 2026-11-11 false-positive audit, part 2 (05 SYS-AVCLEAN / SYS-SIGNING / SYS-CFASAFE).
+NOMEMREAD_01=src/FreeVideoStudio.Core/Infrastructure/ProcessImage.cs
+# RETIRED NOMEMREAD_01 (src/FreeVideoStudio.App/DeploymentLifecycle.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED NOMEMREAD_01 (src/FreeVideoStudio.App/Services/InstallDiscovery.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+OPENWITHHOME_01=src/FreeVideoStudio.App/ShellFileAssociation.cs
+# RETIRED NOMUIWIPE_01 (src/FreeVideoStudio.App/DeploymentLifecycle.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+NOLOCALPORT_01=src/FreeVideoStudio.Core/Ipc/PipeAccess.cs
+NOLOCALPORT_01=src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs
+# RETIRED NOLOCALPORT_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED NOLURKER_01 (src/FreeVideoStudio.App/Services/UpdateService.Background.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SIGNDEPS_01=build/FvsBuild/CodeSigning.cs
+CFAFFMPEG_01=src/FreeVideoStudio.App/Infrastructure/ProtectedFolderGate.cs
+# RETIRED CFAFFMPEG_01 (src/FreeVideoStudio.App/Infrastructure/OutputFolderResolver.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# SIGNPATH_01 — SignPath Foundation signature trusted only with the publisher-signed hash; OSSMEDIA_01 open media (05 SYS-SIGNING, 03).
+SIGNPATH_01=src/FreeVideoStudio.App/Services/AuthenticodeVerifier.cs
+# RETIRED SIGNPATH_01 (src/FreeVideoStudio.App/Services/UpdatePreparer.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SIGNPATH_01 (src/FreeVideoStudio.App/Services/ProtectedWorkerStage.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SIGNPATH_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SIGNPATH_01=src/FreeVideoStudio.App/Services/UpdateService.cs
+# RETIRED OSSMEDIA_01 (src/FreeVideoStudio.App/Infrastructure/MemeAssets.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED OSSMEDIA_01 (build/FvsBuild/Staging.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SETABOUTSAVE_01 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SETABOUTSAVE_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
+SETLASTALWAYS_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
+SETLASTALWAYS_01=src/FreeVideoStudio.App/MainWindow.Export.cs
+# RETIRED SETFREEZEDEF_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SETKEYSFIRST_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SETCHOICES_01 (src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs) — start-value lists replaced by one choice (SETSTARTONE_01)
+# RETIRED SETUPDCOPY_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.axaml) — update check boxes replaced by one choice (SETUPDATEONE_01)
+# RETIRED SETNOMETERED_01 (src/FreeVideoStudio.App/Services/UpdateService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SETZOOMCAP_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.axaml) — fast-move zoom slider removed (SETZOOMONE_01)
+SETNAMEWARN_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+SETRESTORECONFIRM_01=src/FreeVideoStudio.App/Controls/SettingsWindow.Tools.cs
+SETLABELFIT_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
+SETDECLUTTER_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+SETUPDATEONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+SETUPDATEONE_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
+SETNOBETA_01=src/FreeVideoStudio.App/Services/UpdateService.cs
+# RETIRED SETNOBETA_01 (src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SETCLICKONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+SETADVANCED_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
+SETSTARTONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+SETSAFEONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+# RETIRED SETSAFEONE_01 (src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SETEDITORMEMORY_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
+SETMERGERMOVED_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
+SETFOLDERONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+# RETIRED SETFOLDERONE_01 (src/FreeVideoStudio.App/Infrastructure/OutputFolderResolver.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SETFOLDERONE_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SETSOUNDONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+# RETIRED SETMUSICVOL_01 (src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SETVOICEONE_01 (src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED SETVOICEONE_01 (src/FreeVideoStudio.App/Infrastructure/VoiceOverAudioTools.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SETNOCONSENTUI_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+SETKEYONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+SETKEYONE_01=src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs
+# RETIRED SETAIONE_01 (src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SETZOOMONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+# RETIRED SETZOOMONE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SETCAMONE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+FREEZESFX_01=src/FreeVideoStudio.Core/Media/FreezeSoundEffect.cs
+# RETIRED FREEZESFX_01 (src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+FREEZESFX_01=src/FreeVideoStudio.Core/Media/AudioFilterChain.cs
+# RETIRED FREEZESFX_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+FREEZESFX_01=src/FreeVideoStudio.Core/Media/RenderedMixGate.cs
+FREEZESFX_01=src/FreeVideoStudio.Core/Media/OutputTimeline.cs
+SETNAMEONE_01=src/FreeVideoStudio.Core/Media/OutputFileNaming.cs
+SETNAMEONE_01=src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs
+SETNAMEONE_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
+FREEZESFX_02=src/FreeVideoStudio.App/Services/FreezeSoundPreview.cs
+FREEZESFX_02=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs
+FREEZESFX_02=src/FreeVideoStudio.Core/Media/FreezeSoundEffect.cs
+AIANSWER_01=src/FreeVideoStudio.App/Services/AiAnswerGuard.cs
+AIANSWER_01=src/FreeVideoStudio.App/Services/GeminiClient.cs
+# RETIRED AIANSWER_01 (src/FreeVideoStudio.App/Services/OpenAiProvider.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIANSWER_01 (src/FreeVideoStudio.App/Services/ClaudeProvider.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AICLAUDETOOL_01 (src/FreeVideoStudio.App/Services/ClaudeProvider.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+AIREASONING_02=src/FreeVideoStudio.App/Services/AiReasoningPolicy.cs
+# RETIRED AIREASONING_02 (src/FreeVideoStudio.App/Services/GeminiProvider.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIFPSFALLBACK_02 (src/FreeVideoStudio.App/Services/GeminiProvider.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIPREFLIGHT_03 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIPREFLIGHT_03 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIPREFLIGHT_03 (src/FreeVideoStudio.App/Services/AiEliminationTrackerService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIREUSE_03 (src/FreeVideoStudio.App/Services/GeminiTrackingService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIREUSE_03 (src/FreeVideoStudio.App/Services/AiMusicAutoFitService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+AIREUSE_04=src/FreeVideoStudio.App/Services/AiAnswerDiskStore.cs
+AIREUSE_04=src/FreeVideoStudio.App/Services/AiEliminationTrackerService.cs
+AIPARTRETRY_01=src/FreeVideoStudio.App/Services/GeminiTrackingService.cs
+AIPARTRETRY_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs
+AICOMMENTARY_KEEP_01=src/FreeVideoStudio.App/Services/CommentaryService.cs
+# RETIRED AICOMMENTARY_KEEP_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AICOMMENTARY_ONCE_01 (src/FreeVideoStudio.App/Services/CommentaryService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+AICOMMENTARY_CUTS_01=src/FreeVideoStudio.App/Services/CommentaryService.cs
+AIUSAGE_04=src/FreeVideoStudio.App/Services/AiCostEstimator.cs
+AIUSAGE_04=src/FreeVideoStudio.App/Services/AiUsageMeter.cs
+# RETIRED AIUSAGE_04 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+AIAPPROVE_01=src/FreeVideoStudio.App/Services/AiRunApproval.cs
+# RETIRED AIAPPROVE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIAPPROVE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIHUDTRANSPORT_01 (src/FreeVideoStudio.App/Services/GeminiHudDetectionService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIHUDERRORS_01 (src/FreeVideoStudio.App/Services/GeminiHudDetectionService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+AIHUDERRORS_01=src/FreeVideoStudio.Core/Media/AiHudDetection.cs
+AITRACE_01=src/FreeVideoStudio.App/Services/AiUsageMeter.cs
+# RETIRED AIELIM_04 (src/FreeVideoStudio.App/MainWindow.AiElimination.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+AIMERGEKILLS_01=src/FreeVideoStudio.App/VideoMergerWindow.Effects.cs
+# RETIRED AIMERGEKILLS_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+AIPROGRESS_02=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml
+# RETIRED AIPARITY_02 (src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# RETIRED AIELIM_05 (src/FreeVideoStudio.App/Services/AiEliminationTrackerService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests

@@ -1,4 +1,4 @@
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -72,8 +72,9 @@ public sealed record ProjectDocument
     /// <c>animation</c> / <c>transition</c>. Inside a meme object, where a v6 reader keeps no unknown
     /// keys: it would play a trimmed meme in full (a longer video) and drop the keys on save. Refused
     /// instead. Files at 1..6 read unchanged: no keys = the whole meme, in its corner, no effects.
+    /// <b>8 — VOLEVEL_01.</b> Per-take linear gain; older writers would silently reset it on save.
     /// </remarks>
-    public const int SchemaVersion = 7;
+    public const int SchemaVersion = 8;
 
     /// <summary>
     /// PROJ_02 — the oldest schema this build can still READ. A file below this is refused with an

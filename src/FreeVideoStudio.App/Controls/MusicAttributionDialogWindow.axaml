@@ -12,7 +12,7 @@
     <Grid>
         <Border Background="{DynamicResource AppSurfaceBrush}" CornerRadius="0" Padding="0" BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="3">
             <Grid RowDefinitions="30, Auto, *, Auto">
-                <Border Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
+                <Border Name="TitleBarBorder" Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
                     <TextBlock Text="Music Credit — Prevent Mute" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
                 </Border>
 
@@ -55,6 +55,7 @@
                         </StackPanel>
                     </Button>
                     <Button Name="GotItButton" Classes="Secondary" Content="GOT IT, CONTINUE" MinWidth="150" Cursor="Hand" Click="OnGotItClicked"
+                            IsCancel="True" IsDefault="True"
                             AutomationProperties.Name="Close dialog and continue"/>
                 </StackPanel>
             </Grid>

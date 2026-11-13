@@ -104,10 +104,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         _recovery.AcquireLock();
         FreeVideoStudio.App.WindowBoundsHelper.Track(this, "VideoMergerBounds", fitDisplayOnFirstRun: true);
 
-        _ffprobePath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Environment.ProcessPath) ?? AppContext.BaseDirectory, "backend", "ffprobe.exe");
-        if (!System.IO.File.Exists(_ffprobePath))
-            _ffprobePath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Environment.ProcessPath) ?? AppContext.BaseDirectory, "..", "..", "..", "..", "..", "binaries", "ffprobe.exe");
-        if (!System.IO.File.Exists(_ffprobePath)) _ffprobePath = "ffprobe.exe";
+        _ffprobePath = FreeVideoStudio.Core.Infrastructure.BinaryPathResolver.Resolve("ffprobe.exe", "backend", "binaries");
 
         this.Loaded += (s, e) => Controls.CoachOverlay.Register(this, Controls.CoachTours.MergerKey, Controls.CoachTours.Merger);
 
@@ -304,10 +301,8 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         {
             menuSettings.Click += async (s, e) =>
             {
-                var settingsWin = new FreeVideoStudio.App.Controls.SettingsWindow();
-                await settingsWin.ShowDialog<bool>(this);
-                SyncScraperFromSettings();
-                SyncOutputFolderFromSettings();
+                var settingsWin = new FreeVideoStudio.App.Controls.SettingsWindow(Services.SettingsWindowServices.CreateDefault());
+                if (await settingsWin.ShowDialog<bool>(this)) SyncFromSavedSettings();
             };
         }
 
@@ -316,7 +311,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         {
             menuAbout.Click += async (s, e) =>
             {
-                await FreeVideoStudio.App.Controls.SettingsWindow.ShowAboutAsync(this);
+                if (await FreeVideoStudio.App.Controls.SettingsWindow.ShowAboutAsync(this)) SyncFromSavedSettings();
             };
         }
 
@@ -1008,6 +1003,16 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
     }
 
     /// <summary>
+    /// SETABOUTSAVE_01 — everything the merger shows from Settings, re-read after a SAVE from either the
+    /// Settings menu or the About menu (About opens the same window).
+    /// </summary>
+    private void SyncFromSavedSettings()
+    {
+        SyncScraperFromSettings();
+        SyncOutputFolderFromSettings();
+    }
+
+    /// <summary>
     /// SETMERGERDIR_01 — Settings › Files &amp; Folders changed the merger's save folder while this
     /// window was open: show the new folder now, not only after the next merge resolves it.
     /// </summary>
@@ -1048,7 +1053,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             _outputDirectory = picked;
 
             try { await new StateTransferStore(_paths).UpdatePropertiesAsync(new System.Text.Json.Nodes.JsonObject { ["MergerOutputDirectory"] = _outputDirectory }); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
-            Infrastructure.SettingsManager.Update(s => s.MergerOutputDirectory = _outputDirectory);
+            Infrastructure.SettingsManager.Update(s => { s.MergerOutputDirectory = _outputDirectory; s.MainOutputDirectory = _outputDirectory; });
 
             var btn = MenuOutputFolderCtl;
             if (btn != null) btn.Header = $"Output Folder: {System.IO.Path.GetFileName(_outputDirectory)}";
@@ -1120,13 +1125,19 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             _mergeCanvasForCorners = targetRatio == FreeVideoStudio.Core.Media.MergerWorker.TargetAspectRatio.Portrait9x16 ? (1080, 1920) : (1920, 1080);
 
             string mergerStrategy = FreeVideoStudio.Core.Media.ExportEncoderStrategy.Resolve(
-                FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.VideoEncoderOverride,
+                FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.VideoEncoderOverride.ToString(),
                 bootScanResult: null,
                 ffmpegPath: FreeVideoStudio.Core.Infrastructure.BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries"));
 
-            var worker = new FreeVideoStudio.Core.Media.MergerWorker { InputFiles = new List<string>(VideoQueue), OutputDirectory = _outputDirectory, OutputBaseName = Infrastructure.SettingsManager.Instance.MergerOutputBaseName, SpeedFactor = _baseSpeed, QualityPercent = qualityPercent, OutputRatio = targetRatio, AutoSpikeFlattening = FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.Defaults.AutoSpikeFlattening, MatchClipLoudness = FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.MergerMatchClipLoudness /* CLIPLEVEL_01 */, HardwareStrategy = mergerStrategy };
+            var worker = new FreeVideoStudio.Core.Media.MergerWorker { InputFiles = new List<string>(VideoQueue), OutputDirectory = _outputDirectory, OutputBaseName = FreeVideoStudio.Core.Media.OutputFileNaming.MergerBaseFor(Infrastructure.SettingsManager.Instance.MainOutputBaseName) /* SETNAMEONE_01 */, SpeedFactor = _baseSpeed, QualityPercent = qualityPercent, OutputRatio = targetRatio, AutoSpikeFlattening = FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.Defaults.AutoSpikeFlattening, MatchClipLoudness = FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.MergerMatchClipLoudness /* CLIPLEVEL_01 */, HardwareStrategy = mergerStrategy };
 
             worker.ClipTrims = BuildClipTrimList();
+            if (targetRatio == FreeVideoStudio.Core.Media.MergerWorker.TargetAspectRatio.Portrait9x16)
+            {
+                var coords = await FreeVideoStudio.Core.Media.VideoConfig.GetMobileCoordinatesAsync();
+                var d = Infrastructure.SettingsManager.Instance.Defaults;
+                worker.CaptionHudRects = FreeVideoStudio.Core.Media.MobileFilterBuilder.HudCanvasRects(coords, d.StartShowTeammates, showSpectating: true);
+            }
             await EnsureTimelineReadyAsync();
             ApplyScraperToWorker(worker);
             _activeMergerWorker = worker;
@@ -1205,12 +1216,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
                                 ? _musicResult.MusicFilePaths
                                 : (_musicResult?.MusicFilePath != null ? new[] { _musicResult.MusicFilePath } : null));
 
-                        if (!string.IsNullOrEmpty(attribution))
-                        {
-                            var attrDlg = new FreeVideoStudio.App.Controls.MusicAttributionDialogWindow();
-                            attrDlg.SetAttributionText(attribution);
-                            await attrDlg.ShowDialog(this);
-                        }
 
                         var dlg = new FreeVideoStudio.App.Controls.FinishedDialogWindow();
                         dlg.SetOutputPath(msg);
@@ -1652,7 +1657,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         if (!shutdown.Succeeded)
             RuntimeLog.Fail("MERGER", $"Video preview did not shut down cleanly ({shutdown.Reason}); the process exit will reclaim it.");
 
-        string exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? "FreeVideoStudio.exe";
+        string exePath = Environment.ProcessPath ?? "FreeVideoStudio.exe";
         var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exePath, "run-ui") { UseShellExecute = false });
         if (p != null)
         {
@@ -2014,6 +2019,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
                 {
                     VideoQueue.Move(oldIndex, targetIndex);
                     SelectQueueRow(targetIndex, preview: false);
+                    RedrawTimelineSelection();
                 }
             }
             var videoList = VideoListCtl;

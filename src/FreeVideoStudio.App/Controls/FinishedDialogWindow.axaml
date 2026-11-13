@@ -82,6 +82,7 @@
                                 <Border Background="{DynamicResource AppSurfaceSubtleBrush}" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
                                     <TextBlock Name="ViralPostStatusBadge" Text="WRITING…" FontSize="{DynamicResource AppFontSize10}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextMutedBrush}"/>
                                 </Border>
+                                <Button Name="ViralCancelBtn" IsVisible="False" Classes="Secondary" MinHeight="28" Padding="10,2" Content="✕ CANCEL" ToolTip.Tip="Cancel writing." Click="OnViralCancelClicked"/>
                                 <Button Name="ViralSetupAiBtn" IsVisible="False" Classes="Primary" MinHeight="28" Padding="10,2" Content="SET UP AI" ToolTip.Tip="Add an AI key so the post is written for this video." Click="OnViralSetupAiClicked"/>
                                 <Button Name="ViralRegenerateBtn" IsVisible="False" Classes="Secondary" MinHeight="28" Padding="10,2" Content="↻ NEW VERSION" ToolTip.Tip="Ask the AI for a different title, caption and hashtags." Click="OnViralRegenerateClicked"/>
                             </StackPanel>
@@ -92,15 +93,21 @@
                         <!-- Title Row -->
                         <Grid Name="ViralTitleRow" ColumnDefinitions="Auto, *, Auto" RowDefinitions="Auto">
                             <TextBlock Text="TITLE:" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBox Name="ViralTitleTextBox" Grid.Column="1" IsReadOnly="True" FontSize="{DynamicResource AppFontSize12}" FontWeight="SemiBold" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBox Name="ViralTitleTextBox" Grid.Column="1" IsReadOnly="False" Watermark="Post title (editable before copying)" ToolTip.Tip="Edit title if needed, then click Copy." FontSize="{DynamicResource AppFontSize12}" FontWeight="SemiBold" Margin="0,0,8,0" VerticalAlignment="Center"/>
                             <Button Name="CopyViralTitleBtn" Grid.Column="2" Classes="Primary" MinHeight="36" Padding="12,6" Content="📋 COPY TITLE" ToolTip.Tip="Copy viral title to clipboard." Click="OnCopyViralTitleClicked"/>
                         </Grid>
 
                         <!-- Caption & Tags Row -->
                         <Grid Name="ViralCaptionRow" ColumnDefinitions="Auto, *, Auto" RowDefinitions="Auto">
                             <TextBlock Text="CAPTION &amp; TAGS:" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBox Name="ViralDescriptionTextBox" Grid.Column="1" IsReadOnly="True" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap" MaxHeight="60" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBox Name="ViralDescriptionTextBox" Grid.Column="1" IsReadOnly="False" Watermark="Post caption and hashtags (editable before copying)" ToolTip.Tip="Edit caption or hashtags if needed, then click Copy." FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap" AcceptsReturn="True" MaxHeight="84" Margin="0,0,8,0" VerticalAlignment="Center"/>
                             <Button Name="CopyViralDescBtn" Grid.Column="2" Classes="Primary" MinHeight="36" Padding="12,6" Content="📋 COPY CAPTION" ToolTip.Tip="Copy caption and hashtags to clipboard." Click="OnCopyViralDescriptionClicked"/>
+                        </Grid>
+
+                        <!-- 1-Click Copy All for YouTube / TikTok -->
+                        <Grid Name="ViralCopyAllRow" ColumnDefinitions="*, Auto" Margin="0,4,0,0">
+                            <TextBlock Text="Ready for YouTube / Shorts / TikTok:" FontSize="{DynamicResource AppFontSize10}" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center"/>
+                            <Button Name="CopyViralAllBtn" Grid.Column="1" Classes="Primary" MinHeight="36" Padding="14,6" Content="📋 COPY ALL (YT / TIKTOK)" ToolTip.Tip="Copy title, caption and hashtags together for YouTube or TikTok." Click="OnCopyViralAllClicked"/>
                         </Grid>
                     </StackPanel>
                 </Border>

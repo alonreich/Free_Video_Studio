@@ -154,4 +154,22 @@ public sealed class AiAuditFixTests
         string withSound = AiCommentaryPrompts.BuildPrompt(CaptionTone.Hype, AiGameProfile.Fortnite, "English", canHearAudio: true);
         Assert.Contains("visible or audible", withSound);
     }
+
+    [Fact]
+    public void PickReplacement_StripsModelsPrefix_AndExcludesFailingModel()
+    {
+        string? pick = AiVisionProviders.PickReplacement(AiVendor.Google,
+            new[] { "models/gemini-3.8-flash", "models/gemini-3.6-flash" }, "models/gemini-3.8-flash");
+        Assert.Equal("gemini-3.6-flash", pick);
+
+        string? pick2 = AiVisionProviders.PickReplacement(AiVendor.Google,
+            new[] { "gemini-3.8-flash", "gemini-3.6-flash" }, "models/gemini-3.8-flash");
+        Assert.Equal("gemini-3.6-flash", pick2);
+    }
+
+    [Fact]
+    public void CandidateMaxDimension_IsBoundedTo1280()
+    {
+        Assert.Equal(1280, GeminiTrackingService.CandidateMaxDimension);
+    }
 }

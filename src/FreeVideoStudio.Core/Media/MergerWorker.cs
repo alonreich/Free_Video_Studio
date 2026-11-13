@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
@@ -72,6 +72,9 @@ public class MergerWorker : IDisposable
     /// AICAPTION_EXPORT_01 — live commentary captions track burned into merge via ASS subtitles filter.
     /// </summary>
     public CaptionTrack? CaptionTrack { get; set; }
+
+    /// <summary>Optional portrait HUD exclusion zones avoided during ASS caption placement.</summary>
+    public IReadOnlyList<(double X, double Y, double W, double H)>? CaptionHudRects { get; set; }
 
     public int QualityPercent { get; set; } = 100;
 
@@ -796,13 +799,21 @@ public class MergerWorker : IDisposable
                     int canvasH = OutputRatio == TargetAspectRatio.Portrait9x16 ? 1920 : 1080;
                     bool isPortrait = OutputRatio == TargetAspectRatio.Portrait9x16;
 
-                    string assContent = CaptionAssWriter.GenerateAss(
+                    CaptionTrack trackToBurn = MapCaptionTrackForExport(
                         CaptionTrack,
+                        frameAuthority,
+                        speedFactor,
+                        out List<(double AtSec, double DurationSec)>? unmappedSplices);
+
+                    string assContent = CaptionAssWriter.GenerateAss(
+                        trackToBurn,
                         timeline: null,
                         outputW: canvasW,
                         outputH: canvasH,
                         isPortrait: isPortrait,
-                        baseOffsetSec: _outputIntroSec);
+                        hudRects: isPortrait ? CaptionHudRects : null,
+                        baseOffsetSec: _outputIntroSec,
+                        splices: unmappedSplices);
 
                     string assPath = Path.Combine(tempJobDir, "captions_merge.ass");
                     await File.WriteAllTextAsync(assPath, assContent, cancellationToken).ConfigureAwait(false);
@@ -810,7 +821,7 @@ public class MergerWorker : IDisposable
                     string escapedAssPath = assPath.Replace('\\', '/').Replace(":", @"\:");
                     filters.Add($"{vOutputLabel}subtitles=filename='{escapedAssPath}'[v_subtitled]");
                     vOutputLabel = "[v_subtitled]";
-                    CoreLogger.Info("Captions", $"AICAPTION_EXPORT_01: Merger burn-in captions track ({CaptionTrack.Lines.Count} line(s)) via ASS subtitle filter.");
+                    CoreLogger.Info("Captions", $"AICAPTION_EXPORT_01: Merger burn-in captions track ({trackToBurn.Lines?.Count ?? 0} line(s)) via ASS subtitle filter; {(isPortrait ? CaptionHudRects?.Count ?? 0 : 0)} HUD area(s) avoided.");
                 }
 
                 string filterScript = string.Join(";", filters.Where(p => !string.IsNullOrEmpty(p)));
@@ -1154,7 +1165,7 @@ public class MergerWorker : IDisposable
                     }
                     try
                     {
-                        File.Move(successOutputPath, finalOutput);
+                        await FinalOutputCommit.MoveAsync(successOutputPath, finalOutput, overwrite: false).ConfigureAwait(false);
                         ProgressUpdate?.Invoke(100);
                         LastFailure = null;
                         FailureDetail = null;
@@ -1721,5 +1732,83 @@ public class MergerWorker : IDisposable
     /// progress window had already gone — the machine stayed hot and loud for a file nobody would
     /// ever receive. Killing the tree here makes the object's own teardown sufficient.
     /// </summary>
+    /// <summary>
+    /// Maps <paramref name="source"/> captions onto the merger export body-output clock.
+    /// When <paramref name="frameAuthority"/> is present it already accounts for speed, cuts, freezes,
+    /// and inline meme splice offsets (so <paramref name="splices"/> is null to avoid double-shifting),
+    /// while lines spanning across an inline meme insertion point are trimmed cleanly at the meme boundary.
+    /// </summary>
+    internal static CaptionTrack MapCaptionTrackForExport(
+        CaptionTrack source,
+        CompositeTimeline? frameAuthority,
+        double speedFactor,
+        out List<(double AtSec, double DurationSec)>? splices)
+    {
+        splices = null;
+        if (source.Lines == null || source.Lines.Count == 0) return source;
+        if (frameAuthority == null && Math.Abs(speedFactor - 1.0) <= 0.001) return source;
+
+        var inlineMemeStarts = new List<double>();
+        if (frameAuthority != null)
+        {
+            foreach (var cc in frameAuthority.Clips)
+            {
+                double cursor = cc.OutputStartSec;
+                foreach (var ch in cc.Output.Chunks)
+                {
+                    double len = ch.OutputLengthSec;
+                    if (ch.IsInsertion && len > 0)
+                        inlineMemeStarts.Add(cursor);
+                    cursor += len;
+                }
+            }
+        }
+
+        double MapPoint(double sec) => frameAuthority != null
+            ? frameAuthority.MergedSecToBodyOutputSec(sec)
+            : sec / speedFactor;
+
+        double ClipToInlineMeme(double start, double end)
+        {
+            double clipped = end;
+            foreach (double memeAt in inlineMemeStarts)
+            {
+                if (memeAt > start + 1e-6 && memeAt < clipped)
+                    clipped = memeAt;
+            }
+            return clipped;
+        }
+
+        var mappedLines = new List<CaptionLine>(source.Lines.Count);
+        foreach (var l in source.Lines)
+        {
+            double lineStart = MapPoint(l.SourceStartSec);
+            double lineEnd = ClipToInlineMeme(lineStart, MapPoint(l.SourceEndSec));
+            if (lineEnd <= lineStart + 0.01) continue;
+
+            List<CaptionWord>? mappedWords = null;
+            if (l.Words != null && l.Words.Count > 0)
+            {
+                mappedWords = new List<CaptionWord>(l.Words.Count);
+                foreach (var w in l.Words)
+                {
+                    double wStart = MapPoint(w.StartSec);
+                    if (wStart >= lineEnd - 0.005) break;
+                    double wEnd = Math.Min(lineEnd, MapPoint(w.EndSec));
+                    if (wEnd > wStart + 0.001)
+                        mappedWords.Add(new CaptionWord(w.Text, wStart, wEnd, w.Syllables));
+                }
+            }
+
+            mappedLines.Add(l with
+            {
+                SourceStartSec = lineStart,
+                SourceEndSec = lineEnd,
+                Words = mappedWords,
+            });
+        }
+        return source with { Lines = mappedLines };
+    }
+
     public void Dispose() => _lifetime.DisposeJob();
 }

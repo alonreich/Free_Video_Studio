@@ -1,10 +1,10 @@
-# SYMBOL & FILE INDEX (routing lookup)
+﻿# SYMBOL & FILE INDEX (routing lookup)
 
 > 🛑 AGENT RULES — they apply even when you came here directly: never run `.\Build.cmd` (it publishes to GitHub) —
 > use `.\dev_build.cmd` / `dotnet build` / `dotnet test`; open every edit with the Proof-of-Read header
 > (`SPEC_GOVERNANCE.md` §3); land a `TAG=path` line in `build/sentinels.txt` with every guarded fix; log the
 > change in `changes.md` (`## Unreleased`), stage end-user notes in `CHANGELOG.md` (`## Upcoming`) and update
-> the repository map in `README.md` §5 (CHANGELOG_01 / RELNOTES_01). Full rules: `README.md` §0 (the single
+> the repository map `REPO_MAP.md` (CHANGELOG_01 / RELNOTES_01); tests write ONLY to `logs\<Suite>_Results\` (TESTOUT_01). Full rules: `README.md` §0 (the single
 > entry point), `SPEC_GOVERNANCE.md`.
 
 Flat lookup. Grep for a filename, symbol, constant or engineering tag; read ONLY the spec it names.
@@ -17,6 +17,12 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
 ---
 
 ## 1. Source File -> Spec
+
+| File / tag | Spec |
+| :--- | :--- |
+| `AVREG_01` · `tests/run-av-tests.cmd` · `tests/FreeVideoStudio.AvRegression.Tests/` (`PlayerRig`, `PlaybackProbe`, `ExportRig`, `Verify`, `MergerRig`, `MainEdit`, `TestMedia`, `Budget`) | `README.md` GOV-AVGATE (§0.3a) |
+| `developer_tools/Pull_Code_files.py`, `tests/DeveloperTools.Tests/test_pull_code_files.py`, `CODEEXPORT_01` | 05 SYS-CODEEXPORT; offline ten-attachment AI export, coverage, secrets, encoding, snapshot/index and preservation |
+
 Voiceover timing additions (all listed specs govern these files):
 
 | File | Specs and tags |
@@ -27,14 +33,14 @@ Voiceover timing additions (all listed specs govern these files):
 | `Core/Media/VoiceOverClockGuard.cs`, `Core/Media/VoiceOverTiming.cs` | 01 TL-OUTPUTTIMELINE; 02 AUD-VOICEOVER; VOSTALL_01, VOTIMING_01 |
 | `Core/Media/VoiceOverSplice.cs` | 02 AUD-VOICEOVER; 03 FFM-TEMPO; VOSPLICE_01 |
 | `Core/Media/VoiceOverTakeJson.cs` | 02 AUD-VOICEOVER; 06 PROJ-SCHEMA; VOTIMING_01 |
-| `App/Services/VoiceOverPreviewRenderer.cs` | 02 AUD-VOICEOVER; 03 FFM-TEMPO; 05 SYS-VOICE-TIMING; VOCLOCK_01 |
-| `App/VoiceOverWindow.PlaybackClock.cs` | 01 TL-OUTPUTTIMELINE; 02 AUD-VOICEOVER; 03 FFM-TEMPO; 05 SYS-VOICE-TIMING |
+| `App/Services/VoiceOverPreviewRenderer.cs` | 02 AUD-VOICEOVER; 03 FFM-TEMPO; VOCLOCK_01 |
+| `App/VoiceOverWindow.PlaybackClock.cs` | 01 TL-OUTPUTTIMELINE; 02 AUD-VOICEOVER; 03 FFM-TEMPO |
 | `App/MainWindow.VoiceTiming.cs` | 01 TL-OUTPUTTIMELINE; 02 AUD-VOICEOVER; 04 UI-VOICE-TIMING; 06 PROJ-SCHEMA; 07 UNDO-VOICE-TIMING |
 | `VODEFAULTS_01`, `VoiceOverPreparedClockTests`, `VoiceOverEditWarningTests`, `VoiceOverExportTimingTests`, `VoiceOverTimingTests` | 02 AUD-VOICEOVER |
 
 `⚠` = CO-GOVERNED. Reading one listed spec is NOT compliance; read them all (`SPEC_GOVERNANCE.md` §2).
 
-⚠️ **This list is NOT exhaustive** and never has been — many files under `src/` are absent from it. The authoritative routing for any file is the `[SPEC CONTRACT]` sentinel block at its own line 1, which every one of them carries and which `ArchitectureRuleTests.EveryProductionSourceFileCarriesTheSpecContract` enforces. Use this table as a fast lookup, not as proof that an unlisted file is ungoverned.
+⚠️ **This list is NOT exhaustive.** Source-file routing headers (`[SPEC CONTRACT]`) and their test were retired (SPECROUTING_02, `SPEC_GOVERNANCE.md` §4). For an unlisted file, grep the spec Code Mini-Maps (`docs/0*_*.md`); if no spec names it, treat that as a routing gap, not as permission, and add it here (README §0.3 rule 3).
 
 ```
   AiSetupWizardWindow.axaml.cs               04
@@ -42,18 +48,45 @@ Voiceover timing additions (all listed specs govern these files):
 ⚠ AiTrajectorySmoother.cs                    01 03
   AGENTS.md                                  GOV | README.md §0 (pointer only, ONBOARD_01)
   project_structure.txt                      GOV | README.md §0 (pointer only, ONBOARD_01)
-  README.md                                  GOV | GOV-START, GOV-REPOMAP (single entry point)
+  README.md                                  GOV | GOV-START (single entry point: rules, invariants, domain table)
+  REPO_MAP.md                                GOV | GOV-REPOMAP (repository map)
   CHANGELOG.md                               GOV | CHANGELOG_01 | 09 DIST-RELEASENOTES
   changes.md                                 GOV | CHANGELOG_01 | 09 DIST-RELEASENOTES (technical log)
   AiGameProfile.cs                           01
   AiTrackingPrompts.cs                       01
   GeminiClient.cs                            05
+  AiCommentaryPrompts.cs                     01 TL-CAPTIONS
+  CaptionModel.cs                            01 TL-CAPTIONS
+  CaptionTimeline.cs                         01 TL-CAPTIONS
+  CaptionLayoutEngine.cs                     01 TL-CAPTIONS | 03 FFM-CAPTIONS
+  CaptionAssWriter.cs                        01 TL-CAPTIONS | 03 FFM-CAPTIONS
+  AiCommentaryDialogWindow.axaml(.cs)        04 UI-AICOMMENTARY
+  IAiVisionProvider.cs                       05 SYS-AISETTINGS
+  GeminiProvider.cs                          05 SYS-AISETTINGS
+  ClaudeProvider.cs                          05 SYS-AISETTINGS
+  OpenAiProvider.cs                          05 SYS-AISETTINGS
+  AiVisionProviders.cs                       05 SYS-AISETTINGS (AIMODELS_02, AIMODELFALLBACK_02)
+  AiHttpHelper.cs                            05 SYS-AISETTINGS
+  AiCostEstimator.cs                         05 SYS-AISETTINGS §7.7 (AIUSAGE_04)
+  AiAnswerGuard.cs                           05 SYS-AISETTINGS §7.7 (AIANSWER_01)
+  AiReasoningPolicy.cs                       05 SYS-AISETTINGS §7.7 (AIREASONING_02)
+  AiRunApproval.cs                           04 UI-AIAPPROVE | 05 SYS-AISETTINGS §7.7 (AIAPPROVE_01)
+  AiAnswerDiskStore.cs                       05 SYS-AISETTINGS §7.7 | 05 SYS-STORAGE-TABLE (AIREUSE_04)
+  AiPreflight.cs                             05 SYS-AISETTINGS §7.7 (AIPREFLIGHT_03)
+  AiResultCache.cs                           05 SYS-AISETTINGS §7.7 (AIREUSE_03)
+  AiDiagnostics.cs                           05 SYS-AISETTINGS (AIDIAGNOSTICS_03)
+  AiAudit3Tests.cs                           05 SYS-AISETTINGS §7.7 (AIAUDIT_04)
+  AiFrameSequenceExtractor.cs                05 SYS-AISETTINGS
+  CommentaryService.cs                       05 SYS-AISETTINGS
+  FvsBuild/Program.cs                        05 09
   SecretProtector.cs                         05
   SecretLeakTests.cs                         05 SECRETSCAN_01
   AmbientBubblesBackground.cs                04
   AppDataPaths.cs                            05 SYS-REBRAND
   AppDataPathsTests.cs                       05 SYS-REBRAND
   LegacyAppDataNames.txt                     05 SYS-REBRAND
+  SafeDirectoryCleanup.cs                   05 SYS-AVCLEAN (CLEANUPBOUND_01)
+  SafeDirectoryCleanupTests.cs              05 SYS-AVCLEAN
   LegacyResidueSweep.cs                      05 SYS-REBRAND-SWEEP
   RebrandTests.cs                            05 SYS-REBRAND-SWEEP | 03 FFM-OUTNAME
   REBRAND_MIGRATION.md                       rebrand record (REBRAND)
@@ -110,6 +143,8 @@ Voiceover timing additions (all listed specs govern these files):
   WindowsAudioSessionSync.cs                 02
 ⚠ MainWindow.PreviewMix.cs                   01 02
   RenderedMixGate.cs                         02
+⚠ FreezeSoundEffect.cs                       02 03
+  FreezeSoundPreview.cs                      02
 ⚠ VoiceOverWindow.PreviewProtection.cs       01 02
 ⚠ PreviewFidelity.cs                         03 04
   PreviewFidelityBadge.cs                    04
@@ -194,12 +229,20 @@ Voiceover timing additions (all listed specs govern these files):
   RuntimeLog.cs                              05
   SettingsWindow.axaml.cs                    04
   SettingsWindow.AiTracking.cs               04
-  SettingsWindow.Merger.cs                   04 UI-SETTINGS-ABOUT | 03 FFM-SCRAPER
+  SettingsWindow.Behavior.cs                 04 UI-SETTINGS-ABOUT (SETCHIPS_01, SETREVEAL_01, FILEBACKUP_01)
+  SettingsWindow.Save.cs                     04 UI-SETTINGS-ABOUT; 05 SETTX_01
+  FreezeSoundEffectTests.cs                  02 AUD-FREEZESFX
+  SettingsWindow.Help.cs                     04 UI-SETTINGS-ABOUT (SETHELP_01)
   SettingsMusicFolderTests.cs                04 UI-SETTINGS-ABOUT | 05 SYS-IPCLIFETIME
   SettingsWindow.Output.cs                   04 UI-SETTINGS-ABOUT | 03 FFM-OUTNAME
   SettingsWindow.Tools.cs                    04 UI-SETTINGS-ABOUT
 ⚠ SettingsViewModel.cs                       04 05 UI-SETTINGS-ABOUT
+⚠ SettingsViewModel.Services.cs              04 08 UI-SETTINGS-ABOUT (SETTINGSDI_01, AIKEYCANCEL_01, SETBACKUPIO_01)
+⚠ SettingsWindowServices.cs                  04 08 COMP-ROOT (SETTINGSDI_01, SETBACKUPIO_01)
+  SettingsTypes.cs                           05 (SETTINGSTYPES_01)
+  ViralPostViewModel.cs                      04 08 (VIRALVM_01)
   SettingsAuditTests.cs                      04 UI-SETTINGS-ABOUT
+  ArchitectureAuditFixTests.cs               05 08 04 (architecture audit 2026-11-11)
   SpinningWheelSlider.cs                     04
   TextOverlayGenerator.cs                    03
   TimelineKnob.cs                            01
@@ -208,13 +251,18 @@ Voiceover timing additions (all listed specs govern these files):
   UiStateStore.cs                            05
   UpdateToastWindow.axaml.cs                 04 UI-SETTINGS-ABOUT | 05 SYS-AUTOUPDATE
 ⚠ VideoMergerWindow.ClipActions.cs           01 04
-⚠ VideoMergerWindow.EdlPreview.cs            01 03 04
+⚠ VideoMergerWindow.EdlPreview.cs            01 02 03 04
 ⚠ VideoMergerWindow.Effects.cs               01 04
 ⚠ VideoMergerWindow.History.cs               01 06
 ⚠ VideoMergerWindow.Lanes.cs                 01 04
 ⚠ VideoMergerWindow.Session.cs               01 04 05
 ⚠ VideoMergerWindow.TimelineSelect.cs        01 04
   WindowResizeGrip.cs                        04
+  VoiceOverLevel.cs                          02 AUD-VOICEOVER
+⚠ VoiceOverGainSlider.cs                    02 AUD-VOICEOVER; 04 UI-PROMPTS
+⚠ VoiceOverWindow.Volume.cs                 02 AUD-VOICEOVER; 04 UI-PROMPTS
+  VoiceOverLevelTests.cs                     02 AUD-VOICEOVER
+  VoiceOverGainUiTests.cs                    02 AUD-VOICEOVER; 04 UI-PROMPTS
   VoiceOverPreviewPlayer.cs                  02
 ⚠ VoiceOverWindow.axaml.cs                   01 02
 ⚠ VoiceOverWindow.RecordingState.cs          01 02 04 (VOREC_01..03)
@@ -259,6 +307,8 @@ Voiceover timing additions (all listed specs govern these files):
 ⚠ ToolNavigator.cs                           05 08
 ⚠ FfmpegJobLifetime.cs                       03 08
   AppServices.cs                             08
+  CtsSlot.cs                                 08 (CTSSLOT_01)
+  ShellLauncher.cs                           08 (SHELLLAUNCH_01)
   Fault.cs                                   08
   IFaultSink.cs                              08
   IClock.cs                                  08
@@ -275,6 +325,7 @@ Voiceover timing additions (all listed specs govern these files):
   FreeVideoStudio.App.csproj           06 (AOTSAFETY_01) | 05 §5 SYS-SIGNING
   RuntimePayloadManifest.cs                  09
   DiagnosticReport.cs                        05
+  SecretRedactor.cs                          05 SYS-DIAGREPORT
   DiagnosticBundle.cs                        05
   UndoSidecarStore.cs                        07
   Faults.cs                                  08
@@ -285,6 +336,13 @@ Voiceover timing additions (all listed specs govern these files):
   .github/workflows/lfs-guard.yml            09
 ⚠ UpdateService.cs                           05 09
   DevSandbox.ps1                             05 SYS-DEVBUILD
+  DevRun.ps1                                 05 SYS-DEVBUILD
+  DevelopmentEnvironment.cs                  05 SYS-DEVBUILD
+  KnownFolders.cs                            05 SYS-DEVBUILD / SYS-WINSTATE
+  NamedSystemMutex.cs                        05 SYS-MUTEX / SYS-DEVBUILD
+  DevelopmentEnvironmentTests.cs             05 SYS-DEVBUILD
+  DevelopmentLaunchTests.cs                  05 SYS-DEVBUILD
+  DevHarness.Tests/DevSandbox.Tests.ps1       05 SYS-DEVBUILD
   UpgradeCoordinator.cs                      05 SYS-UPGRADE | SYS-UPGRADEUX | SYS-UPGRADE-TRUST
   ProtectedWorkerStage.cs                    05 SYS-UPGRADE-TRUST (WORKERSTAGE_01)
   CommentaryPersonality.cs                   01 TL-CAPTIONS | 04 UI-AICOMMENTARY (COMMENTARYMIX_01, TACTICAL_01..03)
@@ -370,7 +428,13 @@ Voiceover timing additions (all listed specs govern these files):
   FaultCounters.cs                           08
   .gitattributes                             09
   CooperativeShutdownGate.cs                 05
-  CrashLogDigest.cs                          05
+  CrashLogDigest.cs                          05 SYS-AVCLEAN (NOHIDDENTOOLS_01)
+  LegacyScheduledTask.cs                     05 SYS-AVCLEAN (NOHIDDENTOOLS_01)
+  ProcessImage.cs                            05 SYS-AVCLEAN (NOMEMREAD_01)
+  SignPathTrustTests.cs                      05 SYS-SIGNING (SIGNPATH_01)
+  ControlledFolderAccess.cs                  05 SYS-CFASAFE (CFASAFE_01)
+  ProtectedFolderGate.cs                     05 SYS-CFASAFE (CFASAFE_01)
+  AvFriendlyBehaviourTests.cs                05 SYS-AVCLEAN | SYS-CFASAFE
   CropConfigDefaults.cs                      05
   DiskSpaceGuard.cs                          05
   HardwareCapability.cs                      03
@@ -393,6 +457,7 @@ Voiceover timing additions (all listed specs govern these files):
   OwnedLruCache.cs                           04
   ViewportThumbnailLoader.cs                 04
   NamedPipeStateClient.cs                    05
+  PipeAccess.cs                              05
   PreviewDetachController.cs                 04
   PreviewMonitorWindow.axaml                 04
   SingleInstanceGuard.cs                     05
@@ -401,6 +466,13 @@ Voiceover timing additions (all listed specs govern these files):
   ViewModelBase.cs                           04
   WavAudioReader.cs                          02
   WaveformGenerator.cs                       02
+  App/Program.cs                             08 COMP-ROOT | 05 SYS-UPGRADE (command dispatch: run-ui, --install/--install-worker/--uninstall/--cleanup-worker/--crop-tool/--merger; diagnostic verbs paths, read-state/write-state/clear-state, read-crops/write-crops-defaults, phase1-gate .. phase4-gate)
+  Phase1Gate.cs .. Phase4Gate.cs             08 COMP-ROOT (console self-test verbs: IPC workers, crash/recovery, MPVSafetyManager scrubbing, FFmpeg math)
+  LibMpvInterop.cs                           04 UI-GPUPRESENT2 | README invariant 6 (libmpv render API P/Invoke)
+  MpvCommandQueue.cs                         05 SYS-IPCLIFETIME (MpvCommandStatus: Accepted/Rejected/Superseded/Unavailable/Disposed/QueueFull/TimedOut)
+  FfmpegErrorClassifier.cs                   03 | 08 COMP-FAULTS (Classify / ClassifyException -> ExportFailure)
+  FilterGraphBuilder.cs                      03 FFM-ZOOMGRAPH (CasFilterNode, invariant 4) | 02 AUD-MASTERING (SidechainCompressNode.Duck)
+  GracefulProcessTerminator.cs               05 SYS-IPCLIFETIME | 08 COMP-CI (shutdown ladder; tests need real Windows processes)
 ```
 
 Full paths: see each spec's Code Mini-Map.
@@ -435,7 +507,8 @@ ServerMutexName                              05 §4d SYS-IPCLIFETIME | 05 §1 SY
 OUTPATH_01                                   03 §8b FFM-EXPORTLIFETIME
 OUTNAME_01                                   03 §8c FFM-OUTNAME | 04 §11 UI-SETTINGS-ABOUT
 MainOutputBaseName                           03 §8c FFM-OUTNAME
-MergerOutputBaseName                         03 §8c FFM-OUTNAME
+MergerBaseFor                                03 §8c FFM-OUTNAME  [SETNAMEONE_01; MergerOutputBaseName removed]
+AiZoomTuning                                 04 §11 UI-SETTINGS-ABOUT | 05 SYS-AISETTINGS
 PIPEDRAIN_01                                 03 §8b FFM-EXPORTLIFETIME
 PROCGATE_01                                  03 §8b FFM-EXPORTLIFETIME
 PROCGATE_02                                  03 §8b FFM-EXPORTLIFETIME
@@ -541,7 +614,6 @@ RubberbandOptions                            03 §3a FFM-TEMPO  [= transients=mi
 EnsureProbedAsync                            03 §3a FFM-TEMPO
 HelpListsRequiredOptions                     03 §3a FFM-TEMPO
 CalculateEffectiveDurationMs                 03 §8a FFM-QUALITY
-CalculateFreezeOutputMs                      03 §8a FFM-QUALITY
 CanvasMath                                   01 (mini-map only)
 CheckFault                                   05 §4 SYS-RECOVERY
 CHANGELOG_01                                 GOV §6 | build/sentinels.txt
@@ -749,7 +821,6 @@ OnPointerReleased                            02 | 04   [code-only: FluidVolumeSl
 OnPointerWheelChanged                        04 (mini-map only)
 OnTick                                       01 (mini-map only)
 OnTrackSelected                              02 §6 AUD-DIALOGS
-OnlineFrameAccumulator                       01 §12 TL-HUDSTREAMING
 OutputTimeline                               01 §2 TL-OUTPUTTIMELINE | 02 §6 AUD-DIALOGS
 OverlayCanvas                                04 §5 UI-COACH
 P3ASYNC_01                                   02 §6 AUD-DIALOGS
@@ -790,7 +861,7 @@ SampleRate                                   04 (mini-map only)  [= 4000, Wavefo
 SaveBoundsSync                               04 (mini-map only) | 05 (mini-map only)
 SaveRecoveryState                            02 (mini-map only) | 05 SYS-EDITHOT | 07 §6 UNDO-EQUALITY
 SaveState                                    05 (mini-map only)
-CurrentSchemaVersion                         05 (mini-map only)  [= 13, SettingsManager]
+CurrentSchemaVersion                         05 (mini-map only)  [= 14, SettingsManager]
 SEAM_01                                      01 §3 TL-MARKERS | 04 §6 UI-GRANULAR
 SEEKSTORM_01                                 04 §6 UI-GRANULAR
 SETTX_01                                     05 §4c (settings transaction API — Update/SetAutoUpdateChecks; mutation guard)
@@ -816,6 +887,7 @@ SurvivingSourceWidth                         01 §1 TL-PORTRAIT  [= 720]   [form
 SYS-DEVBUILD                                 05 §4a SYS-DEVBUILD
 Tactile                                      04 §1 UI-THEME
 TargetMbFor                                  03 §8a FFM-QUALITY
+TemporalStabilityMask                        01 §12 TL-HUDSTREAMING (Welford variance, inline in HudAutoDetector.SampleFramesAsync)
 TextOverlayGenerator                         03 (mini-map only)
 THUMB_01                                     01 §9 TL-HITBOX
 THUMB_02                                     01 §9 TL-HITBOX
@@ -841,9 +913,9 @@ UpdateEstimatedQuality                       03 §8a FFM-QUALITY
 UpdateReadyLamp                              02 §4 AUD-VOICEOVER
 UpdateThumbnailButtonState                   01 (mini-map only)
 UpdateTimelineMarkers                        01 (mini-map only)
-VERIFY_PATCHES                               05 §4a SYS-DEVBUILD
 VideoVolSlider                               02 §6 AUD-DIALOGS
 VOEND_01                                     01 §8 TL-ENDSTOP
+VOLEVEL_01                                  02 AUD-VOICEOVER; 04 UI-PROMPTS; 06 PROJ-SCHEMA (schema 8)
 VoiceOverPreviewPlayer                       02 §4 AUD-VOICEOVER
 VoiceOverWindow                              01 (mini-map only) | 02 (mini-map only)
 VoiceRecorder                                02 §4 AUD-VOICEOVER
@@ -998,8 +1070,14 @@ UPGRADEUX_04                                 05 SYS-UPGRADEUX   (plain failures,
 UPGRADEUX_05                                 05 SYS-UPGRADEUX   (first-launch "Finishing… / Updated")
 UPGRADEUX_06                                 05 SYS-UPGRADEUX   (installer window first, worker copy in background)
 DEVDATA_01                                   05 §4a SYS-DEVBUILD   (dev sandbox in %LOCALAPPDATA%, AI keys kept)
-DEVUPDATE_01                                 05 §4a SYS-DEVBUILD | §6 SYS-AUTOUPDATE   (dev updates from .\compiled)
-DEVFAST_01                                   05 §4a SYS-DEVBUILD   (default dev run is incremental; dev rebuild = full wipe)
+DEVUPDATE_01                                 05 §4a SYS-DEVBUILD | §6 SYS-AUTOUPDATE   (legacy explicit updater tests only; disabled for ordinary dev launches)
+DEVVERIFY_01                                 05 SYS-DEVBUILD / SYS-VERIFYTOOL (direct dev.cmd verifier invocation before cleanup; dev verify)
+DEVPARITY_01 / DEVISOLATION_01 / DEVCLEAN_01   05 SYS-DEVBUILD (current-source Release runtime, isolated resources, preserved settings)
+DEVHELPERTEMP_01                            05 SYS-DEVBUILD / SYS-STORAGE-TABLE (fresh helper TEMP; defer locked leftovers)
+STORAGEPATHS_01                             05 SYS-STORAGE-TABLE (authoritative storage inventory; mandatory update on storage changes)
+DEVSHAREMEDIA_01                            05 SYS-DEVBUILD / SYS-STORAGE-TABLE (shared music/memes/Downloads; separate TEMP voice)
+DEVINCREMENTAL_01                           05 SYS-DEVBUILD (incremental compiler outputs, hash-verified assets, full-clean fallback)
+DEVFAST_01                                   05 §4a SYS-DEVBUILD   (retired hot reload; DEVINCREMENTAL_01 now retains compiler outputs without hot reload)
 UPDATEPIN_01                                 05 §5 SYS-SIGNING   (publisher root built into the app)
 UPDATEPIN_02                                 05 §5 SYS-SIGNING   (leaf renews itself from the root)
 UPDATEPIN_PEM_01                             05 §5 SYS-SIGNING   (preserve public PEM data and verify its pin)
@@ -1031,7 +1109,7 @@ INSTALLONEXIT_01                             05 SYS-AUTOUPDATE   (a ready update
 RESTARTSAFE_01                               05 SYS-AUTOUPDATE   (Restart & update closes only if the installer runs)
 PAUSESTICK_01                                05 SYS-AUTOUPDATE   (a paused download is not resumed by the re-check)
 WHATSNEW_01                                  05 SYS-AUTOUPDATE | 04 | 09 §3f   ("What's new" after the update + About link)
-BETA_01                                      09 §3e DIST-RELEASEGATE | 05 SYS-AUTOUPDATE   (pre-releases; Beta picks the highest version)
+BETA_01                                      09 §3e DIST-RELEASEGATE   (pre-release publishing only; the app never offers betas, SETNOBETA_01)
 RELNOTES_01                                  09 §3f DIST-RELEASENOTES   (changes.md → CHANGELOG.md, fixed staging headings, promotion)
 RELNOTES_02                                  09 §3f DIST-RELEASENOTES   (user-notes lint)
 RELNOTES_03                                  09 §3f DIST-RELEASENOTES | 05 SYS-AUTOUPDATE | 04   ("What's new" on the update card)
@@ -1042,7 +1120,7 @@ UPDATESPACE_01                               05 §6 SYS-AUTOUPDATE   (per-drive 
 RECHECK_01                                   05 §6 SYS-AUTOUPDATE   (re-check every 6 h while open)
 ONBOARD_01                                   GOV README.md §0   (single entry point; project_structure.txt / AGENTS.md are pointers)
 GOV-START                                    README.md §0
-GOV-REPOMAP                                  README.md §5
+GOV-REPOMAP                                  README.md §5 -> REPO_MAP.md
 SYS-UPGRADE-TRUST                            05 SYS-UPGRADE-TRUST
 DIST-RELEASEGATE                             09 §3e DIST-RELEASEGATE
 DIST-RELEASENOTES                            09 §3f DIST-RELEASENOTES
@@ -1065,11 +1143,25 @@ FASTINSTALL_01                               05 SYS-UPGRADE   (build the new fol
 ONEBACKUP_01                                 05 SYS-UPGRADE   (keep one backup)
 NOSYSTEMTASK_01                              05 SYS-UPGRADE | 05 SYS-AVCLEAN   (no SYSTEM scheduled task)
 NOPOWERSHELL_01                              05 SYS-AVCLEAN   (shortcuts via IShellLinkW, ShellLinkWriter)
+NOHIDDENTOOLS_01                             05 SYS-AVCLEAN   (no hidden event/task/force-kill tools; Event Log API, LegacyScheduledTask)
+NOLOGONHOOK_01                               05 SYS-AVCLEAN   (no Active Setup StubPath; old entry removed)
+CFASAFE_01                                   05 SYS-CFASAFE   (Controlled folder access: ControlledFolderAccess, ProtectedFolderGate, own Media folder)
+CFAFFMPEG_01                                 05 SYS-CFASAFE   (FFmpeg write probe before exporting into a protected folder; FfmpegCanWrite)
+NOMEMREAD_01                                 05 SYS-AVCLEAN   (ProcessImage: program path without reading process memory; own names in the install folder only)
+OPENWITHHOME_01                              05 SYS-AVCLEAN   ("Open with" registered only by the installed program)
+NOMUIWIPE_01                                 05 SYS-AVCLEAN   (uninstall leaves Windows MuiCache alone)
+NOLOCALPORT_01                               05 SYS-AVCLEAN   (installer channels are named pipes, not TCP ports; PipeAccess.CreateUpgradeServer)
+NOLURKER_01                                  05 SYS-AVCLEAN   ("Later" arms the exit hook; no waiting installer process)
+SIGNDEPS_01                                  05 SYS-SIGNING   (bundled FFmpeg/mpv signed only with a public certificate)
+FREETRUST_01                                 05 SYS-SIGNING   (free routes to a trusted signature: SignPath Foundation, Microsoft Store, WDSI)
+SIGNPATH_01                                  05 SYS-SIGNING   (SignPath Foundation certificate trusted only with the listed SHA-256; licence, privacy and signing-policy files)
+OSSMEDIA_01                                  03 starter set   (installer ships Creative-Commons songs only)
 NOPOWERSHELL_02                              03 RDP Auto-Fix | 05 SYS-AVCLEAN   (--apply-rdp-gpu-policy)
 NOSELFDELETE_01                              05 SYS-AVCLEAN   (uninstaller cleanup, MoveFileEx)
 NODROPPER_01                                 09 DIST-INSTALLER | 05 SYS-AVCLEAN   (Inno Setup installer, no embedded payload)
 NOTEMPEXEC_01                                05 SYS-AVCLEAN   (no self-copy to %TEMP%; updates under %LOCALAPPDATA%\FreeVideoStudioUpdates)
 PEIDENTITY_01                                05 §5 SYS-SIGNING   (OriginalFilename = file name, manifest version)
+APPICON_01                                   09 DIST-IDENTITY   (padding-free app/installer icon, assets/icons/FreeVideoStudio.ico)
 UPDATECONSENT_01                             05 §6 SYS-AUTOUPDATE | 04 UI-SETTINGS-ABOUT   (ask once, first check after 5 min)
 DIST-INSTALLER                               09 §3c DIST-INSTALLER
 NOCMD_01                                     05 SYS-AVCLEAN   (whatsapp:// via shell, no cmd /c)
@@ -1129,6 +1221,7 @@ LeadInSec                                    02 §7 AUD-MUSICFADE
 OutgoingGainAt                               02 §7 AUD-MUSICFADE
 MusicCrossfade                               02 §7 AUD-MUSICFADE
 XFADEPLAN_01                                 02 §7 AUD-MUSICFADE
+MUSICEND_01                                  02 AUD-MUSICWIN (wizard output coverage -> source endpoint; no double speed conversion)
 MUSICWIN_01                                  02 §8 AUD-PREVIEWSYNC | 02 §9 AUD-MUSICWIN
 MusicStartsSeconds                           02 §9 AUD-MUSICWIN
 MusicEndsSeconds                             02 §9 AUD-MUSICWIN
@@ -1172,6 +1265,8 @@ ExportTimingTag                              03 §12 FFM-SCRAPER
 SCRAPER_02                                   03 §12 FFM-SCRAPER
 SCRAPER_03                                   03 §12 FFM-SCRAPER
 LIBAVPROBE_01                                03 §13 FFM-LIBAVPROBE
+LIBAVPROBE_04                                03 §13 FFM-LIBAVPROBE
+NOCOMMENTS_01                                README §0.1 GOV-START
 LIBAVPROBE_02                                03 §13 FFM-LIBAVPROBE
 LIBAVPROBE_03                                03 §13 FFM-LIBAVPROBE
 MediaMetadataProbe                           03 §13 FFM-LIBAVPROBE
@@ -1226,6 +1321,7 @@ FfmpegPcmPipe                                04 §9 UI-MERGERQUEUE | 02 §6 AUD-
 MusicEnergyAnalysis                          02 §6 AUD-DIALOGS
 UIIPC_01                                     05 §4d SYS-IPCLIFETIME | 05 §3 SYS-WINSTATE
 IPCDEADLINE_01                               05 §4d SYS-IPCLIFETIME
+PIPEAUTH_01                                  05 §4d SYS-IPCLIFETIME
 SessionStateWriter                           05 §4d SYS-IPCLIFETIME
 SaveBoundsOnClose                            05 §3 SYS-WINSTATE
 FilmStripSource                              04 §9 UI-MERGERQUEUE
@@ -1283,21 +1379,81 @@ SETSAVEFAIL_01                               04 §11 UI-SETTINGS-ABOUT
 SETTIPS_01                                   04 §11 UI-SETTINGS-ABOUT
 SETDEPS_01                                   04 §11 UI-SETTINGS-ABOUT
 SETLOUD_01                                   04 §11 UI-SETTINGS-ABOUT
-SETZOOM_01                                   04 §11 UI-SETTINGS-ABOUT
+SETZOOM_01                                   04 §11 UI-SETTINGS-ABOUT  [retired → SETZOOMONE_01]
 SETGAME_01                                   04 §11 UI-SETTINGS-ABOUT
 SETMUSICDIR_01                               04 §11 UI-SETTINGS-ABOUT
 MEMEPENDING_01                               04 §11 UI-SETTINGS-ABOUT
 SETSEARCH_01                                 04 §11 UI-SETTINGS-ABOUT
 SETBACKUP_01                                 04 §11 UI-SETTINGS-ABOUT
+SETABOUTSAVE_01                              04 §11 UI-SETTINGS-ABOUT
+SETLASTALWAYS_01                             04 §11 UI-SETTINGS-ABOUT
+SETFREEZEDEF_01                              04 §11 UI-SETTINGS-ABOUT
+SETKEYSFIRST_01                              04 §11 UI-SETTINGS-ABOUT
+SETCHOICES_01                                04 §11 UI-SETTINGS-ABOUT  [retired → SETSTARTONE_01]
+SETUPDCOPY_01                                04 §11 UI-SETTINGS-ABOUT
+SETZOOMCAP_01                                04 §11 UI-SETTINGS-ABOUT
+SETNOMETERED_01                              04 §11 UI-SETTINGS-ABOUT
+SETNAMEWARN_01                               04 §11 UI-SETTINGS-ABOUT
+SETRESTORECONFIRM_01                         04 §11 UI-SETTINGS-ABOUT
+SETLABELFIT_01                               04 §11 UI-SETTINGS-ABOUT
+SETDECLUTTER_01                              04 §11 UI-SETTINGS-ABOUT
+SETUPDATEONE_01                              04 §11 UI-SETTINGS-ABOUT
+SETNOBETA_01                                 04 §11 UI-SETTINGS-ABOUT
+SETCLICKONE_01                               04 §11 UI-SETTINGS-ABOUT
+SETADVANCED_01                               04 §11 UI-SETTINGS-ABOUT
+SETSTARTONE_01                               04 §11 UI-SETTINGS-ABOUT
+SETSAFEONE_01                                04 §11 UI-SETTINGS-ABOUT
+SETEDITORMEMORY_01                           04 §11 UI-SETTINGS-ABOUT
+SETMERGERMOVED_01                            04 §11 UI-SETTINGS-ABOUT
+SETFOLDERONE_01                              04 §11 UI-SETTINGS-ABOUT
+SETSOUNDONE_01                               04 §11 UI-SETTINGS-ABOUT
+SETMUSICVOL_01                               04 §11 UI-SETTINGS-ABOUT
+SETVOICEONE_01                               04 §11 UI-SETTINGS-ABOUT
+SETNOCONSENTUI_01                            04 §11 UI-SETTINGS-ABOUT
+SETKEYONE_01                                 04 §11 UI-SETTINGS-ABOUT
+SETAIONE_01                                  04 §11 UI-SETTINGS-ABOUT
+SETAIMODEL_01                                04 §11 UI-SETTINGS-ABOUT
+SETZOOMONE_01                                04 §11 UI-SETTINGS-ABOUT
+SETCAMONE_01                                 04 §11 UI-SETTINGS-ABOUT
+SETNAMEONE_01                                04 §11 UI-SETTINGS-ABOUT | 03 FFM-OUTNAME
+FREEZESFX_01                                 02 §10 AUD-FREEZESFX
+FREEZESFX_02                                 02 §10 AUD-FREEZESFX
 SETRESTORE_01                                04 §11 UI-SETTINGS-ABOUT
 SETDANGER_01                                 04 §11 UI-SETTINGS-ABOUT
 SETAITEST_01                                 04 §11 UI-SETTINGS-ABOUT
 SETWIDTH_01                                  04 §11 UI-SETTINGS-ABOUT
+SETCONSENTVENDOR_01                          04 §11 UI-SETTINGS-ABOUT  [retired → SETNOCONSENTUI_01]
+FILEBACKUP_01                                04 §11 UI-SETTINGS-ABOUT
+SETKEYS_03                                   04 §11 UI-SETTINGS-ABOUT
+SETENTER_01                                  04 §11 UI-SETTINGS-ABOUT
+SETLASTTAB_02                                04 §11 UI-SETTINGS-ABOUT
+SETAIROWS_01                                 04 §11 UI-SETTINGS-ABOUT  [retired → SETAIONE_01]
+SETGAME_02                                   04 §11 UI-SETTINGS-ABOUT
+SETREVEAL_01                                 04 §11 UI-SETTINGS-ABOUT
+SETHELP_01                                   04 §11 UI-SETTINGS-ABOUT
+SETCHIPS_01                                  04 §11 UI-SETTINGS-ABOUT
+SETSAFETY_01                                 04 §11 UI-SETTINGS-ABOUT  [retired → SETSAFEONE_01]
+SETCENTER_01                                 04 §11 UI-SETTINGS-ABOUT
+SETCOPY_01                                   04 §11 UI-SETTINGS-ABOUT
+SETABOUT_01                                  04 §11 UI-SETTINGS-ABOUT
+SETTINGSDI_01                                04 §11 UI-SETTINGS-ABOUT | 08 COMP-ROOT
+AIKEYCANCEL_01                               04 §11 UI-SETTINGS-ABOUT
+SETBACKUPIO_01                               04 §11 UI-SETTINGS-ABOUT
+SETTINGSTYPES_01                             05 (settings) | 04 §11 UI-SETTINGS-ABOUT
+SETTINGSFREEZE_01                            05 (settings, SETTX)
+MEMEPURE_01                                  03 FFM-MEMELIB
+RENDERIMPORT_01                              04 §7b (supersedes ZOOMHANG_01's wait)
+ASYNCSAFE_01                                 08 COMP-ROOT
+CTSSLOT_01                                   08 COMP-ROOT
+SHELLLAUNCH_01                               08 COMP-ROOT
+VIRALVM_01                                   08 COMP-ROOT | 04
+SETWIDE_01                                   04 §11 UI-SETTINGS-ABOUT  [retired]
 SETPRIORITY_01                               04 §11 UI-SETTINGS-ABOUT
 SettingsViewModel                            04 §11 UI-SETTINGS-ABOUT
 CopySection                                  04 §11 UI-SETTINGS-ABOUT
 SETDEFAULTS_01                               04 §11 UI-SETTINGS-ABOUT | 03 FFM-QUALITY
 SETCONFIRM_01                                04 §4 UI-SAFEGUARDS
+FILEDELETE_01                                04 §4 UI-SAFEGUARDS
 SETMERGERDIR_01                              04 §11 UI-SETTINGS-ABOUT
 DuckingStrength                              02 §3 AUD-SIDECHAIN
 CarvingStrength                              02 §3 AUD-SIDECHAIN
@@ -1359,7 +1515,6 @@ SLIDER_08                                    02 §6 AUD-DIALOGS | 04 §1 UI-THEM
 SLIDER_09                                    02 §6 AUD-DIALOGS | 04 §1 UI-THEME
 ISSUE_04                                     02 §7 AUD-MUSICFADE
 CrossfadeOutSec                              02 §7 AUD-MUSICFADE
-CrossfadeInSec                               02 §7 AUD-MUSICFADE
 EdgeFadeSec                                  02 §7 AUD-MUSICFADE
 KeepMusicDuringMeme                          02 §7 AUD-MUSICFADE
 EncoderManager                               03 §1 FFM-HWENC
@@ -1434,6 +1589,7 @@ AUTOZOOM_02                                  04   [code-only: CropToolWindow.axa
 CROSSHAIR_01                                 04   [code-only: CropToolWindow.axaml.cs]
 TOOLRETURN_01                                05 §3 SYS-WINSTATE
 AIAUDIT_01                                   05 §7 SYS-AISETTINGS (plain-English map of all AI features + audit closure)
+AIAUDIT_02                                   05 §7 SYS-AISETTINGS (audit fixes 6-10: window cancellation, multi-vendor 404 fallback, token toasts, onboarding)
 AIMODELS_02                                  05 §7.4 SYS-AISETTINGS
 AIMODELFALLBACK_02                           05 §7.4 SYS-AISETTINGS
 AITEMP_02                                    05 SYS-AISETTINGS
@@ -1454,15 +1610,51 @@ AIREASONING_01                               05 SYS-AISETTINGS
 AIZEROFRAMES_01                              05 §7.4 SYS-AISETTINGS
 AICOMMENTARY_ESTIMATE_01                     04 UI-AICOMMENTARY
 AIUSAGE_01                                   05 §7.5 SYS-AISETTINGS | 04 UI-AICOMMENTARY
+AIAUDIT_04                                   05 §7.7 SYS-AIAUDIT4
+AIANSWER_01                                  05 §7.7 SYS-AIAUDIT4
+AICLAUDETOOL_01                              05 §7.7 SYS-AIAUDIT4
+AIREASONING_02                               05 §7.7 SYS-AIAUDIT4
+AIFPSFALLBACK_02                             05 §7.7 SYS-AIAUDIT4 | 01 TL-AITRACKING
+AIPREFLIGHT_03                               05 §7.7 SYS-AIAUDIT4
+AIREUSE_03                                   05 §7.7 SYS-AIAUDIT4
+AIREUSE_04                                   05 §7.7 SYS-AIAUDIT4 | 05 SYS-STORAGE-TABLE
+AIPARTRETRY_01                               05 §7.7 SYS-AIAUDIT4 | 04 UI-AIAPPROVE
+AICOMMENTARY_KEEP_01                         05 §7.7 SYS-AIAUDIT4 | 04 UI-AICOMMENTARY
+AICOMMENTARY_ONCE_01                         05 §7.7 SYS-AIAUDIT4
+AICOMMENTARY_CUTS_01                         05 §7.7 SYS-AIAUDIT4
+AIUSAGE_04                                   05 §7.7 SYS-AIAUDIT4
+AIAPPROVE_01                                 04 §13b UI-AIAPPROVE | 05 §7.7
+AIHUDTRANSPORT_01                            05 §7.7 SYS-AIAUDIT4 | 01 TL-AIHUD
+AIHUDERRORS_01                               05 §7.7 SYS-AIAUDIT4 | 04 UI-AIHUDWAND
+AITRACE_01                                   05 §7.7 SYS-AIAUDIT4
+AIELIM_04                                    05 §7.7 SYS-AIAUDIT4 | 04 UI-AIZOOM
+AIELIM_05                                    05 §7.7 SYS-AIAUDIT4
+AIMERGEKILLS_01                              04 §13c UI-MERGER-KILLS
+AIPROGRESS_02                                05 §7.7 SYS-AIAUDIT4 | 04 UI-AIZOOM
+AIPARITY_02                                  03 FFM-ZOOMGRAPH | 01 TL-AITRACKING
 AICOMMENTARY_REMEMBER_01                     04 UI-AICOMMENTARY
 ```
 
+
+## Test audit and regression routes
+
+| File, symbol or tag | Specification |
+| :--- | :--- |
+| `tests/TestHarness.ps1`, `TestHarness.Tests.ps1`, `run-av-tests.ps1`, `run-all-tests.cmd`, `TESTGATE_01`, `TESTCLEAN_01` | `README.md` GOV-AVGATE; `08` COMP-ARCHTEST; `05` SYS-STORAGE-TABLE |
+| `MERGERPROBE_01` (`VideoMergerWindow.axaml.cs` `_ffprobePath`, `MergerSmokeApp.cs`) | `03` FFM-BINPATH; `04` UI-MERGERQUEUE |
+| `tests/TestArtifactDirectory.cs`, `TESTCLEAN_02` | `05` SYS-STORAGE-TABLE; `08` COMP-ARCHTEST |
+| `TESTOUT_01`, `logs\<Suite>_Results`, `TestOutputSuite.cs`, `Enter-SuiteOutput`, `SuiteWork`, `VSTestResultsDirectory` | `README.md` GOV-TESTOUT (the ONLY test-output folder); `05` SYS-STORAGE-TABLE |
+| `tests/DesktopPreviewSmoke/Program.cs`, `MergerSmokeApp.cs`, `TESTDESKTOP_01`, `MERGERBOUNDARY_01` | `04` UI-GPUPRESENT2, UI-MERGERQUEUE; `01` TL-COMPOSITE; `08` COMP-ARCHTEST |
+| `ProbeRegressionTests.cs`, `S37_SeekEvidenceTests.cs`, `S38_MutedAndDeletedMemeTests.cs`, `NativeTestBootstrap.cs` | `08` COMP-ARCHTEST; `02` AUD-IPCSTATE; `03` FFM-MEMECONCAT |
+| `FinalOutputCommit.cs`, `FinalOutputCommitTests.cs` | `03` FFM-EXPORTLIFETIME |
+| `VoiceOverGainViewModel.cs` | `02` AUD-VOICEOVER; `04` UI-THEME; `08` COMP-MVVM |
+| `MERGERGAPLESS_01`, `MergerRig.PlayerOptions` | `01` TL-COMPOSITE; `02` AUD-IPCSTATE |
 
 ## Rebrand identity and verification routes
 
 | File, symbol or tag | Specification |
 | :--- | :--- |
-| `FreeVideoStudio.sln`, application/core assembly identities, `FreeVideoStudio-Setup.exe`, retired `FreeVideoStudio.App.update.zip` | `09` DIST-IDENTITY |
+| `FreeVideoStudio.sln`, application/core assembly identities, `FreeVideoStudio.exe`, retired `FreeVideoStudio.App.update.zip` | `09` DIST-IDENTITY |
 | `REBRAND_01`, `AppDataDir`, `LocalCacheDir`, `MigrateDirectory`, `FvsFreeVideoStudioMutex` | `05` SYS-REBRAND |
 | `NOSPACE_01`, `LegacyInstallFolder`, `KnownDestinations`, `ReuseRoot`, `RetargetUserLinksAsync` | `05` SYS-NOSPACE |
 | `MEMEFOLDER_01`, `MEMEFOLDER_02`, `CloudMemeFolder`, `MemeCategory`, `MEMECAT_01`, `MEMESYNC_01`..`03`, `STARTERLIST_01`, `ResolveSavedFile` | `03` FFM-MEMELIB |
@@ -1472,3 +1664,7 @@ AICOMMENTARY_REMEMBER_01                     04 UI-AICOMMENTARY
 | Old→new identity map, old-brand update flow, allow list | `REBRAND_MIGRATION.md` |
 | `ProductionNamespacesUseTheProductRoot` | `08` COMP-ARCHTEST |
 <!-- WGLUNBIND_01: MpvVideoView.cs, Interop/WglInterop.cs and Interop/NativeTeardownInvoker.cs — 05 SYS-WINSTATE; WglInterop.cs also 04 UI-GPUPRESENT2. -->
+
+| `CLEANUPBOUND_01`, `SafeDirectoryCleanup` | `05` SYS-AVCLEAN |
+| `LEGACYKEEP_01` | `05` SYS-REBRAND-SWEEP |
+| `PROJECTIO_01` | `06` PROJ-DISK / PROJ-CLOSEGUARD; `07` UNDO-STATE; `08` COMP-FAULTS |

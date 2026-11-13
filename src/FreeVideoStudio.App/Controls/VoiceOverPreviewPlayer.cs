@@ -126,7 +126,7 @@ public sealed class VoiceOverPreviewPlayer : IDisposable
                 {
                     try
                     {
-                        take.Reader.Volume = (float)MpvIpcClient.MasterLinearGain;
+                        take.Reader.Volume = VoiceOverLevel.PreviewGain(take.Take.Gain, MpvIpcClient.MasterLinearGain);
                         take.StartProjectSec = VoiceOverTiming.OutputStart(take.Take, request.Mapper);
                         double voiceTime = request.Time - take.StartProjectSec;
                         bool play = (!request.Paused || request.Frozen) && !request.Ended &&
@@ -144,16 +144,6 @@ public sealed class VoiceOverPreviewPlayer : IDisposable
     {
         foreach (var take in _takes) take.Dispose();
         _takes.Clear();
-    }
-
-    public void DisposeTakes()
-    {
-        lock (_stateGate)
-        {
-            if (_disposed) return;
-            _latest = _latest with { Takes = [], Revision = _latest.Revision + 1 };
-            _pending.Writer.TryWrite(_latest);
-        }
     }
 
     public void Dispose()

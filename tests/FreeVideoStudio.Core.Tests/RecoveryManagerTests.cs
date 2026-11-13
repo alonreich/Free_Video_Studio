@@ -413,7 +413,7 @@ public class RecoveryManagerTests : IDisposable
         Assert.True(finallyAt > 0);
         string applyToFinally = afterApply.Substring(0, finallyAt);
 
-        Assert.Contains("RESTOREFAIL_01", applyToFinally);
+        Assert.Contains("PreserveFailedRestoreSnapshotAsync()", applyToFinally);
         Assert.DoesNotContain("ClearState()", applyToFinally);
     }
 

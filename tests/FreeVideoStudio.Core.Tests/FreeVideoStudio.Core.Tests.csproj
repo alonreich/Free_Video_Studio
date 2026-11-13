@@ -1,10 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <Compile Include="..\TestArtifactDirectory.cs" Link="TestArtifactDirectory.cs" />
+  </ItemGroup>
 
   <PropertyGroup>
     <TargetFramework>net9.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- TESTOUT_01: dotnet test writes results only to logs\Core_Results (docs/05 SYS-STORAGE-TABLE). -->
+    <VSTestResultsDirectory>$(MSBuildThisFileDirectory)..\..\logs\Core_Results</VSTestResultsDirectory>
     <IsTestProject>true</IsTestProject>
     <NuGetAudit>false</NuGetAudit>
     <!-- IPCOWNER_01: IpcChildProcess.Main runs real cross-process IPC clients. -->

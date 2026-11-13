@@ -1,22 +1,23 @@
-# SPECIFICATION 05: SYSTEM LIFECYCLE & STORAGE
+﻿# SPECIFICATION 05: SYSTEM LIFECYCLE & STORAGE
 
 ## Voiceover preview and take ownership {#SYS-VOICE-TIMING}
-`VOSAMPLE_01` / `VOWRITE_01`: bounded opening captures settle before finalization; positive partial audio is retained. Recovery stores accepted sample duration and its original output offset/review flag. Apply must not inflate a positive sub-millisecond tail to one millisecond. WAV-write failures stop further writes and preserve the last acknowledged prefix; failed header repair remains a recovery error.
-`VoiceOverPreviewRenderer.cs` and `VoiceOverWindow.PlaybackClock.cs` also follow 02 AUD-VOICEOVER and 03 FFM-TEMPO. `VOCLOCK_01`: each proxy/graph has a unique temporary path; `-n` prevents overwrite. Cancel and await preparation before preview teardown; remove only the owned proxy after successful shutdown. `VOTIMING_01`: prior applied WAVs remain owned by projects/undo, and all take metadata uses the schema-5 codec. Failed-take recovery retains duration, freeze offset and review flag. Explicit save/open/undo/redo/close settle pending timing decisions; autosave/recovery defer provisional edits.
+Moved to `02` AUD-VOICEOVER ("Preview & take ownership"). Anchor kept for old links.
 
 ## Code Mini-Map: Bound Source Files & Symbols
 
 > **⚠ CO-GOVERNED rows are bound by EVERY spec listed on them.** Reading only this one is not compliance (`SPEC_GOVERNANCE.md` §2).
 | Source File Path | Key Classes, Records & Controls | Core Bound Methods, Properties & Symbols | Subsystem Domain Role |
 | :--- | :--- | :--- | :--- |
+| `developer_tools/Pull_Code_files.py`, `tests/DeveloperTools.Tests/test_pull_code_files.py` | `run_aggregator`, `collect_entries`, `read_entry`, `ExportTests` | `CODEEXPORT_01`, `SYS-CODEEXPORT` | Offline AI attachment exports, coverage accounting, encoding, credential filtering, non-destructive output and regression tests. |
 | `src/FreeVideoStudio.App/DeploymentLifecycle.cs` | `DeploymentLifecycle` | `RunUninstallWorkerAsync`, `ShouldHandle`, `RunAsync`, `QueueSelfCleanup`, `NOTEMPEXEC_01`, `NOSELFDELETE_01` | OS installation/uninstallation installer-gate semaphore and elevated install/uninstall workers (the uninstall worker runs in place from the program folder). |
+| `src/FreeVideoStudio.Core/Infrastructure/SafeDirectoryCleanup.cs` | `SafeDirectoryCleanup` | `DeleteTree`, `DeleteFile`, `CLEANUPBOUND_01` | Windows handle-bound deletion; junction/ancestor/rename/locked-file coverage in `tests/FreeVideoStudio.Core.Tests/SafeDirectoryCleanupTests.cs`. |
 | `src/FreeVideoStudio.App/DeploymentFootprint.cs` | `DeploymentFootprint` | `UpdatesRoot`, `UpdateDownloadsRoot`, `UpdateStageRoot`, `LegacyUpdateDownloadsRoot`, `LegacyUpdateStageRoot`, `GetDirectoryPurgeTargets`, `NOTEMPEXEC_01` | Install, data, update-scratch and legacy paths; what the uninstaller removes. |
 | `src/FreeVideoStudio.App/RuntimeLog.cs` | `RuntimeLog` | `LogMutexName`, `InitializeAppName`, `ResetForProcess`, `Info` | Decoupled asynchronous producer-consumer logging pipeline. |
 | `src/FreeVideoStudio.Core/Infrastructure/CoreLogger.cs` | `CoreLogger` | `InfoAction`, `FailAction`, `Warn`, `Swallowed` | Core-side logging facade; the App wires its actions to `RuntimeLog` at startup. |
 | `src/FreeVideoStudio.Core/Infrastructure/RecoveryManager.cs` | `RecoveryManager` | `SaveState`, `LoadState`, `CheckFault`, `IsSafeModeActive` | Continuous project session serialization, crash detection, and safe-mode recovery. **⚠ CO-GOVERNED BY: GOV**|
 | `src/FreeVideoStudio.Core/Infrastructure/AtomicJsonFile.cs` | `AtomicJsonFile` | `WriteObject`, `WriteText`, `WriteBytes`, `WriteCore`, `ReadObject`, `ATOMICTEXT_01`, `ATOMICBYTES_01` | Thread-safe, power-outage-safe atomic JSON (and opaque byte) file writing and parsing. |
-| `src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs` | `SettingsManager` | `Update(Action<AppSettings>)`, `SetAutoUpdateChecks`, `SetUpdateConsent`, `UpdateConsentAsked`, `UPDATECONSENT_01`, `Committed`, `Load`, `SettingsMutexName`, `SerializeGate`, `CurrentSchemaVersion` (13), `SETTINGSATOMIC_01`, `SETTX_01`, `SETTX_02` | Cross-process settings persistence under a named mutex and the atomic write protocol; the ONLY settings mutation path is `Update`. |
-| `src/FreeVideoStudio.App/Services/GeminiTrackingService.cs` | `GeminiTrackingService`, `GeminiModelSession` | `TestApiKeyAsync`, `GenerateAsync` (session), `AIMODELFALLBACK_01` | AI SMART ZOOM requests through `GeminiClient`; retired-model fallback. **⚠ CO-GOVERNED BY: 01, 03, 04**|
+| `src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs` | `SettingsManager` | `Update(Action<AppSettings>)`, `SetAutoUpdateChecks`, `SetUpdateConsent`, `UpdateConsentAsked`, `UPDATECONSENT_01`, `Committed`, `Load`, `SettingsMutexName`, `SerializeGate`, `CurrentSchemaVersion` (14), `SETTINGSATOMIC_01`, `SETTX_01`, `SETTX_02` | Cross-process settings persistence under a named mutex and the atomic write protocol; the ONLY settings mutation path is `Update`. |
+| `src/FreeVideoStudio.App/Services/GeminiTrackingService.cs` | `GeminiTrackingService`, `GeminiModelSession` | `GenerateAsync` (session), `AIMODELFALLBACK_01` | AI SMART ZOOM requests through `GeminiClient`; retired-model fallback. **⚠ CO-GOVERNED BY: 01, 03, 04**|
 | `src/FreeVideoStudio.App/Services/GeminiClient.cs` | `GeminiClient`, `GeminiException`, `GeminiErrorKind`, `GeminiCallOptions` | `GenerateAsync`, `TestKeyAsync`, `ListModelsAsync`, `Classify`, `Redact`, `ResolveModel`, `TryExtractModelText`, `PickFallbackModel`, `DefaultModel` | GEMINICLIENT_01: header-only key, per-attempt timeout, classified errors, RetryInfo-aware retries, model list. |
 | `src/FreeVideoStudio.App/Infrastructure/SecretProtector.cs` | `SecretProtector` | `Protect`, `Unprotect`, `IsProtectedForm`, `DpapiPrefix` | KEYPROTECT_01: DPAPI-sealed API key in settings.json. |
 | `src/FreeVideoStudio.Core/Ipc/NamedPipeStateServer.cs` | `NamedPipeStateServer` | `ScheduleDiskFlush`, `FlushToDiskSafe`, `IPCLEASE_01`, `IPCTEARDOWN_01`, `IPCOWNER_01` | In-memory session state server, bounded flush scheduling and ordered teardown. |
@@ -25,15 +26,20 @@
 | `src/FreeVideoStudio.Core/Ipc/StateTransferStore.cs` | `StateTransferStore` | `LoadAsync`, `SaveAsync`, `UpdatePropertiesAsync`, `SendHandoffAsync`, `ClearAsync`, `SchemaVersion` (1), `DeliveryBudget`, `IPCOWNER_01` (no `*Sync` members, UIIPC_01) | Cross-process state persistence and named mutex coordination. |
 | `tests/FreeVideoStudio.Core.Tests/IpcTests.cs` | `IpcTests` | `IpcOwner_*`, `IpcServer_ConcurrentFlushes_DiskEndsAtTheLatestState` | IPC framing, ownership (IPCOWNER_01) and write-order (WRITEORDER_02) regression coverage. |
 | `tests/FreeVideoStudio.Core.Tests/IpcChildProcess.cs` | `IpcChildProcess` | `Main` (`--ipc-child update`) | Test-assembly entry point that runs real cross-process IPC clients for `IpcTests`. |
+| `src/FreeVideoStudio.Core/Ipc/PipeAccess.cs` | `PipeAccess` | `CreateServer`, `CreateOwnerOnlySecurity`, `IsServerTrusted`, `CreateUpgradeServer`, `NewUpgradePipeName`, `IsUpgradePipeName`, `PIPEAUTH_01`, `NOLOCALPORT_01` | Owner-only pipe DACL and client-side verification that the pipe server runs as the same user. |
 | `src/FreeVideoStudio.Core/Ipc/IpcProtocol.cs` | `IpcProtocol`, `IpcFrame`, `IpcOpcode` | `WriteFrameAsync`, `ReadFrameAsync`, `ExchangeAsync` (IPCDEADLINE_01), `PipeName`, `ServerMutexName` | Wire framing protocol and serialization context for IPC pipes. |
 | `src/FreeVideoStudio.Core/Ipc/CropConfigDefaults.cs` | `CropConfigDefaults` | `Create`, `CreateNoMask`, `SchemaVersion` (4), `MinimumUsableSchemaVersion` (3) | Factory for default HUD crop profiles and schema version definitions. |
-| `src/FreeVideoStudio.Core/Infrastructure/CooperativeShutdownGate.cs` | `CooperativeShutdownGate` | `BeginShutdown`, `RegisterTask`, `IsShutdown` | Coordinated graceful process and thread pool task shutdown gate. |
-| `src/FreeVideoStudio.Core/Infrastructure/DiskSpaceGuard.cs` | `DiskSpaceGuard` | `CheckFreeSpaceBytes`, `MinimumFreeBytes` | Pre-render disk space verification preventing corrupt half-written files. |
-| `src/FreeVideoStudio.App/CrashLogDigest.cs` | `CrashLogDigest` | `RunAsync`, `DigestLatestCrash` | Background crash report analyzer and automated log summary generator. |
+| `src/FreeVideoStudio.Core/Infrastructure/CooperativeShutdownGate.cs` | `CooperativeShutdownGate` | `Begin`, `AwaitActiveAsync`, `ReadExitCodeSafely` | Single-flight gate around `GracefulProcessTerminator` for stopping an FFmpeg child, shared by `ProcessWorker` and `MergerWorker` (PIPEDEDUP_01). |
+| `src/FreeVideoStudio.Core/Infrastructure/DiskSpaceGuard.cs` | `DiskSpaceGuard` | `Check`, `HasRoomFor`, `EstimateOutputBytes`, `EstimateTwoPassMasterBytes`, `Result` | Pre-render disk space verification preventing corrupt half-written files. |
+| `src/FreeVideoStudio.App/CrashLogDigest.cs` | `CrashLogDigest` | `RunAsync`, `ReadEvents`, `CondenseXml`, `Mentions`, `NOHIDDENTOOLS_01` | Folds this app's Windows crash events into the log through the Event Log API (no helper program). |
+| `src/FreeVideoStudio.App/Services/LegacyScheduledTask.cs` | `LegacyScheduledTask` | `Exists`, `IsPlainName`, `NOHIDDENTOOLS_01` | Read-only "is an old release's scheduled task still there?" (SYS-AVCLEAN). |
+| `src/FreeVideoStudio.Core/Infrastructure/ProcessImage.cs` | `ProcessImage` | `GetPath`, `TryGetPath`, `NOMEMREAD_01` | Program path of another process with query-only rights (no memory read) (SYS-AVCLEAN). |
+| `src/FreeVideoStudio.Core/Infrastructure/ControlledFolderAccess.cs` | `ControlledFolderAccess` | `Mode`, `IsBlocking`, `ProtectedRoots`, `IsProtectedPath`, `MayBlock`, `IsUnder`, `CFASAFE_01` | Read-only view of Windows "Controlled folder access" (SYS-CFASAFE). |
+| `src/FreeVideoStudio.App/Infrastructure/ProtectedFolderGate.cs` | `ProtectedFolderGate` | `CanWrite`, `CanWriteNow`, `FfmpegCanWrite`, `DenialIsFresh`, `ForgetDenial`, `TakePendingNotice`, `ShowNoticeAsync`, `CFASAFE_01`, `CFAFFMPEG_01` | One write attempt per protected folder, remembered refusal, the one notice (SYS-CFASAFE). |
 | `src/FreeVideoStudio.App/SingleInstanceGuard.cs` | `SingleInstanceGuard` | `TryAcquire`, `Release`, `AppliesTo` | Single application instance enforcement and focus delegation via named mutex. |
 | `src/FreeVideoStudio.Core/Infrastructure/AppDataPaths.cs` | `AppDataPaths` | `AppDataDir`, `LocalCacheDir`, `MigrateDirectory`, `REBRAND_01` | Copy-only rebrand migration before default state initialization. |
 | `src/FreeVideoStudio.Core/Infrastructure/LegacyAppDataNames.txt` | Embedded legacy directory identities | `LegacyAppDataNames.txt` | Historical names retained only as migration data. |
-| `src/FreeVideoStudio.Core/Infrastructure/LegacyResidueSweep.cs` | `LegacyResidueSweep` | `RunForCurrentUser`, `Run`, `LegacyTempNames`, `LegacyStorageNames`, `REBRAND_02` | Removes previous-brand temp/user folders once provably migrated. |
+| `src/FreeVideoStudio.Core/Infrastructure/LegacyResidueSweep.cs` | `LegacyResidueSweep` | `RunForCurrentUser`, `Run`, `LegacyTempNames`, `LegacyStorageNames`, `REBRAND_02` | Rescues renders and retains legacy data (LEGACYKEEP_01). |
 | `tests/FreeVideoStudio.Core.Tests/RebrandTests.cs` | `RebrandTests` | sweep, naming and brand-allow-list tests | Rebrand residue and output-name regression coverage. |
 | `tests/FreeVideoStudio.Core.Tests/AppDataPathsTests.cs` | `AppDataPathsTests` | migration, retry, collision and existing-destination tests | Rebrand data-preservation regression coverage. |
 | `src/FreeVideoStudio.Core/Infrastructure/ApplicationPaths.cs` | `ApplicationPaths` | `ProgramDataRoot`, `DefaultUserRoot`, `RecoveryStateFile`, `SessionStateFile`, `MergerSessionFile`, `LaneCacheDirectory`, `EnsureWritableDirectories` | System directory resolution, temp workspace paths, and sentinel lock files. **⚠ CO-GOVERNED BY: GOV**|
@@ -44,7 +50,7 @@
 | `src/FreeVideoStudio.Core/Ipc/CropConfigStore.cs` | `CropConfigStore` | `LoadAsync`, `SaveAsync`, `RotateBackupsUnlocked`, `IsUsableConfig` | Crop configuration persistence and the 5-tier `.bak` rotation cascade. |
 | `src/FreeVideoStudio.Core/Editing/CropProfileCodec.cs` | `CropProfileCodec`, `CropConfigJson` | `ReadSavedLayers`, `WriteLayers` (crops_source drift trap, RESGUESS_01 position-only, DELETESET_01 tombstones) | The Crop Tool's layers as the crop-config document and back; pure, the window keeps the store I/O (EDITSTATE_01). **⚠ CO-GOVERNED BY: 01**|
 | `src/FreeVideoStudio.Core/Editing/GranularRecoveryCodec.cs` | `GranularRecoveryCodec`, `GranularJsonRead` | `Build`, `TryApply`, `Key = "granular_session"`, `SchemaVersion = 1` | RECOVERY_03 values of the Granular editor's live session; identity = video path + trim window; merge mode never restores (EDITSTATE_01). |
-| `src/FreeVideoStudio.App/Services/ProjectRecoveryService.cs` | `ProjectRecoveryService`, `RecoverySnapshot` | `WireDocumentSource`, `SaveState` (canonical `ProjectDocument` + transient), `SaveCurrentState`, `LoadSnapshot`, `HasUnsavedWork`, `ClearState` | Recovery BRIDGE over the canonical document (RECOVERYDOC): one envelope, no parallel project schema. |
+| `src/FreeVideoStudio.App/Services/ProjectRecoveryService.cs` | `ProjectRecoveryService`, `RecoverySnapshot` | `SaveState` (canonical `ProjectDocument` + transient), `LoadSnapshot`, `HasUnsavedWork`, `ClearState` | Recovery BRIDGE over the canonical document (RECOVERYDOC): one envelope, no parallel project schema. |
 | `src/FreeVideoStudio.App/Services/LatestEstimateWorker.cs` | `LatestEstimateWorker` | `Request`, `RunAsync`, `Dispose`, `Completion` | Bounded background estimates, cancellation and stale UI result rejection. |
 | `src/FreeVideoStudio.App/Services/UpdateService.cs` | `UpdateService` | `RunStartupCheckAsync`, `AskUpdateConsentAsync`, `StartupGracePeriod`, `SetupAssetName`, `UPDATECONSENT_01`, `NODROPPER_01`, `CheckManualAsync`, `GetSkippedVersion`, `ClearSkippedVersion`, `DescribeLastCheck`, `DescribeDownloadProgress`, `RestartToUpdate`, `UPDATEUX_01`..`06` | Background GitHub release query, 15-minute startup throttle, SHA-256 verification, and quiet updater. |
 | `src/FreeVideoStudio.App/Services/UpdateService.Background.cs` | `UpdateService` (partial) | `StartBackgroundUpdate`, `LaunchInstaller`, `SkipPendingVersion`, `PendingVersion`, `BGUPDATE_01` | Background download + the update card (R2/R3). **⚠ CO-GOVERNED BY: 09** |
@@ -65,7 +71,9 @@
 | `build/FvsBuild/CodeSigning.cs` | `CodeSigning` | `SignIfNeeded`, `FVS_SIGN_PFX`, `FVS_SIGN_PASS`, `FVS_ALLOW_UNSIGNED` | Mandatory Authenticode digital signing of the release executable. **⚠ CO-GOVERNED BY: 08**|
 | `Build.cmd` | Production Release Script | `dotnet run build\FvsBuild` | **STRICT AGENT BAN**: Thin entry-point triggering production release, git tagging, and live GitHub Cloud release deployment. Never execute by autonomous agents. **⚠ CO-GOVERNED BY: 09, GOV** |
 | `dev_build.cmd` | Dev Compile Harness | `dotnet run build\FvsBuild -- --dev` | Safe local-only build and NativeAOT publish compilation test harness. Zero git tags, zero GitHub Cloud publishing. Mandatory for agent build tests. **⚠ CO-GOVERNED BY: 09, GOV** |
-| `dev.cmd` | Developer Harness | `VERIFY_PATCHES`, `build/FvsVerify`, `NUKE_BUILD`, `KILL_STALE`, `TRACE`, `FVS_DEV_LOG_DIR`, `FVS_PROGRAMDATA_ROOT` | Sandboxed dev launch, stale-process purge, cache nuke, pre-build fix verification, and in-repo trace logging. |
+| `dev.cmd`, `build/DevRun.ps1`, `build/DevSandbox.ps1` | Developer Harness | `DEVPARITY_01`, `DEVCLEAN_01`, `DEVDATA_01`, `DEVVERIFY_01` | Incremental Release managed launch, shared production staging, safe cache cleanup and preserved development preferences. **⚠ dev.cmd CO-GOVERNED BY: 08** |
+| `src/FreeVideoStudio.Core/Infrastructure/DevelopmentEnvironment.cs` | `DevelopmentEnvironment` | `DataRoot`, `ScopeSuffix`, `InitializeFromRuntimeMarker`, `DEVISOLATION_01` | Central development paths and IPC identity; marker protects direct/companion launches. |
+| `tests/FreeVideoStudio.Core.Tests/DevelopmentEnvironmentTests.cs`, `tests/FreeVideoStudio.App.Tests/DevelopmentLaunchTests.cs`, `tests/DevHarness.Tests/DevSandbox.Tests.ps1` | Development regression tests | `DEVPARITY_01`, `DEVISOLATION_01`, `DEVCLEAN_01` | Isolation, update guards, shared staging, real cleanup and preservation checks. |
 | `src/FreeVideoStudio.Core/Infrastructure/MergerAutosaveStore.cs` | `MergerAutosaveStore` | `Schedule`, `FlushAsync`, `Clear`, `Load`, `DefaultDebounce` | Video Merger edit-list autosave (`merger_session.json`, MERGESESSION_01). |
 | `src/FreeVideoStudio.Core/Media/MergerSession.cs` | `MergerSession`, `ClipIdList` | `Capture`, `Plan`, `DescribeRestoreProblems`, `SyncQueue` | Merger session capture and restore planning (MERGESESSION_01, RESTOREMISS_01). **⚠ CO-GOVERNED BY: 01**|
 | `src/FreeVideoStudio.App/MainWindow.ToolReturn.cs` | `MainWindow` | `RestoreVideoPipelineAfterTool`, `StartVideoHostAsync`, `BindFallbackBadge`, `TOOLRETURN_01` | Main App preview revival after a companion tool closes. **⚠ CO-GOVERNED BY: 08**|
@@ -84,7 +92,7 @@
 * **Pipeline Architecture:**
   * Decoupled producer-consumer pipeline using `BlockingCollection<string>` bounded at 10,000 entries.
   * Under saturation, excess log entries are dropped with a single consolidated dropped-events warning to prevent native memory exhaustion.
-  * Disk writes execute on a dedicated background Task (`Task.Run`).
+  * Disk writes execute in `ProcessLogQueue`, started with `Task.Factory.StartNew(..., TaskCreationOptions.LongRunning)`.
   * UI batches display logs through a thread-safe `ConcurrentQueue` on a 1-second dispatcher timer.
 * **UI Memory Streams:** Visual logging textboxes in diagnostic dialogs rigidly enforce a 100-line bounded FIFO queue to prevent UI thread heap leaks.
 * **Log Rotation & Retention:**
@@ -95,8 +103,8 @@
     ```
   * Retention policy trims oldest files when exceeding 5 files, 50 MB total directory size, or 14 days of age.
 * **Privacy & Security Gating:**
-  * Full FFmpeg command-line arguments and complete filesystem paths log at `DEBUG` level only (enabled via `FVS_DEV_LOG_DIR`).
-  * Production `INFO` logs sanitize sensitive paths, recording file basenames, exit codes, GPU capability discovery, and encoder fallback events.
+  * Export `INFO` logs currently include complete FFmpeg commands, filter graphs and output paths; production logs are not uniformly path-redacted.
+  * `DEBUG` gating (enabled via `FVS_DEV_LOG_DIR`) applies only to calls explicitly using `Debug`.
 * **Progress Spam Filtering:** Filters out FFmpeg `frame=... size=... time=... bitrate=...` progress stderr spam to protect log bounds while preserving initialization probes and error banners.
 * **Error Isolation:** Disk write paths swallow I/O exceptions; `LogAppended` event callbacks are exception-guarded to ensure logging failures never crash host worker threads.
 
@@ -201,92 +209,152 @@
 
 ## 4a. Developer Build Harness & Fix Sentinels  {#SYS-DEVBUILD}
 
-> [!CAUTION]
-> ### STRICT BAN ON `Build.cmd` FOR AI AGENTS (USE `dev_build.cmd` FOR COMPILE TESTS)
-> Autonomous AI agents are **STRICTLY FORBIDDEN from ever executing `.\Build.cmd` or `Build.cmd`**.
-> `Build.cmd` compiles `FreeVideoStudio.exe` and **OFFICIALLY PUBLISHES A VERSION ON GIT CLOUD (GITHUB RELEASES)**, deploying downloadable binaries worldwide.
-> If an agent needs to test or verify compilation, NativeAOT builds, or packaging, it **MUST ONLY RUN `.\dev_build.cmd`** (or `dotnet build` / `dotnet test`).
-> `.\dev_build.cmd` passes `--dev` to `build\FvsBuild\FvsBuild.csproj`:
-> * Builds purely locally.
-> * Never pushes git tags.
-> * Never publishes or uploads assets to GitHub Cloud.
-> * Does not wipe `.\compiled` beforehand.
+**DEVPARITY_01 / DEVISOLATION_01 / DEVCLEAN_01 (2026-10-20)** supersede the old hot-reload
+DEVFAST_01 and ordinary launch's DEVUPDATE_01 behaviour. **DEVINCREMENTAL_01 (2026-10-21)**
+retains compiler intermediates and verified dependency assets. Development runs current source, never an installer test.
 
-`dev.cmd` is the only supported way to run a development build. Three guarantees, in order, before every mode:
+* **Never execute `Build.cmd` as an agent.** It publishes a public release. `dev_build.cmd` remains
+  the separate local NativeAOT/installer check, not the normal development launcher.
+* **DEVVERIFY_01 / VERIFYHALT_01 / SYS-VERIFYTOOL:** `dev.cmd` runs `FvsVerify` first and propagates
+  failure. `dev verify` then exits without process, cache or settings changes. The sentinel registry
+  is `build/sentinels.txt`; never move it back into batch parsing (VERIFYLOOP_01, LISTCOMMENT_01,
+  BATCHPARENS_01/02). A sentinel proves a fix was not deleted; a behavioural test proves it still works.
+* **One runtime, one staging implementation:** `build/DevRun.ps1` publishes the current app project and
+  its references using Release, win-x64, self-contained managed .NET (`PublishAot=false`,
+  `PublishTrimmed=false`) into `.dev-run/app`. Normal launches retain isolated compiler intermediates in `.dev-run/build`; MSBuild rebuilds
+  changed projects and their dependants. Old `src/bin`, `src/obj`, `compiled` and release stages are
+  not inputs. Before publishing, remove managed output from `.dev-run/app`, retaining only
+  `backend`, `frontend` and `starter` directories, so removed packages/assemblies cannot linger.
+  No hot reload or launch of an old executable after failure. `FvsBuild --dev-runtime` invokes the SAME `Staging.StageDependencies`
+  function used by the installer, with a different destination, including codecs, player and starter
+  media, and writes the same runtime fingerprint. For development destinations, compare source and
+  destination SHA-256 content (not timestamps alone), copy missing/changed/corrupted assets, and
+  remove obsolete files from those three stager-owned directories. Missing required sources fail
+  even when an older staged copy exists. Reject linked staging paths before synchronization.
+  Production staging retains its existing unconditional-copy behavior. This branch cannot publish, sign, install or enter
+  the release pipeline; additional arguments are refused. Application bootstrap, UI, settings schema
+  migration, preview and export code remain shared. AOT/trimming, signatures, installer transactions,
+  shortcuts and machine registration still require the separate packaging/installation checks.
+* **BUILDKILL_01:** the launcher refuses while a repository-owned app/media process is still running;
+  it never force-kills unsaved work, production processes or shared MSBuild/Roslyn servers. A launch
+  lock serializes development builds. A cleanup, compile or staging failure stops the launch: there is
+  no fallback to the last executable. `run` (the default) and `trace` use incremental compilation and verified retained assets;
+  `build` does the same but stops after staging. `fresh` and `rebuild` first remove all of `.dev-run`
+  for a full-clean build and launch; `clean` removes only `.dev-run`; `restore` only restores packages.
+  Incremental builds depend on MSBuild input tracking: unusual timestamps, custom targets or damaged
+  intermediates may require `dev fresh`. Hash checks still read asset bytes, so copying savings do not
+  eliminate staging I/O. Retained intermediates use disk space; the first/full-clean build stays slow.
+* **DEVDATA_01 / STORAGEPATHS_01:** the stable development identity, profiles and recovery root is
+  `%LOCALAPPDATA%/FreeVideoStudio_DEV/data`. Preferences/session/UI state and logs instead use
+  `%TMP%/FreeVideoStudio_DEV/data`. Normal launches and `fresh` preserve those preferences while
+  TEMP exists. Clearing TEMP intentionally resets them, including stored API credentials.
+  On the first revised launch, copy absent settings/session/UI/roaming files from the stable
+  development root, without overwriting destinations or deleting sources. A persistent
+  `.temporary-preferences-v1` marker prevents stale preferences being restored after a later TEMP
+  purge. The migration is serialized with a named mutex and rejects linked paths. No production
+  preferences are imported. Earlier development backups can seed the stable root before this copy.
+* **Disposable data:** clear temporary dev `cache`, `updates`, `logs`, `uistate/meme_dimensions.json`,
+  cached update status/notes and processing scratch on launch. Preserve voice WAVs, failed-take
+  indexes and rescued exports. **DEVHELPERTEMP_01:** helper scratch uses a fresh GUID subfolder
+  per launch under its documented root. Cleanup removes unlocked older helper files, but defers
+  sharing/lock violations (Windows errors 32/33) until a later launch. Old console/helper handles
+  must not block relaunch or cause old helper files to be reused. Other errors still fail explicitly.
+  Validate absolute child paths and reject reparse points before cleanup. Locked app caches still fail launch.
+  Never delete a whole settings root or a directory chosen by the user as media/output storage.
+* **Isolated resources / DEVSHAREMEDIA_01:** stable data-root-derived pipes, leases, mutexes and
+  single-instance identities remain separate. `FVS_DEV_SHARED_MEDIA=1` selects the normal development
+  storage table below: music, memes and Downloads defaults are shared; new voice recordings are
+  separate TEMP files. Custom media/output choices still win. Generic test/sandbox overrides without
+  this flag keep their own paths. Existing recordings remain at their referenced paths.
+  Legacy production UI-state migration and Explorer registration are skipped. The runtime marker
+  protects direct and companion launches. Capture `FVS_SYSTEM_TEMP_ROOT` before redirecting TEMP/TMP;
+  inherit it in children so repeated initialization cannot nest directories. `FVS_DEV_HELPER_TEMP`
+  carries the launch GUID folder to companions; a direct runtime-marker launch creates one when absent.
+  `DevRun.ps1` also sets `FVS_DEV_HOME` (`%LOCALAPPDATA%\FreeVideoStudio_DEV`) and clears
+  `FVS_DEV_UPDATE_SOURCE`; the latter (dev-only, with `FVS_DEV_LOG_DIR` and `FVS_ALLOW_UNSIGNED_UPDATE`
+  in `UpdateService.DevOnlyEnvironment`) points the updater at a repository's `.\compiled` when set.
+* **Authoritative path map:** [SYS-STORAGE-TABLE](#SYS-STORAGE-TABLE) below supersedes the earlier
+  single-root and shared-voice path maps. `dev trace` still explicitly uses `<repo>/.devlogs`.
+* **No installation from development:** automatic/manual update checks, background updates and
+  installer launch are blocked by the data-root boundary, independently of logging. Deployment worker
+  arguments are refused before dispatch. The launcher clears the old local-update and unsigned-update
+  overrides. Update scratch has a sandbox location as defence in depth. The old DEVUPDATE_01 local
+  release-reader remains for explicit updater tests; ordinary dev launches cannot enter it.
+* **TRANSPORT_TRACE_01:** `dev trace` uses `.devlogs` for diagnostic logs; normal logs live under the
+  temporary development preferences root. Both modes publish current source with the same Release settings. Logs must never be committed.
+* **Regression coverage:** `DevelopmentEnvironmentTests` checks production identity compatibility and
+  separate sandbox paths/pipes; `DevelopmentLaunchTests` checks update guards and shared staging and
+  runs `tests/DevHarness.Tests/DevSandbox.Tests.ps1` against synthetic data to verify preservation,
+  repeat launches, retained compiler/assets versus removed managed output, locked caches,
+  traversal/prefix rejection and junction rejection. Dependency tests exercise unchanged-file reuse,
+  same-size/timestamp source changes, damaged destinations, renamed assets and missing required inputs. The existing
+  verifier-order test guards the batch entry point. These run with the normal CI test suites.
 
-1. **KILL_STALE** — kills every process whose executable lives under the repo (the app, its companion windows, and orphaned `mpv.exe` / `ffmpeg.exe` children), then shuts down the Roslyn/MSBuild servers. An orphaned app holds a lock on `bin\`, which is what makes the next build silently reuse a stale binary.
-   * **`BUILDKILL_01` — nothing outside the repository is ever stopped.** `dev.cmd` (KILL_STALE) and `FvsBuild` (`Staging.TerminateProcesses`, every dev, `--no-publish` and release build) used to start with `taskkill /F /IM FreeVideoStudio.exe /T` — every copy of the product BY NAME, including the INSTALLED app in Program Files with a real project open. `/F` skips the app's own save question and `/T` takes a running export with it, so starting a build silently destroyed unsaved work. Both now stop only processes whose executable path is under the repository root (FvsBuild excludes itself). Never add a name-based kill of the product back; `ReleaseHardeningTests.BuildKill01_*` fails if one returns.
-2. **NUKE_BUILD** — deletes `bin` and `obj` for EVERY project under `src\` and `tests\`. Runs for `dev rebuild`, `dev fresh`, `dev run`, `dev build` and `dev clean`.
-   * **`DEVFAST_01` — the default `dev` (hot reload) and `dev trace` are INCREMENTAL.** The wipe plus `dotnet clean` on every launch cost ~30 s of full restore and rebuild while the app itself starts in ~2 s. KILL_STALE (step 1) already removes the real cause of a stale binary — a running process locking `bin\` — and MSBuild rebuilds whatever changed. If a fix ever seems missing, `dev rebuild` is the full wipe; VERIFY_PATCHES (step 3) still runs on every mode.
-3. **VERIFY_PATCHES** — runs `build/FvsVerify`, which checks every `build/sentinels.txt` entry for the **fix sentinel** tag that sits beside a specific fix, and halts loudly if one is absent (SYS-VERIFYTOOL). Fixes have been reverted between a commit and a build more than once, silently producing a binary without them and costing a full test cycle to discover.
+---
 
-* **Every fix that costs a test cycle to re-diagnose earns a sentinel.** Add a `TAG=path` line for its tag to `build/sentinels.txt` when the fix lands, in the same change — not later.
-* **`VERIFYHALT_01` — THIS SUBROUTINE WAS A NO-OP AND HAD TO BE TAUGHT TO SPEAK.**
-  `VERIFY_PATCHES` built its `MISSING` list correctly and then returned. The variable was **assigned in two places and read in none**, so every sentinel in the list (133 at the time it was found) was checked on every run and the answer thrown away. The guarantee stated above — *"halts loudly if one is absent"* — could neither halt nor be loud, for as long as the list has existed.
-  Two defects, both now closed:
-  1. The unread `MISSING` variable. A missing sentinel now prints the offending tags and exits non-zero.
-  2. `exit /b 1` inside a `call`ed subroutine returns from the **subroutine**, not the script. The call site therefore tests `if errorlevel 1` immediately after `call :VERIFY_PATCHES`.
-  **The damage was not hypothetical.** `STRIPCOST_01` pointed at a tag that no longer existed in `GranularSpeedEditorWindow.axaml.cs` and nothing ever said so. It was not a revert — commit `ad0b7bd` replaced the per-slot `Image` path with `Controls/TimelineFilmstrip`, which draws via `DrawingContext.DrawImage` with explicit source/destination rects, making the oversized-bitmap defect structurally unreachable. The sentinel is retired with a note, per the `WIZPROGRESS_01` precedent.
-  ⚠️ `VERIFYLOOP_01` had already learned this lesson once, about two silently skipped entries, and its fix left the reporting half unwritten. **A guard that cannot fail is worse than no guard at all, because it is trusted.**
-* **`LISTCOMMENT_01` — `REM` IS NOT A COMMENT INSIDE A `FOR` LIST.**
-  `cmd.exe` tokenises everything between a list's brackets on whitespace. An unquoted
-  `REM --- Crop Tools rework, phase 3 ---` inside `for %%P in ( … )` is **not skipped** — it
-  becomes the list items `REM`, `---`, `Crop`, `Tools`, `rework`, `---`, and each is checked as
-  though it were a sentinel. The 37 annotation lines in this list were producing roughly 400 bogus
-  `[no-file]` entries.
-  * ⚠️ **They had been mis-parsed for as long as they had existed.** It was invisible only because
-    `MISSING` was never read (`VERIFYHALT_01`). Fixing the reporting is what surfaced it — which is
-    the whole argument for guards that can actually fail.
-  * Annotations are now **quoted**, so each is a single token, and the loop skips them by their
-    `REM` prefix. They must contain no double quote (it would end the token) and no `=` (it would
-    parse as a `TAG=path` entry).
-  * `ArchitectureRuleTests.DevCmdSentinelListContainsOnlyQuotedTokens` asserted this invariant while the
-    list lived in `dev.cmd`. It was retired when the list moved to `build/sentinels.txt` (SYS-VERIFYTOOL);
-    `tests/FvsVerify.Tests` (`CommentsAndBlankLinesAreSkipped`, `AMalformedLineIsReportedRatherThanSkipped`) covers the new format.
+## Storage locations — production vs development {#SYS-STORAGE-TABLE}
 
-* **`BATCHPARENS_01` — NO ROUND BRACKETS IN A `REM` INSIDE THE SENTINEL LIST.**
-  `cmd.exe` counts `(` and `)` while scanning a parenthesised block **even inside a `REM`**. A
-  comment added to the `for %%P in (` list reading *"phase 0 (foundation). docs/08_…"* closed the
-  list at `(foundation)`, and the next token — a bare `.` — was then run as a command. The whole
-  script died at parse time with `. was unexpected at this time.` **before a single sentinel was
-  checked**, so the guard that had just been taught to halt could not even start.
-  * ⚠️ This is `VERIFYLOOP_01`'s lesson a third time: that section already records the list being
-    fragile to edits, and the failure mode is always the same shape — the check silently does not
-    run. A comment is not inert inside a block.
-  * `ArchitectureRuleTests.DevCmdSentinelListHasNoBracketsInComments` (`BATCHPARENS_01`) and
-    `DevCmdBracketsBalance` (`BATCHPARENS_02`) asserted both cases while the list lived in `dev.cmd`;
-    both were retired with it (SYS-VERIFYTOOL). `DevCmdDelegatesTheSentinelCheckRatherThanParsingIt`
-    now fails if the list ever moves back into the script.
-* **A sentinel proves a fix has not been DELETED; a test proves it has not been BROKEN.** Where a rule can be asserted, prefer `tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs` (`08_APPLICATION_COMPOSITION.md` §3). `EveryFixSentinelStillResolves` re-checks every `build/sentinels.txt` entry from CI, on any platform, naming the file and tag. It is the authority on the current count, not this paragraph.
-* **DEVDATA_01 — the dev sandbox keeps your settings and AI keys.** `FVS_PROGRAMDATA_ROOT` is
-  `%LOCALAPPDATA%\FreeVideoStudio_DEV\data`, no longer `%TMP%\FreeVideoStudio_DEV\.dev_data`:
-  Windows Storage Sense and Disk Cleanup empty `%TMP%`, which silently reset the dev settings and the
-  Gemini key. `build\DevSandbox.ps1` (called by `dev.cmd` after KILL_STALE, and again after the
-  `dev fresh` wipe) moves the old `%TMP%` sandbox across once (`keep\moved_from_tmp.txt`), remembers
-  the AI settings (`GeminiApiKey`, `GeminiModelName`, `AiMagicWandCloudConsent`, `AiZoom*`) in
-  `keep\ai_settings.json` OUTSIDE the wiped folder, and puts them back when `settings.json` is missing
-  or has no key. With nothing remembered, the key is borrowed once from the installed app's settings
-  (`%LOCALAPPDATA%\FreeVideoStudio`). A missing settings file is recreated with only `SchemaVersion` and
-  the AI fields; every other setting takes the app's default, so `dev fresh` is still a fresh boot. The
-  script never deletes anything and never fails the run. Logs stay in `%TMP%` and are still cleared.
-* **DEVUPDATE_01 — dev updates come from `.\compiled`, through the production flow.** `dev.cmd` sets
-  `FVS_DEV_UPDATE_SOURCE` (the repo root) and the documented developer override
-  `FVS_ALLOW_UNSIGNED_UPDATE=1` (the dev app is unsigned, UPDATETRUST_02; honoured ONLY by Debug
-  builds while the dev update source is active — UNSIGNEDDEV_01). With both
-  `FVS_DEV_LOG_DIR` and `FVS_DEV_UPDATE_SOURCE` set, `UpdateService.QueryLocalDevReleaseAsync` treats
-  `.\compiled\FreeVideoStudio-Setup.exe` (NODROPPER_01) as the latest release (version from its file version, size, SHA-256
-  taken like GitHub's digest) and compares it with the copy INSTALLED in Program Files (nothing
-  installed = 0.0), because the dev app is stamped by the same `dev_build.cmd` run and would always be
-  "up to date". Everything after that is the production flow: question, download window (read from disk
-  with the same loop, hash and publisher check), Restart & update, installer window, first-launch
-  notice. The startup check runs on every dev launch (no throttle). The installer is started WITHOUT
-  the dev variables (`FVS_DEV_LOG_DIR`, `FVS_PROGRAMDATA_ROOT`, `FVS_DEV_UPDATE_SOURCE`,
-  `FVS_ALLOW_UNSIGNED_UPDATE`), so it really installs to Program Files and the installed app opens
-  with the real settings. A `file://` download URL is refused unless both dev variables are set.
-* **`dev.cmd trace` — a log that can leave the machine (TRANSPORT_TRACE_01).** Identical to the default watch mode except `FVS_DEV_LOG_DIR` points at `.devlogs\` inside the repo instead of `%TMP%`. The rule that dev logs never land in the project tree exists so an ordinary run cannot litter it and so a log can never be committed; this mode is opt-in, announces itself, and `.devlogs/` is gitignored, so neither risk applies.
-  It exists because **a log nobody can reach is a log nobody can read.** A fault that cannot be reproduced from source is diagnosed from a log, and a log sitting in a temp folder on one machine is unavailable to whoever is helping.
-* **Instrument before the third guess.** The main window writes one `TRANSPORT` line for every play and pause it issues — who issued it, and the player state at that instant (`t`, `dur`, `eof`, `pausedBefore`, `frozen`, `freezeAt`, `freezeArmed`, `endParked`, `seeking`). It is per transport change, not per tick, so it is cheap enough to leave in permanently. A transport fault that survives two source-level fixes is not a reading problem; ship the trace and let the log name the line.
-* ⚠️ **The default mode is `dotnet watch` hot reload, and hot reload cannot apply structural edits** — new fields, new methods, changed signatures. A fix that adds either is NOT in the running process until `dev.cmd` is stopped and restarted, however many times the file was saved. When a change does not appear, restart before re-diagnosing: the source on disk being correct is not evidence that the running binary contains it.
+**STORAGEPATHS_01 — mandatory maintained inventory.** Every agent/developer adding or changing any
+stored file, cache, secret/API credential, profile, output, recovery record or storage lifecycle MUST
+update this table and its retention rules in the same change, with corresponding path/lifecycle tests.
+Add a row for new categories; do not leave storage locations documented only in code. Never put actual
+credentials in documentation, test fixtures or logs. This section is the authoritative default layout.
+
+`C:\Users\<user>` is the example user profile from the approved table, never a hardcoded application path.
+LocalAppData/Roaming/Music/Videos use Windows folder resolution. `%TMP%` below means the ORIGINAL
+system temporary folder captured before application helper redirection. Downloads uses the Windows
+Known Folder API, including GPO/OneDrive relocation; saved explicit choices override defaults.
+
+| Files / purpose | Production | `.\dev.cmd` |
+| --- | --- | --- |
+| Settings | `C:\Users\<user>\AppData\Local\FreeVideoStudio\settings.json` | `%TMP%\FreeVideoStudio_DEV\data\settings.json` |
+| Saved session / folder choices | `C:\Users\<user>\AppData\Local\FreeVideoStudio\session_state.json` | `%TMP%\FreeVideoStudio_DEV\data\session_state.json` |
+| Window sizes / UI preferences | `C:\Users\<user>\AppData\Local\FreeVideoStudio\uistate` (window bounds in session state) | `%TMP%\FreeVideoStudio_DEV\data\uistate` (window bounds in session state) |
+| Music | `C:\Users\<user>\Music` | `C:\Users\<user>\Music` |
+| Saved voice recordings | `%TMP%\FreeVideoStudio\voiceovers` | `%TMP%\FreeVideoStudio_DEV\voiceovers` |
+| Memes | `C:\Users\<user>\Videos\FreeVideoStudio\Memes` | `C:\Users\<user>\Videos\FreeVideoStudio\Memes` |
+| Memes / starter songs while Windows "Controlled folder access" refuses the app (CFASAFE_01; kept with user data) | `C:\Users\<user>\AppData\Local\FreeVideoStudio\Media\Memes` and `\Media\Music` | Not used (development media rules above) |
+| Remembered "Controlled folder access" refusal (CFASAFE_01; rechecked after 7 days or from the notice) | `C:\Users\<user>\AppData\Local\FreeVideoStudio\controlled_folder_denied.txt` | `%TMP%\FreeVideoStudio_DEV\data\controlled_folder_denied.txt` |
+| Mask overlay profiles | `C:\Users\<user>\AppData\Local\FreeVideoStudio\MaskProfiles` | `C:\Users\<user>\AppData\Local\FreeVideoStudio_DEV\data\MaskProfiles` |
+| Active crop configuration | `C:\Users\<user>\AppData\Local\FreeVideoStudio\crops_coordinations.conf` | `C:\Users\<user>\AppData\Local\FreeVideoStudio_DEV\data\crops_coordinations.conf` |
+| Output videos | `%USERPROFILE%\Downloads` or Windows-redirected Downloads | `%USERPROFILE%\Downloads` or Windows-redirected Downloads |
+| Temporary processing / unfinished recordings | `%TMP%\FreeVideoStudio` | `%TMP%\FreeVideoStudio_DEV\data\scratch\work` |
+| Helper-program temporary files | `%TMP%\FreeVideoStudio` | `%TMP%\Local\FreeVideoStudio_DEV\data\scratch\os\<launch-guid>` |
+| Thumbnail / waveform cache | `%TMP%\FreeVideoStudio\cache\lanes` | `%TMP%\FreeVideoStudio_DEV\data\cache\lanes` |
+| Saved AI answers (AIREUSE_04: Kill Tracker scans per file + company + model; 200 files max, oldest removed; disposable, no keys) | `%TMP%\FreeVideoStudio\cache\ai` | `%TMP%\FreeVideoStudio_DEV\data\cache\ai` |
+| Merger preview silence (MERGEPREVIEW_SILENT_01; one ~10 KB FLAC, rewritten when missing) | `%TMP%\FreeVideoStudio\preview-silence` | `%TMP%\FreeVideoStudio_DEV\data\scratch\work\preview-silence` |
+| Crash recovery | `C:\Users\<user>\AppData\Local\FreeVideoStudio\recovery_v2.json` | `C:\Users\<user>\AppData\Local\FreeVideoStudio_DEV\data\recovery_v2.json` |
+| Merger recovery | `C:\Users\<user>\AppData\Local\FreeVideoStudio\merger_session.json` | `C:\Users\<user>\AppData\Local\FreeVideoStudio_DEV\data\merger_session.json` |
+| Logs | `C:\Users\<user>\AppData\Local\FreeVideoStudio\logs` | `%TMP%\FreeVideoStudio_DEV\data\logs`; explicit `dev trace`: `C:\FreeVideoStudio\.devlogs` |
+| Generated test fixtures, results, logs and isolated test state (TESTOUT_01, TESTCLEAN_01/02) | Not created by the installed application | ONLY repository `logs\<Suite>_Results\` (`console.log`, `<Suite>.trx`, `work\`; gate verdict `logs\Gate_Results\LAST_RESULT.txt`), one latest copy per suite — README GOV-TESTOUT. No other folder (`TestResults`, `artifacts`, `tests/AvRegression`, `tests/MediaPipelineChecks/artifacts`, `%TEMP%`) may hold test results. Each suite replaces only its own folder when it runs; the gate does so under an exclusive `tests/.test-run.lock`. No user media is removed; linked ancestors and escaping paths are refused. TEMP loss requires regenerating fixtures, never restoring user data. |
+| Roaming application data | `C:\Users\<user>\AppData\Roaming\FreeVideoStudio` | `%TMP%\FreeVideoStudio_DEV\data\roaming` |
+| Saved projects / project autosaves | User-selected project location; first close-time save reserves an unused name beside the source | Same behavior |
+| Legacy migration sources (LEGACYKEEP_01) | Original legacy Local/Roaming and TEMP roots; retained until explicit removal, including conflicts and referenced media | Production sweep disabled with development override; original legacy TEMP remains subject to OS/user TEMP clearing |
+| API keys (Gemini, Claude, OpenAI) | DPAPI-protected values in production `settings.json` above | DPAPI-protected values in development `settings.json` above; lost if TEMP is cleared |
+| Undo history | `C:\Users\<user>\AppData\Local\FreeVideoStudio\History` | `C:\Users\<user>\AppData\Local\FreeVideoStudio_DEV\data\History` |
+| Recent projects | `C:\Users\<user>\AppData\Local\FreeVideoStudio\recent_projects.json` | `C:\Users\<user>\AppData\Local\FreeVideoStudio_DEV\data\recent_projects.json` |
+| Favourite memes / remembered placement / delivery markers | Files inside production `uistate` above | Files inside temporary development `uistate` above |
+| Crop backups | Beside active crop configuration, `.bak1` through `.bak5` | Beside active crop configuration, `.bak1` through `.bak5` |
+| Failed voice-take recovery indexes | `voiceover_recovery_*.json` in processing folder above | `voiceover_recovery_*.json` in processing folder above |
+| Session lock / safe-mode / clean-exit markers | `C:\Users\<user>\AppData\Local\FreeVideoStudio` | `C:\Users\<user>\AppData\Local\FreeVideoStudio_DEV\data` |
+| Update downloads / staging | `C:\Users\<user>\AppData\Local\FreeVideoStudioUpdates` | Disabled; reserved `C:\Users\<user>\AppData\Local\FreeVideoStudio_DEV\data\updates` |
+| Installed executable / codecs / starter assets | `C:\Program Files\FreeVideoStudio` | `C:\FreeVideoStudio\.dev-run\app` |
+| Compiler intermediates / build tools | Not needed by installed app | `C:\FreeVideoStudio\.dev-run\build`; `C:\FreeVideoStudio\build\FvsBuild\bin` and `obj`; `C:\FreeVideoStudio\build\FvsVerify\bin` and `obj` |
+| One-time development preferences migration marker | Not applicable | `C:\Users\<user>\AppData\Local\FreeVideoStudio_DEV\data\.temporary-preferences-v1` |
+
+**Retention and deletion:**
+- Export success does NOT make voice source files disposable. Preserve recordings referenced by saved
+  projects, the open editor, undo or recovery. Existing ownership-based studio cleanup can remove
+  uncommitted/discarded session copies or rollback files after a failed Apply. Do not sweep applied
+  recordings merely because they are absent from the recent-project list: projects may live anywhere.
+  If lack of references cannot be proved, retain the file. No deletion of old recordings during path migration.
+- User/OS deletion of TEMP can still remove referenced voice audio and development preferences.
+  This layout does not protect TEMP from external cleanup. A later launch recreates working directories;
+  missing media requires relinking/re-recording. Persistent recovery JSON cannot reconstruct lost WAVs.
+- Never clear all of the production processing root: it now also holds applied voice recordings.
+  Caches may be regenerated; active operations can fail if TEMP is removed during execution.
+- Existing custom paths and older recording paths remain valid; source files are not moved/deleted.
+  Sharing music/memes/output defaults deliberately shares those files, not settings or IPC identity.
 
 ---
 
@@ -298,7 +366,7 @@
 
 ## 4c. Atomic Persistence Is Not Optional, And It Is Not Per-Caller  {#SYS-ATOMICWRITE}
 * **`SETTINGSATOMIC_01` — every shared-state file goes through `AtomicJsonFile`, under a named mutex.**
-  `settings.json` lives in `ProgramDataRoot` (the per-user root, SYS-USERSCOPE), which the Main App, the Video Merger (`--merger`) and
+  `settings.json` lives in `ApplicationPaths.PreferencesDirectory` (SYS-STORAGE-TABLE), which the Main App, the Video Merger (`--merger`) and
   the Crop Tools (`--crop-tool`) all share. `SettingsManager.Save` previously did
   `File.WriteAllText(SettingsPath + ".tmp")` followed by `File.Move`. Three defects, all now closed:
   1. **A FIXED temp name.** Three processes wrote the same scrap file. The loser got an `IOException`
@@ -319,6 +387,18 @@
 * **Lock waits are bounded and never span a UI `await`.** `Global\FvsFreeVideoStudioMutex_<user SID>`
   (USERSCOPE_01) is acquired with the 2-second `InteractiveMutexTimeout` so a wedged sibling process
   cannot freeze a click. A `LockException` is logged and reported as a failed save, not swallowed.
+* **`SETTINGSFREEZE_01` — the published snapshot is read-only.** `AppSettings`, `KeyBinds`,
+  `DefaultValues` and `AiUsageConfig` derive from `FreezableSettings`; every property setter goes
+  through `Set(ref field, value)`, which throws (naming the property) once the object is frozen.
+  `Update` and `Load` freeze the snapshot (recursively) before publishing it to `Instance` and
+  `Committed`; drafts (the patch target, JSON clones, `SettingsManager.Snapshot()`, a view-model's
+  pending copy) stay writable. Tests publish in-memory snapshots through `ReplaceInstanceForTests`.
+* **`SETTINGSTYPES_01` — closed sets are enums, the file format is unchanged.** `UpdateChannel` (removed 2026-11-12, SETNOBETA_01),
+  `VideoEncoderOverride` (`EncoderPreference`, member names = the strategy strings), the three
+  `Ai*CloudConsentVendor` stamps (`AiVendor?`, empty = no stamp = legacy Google), `AiTrackingGameProfile`
+  (`AiGameProfile`) and `AiUsageOverrides` (`IReadOnlyList<AiUsage>`, immutable) use lenient per-property
+  converters (`Infrastructure/SettingsTypes.cs`): any case reads, unknown values fall back to the
+  default and are logged, and the values are written as the same strings older builds read. No schema bump.
 * **`SETTX_01` / `SETTX_02` — ONE transaction, ONE mutex acquisition.**
   All settings mutation goes through `SettingsManager.Update(Action<AppSettings>)` (plus the typed
   `SetAutoUpdateChecks` helper). SETTX_01 re-read the persisted file before patching, but released
@@ -360,7 +440,7 @@
   an export records its choices (`RememberChoices`) only when a start value follows the last choice.
 
 * **`CACHEBOUND_01` / `ATOMICBYTES_01` — disposable cache bytes use the same publish sequence, without the mutex.**
-  `LaneDiskStore.Write` (the Merger's lane cache, `ProgramDataRoot\cache\lanes`, SYS-USERSCOPE) calls
+  `LaneDiskStore.Write` (the Merger's lane cache, `ApplicationPaths.LaneCacheDirectory`, SYS-STORAGE-TABLE) calls
   `AtomicJsonFile.WriteBytes` — the one `WriteCore` (GUID temp in the target folder, `WriteThrough`,
   `Flush(flushToDisk: true)`, `File.Move(overwrite: true)` with its bounded retry, temp deleted on failure).
   No named mutex is taken because a lost or duplicate cache write is a miss, never lost user state. Readers open with Read|Write|Delete sharing; the background prune deletes
@@ -393,8 +473,8 @@
   `IProjectStore.Save` and `UndoSidecarStore.Save` on the thread pool. Only the dirty-flag update /
   Fatal report is marshalled back, and dirty is cleared only if no edit landed during the write
   (`_editGeneration`). One autosave in flight at a time. Every project write — background or
-  explicit — passes one ordered gate (`_ioGate` + write sequence), so a stale autosave is skipped
-  rather than landing on top of a newer Ctrl+S; no `Task.Wait` on the UI thread (ASYNCUI_01).
+  explicit — awaits one background task chain (`_ioTail`, PROJECTIO_01), so an older autosave
+  finishes before a newer Ctrl+S; the dispatcher never waits on a disk-held monitor (ASYNCUI_01).
 * **`IPCLEASE_01` — the single-server lease is a mutex that is NEVER OWNED.**
   A Win32 mutex is thread-affine: only the thread that acquired it may release it. The lease was
   taken on the startup thread and released in `Dispose` on another, so `ReleaseMutex` threw
@@ -468,6 +548,7 @@
   * **Reads:** `InProcessSessionState.ReadSnapshot()` = `SessionStateWriter.ReadSnapshot()`: the in-process server's memory, or the snapshot primed at bootstrap (`Program.BootstrapAsync` → `LoadAsync` → `Prime`), overlaid with unacknowledged → in-flight → pending updates. No pipe, no mutex, no disk; an unprimed read starts an asynchronous prime.
   * **Removed APIs (enforced by `ArchitectureRuleTests.UiCodeNeverBlocksOnSessionStateIpc` and `IpcTests.UiIpc_NoSynchronousIpcEntryPointExists`):** `StateTransferStore.UpdatePropertiesSync/SendHandoffSync/LoadSync`, `NamedPipeStateClient.GetStateSync/UpdatePropertiesSync/SaveStateSync/ClearStateSync/SendHandoffSync`, `WindowBoundsHelper.SaveBoundsSync`. The Merger's standalone return handoff awaits `SendHandoffAsync` and logs a miss.
 * **`IPCDEADLINE_01` — one end-to-end deadline per pipe exchange.** `IpcProtocol.ExchangeAsync` runs connect, write AND read under ONE linked token (`CancelAfter(deadline)`), and the token's registration also disposes the stream, so a peer that accepts the connection and never answers releases the caller at the deadline even if an I/O primitive ignored the token. Every `NamedPipeStateClient` call goes through it; there is no synchronous client. Wire protocol, opcodes, pipe name and lease name are unchanged. Tests: `IpcTests.IpcDeadline_*` (silent peer), `SessionWriter_*` (rapid updates → newest persists, hung owner, failure retained/retried, close during pending save, slow ACK), `AutosaveBackgroundTests.WindowClose_*` (dispatcher keeps processing while the owner is hung; re-entry; unacknowledged save reported).
+* **`PIPEAUTH_01` — both ends of every local pipe prove who the other end is.** The pipe names carry the user's SID, which is not a secret, so another account could pre-create the pipe and receive this user's handoff paths and session state. `PipeAccess.CreateServer` gives the state pipe and the single-instance handoff pipe a protected DACL granting only the current user and LocalSystem; `NamedPipeStateServer` adds `FirstPipeInstance` whenever none of its own instances is live, the handoff pipe (one instance) always. Before writing a byte, `IpcProtocol.ExchangeAsync` and `SingleInstanceGuard.TrySendHandoff` call `PipeAccess.IsServerTrusted` (`GetNamedPipeServerProcessId` → process token SID == current user) and refuse otherwise; every failure to establish identity fails CLOSED. Tests: `PipeAccessTests`.
 
 * **In-Process Navigation vs. Standalone CLI & Named Pipe Architecture (`TOOLNAV_01`–`TOOLNAV_04`):**
   Companion tools (Crop Tool, Video Merger) were originally launched via "process suicide": `CompanionAppService` serialized state, invoked `Process.Start(sameExe, "--crop-tool")`, and terminated the host via `Environment.Exit(0)`.
@@ -481,7 +562,7 @@
 
 ## 5. Binary Metadata & Authenticode Signing Mandate  {#SYS-SIGNING}
 * **Win32 Executable Metadata:** The compiled `.exe` embeds complete production metadata (Product Name, Publisher, Assembly Version, File Version, Legal Copyright).
-* **PEIDENTITY_01 — the binary names its own file.** NativeAOT copies the version resource from the managed assembly, so the program said `OriginalFilename = InternalName = FreeVideoStudio.dll` while it is `FreeVideoStudio.exe` — the renamed-binary masquerading pattern (MITRE T1036.003) antivirus scores. The SDK has no property for these strings, so `FvsBuild` (`PeIdentity.FixOriginalFilename`) rewrites them in the VS_VERSION_INFO block of the `.rsrc` section, in place (`.dll` → `.exe` is length-preserving; no offset, size or checksum moves; nothing outside that block can change), right after the publish and BEFORE signing. Idempotent; a file without a version resource fails the build. Measured on the 2026.10.11.1008 program: exactly 6 bytes changed. `ReleaseGate.SynchronizeVersionFiles` (official releases only, inside the release commit — RELGATE_01) also stamps `app.manifest`'s `assemblyIdentity version` with the build version (it said `1.0.0.0`). The Inno Setup installer's own resource says `OriginalFilename = FreeVideoStudio-Setup.exe`, Company `Alon Reich`, the same version (09 DIST-INSTALLER). Tests: `PeIdentityTests`.
+* **PEIDENTITY_01 — the binary names its own file.** NativeAOT copies the version resource from the managed assembly, so the program said `OriginalFilename = InternalName = FreeVideoStudio.dll` while it is `FreeVideoStudio.exe` — the renamed-binary masquerading pattern (MITRE T1036.003) antivirus scores. The SDK has no property for these strings, so `FvsBuild` (`PeIdentity.FixOriginalFilename`) rewrites them in the VS_VERSION_INFO block of the `.rsrc` section, in place (`.dll` → `.exe` is length-preserving; no offset, size or checksum moves; nothing outside that block can change), right after the publish and BEFORE signing. Idempotent; a file without a version resource fails the build. Measured on the 2026.10.11.1008 program: exactly 6 bytes changed. `ReleaseGate.SynchronizeVersionFiles` (official releases only, inside the release commit — RELGATE_01) also stamps `app.manifest`'s `assemblyIdentity version` with the build version (it said `1.0.0.0`). The Inno Setup installer's own resource says `OriginalFilename = FreeVideoStudio.exe`, Company `Alon Reich`, the same version (09 DIST-INSTALLER). Tests: `PeIdentityTests`.
 * **Authenticode Integrity Enforcement:**
   `Build.cmd` executes Authenticode signing when `FVS_SIGN_PFX` and `FVS_SIGN_PASS` environment variables are detected.
   ⚠️ **Agent Restriction**: `Build.cmd` triggers public GitHub Cloud release deployment and is strictly banned for autonomous agents. For local compilation checks and signing validation, agents must run `dev_build.cmd`.
@@ -495,7 +576,7 @@
   The download is now deleted and the user is told to install the signed build by hand **once**; from then on they have an anchor and auto-update verifies normally.
   * ⚠️ This is a real, accepted regression: in-app auto-update stops working for installs that are themselves unsigned. Refusing to execute unverified code with elevation is the correct trade.
   * **`FVS_ALLOW_UNSIGNED_UPDATE=1`** restores the old behaviour for developers. It is read from the **environment** on purpose — it cannot be set by a downloaded payload, a settings file or a server response.
-  * **`UNSIGNEDDEV_01` — and it exists ONLY in Debug builds.** The override used to be honoured by every build, released ones included, so any program running as the user could set one environment variable and make the user's installed copy run an unsigned "update" with administrator rights. The branch is now compiled only under `#if DEBUG` (`dev.cmd` runs Debug) and additionally requires the dev update source (`UpdateService.DevReleaseFolder`). A Release build — every copy a user can download — has no code path that accepts `NoAnchor`. The same rule governs the protected worker copy (`ProtectedWorkerStage`, SYS-UPGRADE-TRUST). Enforced by `ReleaseHardeningTests.UnsignedDev01_*`.
+  * **`UNSIGNEDDEV_01` — and it exists ONLY in Debug builds.** The override used to be honoured by every build, released ones included, so any program running as the user could set one environment variable and make the user's installed copy run an unsigned "update" with administrator rights. The branch is now compiled only under `#if DEBUG` (explicit Debug updater tests only; `dev.cmd` now runs Release and disables updates) and additionally requires the dev update source (`UpdateService.DevReleaseFolder`). A Release build — every copy a user can download — has no code path that accepts `NoAnchor`. The same rule governs the protected worker copy (`ProtectedWorkerStage`, SYS-UPGRADE-TRUST). Enforced by `ReleaseHardeningTests.UnsignedDev01_*`.
   * The three-way `TrustVerdict` is unchanged: *what to do* about a missing anchor is policy, and policy belongs with the caller that owns the consequence, not with the primitive that reads the signature.
 * **Mandatory Signing Failure Abort:**
   If certificate signing environment variables are present but the signing tool (`signtool.exe`) fails or returns a non-zero exit code, the build script MUST FAIL IMMEDIATELY. Silently producing or packaging an unsigned binary when signing was explicitly requested is classified as a severe security failure.
@@ -511,6 +592,40 @@
   accepted as before. What money still buys: no SmartScreen "unknown publisher" on a FIRST download.
   `CodeSigning` refuses to sign with a certificate that does not chain to the pinned root (a different
   root would make every installed copy refuse every future update).
+* **SIGNDEPS_01 — bundled tools are signed only with a publicly trusted certificate (2026-11-11).** FFmpeg, ffprobe, mpv
+  and their DLLs (12 files) ship unsigned. Smart App Control, the ASR "prevalence" rule and company allow-lists judge each
+  file on its own, so an allowed app can still have its FFmpeg blocked (dead preview, failing export).
+  `CodeSigning.SignDependenciesWhenPubliclyTrusted` (after the program is signed, before the manifests) signs every
+  unsigned `.exe`/`.dll` in staging — but ONLY when `FVS_SIGN_PFX` is set. With the repository certificate they stay
+  byte-identical to upstream: Microsoft's reputation is per file hash, and re-signing with a certificate nobody trusts
+  would discard any reputation those exact bytes have and gain nothing. Already-signed files are never re-signed. The
+  first release that signs them changes their hashes once (one larger smart update).
+* **FREETRUST_01 — free routes to a trusted signature (no purchase).** Only a certificate from a public CA (or Microsoft's
+  Store signing) clears Smart App Control and the "unknown publisher" screen. The no-cost options are listed in
+  `docs/New-Release.md` › "Free ways to be trusted": (1) SignPath Foundation — free code signing for open-source
+  projects (requires an OSI-approved licence and signing from GitHub Actions — CHOSEN 2026-11-11: the repository is
+  now GPL-3.0, see SIGNPATH_01); (2) the Microsoft Store — individual developer registration is
+  free and Store-delivered MSIX packages are signed by Microsoft (requires an MSIX package; the elevated transactional
+  installer and self-update do not apply inside MSIX); (3) WDSI submissions per release (NEWRELEASE_01), which build file
+  reputation but not publisher trust. A public certificate is accepted by every installed copy alongside the pinned
+  root (UPDATEPIN_01); `update.json` stays signed by the repository leaf.
+* **SIGNPATH_01 — accepting SignPath Foundation's certificate without trusting its name (2026-11-11).** The free
+  open-source certificate's publisher is "SignPath Foundation" — shared by every project they sign — so "same publisher
+  as the running program" proves nothing, and copies signed with the repository certificate (no public chain) would
+  return `NoAnchor` and REFUSE the first SignPath-signed release. `AuthenticodeVerifier.EvaluateUpdateCandidate` now
+  takes the SHA-256 from the publisher-signed update list (`listedSha256`): a file whose signer CN is exactly
+  `SignPath Foundation` (`IsSharedPublisher`) is Trusted only when Windows fully trusts the signature AND its hash
+  equals the listed hash (`EvaluateSharedPublisher`); otherwise Rejected — even when the running program is
+  SignPath-signed too. Callers: `UpdatePreparer` (smart: the program's `exe.Sha256`; full: `FullInstaller.Sha256` of the
+  verified list, null when no list could be verified → refused), `ProtectedWorkerStage` (the hash of the running
+  program: the copy must be byte-identical). The shared certificate never vouches for `update.json`
+  (`VerifySignature`'s `alsoTrustThumbprint` is withheld for it in `UpdatePreparer` and `UpgradeInstallWorker`); the list
+  stays signed by the repository leaf under the pinned root. ⚠️ ORDER: at least one release carrying this code must be
+  published (signed as today) BEFORE the first SignPath-signed release; copies older than that must reinstall by hand
+  once. Other SignPath conditions met in the repository: `LICENSE` (GPL-3.0), `CODE_SIGNING_POLICY.md`, `PRIVACY.md`
+  (linked from the first-start update question, `UpdateService.PrivacyPolicyUrl`), `THIRD_PARTY_NOTICES.md` (FFmpeg /
+  mpv source offer), Creative-Commons starter songs (OSSMEDIA_01, `03`). Still to do after acceptance: a GitHub Actions
+  release build with the SignPath signing step (verifiable builds, manual approval). Tests: `SignPathTrustTests`.
 * **ROOTKEY_01 — the root key has its OWN passphrase and may live offline (2026-10-18, free).** The root
   private key (`ssl-certificate\fvs-dev-root-ca.key.pem`) was encrypted with the SAME password that sits in
   plain text in `fvs-codesign.password.txt` beside it, so a copy of that folder was a copy of the key every
@@ -561,15 +676,13 @@
 * **Schema v12 (LOUDSTD_REMOVED_01 / CLIPLEVEL_01 / VOLMUTE_01):** removes `LoudnessNormalizationPrompt` and `Defaults.AutoVoiceNormalization` (old keys are ignored on read and dropped on the next write); adds `MergerMatchClipLoudness` (default OFF) and `PreviewMuted` (default OFF). The master LEVEL stays in the session state (`MainVolume`), written by `MasterVolumePersistence` off the UI thread.
 * **Schema v10 (SYS-AISETTINGS):** Introduces configuration for Universal AI Smart Tracking Zoom:
   * `GeminiApiKey` (string, default `""`): Google Gemini API key. Since schema 14 the on-disk value is SEALED (`KEYPROTECT_01`, below); code reads the clear key only through `AppSettings.GeminiApiKey` (`[JsonIgnore]`), the JSON property is `GeminiApiKeyStored`.
-  * `GeminiModelName` (string, default `GeminiClient.DefaultModel` = `"gemini-3.8-flash"` since `AIMODELS_02` (was `"gemini-2.5-flash"`, shut down 2026-10-16) — the ONE place the default model is named; D3): selected Gemini model, chosen in Settings › AI Tracking from the list the key can use.
+  * `GeminiModelName` (string, default `GeminiClient.DefaultModel` = `"gemini-3.8-flash"` since `AIMODELS_02` (was `"gemini-2.5-flash"`, shut down 2026-10-16) — the ONE place the default model is named; D3): selected Gemini model, chosen in Settings › AI › "Advanced: AI model" from the list the key can use.
   * `AiZoomBaseScale` (double, default `2.2`): camera scale during still or slow gameplay ($v \le v_{\text{slow}}$).
-  * `AiZoomMinScale` (double, default `1.3`): minimum wide camera scale during high-velocity gameplay ($v \ge v_{\text{fast}}$).
-  * `AiZoomAvoidHud` (bool, default `true`): keeps the camera crop off HUD zones (`01` AIHUDZONE_01).
-  * `AiZoomDeadbandPercent` (double, default `2.0`, Settings slider 0–6 %): suppresses micro-jitter below that share of the frame.
+  * `AiZoomMinScale`, `AiZoomAvoidHud`, `AiZoomDeadbandPercent` — REMOVED 2026-11-12 (SETZOOMONE_01; old keys are ignored). The fast-move scale is derived from `AiZoomBaseScale` (`AiZoomTuning.MinScaleFor`: 2.2x → 1.3x, at most 2.0x and never above the base); HUD avoidance (on) and the 2 % deadband are the tuned constants `AiZoomTuning.AvoidHud` / `DeadbandPercent`.
   * `AiMagicWandCloudConsent` (bool, default `false`, `AIHUD_05`): the user's yes to the Crop Tool Magic Wand sending ONE frozen frame to the configured AI provider. Additive (missing reads as false), so no schema bump. Holds no credential.
   * `AiZoomCloudConsent` (bool, default `false`, `AIZOOMCONSENT_01`): the user's yes to AI SMART ZOOM sending still frames and short, silent, low-resolution clips to Google Gemini. Additive. Holds no credential.
   * `AiTrackingGameProfile` (string, default `"ThirdPerson"`, `AIGAME_01`): an `AiGameProfile` name; unknown text reads as the default. Additive.
-* **Schema v14 (`KEYPROTECT_01`, `SecretProtector`):** the `"GeminiApiKey"` JSON value changes MEANING: it holds `"dpapi1:" + base64(CryptProtectData(key, entropy "FreeVideoStudio.GeminiApiKey.v1", CURRENT USER))` instead of plain text. Only the same Windows account on the same machine can open it, so a copied settings file, a quarantined `settings.json.corrupt-*.bak` or a support bundle carries no usable key. Direct P/Invoke to `crypt32` (no package, NativeAOT-safe). A plain-text value (older file, or one written back by a downgraded build) is sealed by `Migrate` / `SealLegacyPlainKey` on load and the file is rewritten, so the clear key leaves the disk at first start. An undecryptable blob (other user / machine) reads as empty: the user is asked for the key again. Off Windows (test hosts only) the value is stored as `"plain1:" + base64` so it is never mistaken for a sealed blob. A key is re-sealed only when it CHANGED (`ApplyPendingAiSettings`), so Save does not rewrite an identical secret. Downgrade note: a build older than schema 14 reads the sealed text as an invalid key and asks for it again.
+* **Schema v14 (`KEYPROTECT_01`, `SecretProtector`):** the `"GeminiApiKey"` JSON value changes MEANING: it holds `"dpapi1:" + base64(CryptProtectData(key, entropy "FreeVideoStudio.GeminiApiKey.v1", CURRENT USER))` instead of plain text. Only the same Windows account on the same machine can open it, so a copied settings file, a quarantined `settings.json.corrupt-*.bak` or a support bundle carries no usable key. Direct P/Invoke to `crypt32` (no package, NativeAOT-safe). A plain-text value (older file, or one written back by a downgraded build) is sealed by `Migrate` / `SealLegacyPlainKey` on load and the file is rewritten, so the clear key leaves the disk at first start. An undecryptable blob (other user / machine) reads as empty: the user is asked for the key again. Off Windows (test hosts only) the value is stored as `"plain1:" + base64` so it is never mistaken for a sealed blob. A key is re-sealed only when it CHANGED (`SettingsViewModel.WriteKeys` compares before assigning), so Save does not rewrite an identical secret. Downgrade note: a build older than schema 14 reads the sealed text as an invalid key and asks for it again.
 * **`GEMINICLIENT_01` — one Gemini transport (`GeminiClient.cs`) for AI SMART ZOOM, the key test and the model list:**
   * The key travels ONLY in the `x-goog-api-key` header — never in a URL (the old `?key=` URLs of the tracking service and key test are gone; `AiZoomReviewTests.NoGeminiUrlCarriesTheKey` enforces it). Every string bound for a log, a fault or an exception passes `GeminiClient.Redact` (key text, `key=…`, `x-goog-api-key`, `Authorization`, and anything shaped like a raw Google key `AIza…`). `GeminiHudDetectionService.Redact` delegates to it.
   * Each attempt has its own timeout through a linked token (tracking 180 s, key test / model list 20 s); the shared `HttpClient` has an infinite timeout. A timeout is `GeminiErrorKind.Timeout`, never the user's cancel — `OperationCanceledException` escapes ONLY when the caller's token was cancelled. (Before, the 60 s `HttpClient.Timeout` surfaced as a cancellation and the editor told the user they had cancelled.)
@@ -581,37 +694,36 @@
   * Establishes a vendor-neutral interface (`IAiVisionProvider`: `Vendor`, `DefaultModel`, `ListModelsAsync`, `GenerateJsonAsync`) designed for multi-provider support (Google Gemini, Anthropic Claude, OpenAI).
   * `AiProviderException` unifies error classification (`AiProviderErrorKind`) across providers while preserving full `GEMINICLIENT_01` error fidelity; `GeminiException` derives from `AiProviderException` for seamless backward compatibility.
   * `GeminiProvider` wraps `GeminiClient`, building AOT-safe structured JSON generationContent requests with support for text prompts, images, video with FPS metadata, response schemas, and reasoning/thinking configurations, with automatic single retry if `videoMetadata` is rejected.
-  * `ClaudeProvider` (`CLAUDEPROVIDER_01`) implements `IAiVisionProvider` using Anthropic's Messages API with `x-api-key` and `anthropic-version: 2023-06-01` headers, base64 image inputs, structured JSON extraction via tool use (`tool_choice: { type: "tool", name: "submit_result" }`), extended thinking budgets, and classified error responses.
-  * `OpenAiProvider` (`OPENAIPROVIDER_01`) implements `IAiVisionProvider` using OpenAI's Chat Completions API with `Authorization: Bearer` headers, data URL image inputs, strict Structured Outputs via `response_format: { type: "json_schema" }`, `reasoning_effort` controls, and classified error handling.
-  * `GeminiClient.Redact` scrubs all vendor key shapes (`AIza…`, `sk-ant-…`, `sk-…`), auth headers (`x-goog-api-key`, `x-api-key`, `Authorization: Bearer`), and query parameters from logs, faults, and exception messages.
+  * `ClaudeProvider` (`CLAUDEPROVIDER_01`) and `OpenAiProvider` (`OPENAIPROVIDER_01`) both implement `IAiVisionProvider` (Anthropic Messages / OpenAI Chat Completions), honor both `RetryAfter.Delta` and `RetryAfter.Date`, sort `ListModelsAsync` newest-first, log redacted truncated prompt + raw AI answer on malformed JSON, and emit verbose live step progress (`Preparing payload`, `Sending to <Vendor> (<Model>)`, live wait heartbeats, retries, 404 fallback, response token summary) via `userLog`. `AiVisionProviders.SessionRemap` entries are scoped by key fingerprint so key switches clear stale remaps.
+  * Central secret redaction (`SecretRedactor` in Core, wired into `GeminiClient.Redact`, `RuntimeLog`, and `DiagnosticReport.Redact`) automatically scrubs all vendor key shapes (`AIza…`, `sk-ant-…`, `sk-…`), auth headers (`x-goog-api-key`, `x-api-key`, `Authorization: Bearer`), and `?key=` query parameters everywhere logs are written.
 * **`AISCHEMA_01` — one response-schema translator (`AiJsonSchema`):** the app's schemas are written in Google's dialect (upper-case types, `nullable`, array roots). `ClaudeProvider` and `OpenAiProvider` translate them before sending: types lower-cased, `nullable` → `[type,"null"]`, an array root wrapped as `{ "items": [...] }` (both vendors require an object root) and unwrapped from the answer; for OpenAI strict mode every object also gets `additionalProperties:false` with all properties required (optional ones become nullable) and `null` values are dropped from the answer, so every parser sees exactly the Gemini shape. Before this, Claude and OpenAI rejected Smart Zoom, Commentary and Magic Wand requests outright, and OpenAI rejected all seven features. Tests: `AiJsonSchemaTests`.
 * **`AITEMP_02` — temperature, per vendor (supersedes the AITEMP_01 details below):** Claude NEVER receives a temperature (Claude 4.7+ answer HTTP 400 to any non-default value — Commentary and Viral Post used to fail on Claude every time); Gemini 3 and later and the `-latest` aliases keep their default temperature unless the task asks for a creative one (`GeminiClient.PrefersDefaultTemperature`; Google warns a lowered value can loop or degrade); older Gemini keeps 0; OpenAI gets a temperature only for the gpt-4 family (o-series and gpt-5+ are reasoning models). Claude `max_tokens` is 8192 without thinking so long answers are not cut mid-JSON.
 * **`AITEMP_01` — temperature per task:** `GeminiCallOptions.Temperature` (null = deterministic: 0 on Gemini, vendor default elsewhere). Tracking, HUD, elimination and music stay deterministic; Commentary and Viral Post use `GeminiCallOptions.Creative` (0.9) so a retry is not a copy. Claude never receives a temperature together with extended thinking; OpenAI reasoning models (o-series, gpt-5) never receive one.
-* **Claude extended thinking:** Anthropic rejects a forced tool choice while thinking is on, so a thinking request uses `tool_choice: auto` and the prompt asks for `submit_result`. Image labels are sent BEFORE their image for every vendor. 404s name the real model and point to Settings › AI Features.
+* **Claude extended thinking:** Anthropic rejects a forced tool choice while thinking is on, so a thinking request uses `tool_choice: auto` and the prompt asks for `submit_result`. Image labels are sent BEFORE their image for every vendor. 404s name the real model and point to Settings › AI.
 * **`AIFFMPEG_01` — AI helper FFmpeg jobs (`AiFfmpeg`):** stills, duration probe and PCM dump for Music Auto-Fit, Viral Post and the Kill Tracker run through `AsyncProcessRunner` (both pipes drained, time limit, kill on cancel, `ArgumentList` quoting). The old helpers redirected stderr without reading it and had no limit, so a chatty FFmpeg could fill the pipe and hang forever.
-* **`AIDEFAULT_01` — one AI for every feature:** `AppSettings.AiDefaultUsage` (vendor + model) is what `GetUsageConfig` returns for every usage NOT listed in `AiUsageOverrides`; listed usages use their own stored `AiUsage*` config (`GetOwnUsageConfig`). Both are additive (missing = null, no schema bump): `EnsureAiDefault` (called by `Migrate` and the Settings window) derives them from an older file — the most common per-feature choice becomes the default and every feature that differs becomes an override — so nobody's routing changes. `SetUsageConfig` marks the usage overridden. All seven usages (U5 Music Auto-Fit, U6 Viral Post, U7 Kill Tracker included) can be overridden in Settings › AI Features › Advanced.
+* **`AIDEFAULT_01` — one AI for every feature:** `AppSettings.AiDefaultUsage` (vendor + model) is what `GetUsageConfig` returns for every usage NOT listed in `AiUsageOverrides`; listed usages use their own stored `AiUsage*` config (`GetOwnUsageConfig`). Both are additive (missing = null, no schema bump): `EnsureAiDefault` (called by `Migrate` and the Settings window) derives them from an older file — the most common per-feature choice becomes the default and every feature that differs becomes an override — so nobody's routing changes. `SetUsageConfig` marks the usage overridden. SETAIONE_01 (2026-11-12): Settings no longer offers overrides — saving Settings clears `AiUsageOverrides` and sets every `AiUsage*` config to the default, so ONE company and model serve all seven usages. The override mechanism stays in `AppSettings` for older files until their next Settings SAVE.
 * **`AIFRAMESEQ_01` — Frame-sequence fallback for AI vision providers (`AiFrameSequenceExtractor`):**
   * Extracts sampled video frames (default 2 fps, 640 px width preserving aspect ratio, JPEG format) labelled with their exact source timestamps (formatted `[MM:SS.fff]`) using FFmpeg.
-  * Partitions frame sequences into chunks respecting vendor-specific limits (e.g. Claude: 20 images per request; OpenAI: 50 images per request; custom limits configurable).
+  * Partitions frame sequences into chunks respecting vendor-specific limits (Claude: 20 images per request; OpenAI: 50 images per request; custom limits configurable). Non-zero FFmpeg exits fail explicitly with redacted stderr when zero frames are extracted.
   * Enables high-accuracy video tracking and karaoke caption analysis across all non-native video providers without changing prompt schemas or coordinate contracts.
 * **`AISETTINGS_01` — Multi-vendor AI keys & per-usage settings (`SettingsManager`, `AppSettings`, `AiUsageConfig`):**
   * Extends DPAPI-sealed credentials storage (`KEYPROTECT_01`, `SecretProtector`) to Anthropic Claude (`ClaudeApiKey` / `ClaudeApiKeyStored`) and OpenAI (`OpenAiApiKey` / `OpenAiApiKeyStored`). Plain-text keys on disk are automatically sealed on load and persisted back immediately; test keys are sealed with `plain1:` prefix.
   * Introduces per-usage execution settings (`AiUsageConfig: { Vendor, Model }` — the never-used `ReasoningLevel` was removed by `AIREASONING_01`; an old file carrying it still loads) for seven studio tasks: U1 Zoom Subject Discovery (`AiUsageSubjectDiscovery`), U2 Zoom Dense Tracking (`AiUsageTracking`), U3 Magic Wand HUD Detection (`AiUsageMagicWand`), U4 Live Commentary Captions (`AiUsageCommentary`), U5 Music Auto-Fit (`AiUsageMusicAutoFit`), U6 Viral Post (`AiUsageViralPost`) and U7 Kill Tracker (`AiUsageEliminationTracker`). Since `AIDEFAULT_01` these are per-feature OVERRIDES of one shared default.
   * Backward compatibility invariant: Migration automatically maps legacy user-configured `GeminiModelName` into all Google vendor usage profiles; missing fields deserialize safely to default models; no plain-text secret ever touches disk.
 * **`AIPROVIDER_UI_01` — Multi-Vendor AI Settings UI (`SettingsWindow.AiTracking.cs`, `SettingsWindow.axaml`):**
-  * Since `AISETTINGS_UI_02` the controls live in the single "AI Features" tab (docs/04 UI-SETTINGS-ABOUT): one default provider row plus collapsed per-feature overrides (U1–U7); key cards show only for companies in use.
-  * Connects credential management for Google Gemini, Anthropic Claude, and OpenAI with password masking, single-click "Test Connection" verification against live vendor endpoints, "Remove Key" confirmation, and direct browser navigation to developer consoles.
-  * Provides the default vendor/model row and per-usage override rows (U1-U7) populated from provider catalogs or local defaults, with one live "Refresh" for every company in use, a "★ Recommended" badge and "Use Recommended".
+  * Since `AISETTINGS_UI_02` the controls live in the single "AI" tab (docs/04 UI-SETTINGS-ABOUT); since SETDECLUTTER_01 there is one company row (model under Advanced) and no per-feature overrides (SETAIONE_01).
+  * One "Paste any AI key" box (SETKEYONE_01: `DetectKeyVendor` — `AIza…` Google, `sk-ant-…` Anthropic, `sk-…` OpenAI) with password masking, then one row per saved key (last 4 characters, "Test" against the live vendor endpoint, "Remove"), plus browser links to the three developer consoles.
+  * The model list comes from provider catalogs or local defaults, with one live "Refresh" for the company in use, a "★ Recommended" badge and "Use recommended".
   * Persists all key changes and task mappings atomically via single-transaction settings save (`SETTX_01`).
 * **`AIPROVIDER_ROUTING_01` — Dynamic Multi-Vendor Vision Dispatch & Unified Error Handling:**
   * Routes U1 Subject Discovery (`GeminiTrackingService.DiscoverSubjectsWithLookaheadAsync`), U2 Dense Tracking (`GeminiTrackingService.TrackSubjectAsync`), and U3 Magic Wand HUD (`GeminiHudDetectionService.DetectAsync`, `CropToolWindow.MagicWand.cs`) through each task's configured vendor and model.
   * For non-Google providers, maps structured JSON outputs from `IAiVisionProvider.GenerateJsonAsync` back into existing `DiscoveredSubject`, `RawSubjectWaypoint`, and `HudCandidate` records.
-  * U2 Dense Tracking employs timestamp-labelled frame-sequence extraction at 2 fps from in-memory MP4 chunks (`AiFrameSequenceExtractor.SampleFramesFromMp4BytesAsync`).
+  * U2 Dense Tracking encodes H.264 MP4 chunks ONLY for native Google Gemini video dispatch; Anthropic Claude, OpenAI, and custom `IAiVisionProvider` routes sample 2 fps 640-px JPEGs directly from source media via `AiFrameSequenceExtractor.SampleFramesAsync`, eliminating duplicate decode/encode overhead.
   * Unified error handling catches `AiProviderException` across all providers, scrubbed via multi-key redaction and presented via persistent modal dialogs (`AiProviderErrorTitle`).
 * **Magic Wand AI key handling (`AIHUD_01`, `GeminiHudDetectionService`):** the key is read from settings at call time and sent ONLY in the `x-goog-api-key` header. Every log line, fault detail and result detail passes through `GeminiHudDetectionService.Redact`. The key is never cached (`AiHudResultCache` keys are source/frame/model hashes) and never written to project (`.fvsproj`), recovery or crop-config files; `GeminiHudDetectionServiceTests.ApiKey_*` enforce this.
   * **Migration Invariant:** Upgrading from schema v9 or older preserves all existing preferences and initializes AI tracking fields to defaults. Files from a higher schema version are loaded best-effort without destructive rewrites.
 * **`SECRETSCAN_01` — nothing secret reaches git.** `tests/FreeVideoStudio.App.Tests/SecretLeakTests.cs` (run by CI on every push) scans every file git tracks or would add (`git ls-files --cached --others --exclude-standard`; without git: `src`, `tests`, `docs`, `build`, `.github`) for Google API keys, private-key blocks, GitHub tokens and `sk-…` keys, fails if a `.pfx`/`.p12`/`.key.pem`/`.password.txt`/`.snk` file is visible to git, and checks that `.gitignore` covers those types. Git-ignored files (the developer's own `ssl-certificate/*.pfx`, `*.key.pem`, `*.password.txt`) are deliberately NOT read. Fake test keys carry `SECRETSCAN_ALLOW` on their line.
-* **Schema v9 (REMOVEUX_01):** upgrading from v8 or older sets `ConfirmVideoMergerRemove = false` once (product decision 2026-09-27: removal is instant and undoable); a v9 file keeps the user's choice. `ApplicationPaths.LaneCacheDirectory` (`ProgramDataRoot/cache/lanes`) holds the Merger's per-clip filmstrip PNGs and waveform peaks (LANECACHE_02), best-effort, pruned to 800 files.
+* **Schema v9 (REMOVEUX_01):** upgrading from v8 or older sets `ConfirmVideoMergerRemove = false` once (product decision 2026-09-27: removal is instant and undoable); a v9 file keeps the user's choice. `ApplicationPaths.LaneCacheDirectory` (see SYS-STORAGE-TABLE) holds the Merger's per-clip filmstrip PNGs and waveform peaks (LANECACHE_02), best-effort, pruned to 800 files.
 * **UPDATECONSENT_01 — no network at startup, and only after a yes (2026-10-12).** An unknown program that contacts a server and downloads executables the moment it starts is what downloader malware does, and antivirus behaviour engines score it that way. `RunStartupCheckAsync` therefore (1) asks ONCE — "Check for updates automatically?" (`AskUpdateConsentAsync`, a `ConfirmDialogWindow` over the main window, 3 s after it opens) — while `AppSettings.UpdateConsentAsked` is false, and sends nothing before the answer; Yes/No are stored by `SettingsManager.SetUpdateConsent` (`AutoUpdateChecks` = the answer, `UpdateConsentAsked` = true); closing the question counts as "not now" and it is asked on the next start; (2) waits `StartupGracePeriod` = **5 minutes** after the window opens before the first request (dev source: 2 s). `UpdateConsentAsked` is additive (missing reads as false, no schema bump), so every existing install is asked once as well. Changing the Settings › General update checkbox also records the answer. Help › Check for Updates is unaffected. `--upgrade-health` launches never ask. Meme/song cloud sync and the AI features were already user-triggered only. Test: `VersionAndUpdaterTests.UpdateConsent01_*`.
 * **Schema v7 Migration Invariant:** When upgrading from older application installations lacking update checking (or whenever `settings.json` lacks an explicit `AutoUpdateChecks` configuration), `SettingsManager` automatically initializes and persists `AutoUpdateChecks = true`. On fresh installs without an existing config file, default settings with `AutoUpdateChecks = true` are saved immediately to disk, ensuring new releases are never silently missed. Since UPDATECONSENT_01 that default only takes effect after the user's yes.
 * **Network Stall Guard:** `UpdateDownloader` wraps chunk stream reads in a 45-second stall cancellation timeout (`CancellationTokenSource.CreateLinkedTokenSource`). A frozen HTTP pipe stops the download and is REPORTED as a failure ("stopped receiving data for 45 seconds"); it is never treated as the user's own Cancel (UPDATEUX_03 — it used to close the window silently).
@@ -623,8 +735,8 @@
 * **BGUPDATE_01 — background update and user control (R2/R3).** A newer version found by the startup
   check (or Help › Check for Updates) is downloaded in the BACKGROUND (`UpdateService.StartBackgroundUpdate`
   → `UpdatePreparer`) while the user keeps working; the update card (`UpdateToastWindow`, 04) shows
-  progress. Background downloads respect user settings for metered connections (`AvoidMeteredNetworkUpdates`)
-  and auto-download toggles (`AutoDownloadUpdates`), with per-drive disk space verification (UPDATESPACE_01, below).
+  progress. Background downloads follow the auto-download toggle (`AutoDownloadUpdates`; the metered-connection
+  option was removed, SETNOMETERED_01), with per-drive disk space verification (UPDATESPACE_01, below).
   When everything is verified the installer is started and waits (`--wait-pid`, plus
   `--smart-update <folder>` for a smart update); the card then presents: **Restart & update**
   (closes the app through its NORMAL close path — unsaved work is still asked about, nothing is killed,
@@ -658,14 +770,9 @@
 * **RECHECK_01 — a session that stays open checks again.** The automatic check used to run once, five
   minutes after start; a user who leaves the app open for days never heard of a new version. After the
   first check `RunStartupCheckAsync` repeats `RunAutomaticCheckAsync` every `RecheckInterval` (6 h)
-  while the main window is open, the checkbox is on and no update is already downloading or waiting.
-  Same consent, throttle, metered, auto-download and "skipped" rules as the first check.
-* **BETA_01 — the Beta channel is real.** `Build.cmd --beta` publishes a PRE-release (09
-  DIST-RELEASEGATE); `/releases/latest` never returns one, so Stable users never see it. The Beta
-  channel reads `/releases` and takes the HIGHEST version among non-draft releases, pre-releases
-  included (`PickBetaRelease`; it used to take whatever GitHub listed first — and nothing published
-  pre-releases, so the setting did nothing). A Beta user is offered the next stable release as soon as
-  it is newer than their beta.
+  while the main window is open, Updates is not "Never check" (SETUPDATEONE_01) and no update is already downloading or waiting.
+  Same consent, throttle, auto-download and "skipped" rules as the first check.
+* **SETNOBETA_01 (2026-11-12) — there is one release line.** The Beta channel was removed: the app reads `/releases/latest` only and the Settings choice is gone (an old `UpdateChannel` value is ignored). `Build.cmd --beta` still publishes a pre-release for manual download (09 DIST-RELEASEGATE, BETA_01).
 * **UPDATESPACE_01 — free space is checked for what is really written, per drive.** `UpdatePreparer`
   used to demand the FULL installer size + 256 MB on the downloads drive before every update, so a 9 MB
   smart update failed on a nearly full disk, while the full installer's own unpacking into `%TEMP%`
@@ -687,9 +794,10 @@
 
 ## SYS-VERIFYTOOL — The Fix-Sentinel Check Is Code Now  {#SYS-VERIFYTOOL}
 
-`VERIFY_PATCHES` no longer parses anything. The list lives in `build/sentinels.txt` and the checker
-is `build/FvsVerify`, with its own tests in `tests/FvsVerify.Tests`. `dev.cmd` runs it and reads the
-exit code; the script went from 29KB to 10KB and contains no list at all.
+The former `VERIFY_PATCHES` batch subroutine has been removed. The list lives in
+`build/sentinels.txt` and the checker is `build/FvsVerify`, with its own tests in
+`tests/FvsVerify.Tests`. `dev.cmd` invokes the checker directly and propagates failure
+before launch cleanup (`DEVVERIFY_01` / `VERIFYHALT_01`); it contains no sentinel list.
 
 ⚠️ **Why it moved.** As a batch `FOR` list this check broke three separate times and every failure
 was silent — `VERIFYLOOP_01` (byte-offset label seeks skipped two entries and reported a clean
@@ -706,6 +814,61 @@ test; this one now is, twice over: `FvsVerify.Tests` unit-tests the parser and c
 CI. `DevCmdDelegatesTheSentinelCheckRatherThanParsingIt` fails if the list is ever moved back.
 
 **To add a sentinel: add one `TAG=path` line to `build/sentinels.txt`.** That is the whole procedure.
+
+DEVVERIFY_01: sentinel annotations are functional verification inputs; comment cleanup must preserve
+these tags beside their guarded code. The 2026-10-18 cleanup removed 256 existing references and
+omitted tags for newer fixes. Restore annotations from history, retain the strict checker, and retire
+only superseded paths with an explicit reason. Never strip `//` inside string literals (UPDATEPIN_PEM_01).
+
+## AI source attachment exporter {#SYS-CODEEXPORT}
+
+`CODEEXPORT_01`: `developer_tools/Pull_Code_files.py` exports the current working tree for an
+advanced online AI GUI (including GPT-6 Astra with max reasoning). It is offline: it neither uploads
+files nor selects a model. Run `python -B developer_tools/Pull_Code_files.py`.
+
+* **Preserve previous work:** create a unique UTC-dated child under
+  `%USERPROFILE%\Downloads\free_video_studio` (or `--output-parent`). Never delete old exports,
+  unrelated text files, or Python caches. Use exclusive writes and write the manifest last.
+  The output parent must be outside the repository to prevent self-inclusion.
+* **Ten attachments maximum:** one manifest, one complete path/status/bundle-line index and up to
+  eight text bundles. Keep source files whole. Include `.iss` installer source and every eligible
+  test file; classify the whole `tests/` subtree before build-name matching. Assets/certificates
+  have metadata only. Unknown formats remain visible as metadata, never silently disappear.
+* **Account for gaps:** the index records skipped files and excluded subtrees, encoding errors,
+  redactions and metadata-only assets. Reconcile tracked paths against the traversal; missing
+  tracked files/read failures produce an INCOMPLETE warning and exit 2. Links/reparse points are
+  not followed. Generated/private directories are excluded as entire subtrees, with their reason.
+* **Living context:** derive groups/top-level entries from this snapshot; route architecture and
+  framework facts to included specs and project files instead of copying stale prose. Put the
+  entry documents first. Record UTC, Git commit/local changes and exported-text SHA256 values.
+  This is a live working-tree read, not an atomic Git snapshot. Report observed concurrent changes.
+* **GUI limits are unknown unless supplied:** never substitute an API model limit for a GUI/account
+  limit or claim that max reasoning guarantees full attachment ingestion. Count actual UTF-8 bytes
+  of all final attachments, including indexes/headers; label bytes/4 token estimates as heuristics.
+  `--ui-context-tokens`, `--reserve-tokens`, and `--max-file-bytes` accept user-confirmed budgets
+  for advisory warnings only; never truncate to meet a guessed budget. Optional repeated
+  `--focus "src/.../*"` globs retain all docs/configs/tests but explicitly omit other source and
+  warn that dependencies may be missing. The full export remains the default.
+  References checked 2026-10-19: [GUI model documentation](https://learn.chatgpt.com/docs/models),
+  [Astra API specifications](https://developers.openai.com/api/docs/models/gpt-6-astra),
+  [API reasoning](https://developers.openai.com/api/docs/guides/reasoning). These do not establish
+  a numeric context/upload limit for the user's particular online GUI session.
+* **Sensitive data:** exclude private-key/password/environment filenames before reading; redact
+  recognizable tokens, private-key blocks and literal credential assignments. Record redactions
+  without echoing values. Scan generated metadata too. Detection is heuristic, not a guarantee;
+  review locally before upload. Exported hashes identify filtered decoded text, not secrets.
+* **Encoding:** strict UTF-8/BOM-aware UTF-16/UTF-32; detect strongly indicated BOM-less UTF-16.
+  Never silently replace invalid characters. `--legacy-encoding cp1252` explicitly enables a
+  strict, labelled fallback. The existing `mp3/!_System Recall - Aftertune (No CopyRights).txt`
+  uses byte `0x97` for dashes; the exporter declares `cp1252` for that exact path, labels it in the
+  export and includes it with no command-line flags. Other invalid text still fails unless the
+  user explicitly chooses a fallback. Do not generalize this exception to arbitrary files.
+* **Test evidence:** optional repeated `--test-result PATH` copies existing reports through the
+  same filters. Clearly mark them potentially stale; never infer passing tests from source files.
+  The exporter never executes app builds/tests. Run its own regression suite with
+  `python -B -m unittest discover -s tests/DeveloperTools.Tests -v`; CI runs it in the sentinel job.
+  Its fixtures live in `logs\Python_Results\work` and are replaced on every run (TESTOUT_01); the exporter
+  never reads `logs\` unless a report is passed with `--test-result`.
 
 ---
 
@@ -734,13 +897,9 @@ of the log, the recovery state — and `DiagnosticBundle` (App) writes it under
 
 ## SYS-PAYLOADSPLIT — See `09_DISTRIBUTION_AND_RELEASE.md`  {#SYS-PAYLOADSPLIT}
 
-The update path is bound by `09` §3 (DIST-SPLIT): a release may publish an app-only package beside
-the full installer, and `UpdateService` takes it only when the installed runtime fingerprint matches
-what the release advertises. Every uncertainty resolves to the full installer.
-The compact installer uses the same transactional installation worker as the full installer;
-missing runtime files are copied only when their SHA-256 matches the embedded signed manifest.
-Since NODROPPER_01 no compact package is built or published (it embedded the app inside a second
-program); the client side stays for releases that still carry one. See `09` DIST-SPLIT / DIST-INSTALLER.
+History only. The app-only (compact) package stopped being built at NODROPPER_01, and its client code
+was removed on 2026-10-18 (COMPACTGONE_01); updates use the signed per-file list or the full installer.
+Canonical: `09` DIST-SPLIT / DIST-INSTALLER / DIST-SMART.
 
 ⚠️ `UpdateService.cs` is CO-GOVERNED by this spec and `09`. Reading one is not compliance.
 
@@ -881,17 +1040,109 @@ with a plain Windows API doing the same job. Do NOT reintroduce any of them:
   forwards to it; the `-EncodedCommand` PowerShell runner is gone. Every failure is an `IOException`
   (the upgrade code's "retry later"); a link without a file-system target reads as an empty string.
 * **NOPOWERSHELL_02 — RDP Auto-Fix without a script host.** See `03` FFM RDP Auto-Fix.
-* **NOSELFDELETE_01 — no "cmd /c ping … & del" self-deletion** (Sigma "ping + del combined execution",
-  MITRE T1070.004). `DeploymentLifecycle.QueueSelfCleanup` deletes the uninstaller's temp folder and the
-  `FVS_*`/`fvs_*` temp files directly; files still in use (the running uninstaller and its window
-  libraries) and their folders are queued with `MoveFileEx(MOVEFILE_DELAY_UNTIL_REBOOT)`, files before
-  folders. Since NOTEMPEXEC_01 there is no temporary copy: the queued items are the uninstaller itself,
-  its hard-linked twin, its window libraries and the program folder, all removed at the next restart.
+* **NOSELFDELETE_01 / CLEANUPBOUND_01 — fail-closed uninstall cleanup.** All recursive purge,
+  shortcut deletion and final self-cleanup in `DeploymentLifecycle` use `SafeDirectoryCleanup`.
+  It pins each ancestor and target without write/delete sharing, rejects reparse points, and sets
+  delete disposition on the validated handle. Linked, locked or unprovable entries are retained
+  and reported; there is no path-based recursive retry, attribute mutation or reboot deletion queue.
+  Read-only hard links are refused rather than changing attributes shared by another pathname.
+  A failed subtree stops that subtree's traversal. Running binaries may remain after uninstall;
+  close the app and retry removal. No script host or delayed mutable pathname performs cleanup.
 * **NOCMD_01 — links open through the shell.** The WhatsApp share (`MainWindow.OnSuccessAction`,
   `VideoMergerWindow.OnSuccessAction`) starts the `whatsapp://` URI with `UseShellExecute = true` instead of a
   hidden `cmd /c start`.
+* **NOHIDDENTOOLS_01 — no hidden Windows tools (2026-11-11).** Three were left after NOPOWERSHELL/NOCMD:
+  the event tool started hidden at EVERY launch (`CrashLogDigest`), the task tool started hidden at every
+  install, uninstall and maintenance run, and a force-kill tool as a second attempt in
+  `DeploymentLifecycle.TerminateProcessAsync`. Now: `CrashLogDigest` reads the Application log through the
+  Windows Event Log API (`wevtapi.dll`: `EvtQuery`/`EvtNext`/`EvtRender`, direct `LibraryImport`, NativeAOT-safe)
+  and condenses each event's XML (`CondenseXml`, `Mentions`); the task tool runs ONLY when
+  `LegacyScheduledTask.Exists` (task file or Task Scheduler registry index, read-only) says a task of an old
+  release is still there; the force-kill fallback is gone (a process Windows will not end is logged and the
+  locked file is reported by the file step). ⚠️ The log line no longer carries Windows' formatted description,
+  only the recorded values (program, module, exception code).
+* **NOLOGONHOOK_01 — no Active Setup entry (2026-11-11).** The machine install wrote
+  `HKLM\…\Active Setup\Installed Components\{24CA6D78-…}` with a `StubPath`, so Windows started the program at
+  every user's next sign-in (run-at-logon persistence, MITRE T1547.014). It was redundant: every normal start
+  from the install folder already runs `UpgradeCoordinator.CompleteUserAsync` (`Program.cs`).
+  `UpgradeRegistration.ApplyAsync` now deletes the entry of an older release; the key stays in `KeyPaths`, so a
+  rollback restores what was captured. Consequence: another user's shortcuts and file associations are
+  completed when THEY first start the app, not at their sign-in. `--complete-user-migration` is still accepted
+  (entries of older installs until their next update).
+* **NOMEMREAD_01 — no other process's memory is opened (2026-11-11).** The elevated uninstaller read `Process.MainModule`
+  of EVERY running process (`PROCESS_VM_READ`), antivirus and `lsass.exe` included — the credential-dumping signature
+  (MITRE T1003.001) — and ended every process named `Uninstall` anywhere on the PC. `ProcessImage.GetPath`
+  (`OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` + `QueryFullProcessImageNameW`) replaces every `MainModule` read
+  (`DeploymentLifecycle.KillAllProcessesAsync`, `InstallDiscovery.EnsureIdle`/`FindOpenApps`, the worker's first-launch
+  check). The uninstaller looks only at processes whose name is in `DeploymentFootprint.ProcessNames` (the program, the
+  uninstaller, `ffmpeg`, `ffprobe`, `mpv`) AND that run from the install folder. Side effect: the elevated idle check can
+  now read another account's copy instead of refusing with "could not be checked".
+* **OPENWITHHOME_01 — "Open with" points only at the installed program (2026-11-11).** `ShellFileAssociation.EnsureRegistered`
+  ran in every UI mode, so the installer's unpacked copy (`%TEMP%\is-…\fvs`), the `%ProgramData%` worker and the
+  uninstaller each wrote `HKCU\Software\Classes\FreeVideoStudio.Video\shell\open\command` pointing at themselves — an
+  open command into a temporary folder (T1546.001), broken once the folder was gone. It now returns unless the running
+  file IS `DeploymentFootprint.InstallPath` (`IsInstalledProgram`). A portable copy elsewhere no longer registers.
+* **NOMUIWIPE_01 — Windows' run caches are not edited (2026-11-11).** Uninstall deleted this app's values from the three
+  `MuiCache` keys (HKCU and HKLM) — trace clearing (T1070). Removed; the values are Windows' own display-name cache.
+* **NOLOCALPORT_01 — no TCP port (2026-11-11).** The broker ↔ elevated worker and broker ↔ first-launch health channels
+  (`UpgradeChannel`) were `TcpListener`s on 127.0.0.1; third-party firewalls prompt for or block an unknown program that
+  listens. They are named pipes (`PipeAccess.CreateUpgradeServer`): random `FreeVideoStudio-Upgrade-<32 hex>` name,
+  created BEFORE the other process starts, one instance + `FirstPipeInstance`, DACL = current user + LocalSystem +
+  Administrators (the worker may run as another administrator account, UPGRADE_07), 256 KiB buffers (a sender never
+  waits for the reader, like the socket did). Exactly one connection is accepted; its first message must be the 64-hex
+  token, otherwise the upgrade stops ("An unexpected program answered the installer"). The pipe is never re-created, so
+  no other program can own the name while the worker looks for it. The health client also checks that the server runs
+  as the same user (PIPEAUTH_01). `--upgrade-worker <pipe> <token>` / `--upgrade-health <pipe> <token>` replace the port.
+* **NOLURKER_01 — no installer waiting in the background (2026-11-11).** "Later" on the update card started the verified
+  installer at once with `--wait-pid`, so a hidden process sat until the app closed and then raised a UAC prompt by
+  itself. "Later" now only arms INSTALLONEXIT_01's exit hook, which starts the same installer when the app closes.
+  Same result for the user.
+* **Deliberately unchanged (2026-11-11 audit):** (a) the install still unpacks to Inno's `{tmp}` and runs the elevated
+  worker from `%ProgramData%\FreeVideoStudio-Worker-<id>` (WORKERSTAGE_01): letting Inno elevate would run the program
+  elevated from `%TEMP%` (NOTEMPEXEC_01) or require rewriting the transactional installer; (b) the RDP Auto-Fix
+  (NOPOWERSHELL_02) keeps its one-click elevated policy write: it runs only when the user clicks it and confirms UAC,
+  and the alternative is several manual Group Policy / Registry Editor steps.
 * No `powershell.exe`, `cmd.exe /c`, `-ExecutionPolicy Bypass`, `-WindowStyle Hidden` or `-EncodedCommand`
-  in production code under `src/`. Enforced by `AvCleanRuleTests` (App tests).
+  in production code under `src/`. Enforced by `AvCleanRuleTests` and `AvFriendlyBehaviourTests` (App tests).
+
+### Working under Windows "Controlled folder access"  {#SYS-CFASAFE}
+
+**CFASAFE_01 (2026-11-11).** With Windows Security › Ransomware protection › Controlled folder access ON,
+Windows refuses writes into Documents, Pictures, Videos, Music, Desktop and Favorites from any program it does
+not already trust, and shows a "blocked" notification per attempt. A new self-signed program is never trusted.
+The app wrote into those folders at EVERY start, so a protected PC showed the notification on every launch and
+had no starter memes or songs:
+
+| Write | Before | Now |
+| :--- | :--- | :--- |
+| Starter memes → `Videos\FreeVideoStudio\Memes` | `CreateDirectory` refused, retried every start | `MemeDirectory.GetDefault` → the app's `Media\Memes` when refused and no folder exists yet |
+| Starter songs → `Music` | every copy refused, yet "delivered" was recorded: never delivered | `MemeDirectory.GetMusicRoot` → the app's `Media\Music` when refused; `MemeAssets.DeliverStarter` records delivery only when no copy failed |
+| Personal / public Desktop icon | threw; Start menu entry after it never written; retried every start | skipped when refused (`UpgradeRegistration.DesktopWritable`); the Start menu entry is always written |
+| Saved output folder inside a protected folder | probed (one notification) at every export | asked through the gate; Downloads is used |
+| Export folder that allows the app but not FFmpeg (CFAFFMPEG_01) | the export failed at the very end | FFmpeg writes, and the app deletes, a tiny probe once per folder and run (`ProtectedFolderGate.FfmpegCanWrite`); refused → Downloads + the notice |
+| Legacy meme folder move out of `Videos` | each file refused | postponed while refused |
+
+* **`ControlledFolderAccess` (Core) only READS**: the mode (`EnableControlledFolderAccess`, policy key first;
+  `1` = block; readable by every user) and the default protected folders. With protection off or in audit mode
+  every path returns exactly what it returned before, with no disk access.
+* **`ProtectedFolderGate` (App)**: whether THIS program is on the allowed list is admin-only information, so the
+  gate makes ONE real write attempt per protected folder. A refusal is remembered in
+  `controlled_folder_denied.txt` (UTC time + program path); while it is younger than 7 days and names this
+  program no further attempt is made (no notification). `CanWriteNow` (installer code) remembers nothing.
+* **One notice** (`ShowNoticeAsync`, after the first refusal): what is happening, that nothing is lost, the two
+  programs to allow (`FreeVideoStudio.exe`, `backend\ffmpeg.exe` — the allowed list is per program, and FFmpeg
+  writes the exported video), and a button that opens `windowsdefender://ransomwareprotection` and forgets the
+  remembered refusal so the next start checks again.
+* **An existing folder is never abandoned**: an existing `Videos\FreeVideoStudio\Memes` stays the meme folder
+  (reading is not blocked); the app's own folder is chosen only for a NEW one, and stays chosen once it exists.
+* ⚠️ **The app never changes Windows Security and never adds itself to the allowed list** — that is tampering,
+  and exactly what antivirus must stop. Only the user can allow it; only a publicly trusted signature with
+  reputation makes Windows allow it by itself (SYS-SIGNING).
+* ⚠️ Not covered: a custom meme/music/output folder the user points INTO a protected folder while only one of
+  the two programs is allowed, and project files saved into a protected folder; those report their normal
+  "could not save" error. Real-Windows verification with the protection in block mode is still required
+  (this change was developed on a PC in audit mode).
+* Tests: `AvFriendlyBehaviourTests.CfaSafe01_*`.
 
 ### No silent moment during install or update  {#SYS-UPGRADEUX}
 
@@ -991,11 +1242,11 @@ This per-user rebrand migration copies recovery backups and is distinct from `Mi
 
 REBRAND_01 and UPGRADE_04 never delete their sources, so `Program` starts `LegacyResidueSweep.RunForCurrentUser` on a background task on every normal UI launch (not in sibling tool processes, deployment helpers, `--upgrade-health`, or under `FVS_PROGRAMDATA_ROOT`). It does nothing while a previous-brand executable exists in Program Files, a previous-brand process runs, or a journal under `%LOCALAPPDATA%`/`%APPDATA%\FreeVideoStudioMigration` is not `Committed`/`Pruned`. Otherwise:
 
-* Legacy `%TEMP%` roots (`LegacyTempNames`) are scratch. Rescued renders (`*-RECOVERED-*.mp4`) are moved into `ApplicationPaths.TempDirectory` first, renamed to `FreeVideoStudio-RECOVERED-…` (Merger rescues keep `Merged-Videos-RECOVERED-…`), never overwriting (a `-2`, `-3` … suffix is added). If any rescue cannot be moved, the folder is kept.
-* A legacy Local/Roaming root is deleted only when the current root exists and every legacy file exists at the same relative path in the current root. Otherwise it is kept and retried on the next launch.
+* **LEGACYKEEP_01:** Legacy `%TEMP%` roots (`LegacyTempNames`) may contain referenced audio and are retained. Rescued renders (`*-RECOVERED-*.mp4`) are moved into `ApplicationPaths.TempDirectory` first, renamed to `FreeVideoStudio-RECOVERED-…` (Merger rescues keep `Merged-Videos-RECOVERED-…`), never overwriting (a `-2`, `-3` … suffix is added). If any rescue cannot be moved, the folder is kept.
+* Legacy Local/Roaming roots are always retained automatically. A same-named destination proves neither equal content nor that saved projects no longer reference the original. Conflicting versions remain at their original paths even across repeated launches; removal requires explicit uninstall or manual cleanup.
 * The shared `%ProgramData%` legacy root is never deleted here. The elevated uninstaller removes it with every legacy user root when user data is removed (`DeploymentFootprint.GetDirectoryPurgeTargets`, `includeUserData`).
 
-The sweep never throws; failures are logged under the `Rebrand` tag. `RebrandTests` covers rescue moves, collision-free renames, mirrored versus partial roots, the closed safety gate, and the repository-wide previous-name allow list.
+The sweep never throws; failures are logged under the `Rebrand` tag. `RebrandTests` covers rescue moves, collision-free renames, same-name conflicts, repeated-sweep retention, referenced audio, the closed safety gate, and the repository-wide previous-name allow list.
 
 ### NOSPACE_01 — Folder names on disk never contain spaces  {#SYS-NOSPACE}
 
@@ -1031,60 +1282,71 @@ every AI step is ONE HTTPS call to the user's own key (Google Gemini, Anthropic 
 | # | Feature (where) | What the user gets | What is sent | How it works, step by step |
 | :- | :- | :- | :- | :- |
 | U1+U2 | **AI Smart Zoom** (Granular speed editor) | A broadcast-style camera that follows one person through a block | 3 stills, then the block as silent 640-px clips of at most 8 s (Gemini) or 2 stills per second (Claude / OpenAI) | 3 stills → the AI lists the people it sees → the user picks one (or tracks their own box) → the block is sent in ≤ 8 s parts → the AI returns the person's position every 0.5 s → `AiTrajectorySmoother` turns it into a smooth camera path → loop preview → ACCEPT (one undo step) / DISCARD. Re-frame re-smooths stored points with no new AI call. Spec: `01` TL-AITRACKING, `04` UI-AIZOOM. |
-| U3 | **Magic Wand** (Crop Tool) | Boxes around HUD pieces (minimap, health, ammo…) | ONE frozen frame (optional, after consent) | The offline detector scans the clip and shows its finds first; the AI is asked about the frozen frame; boxes both agree on show ✓, AI-only boxes are dashed; nothing is applied until the user clicks a box. Answers are cached per frame. Spec: `01` TL-AIHUD, `04` UI-AIHUDWAND. |
+| U3 | **Magic Wand** (Crop Tool) | Boxes around HUD pieces (minimap, health, ammo…) | ONE frozen frame (only with a saved key) | The offline detector scans the clip and shows its finds first; the AI is asked about the frozen frame; boxes both agree on show ✓, AI-only boxes are dashed; nothing is applied until the user clicks a box. Answers are cached per frame. Spec: `01` TL-AIHUD, `04` UI-AIHUDWAND. |
 | U4 | **AI Commentary** (Granular speed editor) | Short first-person caption lines ("I'm pushing left!") timed to the action, burned into the export | Gemini: each ≤ 8 s part as a small clip WITH game audio. Claude / OpenAI: 2 stills per second (no audio) | Split into ≤ 8 s parts (1 s overlap) → the AI writes lines with start/end times → overlaps merged → lines kept readable in the FINISHED video (slow-mo, fast-forward, freezes, cuts) → preview → ACCEPT / DISCARD → the export burns the same lines in. Spec: `01` TL-CAPTIONS, `03` FFM-CAPTIONS, `04` UI-AICOMMENTARY. |
 | U5 | **Music Auto-Fit** (Add Music wizard) | One recommended song and where it starts | 4–8 stills of the finished video + the song list | Stills from the whole finished video + numbered song list → the AI names a song → the app picks the start point locally from the song's loudness so the song covers the video. Spec: `02` AUD-MUSICWIN. |
 | U6 | **Viral Post Helper** (Export finished screen) | A title, caption and hashtags with copy buttons | 3 stills of the exported file | Runs after export when switched on; the badge always says what really happened (WRITING… / AI WRITTEN / NO AI KEY / AI FAILED); NEW VERSION asks for a different angle. Spec: `04` UI-SETTINGS-ABOUT (Viral Post card). |
 | U7 | **AI Kill Tracker** (main timeline + speed editor) | A red ✕ over every kill; click jumps there | 2 stills after each loud moment | Local audio energy finds the loud moments → 2 stills just after each → the AI answers yes/no per moment ID (it can never land on the wrong moment) → ✕ markers + a status chip. Spec: `01` TL-AITRACKING (AIELIM_02), `04` UI-SETTINGS-ABOUT. |
-| — | **Settings › AI** | One AI for everything, optional per-feature override | nothing | One default vendor + model (`AIDEFAULT_01`), per-feature overrides under Advanced, keys sealed with DPAPI for the Windows account (`KEYPROTECT_01`). |
+| — | **Settings › AI** | One AI for everything | nothing | One vendor + model for every feature (`AIDEFAULT_01`, SETAIONE_01), one key box that recognises the company (SETKEYONE_01), keys sealed with DPAPI for the Windows account (`KEYPROTECT_01`); a saved key is the permission (SETNOCONSENTUI_01). |
 
 ### 7.2 Shared contracts (every feature)
 * **Transport:** `IAiVisionProvider` (`GeminiProvider`, `ClaudeProvider`, `OpenAiProvider`) — key only in headers, classified errors (`AiProviderException`), per-attempt timeout ≠ user cancel, key redaction in every log (`GEMINICLIENT_01`, `AIPROVIDER_01`).
 * **Schemas:** written once in Google's dialect and translated for Claude / OpenAI (`AISCHEMA_01`).
 * **Honesty rule:** a feature never shows stock or guessed output as an AI answer; failures say what failed and why.
-* **Consent:** any feature that sends frames or clips asks first, naming the provider and exactly what is sent.
+* **Consent:** a saved key for the company in use is the permission (SETNOCONSENTUI_01); the feature records consent itself without asking. The per-feature dialog (naming the provider and exactly what is sent) appears only when no key for that company is saved.
 
-### 7.3 Audit findings 2026-10-16 (`AIAUDIT_01`) — tracked to closure (all closed, §7.4)
-Found in review and in live testing. Each entry names the fix that closes it; §7.4 records the shipped behaviour.
-1. Default and listed models retired or retiring (`gemini-2.5-flash` shut down 2026-10-16; Claude 3.x retired; `o3-mini` 2026-10-23); saved settings pin the old name; only Smart Zoom fell back.
-2. Claude 4.7+ rejects a non-default temperature; Commentary and Viral Post sent 0.9.
-3. Music Auto-Fit: the AI only sees file names, so its "start point" was a guess; loose name matching; silent fallback to song #1; 40-song cap; start point could leave the end of the video silent; no progress or timeout (stuck on "Analyzing…").
-4. Kill Tracker: 640-px stills (kill feed unreadable); other players' kills counted; 24-moment cap; misleading "no audio" text; editor never got late results; no consent; no visible status when the scan failed silently.
-5. Caption preview stacked subtitle tracks in libmpv.
-6. Gemini temperature forced to 0 on Gemini 3.
-7. Setup wizard titled "AI Zoom" for every feature; Claude / OpenAI dead-ended.
-8. Commentary had its own game-type picker that ignored Settings.
-9. Consent text wrong for Claude / OpenAI; consent not re-asked on vendor change.
-10. Reasoning level stored but never used.
-11. Claude / OpenAI tracking could send zero frames.
-12. Whole-timeline Commentary gave no time / call estimate.
-13. LIVE: accepted commentary captions never reached the export (`ExportPayload` had no caption track).
-14. LIVE: caption font too small and placed too low (overlapping Fortnite HUD / stamina bar in portrait).
-
-### 7.4 What shipped for each finding (2026-10-16)
-| # | Tag(s) | Now | Spec |
-| :- | :- | :- | :- |
-| 1 | `AIMODELS_02`, `AIMODELFALLBACK_02` | Defaults `gemini-3.8-flash` / `claude-sonnet-5-5` / `gpt-6-luna`; offline catalogue updated; `AiVisionProviders.IsRetiredModel` + `AppSettings.ReplaceRetiredAiModels` move saved retired names to the defaults on every load; ONE 404 fallback for every vendor and feature (`FindLiveReplacementAsync`: list the key's live models, pick the best non-retired one, remember it for the session, tell the user, never change the setting). OpenAI's list shows gpt-6+. | this section |
-| 2 | `AITEMP_02` | No temperature to Claude, ever. | §AITEMP_02 above |
-| 3 | `AIMUSIC_HONEST_01`, `AIMUSIC_START_01`, `AIMUSIC_PROGRESS_01` | Numbered choice, local start point, visible steps + seconds, cancel, 45 s / 120 s limits. | `02` AUD-MUSICWIN, `04` UI-MUSICWIZARD |
-| 4 | `AIELIM_03` | 1280-px stills, own-kills-only prompt, 24–60 moments by length, honest "no sound", real length, solid ✕ badges + notice, editor gets late results; Settings text states what is sent. | `01` TL-AITRACKING, `04` |
-| 5 | `AICAPTION_PREVIEWSUB_01` | One caption track in the preview, ever. | `03` FFM-CAPTIONS |
-| 6 | `AITEMP_02` | Gemini 3+ keeps its default temperature (also Smart Zoom and Magic Wand bodies). | above |
-| 7 | `AISETUP_02` | One "Connect Your AI" window for every feature and company. | `04` |
-| 8 | `AIPROFILE_ONE_01` | Commentary uses and saves the Settings game type. | `04` UI-AICOMMENTARY |
-| 9 | `AICONSENT_02`, `AIVENDORCAPS_01` | Consent per company with company-true text; stills vendors are told there is no sound. | `04` |
-| 10 | `AIREASONING_01` | The dead `ReasoningLevel` field is gone. | above |
-| 11 | `AIZEROFRAMES_01` | No pictures → no AI request (Smart Zoom and Commentary). | `01` |
-| 12 | `AICOMMENTARY_ESTIMATE_01` | > 6 parts asks first with count and minutes. | `04` UI-AICOMMENTARY |
-| 13 | `AICAPTION_EXPORT_02` | Accepted captions are burned into the export. | `03` FFM-CAPTIONS |
-| 14 | `AICAPTION_LAYOUT_02`, `AICAPTION_MEMESHIFT_01` | Bigger captions on the 2/3 line, clear of the user's HUD layout; correct after spliced memes. | `01` TL-CAPTIONS, `03` |
+### 7.3 / 7.4 Audit findings and what shipped, 2026-10-16 (`AIAUDIT_01`, all closed)
+Found in review and in live testing (LIVE = seen by a user).
+| # | Was (why) | Tag(s) | Now | Spec |
+| :- | :- | :- | :- | :- |
+| 1 | Default and listed models retired or retiring (`gemini-2.5-flash` shut down 2026-10-16; Claude 3.x retired; `o3-mini` 2026-10-23); saved settings pin the old name; only Smart Zoom fell back. | `AIMODELS_02`, `AIMODELFALLBACK_02` | Defaults `gemini-3.8-flash` / `claude-sonnet-5-5` / `gpt-6-luna`; offline catalogue updated; `AiVisionProviders.IsRetiredModel` + `AppSettings.ReplaceRetiredAiModels` move saved retired names to the defaults on every load; ONE 404 fallback for every vendor and feature (`FindLiveReplacementAsync`: list the key's live models, pick the best non-retired one, remember it for the session, tell the user, never change the setting). OpenAI's list shows gpt-6+. | this section |
+| 2 | Claude 4.7+ rejects a non-default temperature; Commentary and Viral Post sent 0.9. | `AITEMP_02` | No temperature to Claude, ever. | §AITEMP_02 above |
+| 3 | Music Auto-Fit: the AI only sees file names, so its "start point" was a guess; loose name matching; silent fallback to song #1; 40-song cap; start point could leave the end of the video silent; no progress or timeout (stuck on "Analyzing…"). | `AIMUSIC_HONEST_01`, `AIMUSIC_START_01`, `AIMUSIC_PROGRESS_01` | Numbered choice, local start point, visible steps + seconds, cancel, 45 s / 120 s limits. | `02` AUD-MUSICWIN, `04` UI-MUSICWIZARD |
+| 4 | Kill Tracker: 640-px stills (kill feed unreadable); other players' kills counted; 24-moment cap; misleading "no audio" text; editor never got late results; no consent; no visible status when the scan failed silently. | `AIELIM_03` | 1280-px stills, own-kills-only prompt, 24–60 moments by length, honest "no sound", real length, solid ✕ badges + notice, editor gets late results; Settings text states what is sent. | `01` TL-AITRACKING, `04` |
+| 5 | Caption preview stacked subtitle tracks in libmpv. | `AICAPTION_PREVIEWSUB_01` | One caption track in the preview, ever. | `03` FFM-CAPTIONS |
+| 6 | Gemini temperature forced to 0 on Gemini 3. | `AITEMP_02` | Gemini 3+ keeps its default temperature (also Smart Zoom and Magic Wand bodies). | above |
+| 7 | Setup wizard titled "AI Zoom" for every feature; Claude / OpenAI dead-ended. | `AISETUP_02` | One "Connect Your AI" window for every feature and company. | `04` |
+| 8 | Commentary had its own game-type picker that ignored Settings. | `AIPROFILE_ONE_01` | Commentary uses and saves the Settings game type. | `04` UI-AICOMMENTARY |
+| 9 | Consent text wrong for Claude / OpenAI; consent not re-asked on vendor change. | `AICONSENT_02`, `AIVENDORCAPS_01` | Consent per company with company-true text; stills vendors are told there is no sound. | `04` |
+| 10 | Reasoning level stored but never used. | `AIREASONING_01` | The dead `ReasoningLevel` field is gone. | above |
+| 11 | Claude / OpenAI tracking could send zero frames. | `AIZEROFRAMES_01` | No pictures → no AI request (Smart Zoom and Commentary). | `01` |
+| 12 | Whole-timeline Commentary gave no time / call estimate. | `AICOMMENTARY_ESTIMATE_01` | > 6 parts asks first with count and minutes. | `04` UI-AICOMMENTARY |
+| 13 | LIVE: accepted commentary captions never reached the export (`ExportPayload` had no caption track). | `AICAPTION_EXPORT_02` | Accepted captions are burned into the export. | `03` FFM-CAPTIONS |
+| 14 | LIVE: caption font too small and placed too low (overlapping Fortnite HUD / stamina bar in portrait). | `AICAPTION_LAYOUT_02`, `AICAPTION_MEMESHIFT_01` | Bigger captions on the 2/3 line, clear of the user's HUD layout; correct after spliced memes. | `01` TL-CAPTIONS, `03` |
 
 Shared rule added: **`AISCHEMA_02`** — schemas written in standard JSON Schema (Music Auto-Fit, Viral Post, Kill Tracker) are sent to Gemini in its upper-case dialect (`AiJsonSchema.ToGeminiDialect`).
 Tests: `AiAuditFixTests` (App), `CaptionAuditFixTests` and `CaptionLayoutEngineTests` (Core), `SettingsMigrationTests.RetiredModels_*` / `ConsentCovers_*`.
 
-### 7.5 AI usage report for Smart Zoom and Commentary (`AIUSAGE_01`, `AiUsageMeter`)
-* **What the user sees:** when an AI SMART ZOOM or AI COMMENTARY run ends, two lines — in the preview bar on success, in the error dialog on failure, in the run's console and the log (`AiUsage`) always, and in the cancel notice:
-  1. *Usage:* "AI usage for this task: 7 requests · 48,210 in + 3,104 out + 1,200 thinking = 52,514 tokens (Google Gemini)."
-  2. *Allowance:* "before → after" as the AI company reports it.
-* **Where the numbers come from (no extra AI call, nothing estimated by the app):** every successful answer adds the company's own count — Gemini `usageMetadata` (prompt / candidates / thoughts), Claude `usage` (input incl. cache reads/writes, output), OpenAI `usage` (prompt, completion minus reasoning, reasoning). Requests that fail are not billed and not counted. `AiUsageMeter.BeginTask` opens an `AsyncLocal` scope, so calls made on worker threads (`Task.Run`) are counted too.
-* **Allowance — honest limits of what can be known:** API keys have NO "5-hour cap"; that belongs to the consumer chat apps. API limits are per minute (and per day). Anthropic and OpenAI return the per-minute window in response headers (`anthropic-ratelimit-{tokens,requests}-{remaining,limit,reset}`, `x-ratelimit-{remaining,limit}-{tokens,requests}`, `x-ratelimit-reset-tokens`); "before" is the last value reported earlier this session, or — on the first AI use of the session — the first answer's value with that answer's own usage added back (shown with ≈). Google reports nothing to apps, so the line says so and points to AI Studio › Usage. No money cost is shown: prices change and differ per account.
+### 7.5 AI usage, pre-run estimates & approximate cost summaries (`AIUSAGE_01`, `AiUsageMeter`, `AiCostEstimator`)
+* **What the user sees:** ALL 7 AI features (Smart Zoom incl. cancelled/empty Discovery, Commentary + single-line Rewrite, Magic Wand, Music Auto-Fit, Viral Post, Kill Tracker) track token usage under `AiUsageMeter.BeginTask` / `Record` (with `GeminiHudDetectionService` single-attempt HTTP calls metered too) and surface `AiCostEstimator` approximate USD figures alongside exact token counts ("Est: ~N tokens (~$0.01 approx.)" before runs; "Estimated vs Consumed" + allowance `before → after` after runs):
+  1. *Usage:* "AI usage for this task: 7 requests · 48,210 in + 3,104 out + 1,200 thinking = 52,514 tokens (Google Gemini) — approx. $0.0082 est."
+  2. *Allowance:* "before → after" as the AI company reports it (or AI Studio link for Google).
+* **Honesty contract:** token counts reported in `Report()` remain exact vendor-reported counts (`usageMetadata` / `usage`); USD costs and pre-run token forecasts are explicitly computed and labeled as **approximate estimates** (`AiCostEstimator`).
+
+
+### 7.7 Audit 2026-11-13 — what shipped (`AIAUDIT_04`)  {#SYS-AIAUDIT4}
+* **Shared answer checks (`AIANSWER_01`, `AiAnswerGuard`):** every provider checks the vendor's stop reason first — `MAX_TOKENS` / `max_tokens` / `length` is `AiProviderErrorKind.Truncated` ("The AI's answer was cut off… try a shorter block"), never retried. A JSON answer that does not parse is asked again ONCE in the transport (`GeminiCallOptions.ExpectJson`, default true; the plain-text key test sets false), so features no longer stack their own retries.
+* **Claude tool choice (`AICLAUDETOOL_01`):** Claude Sonnet 5.5 / Opus 5.5 / Fable 5.1+ answer a forced `tool_choice` (`tool`/`any`) with HTTP 400 and the default Claude model is Sonnet 5.5, so `tool_choice` is always `auto` and the prompt ends "Submit your answer by calling the submit_result tool." A plain-text JSON answer is still read.
+* **Per-task thinking and picture detail (`AIREASONING_02`, `AiReasoningPolicy`):** Kill Tracker, Magic Wand and the connection check ask for LOW thinking (Gemini 3+: `thinkingLevel: "low"`, older Gemini: 512-token budget, OpenAI: `reasoning_effort: "low"` except gpt-4 chat models, Claude: no thinking block); Smart Zoom and Commentary keep the vendor default. OpenAI picture `detail`: `low` for Smart Zoom tracking and Commentary stills, `high` for Magic Wand and Kill Tracker. A 400 naming the setting is remembered per model for the session and re-sent without it. Quality at these levels still needs a run of `tools/AiBakeOff`.
+* **Frame-rate fallback (`AIFPSFALLBACK_02`):** only a 400 whose detail names fps / videoMetadata re-sends a clip without the frame rate (Gemini provider and Smart Zoom); any other 400 is not re-uploaded.
+* **Connection check (`AIPREFLIGHT_03`, `AiPreflight`):** before a MULTI-request job prepares media (Smart Zoom, Commentary, Kill Tracker) one tiny picture + JSON request proves key, model and image support; a success is reused 30 min per key + model. Single-request features skip it.
+* **Answer reuse (`AIREUSE_03`, `AiResultCache`, session only, 30 min, 64 answers):** Smart Zoom subject discovery (key = SHA-256 of the 3 stills + prompt + company + model) and Music Auto-Fit (stills + song-list prompt + company + model) reuse an identical earlier answer and say "Reused the previous result. No new AI request." Tracking and Commentary are never reused (a re-run means "try again"). **`AIREUSE_04`, `AiAnswerDiskStore`:** a successful Kill Tracker scan is saved per file identity + company + model in `ApplicationPaths.AiAnswerCacheDirectory` (SYS-STORAGE-TABLE), 200 files max, so reopening a video after a restart does not scan again.
+* **Partial results (`AIPARTRETRY_01`, `AiPartFailureChoice`):** Smart Zoom and Commentary retry a failed part once; if it fails again the editor asks **Retry part / Keep the others / Stop** (closing = Stop). A skipped Smart Zoom part becomes two invisible waypoints (the camera eases wide); a skipped Commentary part has no lines. Account problems (key, permission, model, quota) still stop at once. **`AICOMMENTARY_KEEP_01`:** cancelling Commentary after some parts finished asks whether to keep their lines for review (`CommentaryCancelledException.Partial`). **`AICOMMENTARY_ONCE_01`:** a part's clip/stills are made once and re-sent on retry. **`AICOMMENTARY_CUTS_01`:** a part entirely cut from the finished video is not sent; stills inside a cut are dropped (Claude / OpenAI).
+* **Prices and the one usage sentence (`AIUSAGE_04`):** `AiCostEstimator.ListPrices` holds list prices for the listed models as of `PricesAsOf` (2026-11-13; Gemini 3.8 Flash at its introductory rate until 2027-01-01). Any other model shows "price unavailable", never a guess. Every feature ends with `Scope.SummaryWithEstimate`: "Used 10,850 tokens (~$0.0031, estimate) · estimated beforehand: ~12,000 tokens (~$0.0040)". Settings › AI shows `AiUsageMeter.SessionSummary()` (tasks, tokens, estimated dollars) with each task in the tooltip.
+* **Ready to send (`AIAPPROVE_01`, `AiRunApproval`, 04 UI-AIAPPROVE):** before Smart Zoom or Commentary send more than one request.
+* **Magic Wand transport (`AIHUDTRANSPORT_01`, `AIHUDERRORS_01`):** every company goes through the shared provider (Gemini through `GeminiProvider` + `GeminiClient`), still ONE attempt (TL-AIHUD). Key / permission / model / quota problems are `AiHudOutcome.AccountProblem` and the notice uses the provider's own sentence. A service built with a test `HttpClient` gets its own cache.
+* **Error references (`AITRACE_01`):** `AiUsageMeter.LastTaskId`; AI error dialogs, the Music status line, the Viral Post failure text and the Kill Tracker chip end with "Reference: <id>"; SHOW LOGS opens the log, whose AI lines carry `task=<id>`.
+* **Kill Tracker answers (`AIELIM_05`, user decision):** a moment the AI leaves out of its answer counts as "no kill there"; an empty `results` array is a valid "no kills" answer.
+* **Kill Tracker failures (`AIELIM_04`):** the chip says why ("AI kill scan failed: <reason> (Reference: <id>)") instead of a bare "failed".
+* **Merger kills (`AIMERGEKILLS_01`, 04 UI-MERGER-KILLS).**
+* **Plain progress (`AIPROGRESS_02`):** Smart Zoom shows "Step k of 4 · …" and Commentary "Writing captions · part k of n"; company and model stay on the elapsed line; the technical log sits in a closed "Details (technical log)" expander.
+* **Preview = export in a glide (`AIPARITY_02`, 03 FFM-ZOOMGRAPH).**
+Tests: `AiAudit3Tests` (App), `AiTrajectoryParityTests.AFreezeInsideTheGlide_ShowsTheBox_LikeThePreview` (Core).
+
+### 7.6 What shipped for audit findings 6–10 (2026-11-02, AIAUDIT_02)
+* **Window cancellation (Issues 6 & 7):** Closing MusicWizardWindow or GranularSpeedEditorWindow invokes CancelAiAutoFit(), CancelAiTracking(), and CancelAiCommentary(), cancelling running CTS instances immediately and preventing stranded background AI jobs.
+* **404 live model fallback in Smart Zoom (Issue 8):** GeminiModelSession routes model name resolution via AiVisionProviders.EffectiveModel and 404 handling through AiVisionProviders.FindLiveReplacementAsync across Google, Anthropic, and OpenAI.
+* **Model replacement name sanitation (Issue 9):** PickReplacement strips the 'models/' prefix from candidate models and the excluded failing model, preventing recurring 404 loops.
+* **Bounded discovery stills (Issue 10):** CandidateMaxDimension = 1280 px enforces proportional downscaling on discovery stills via SkiaSharp and FFmpeg, strictly preserving source aspect ratio while bounding token usage.
+* **Multi-provider first-time onboarding (AISETUP_03):** When clicking an AI feature with no configured keys, AiSetupWizardWindow probes and displays multi-vendor switching tabs (Google, Anthropic, OpenAI), allowing setup of multiple providers in one session.
+* **Session token spend toasts:** Real-time FloatingNotice.Info toasts display exact token usage upon every return in AI Smart Zoom and AI Music Auto-Fit.

@@ -1,13 +1,15 @@
 ﻿using System.Buffers.Binary;
-using System.Net.Sockets;
 using System.Text;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>UPGRADE_07 — a bounded local channel survives elevation under a different account.</summary>
-internal sealed class UpgradeChannel(TcpClient client) : IDisposable
+/// <summary>
+/// UPGRADE_07 — a bounded local channel survives elevation under a different account.
+/// NOLOCALPORT_01 — it runs over a named pipe (<c>PipeAccess.CreateUpgradeServer</c>), never a TCP port.
+/// </summary>
+internal sealed class UpgradeChannel(Stream stream) : IDisposable
 {
-    private readonly NetworkStream _stream = client.GetStream();
+    private readonly Stream _stream = stream;
     public async Task SendAsync(string kind, string detail = "")
     {
         byte[] body = Encoding.UTF8.GetBytes(kind + "\n" + detail);
@@ -63,5 +65,5 @@ internal sealed class UpgradeChannel(TcpClient client) : IDisposable
     /// <summary>UPGRADEUX_01 — the message kind for "phase|fraction" status lines.</summary>
     public const string ProgressKind = "progress";
 
-    public void Dispose() => client.Dispose();
+    public void Dispose() => _stream.Dispose();
 }

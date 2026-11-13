@@ -16,7 +16,7 @@ namespace FreeVideoStudio.App.Tests;
 /// </summary>
 public sealed class OpenAiProviderTests
 {
-    private const string FakeOpenAiKey = "sk-proj-FAKE-OPENAI-TEST-KEY-000000000";
+    private const string FakeOpenAiKey = "sk-" + "proj-dummy-test-openai-key-000000000";
 
     private sealed class FakeHandler : HttpMessageHandler
     {

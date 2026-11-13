@@ -1,4 +1,4 @@
-# SPECIFICATION 07: UNDO, REDO & EDIT HISTORY
+﻿# SPECIFICATION 07: UNDO, REDO & EDIT HISTORY
 
 ## Voiceover timing changes {#UNDO-VOICE-TIMING}
 `MainWindow.VoiceTiming.cs` also follows 02 AUD-VOICEOVER. `VOTIMING_01`: a 350 ms debounce groups timing gestures before the decision. Cancel restores timing and the no-op rule avoids a spurious undo step; Keep commits timing and review flags together. Every take participates in `ProjectAudio` equality. Undo and reapply preserve previously applied WAVs.
@@ -9,7 +9,7 @@
 | `src/FreeVideoStudio.Core/Undo/UndoStack.cs` | `UndoStack<T>`, `UndoEntry<T>` | `Apply`, `Undo`, `Redo`, `Reset`, `Restore`, `ReplaceCurrent`, `EndGesture`, `TouchGesture`, `NextUndoLabel`, `NextRedoLabel`, `DefaultMaxDepth`, `GestureIdleMs`, `GestureIdle` | Application-wide history |
 | ⚠ `src/FreeVideoStudio.Core/Project/ProjectDocument.cs` | `ProjectDocument` | immutable state carried by the stack | CO-GOVERNED by `06_PROJECT_DOCUMENT_MODEL.md` |
 | ⚠ `src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs` | `PushUndo` / `EndUndoGesture` call sites, `ClearUndoHistory("changes applied")` | the ORIGIN of U1–U4; migrated onto `UndoStack<T>` (UNDO_26) | CO-GOVERNED by `01`, `04`, `05` |
-| ⚠ `src/FreeVideoStudio.App/GranularSpeedEditorWindow.History.cs` | `GranularSpeedEditorWindow` (Partial) | `PushUndo`, `CaptureSnapshot`, `PerformUndo`, `PerformRedo`, `RestoreSnapshot`, `ClearUndoHistory`, `ParkHistoryForReopen`, `AdoptParkedHistory`, `_parkedHistory`, `_historyBaseline`, `HistoryKey` | CO-GOVERNED by `04` |
+| ⚠ `src/FreeVideoStudio.App/GranularSpeedEditorWindow.History.cs` | `GranularSpeedEditorWindow` (Partial) | `PushUndo`, `PerformUndo`, `PerformRedo`, `RefreshAfterRestore`, `ClearUndoHistory`, `ParkHistoryForReopen`, `AdoptParkedHistory`; snapshot/restore live in `src/FreeVideoStudio.Core/Editing/GranularEditSession.History.cs` (`Capture`, `Checkpoint`, `ApplySnapshot`, `HistoryKey`) | CO-GOVERNED by `04` |
 | ⚠ `src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs` | `GranularSpeedEditorWindow` (Partial) | `EndAiPreviewLoop`, `BeginAiPreview`, `AIUNDO_01` | un-checkpointed AI preview; ACCEPT checkpoints the original block first | CO-GOVERNED by `01`, `04` |
 | `src/FreeVideoStudio.Core/Undo/GranularEditHistory.cs` | `GranularEditHistory`, `GranularEditorSnapshot`, `ParkedGranularHistory` | `Checkpoint`, `EndGesture`, `Undo`, `Redo`, `Clear`, `Park`, `BelongsTo`, `TryAdopt`, `MaxDepth = 40`, `GestureIdleMs = 700` | Granular adapter onto `UndoStack<T>` (UNDO_26) |
 | `src/FreeVideoStudio.Core/Undo/CropLayoutSnapshot.cs` | `CropLayoutSnapshot`, `CropItemState`, `CropHistoryLabels` | `Create`, `ForPointerGesture` | Crop Tool history state (UNDO_27) |
@@ -235,3 +235,5 @@ canvases and timers. It now lives in Core, in types that cannot reference Avalon
 * **Crop selection is identity.** `SelectedRoleKey` survives a restore that rebuilds every layer object
   when that element still exists; the window still clears it after Undo/Redo, as it always did.
 * Tests: `GranularEditSessionTests`, `CropEditSessionTests` (Core), `EditStateExtractionTests` (App).
+
+PROJECTIO_01: project save/open sidecars share the ordered background I/O queue. History branches are copied on the dispatcher before enqueueing; the saved fingerprint uses the metadata of the actual saved document. Delayed I/O never enumerates a live undo stack. Regression coverage: `tests/FreeVideoStudio.App.Tests/AutosaveBackgroundTests.cs`.

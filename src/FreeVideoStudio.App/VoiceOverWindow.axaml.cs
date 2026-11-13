@@ -243,7 +243,7 @@ public partial class VoiceOverWindow : Window
         public FreeVideoStudio.Core.Media.WavAudioReader Reader { get; }
         public NAudio.Wave.WaveOut Player { get; }
         public VoiceOverSession Session { get; }
-        private readonly float _previewGain;
+        private float _previewGain;
 
         public PreviewPlayer(VoiceOverSession session, float previewGain = 1.0f)
         {
@@ -258,6 +258,12 @@ public partial class VoiceOverWindow : Window
 
         /// <summary>VOLCURVE_01 — the suite master as a linear gain (level, mute, curve; 1.0 when Windows applies it).</summary>
         public void ApplyMasterVolume(int volume) => Reader.Volume = _previewGain * (float)MpvIpcClient.MasterLinearGain;
+
+        public void SetVoiceGain(double gain)
+        {
+            _previewGain = (float)VoiceOverLevel.Clamp(gain);
+            ApplyMasterVolume(MpvIpcClient.GlobalMasterVolume);
+        }
 
         /// <summary>MUSICSYNC_02 — consecutive out-of-tolerance readings (PreviewAudioSync).</summary>
         public int DriftStrikes;
@@ -352,6 +358,7 @@ public partial class VoiceOverWindow : Window
         _outputWavPath = CreateTempVoiceOverPath();
         InitializeComponent();
         CacheControls();
+        WireVoiceGain();
         FreeVideoStudio.App.WindowBoundsHelper.Track(this, BoundsKey, fitDisplayOnFirstRun: true);
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
         MpvIpcClient.GlobalMasterVolumeChanged += OnMasterVolumeChanged;
@@ -385,7 +392,6 @@ public partial class VoiceOverWindow : Window
     private volatile bool _isCommitted = false;
     private string? _lastApplyErrorMessage = null;
     private bool _lastTakeFailedFinalization = false;
-    private Exception? _lastTakeFinalizationError = null;
 
     internal FreeVideoStudio.App.Services.VoiceOverRecoveryManager RecoveryManager => _recovery;
     internal IReadOnlyList<FreeVideoStudio.App.Services.PendingFailedTake> PendingFailedTakes => _recovery.PendingFailedTakes;
@@ -395,15 +401,12 @@ public partial class VoiceOverWindow : Window
 
     internal Button? DiscardFailedTakesButtonControl => _discardFailedTakesButton;
     internal Button? RecoverFailedTakesButtonControl => _recoverFailedTakesButton;
-    internal Button? DeleteFailedTakesButtonControl => _discardFailedTakesButton;
-    internal Button? RestoreFailedTakesButtonControl => _recoverFailedTakesButton;
     internal TextBlock? VoiceOverHintTextControl => _voiceOverHintText;
 
     internal bool IsApplyingInFlight { get => _isApplying; set => _isApplying = value; }
     internal bool IsCommitted { get => _isCommitted; set => _isCommitted = value; }
     internal string? LastApplyErrorMessage => _lastApplyErrorMessage;
     internal bool LastTakeFailedFinalization => _lastTakeFailedFinalization;
-    internal Exception? LastTakeFinalizationError => _lastTakeFinalizationError;
     internal List<VoiceOverSession> Sessions => _sessions;
     internal VoiceOverSession? CurrentSession { get => _currentSession; set => _currentSession = value; }
     internal bool IsRecordingLive { get => _isRecording; set => _isRecording = value; }
@@ -657,7 +660,7 @@ public partial class VoiceOverWindow : Window
             var snapshot = new List<(VoiceOverSession session, float gain)>();
             foreach (var session in _sessions)
             {
-                snapshot.Add((session, 1f));
+                snapshot.Add((session, (float)VoiceGain));
             }
 
             _ = Task.Run(() =>
@@ -685,6 +688,7 @@ public partial class VoiceOverWindow : Window
 
                     StopPreviewPlayers();
                     _previewPlayers.AddRange(built);
+                    ApplyVoiceGain();
                     OnMasterVolumeChanged(MpvIpcClient.GlobalMasterVolume);
                     _previewPlayersBuiltForCount = builtForCount;
                 });
@@ -1467,35 +1471,14 @@ public partial class VoiceOverWindow : Window
     {
         var settings = FreeVideoStudio.App.Infrastructure.SettingsManager.Instance;
 
-        Apply(_duckAudioCb, settings.VoiceProtectGameMode, projectGame, settings.VoiceProtectGameLast,
-            "Protect VoiceOver Recording from Game-Play Sound");
-        Apply(_duckMusicCb, settings.VoiceProtectMusicMode, projectMusic, settings.VoiceProtectMusicLast,
-            "Protect VoiceOver Recording from Music");
+        Apply(_duckAudioCb, projectGame, settings.VoiceProtectGameLast);
+        Apply(_duckMusicCb, projectMusic, settings.VoiceProtectMusicLast);
 
-        static void Apply(CheckBox? box, FreeVideoStudio.App.Infrastructure.VoiceProtectionMode mode,
-                          bool? projectChoice, bool rememberedChoice, string label)
+        static void Apply(CheckBox? box, bool? projectChoice, bool rememberedChoice)
         {
             if (box == null) return;
-
-            switch (mode)
-            {
-                case FreeVideoStudio.App.Infrastructure.VoiceProtectionMode.AlwaysOn:
-                    box.IsChecked = true;
-                    box.IsEnabled = false;
-                    ToolTip.SetTip(box, $"Settings > Sound & Music is set to always protect your voice, so \"{label}\" is locked on. Change it there to unlock this.");
-                    break;
-
-                case FreeVideoStudio.App.Infrastructure.VoiceProtectionMode.AlwaysOff:
-                    box.IsChecked = false;
-                    box.IsEnabled = false;
-                    ToolTip.SetTip(box, $"Settings > Sound & Music is set to never protect your voice, so \"{label}\" is locked off. Change it there to unlock this.");
-                    break;
-
-                default:
-                    box.IsChecked = projectChoice ?? rememberedChoice;
-                    box.IsEnabled = true;
-                    break;
-            }
+            box.IsChecked = projectChoice ?? rememberedChoice;
+            box.IsEnabled = true;
         }
     }
 
@@ -2320,7 +2303,7 @@ public partial class VoiceOverWindow : Window
 
     private void OnKeyUpHandler(object? sender, Avalonia.Input.KeyEventArgs e)
     {
-        if (Avalonia.Controls.TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is Avalonia.Controls.TextBox or Avalonia.Controls.NumericUpDown)
+        if (Avalonia.Controls.TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is Avalonia.Controls.TextBox or Avalonia.Controls.NumericUpDown or VoiceOverGainSlider)
             return;
 
         if (e.Key == Avalonia.Input.Key.V)
@@ -2757,7 +2740,6 @@ public partial class VoiceOverWindow : Window
             _lastTakeFailedFinalization = HasUnresolvedFailedTakes;
             if (!HasUnresolvedFailedTakes)
             {
-                _lastTakeFinalizationError = null;
                 _lastApplyErrorMessage = null;
             }
 
@@ -2793,7 +2775,6 @@ public partial class VoiceOverWindow : Window
             {
                 _ = ObserveRecoveryStoreAsync(_recovery.RegisterFailedTakeAsync(session, takeOutcome, failureReason));
                 _lastTakeFailedFinalization = true;
-                _lastTakeFinalizationError = takeOutcome?.Error;
                 _lastTakeWasRejected = true;
                 _lastApplyErrorMessage = $"Microphone finalization failed: {takeOutcome?.Error?.Message ?? "device error"}. Your audio is preserved on disk.";
                 UpdateFailedTakesUi();

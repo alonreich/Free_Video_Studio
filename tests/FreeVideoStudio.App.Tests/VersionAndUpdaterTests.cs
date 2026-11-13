@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using FreeVideoStudio.App;
 using FreeVideoStudio.App.Services;
@@ -247,28 +247,42 @@ public sealed class VersionAndUpdaterTests : IDisposable
     [Fact]
     public async Task ProgressMessagesNeverSatisfyOrBreakAnExpectedReply()
     {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        try
-        {
-            using var client = new TcpClient();
-            await client.ConnectAsync(IPAddress.Loopback, ((IPEndPoint)listener.LocalEndpoint).Port);
-            using TcpClient serverSide = await listener.AcceptTcpClientAsync();
-            using var sender = new UpgradeChannel(client);
-            using var receiver = new UpgradeChannel(serverSide);
-            var progress = new List<string>();
-            receiver.Progress = progress.Add;
+        string name = FreeVideoStudio.Core.Ipc.PipeAccess.NewUpgradePipeName();
+        var server = FreeVideoStudio.Core.Ipc.PipeAccess.CreateUpgradeServer(name);
+        using var receiver = new UpgradeChannel(server);
+        var client = new System.IO.Pipes.NamedPipeClientStream(".", name, System.IO.Pipes.PipeDirection.InOut, System.IO.Pipes.PipeOptions.Asynchronous);
+        using var sender = new UpgradeChannel(client);
+        Task accept = server.WaitForConnectionAsync();
+        await client.ConnectAsync(5_000);
+        await accept;
+        var progress = new List<string>();
+        receiver.Progress = progress.Add;
 
-            await sender.SendAsync(UpgradeChannel.ProgressKind, "unpack|0.250");
-            await sender.SendAsync(UpgradeChannel.ProgressKind, "unpack|0.500");
-            await sender.SendAsync("installed");
+        await sender.SendAsync(UpgradeChannel.ProgressKind, "unpack|0.250");
+        await sender.SendAsync(UpgradeChannel.ProgressKind, "unpack|0.500");
+        await sender.SendAsync("installed");
 
-            Assert.Equal(string.Empty, await receiver.ExpectAsync("installed", TimeSpan.FromSeconds(5)));
-            Assert.Equal(["unpack|0.250", "unpack|0.500"], progress);
-        }
-        finally
+        Assert.Equal(string.Empty, await receiver.ExpectAsync("installed", TimeSpan.FromSeconds(5)));
+        Assert.Equal(["unpack|0.250", "unpack|0.500"], progress);
+    }
+
+    [Fact]
+    public void NoLocalPort01_UpgradePipeNamesAreOursAndCannotBeDoubleCreated()
+    {
+        string name = FreeVideoStudio.Core.Ipc.PipeAccess.NewUpgradePipeName();
+        Assert.True(FreeVideoStudio.Core.Ipc.PipeAccess.IsUpgradePipeName(name));
+        Assert.False(FreeVideoStudio.Core.Ipc.PipeAccess.IsUpgradePipeName("12345"));
+        Assert.False(FreeVideoStudio.Core.Ipc.PipeAccess.IsUpgradePipeName(@"..\pipe\other"));
+        Assert.False(FreeVideoStudio.Core.Ipc.PipeAccess.IsUpgradePipeName(name.ToUpperInvariant()));
+        using var first = FreeVideoStudio.Core.Ipc.PipeAccess.CreateUpgradeServer(name);
+        Assert.ThrowsAny<IOException>(() => FreeVideoStudio.Core.Ipc.PipeAccess.CreateUpgradeServer(name).Dispose());
+
+        string coordinator = File.ReadAllText(Path.Combine(RepoRoot.Path, "src", "FreeVideoStudio.App", "Services", "UpgradeCoordinator.cs"));
+        string worker = File.ReadAllText(Path.Combine(RepoRoot.Path, "src", "FreeVideoStudio.App", "Services", "UpgradeInstallWorker.cs"));
+        foreach (string code in new[] { coordinator, worker })
         {
-            listener.Stop();
+            Assert.DoesNotContain("TcpListener", code);
+            Assert.DoesNotContain("TcpClient", code);
         }
     }
 
@@ -295,7 +309,17 @@ public sealed class VersionAndUpdaterTests : IDisposable
     public void StagingFolderArgumentIsAcceptedOnlyInsideTheUpgradeStageRoot()
     {
         string root = UpgradeCoordinator.StageRoot;
-        Assert.False(root.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase), "NOTEMPEXEC_01: the worker is never staged in %TEMP%.");
+        Assert.StartsWith(_tempDir, root);
+        Environment.SetEnvironmentVariable(ApplicationPaths.ProgramDataRootOverrideEnvironmentVariable, null);
+        try
+        {
+            Assert.False(UpgradeCoordinator.StageRoot.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase),
+                "NOTEMPEXEC_01: production update staging must never use %TEMP%.");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ApplicationPaths.ProgramDataRootOverrideEnvironmentVariable, _tempDir);
+        }
         string good = Path.Combine(root, "t" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(good);
         try

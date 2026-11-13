@@ -13,7 +13,15 @@ namespace FreeVideoStudio.Core.Tests;
 /// LIBAVPROBE_01/03 — native libav metadata vs the ffprobe subprocess it replaces.
 /// Every assertion compares the two backends on the SAME file through the SAME MediaProber
 /// accessors, plus the raw JSON keys those accessors (and OutputSizeEstimator) read.
+/// LIBAVPROBE_04 — <see cref="RepeatedProbesShowNoResourceGrowth"/> reads PROCESS-wide private bytes and handles,
+/// so this class runs in a collection with parallelisation disabled (after, never beside, other tests).
+/// In the 2026-11-13 gate run the probes stayed flat for 240 of 300 pairs (163 → 171 MB) and then another
+/// test running in parallel added +375 MB and +133 handles inside the last block — not a probe leak.
 /// </summary>
+[CollectionDefinition(nameof(LibAvMetadataProbeTests), DisableParallelization = true)]
+public sealed class LibAvMetadataProbeCollection { }
+
+[Collection(nameof(LibAvMetadataProbeTests))]
 public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTests.Fixtures>
 {
     private readonly Fixtures _fx;

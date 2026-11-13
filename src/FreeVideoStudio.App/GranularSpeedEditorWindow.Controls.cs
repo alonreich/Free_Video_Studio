@@ -1,4 +1,4 @@
-
+﻿
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
@@ -102,8 +102,6 @@ public partial class GranularSpeedEditorWindow
     private Button? AiCommentaryCancelBtnCtl => _cAiCommentaryCancelBtn ??= (this.FindNameScope()?.Find("AiCommentaryCancelBtn") as Button);
     private TextBlock? _cAiCommentaryStatusLabel;
     private TextBlock? AiCommentaryStatusLabelCtl => _cAiCommentaryStatusLabel ??= (this.FindNameScope()?.Find("AiCommentaryStatusLabel") as TextBlock);
-    private ProgressBar? _cAiCommentaryProgressBar;
-    private ProgressBar? AiCommentaryProgressBarCtl => _cAiCommentaryProgressBar ??= (this.FindNameScope()?.Find("AiCommentaryProgressBar") as ProgressBar);
     private TextBlock? _cAiCommentaryConsoleText;
     private TextBlock? AiCommentaryConsoleTextCtl => _cAiCommentaryConsoleText ??= (this.FindNameScope()?.Find("AiCommentaryConsoleText") as TextBlock);
     private ScrollViewer? _cAiCommentaryConsoleScroll;

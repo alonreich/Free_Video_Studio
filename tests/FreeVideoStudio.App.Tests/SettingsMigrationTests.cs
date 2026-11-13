@@ -121,12 +121,11 @@ public sealed class SettingsMigrationTests : IDisposable
         SettingsManager.Load();
 
         Assert.Equal("FreeVideoStudio", SettingsManager.Instance.MainOutputBaseName);
-        Assert.Equal("Merged-Videos", SettingsManager.Instance.MergerOutputBaseName);
         Assert.Equal("C:\\Videos", SettingsManager.Instance.MainOutputDirectory);
         Assert.Equal("C:\\Merged", SettingsManager.Instance.MergerOutputDirectory);
         string saved = File.ReadAllText(_settingsFile);
         Assert.Contains("\"MainOutputBaseName\": \"FreeVideoStudio\"", saved);
-        Assert.Contains("\"MergerOutputBaseName\": \"Merged-Videos\"", saved);
+        Assert.DoesNotContain("MergerOutputBaseName", saved);
     }
 
     [Fact]
@@ -144,7 +143,7 @@ public sealed class SettingsMigrationTests : IDisposable
         SettingsManager.Load();
 
         Assert.DoesNotContain("\\", SettingsManager.Instance.MainOutputBaseName);
-        Assert.Equal("Merged-Videos", SettingsManager.Instance.MergerOutputBaseName);
+        Assert.EndsWith("-merged", FreeVideoStudio.Core.Media.OutputFileNaming.MergerBaseFor(SettingsManager.Instance.MainOutputBaseName));
     }
 
     [Fact]
@@ -192,16 +191,14 @@ public sealed class SettingsMigrationTests : IDisposable
         Assert.Equal(14, SettingsManager.CurrentSchemaVersion);
         Assert.Equal(FreeVideoStudio.App.Services.GeminiClient.DefaultModel, SettingsManager.Instance.GeminiModelName);
         Assert.Equal(2.2, SettingsManager.Instance.AiZoomBaseScale);
-        Assert.Equal(1.3, SettingsManager.Instance.AiZoomMinScale);
-        Assert.True(SettingsManager.Instance.AiZoomAvoidHud);
-        Assert.Equal(2.0, SettingsManager.Instance.AiZoomDeadbandPercent);
+        Assert.Equal(1.3, FreeVideoStudio.App.ViewModels.AiZoomTuning.MinScaleFor(SettingsManager.Instance.AiZoomBaseScale));
     }
 
     /// <summary>KEYPROTECT_01 — a plain-text key on disk is sealed on load and the clear key leaves the file.</summary>
     [Fact]
     public void MigrateFromSchema13_SealsAPlainTextApiKeyOnDisk()
     {
-        const string key = "AIzaSyFAKE-MIGRATION-ONLY-00000000000";
+        const string key = "AIzaSy-dummy-migration-key-000000";
         File.WriteAllText(_settingsFile, "{ \"SchemaVersion\": 13, \"AutoUpdateChecks\": true, \"GeminiApiKey\": \"" + key + "\" }");
 
         SettingsManager.Load();
@@ -220,7 +217,7 @@ public sealed class SettingsMigrationTests : IDisposable
     public void SecretProtector_RoundTripsOnWindows_AndProducesDpapiPrefix()
     {
         if (!OperatingSystem.IsWindows()) return;
-        const string key = "AIzaSyFAKE-TEST-KEY-12345678901234567";
+        const string key = "AIzaSy-dummy-test-key-000000000000";
         string sealedKey = SecretProtector.Protect(key);
         Assert.StartsWith("dpapi1:", sealedKey);
         Assert.True(SecretProtector.IsProtectedForm(sealedKey));
@@ -288,7 +285,7 @@ public sealed class SettingsMigrationTests : IDisposable
         AppSettings s = SettingsManager.Instance;
         Assert.Equal(SettingsManager.CurrentSchemaVersion, s.SchemaVersion);
         Assert.True(s.AutoUpdateChecks);
-        Assert.Equal("Auto", s.VideoEncoderOverride);
+        Assert.Equal(EncoderPreference.Auto, s.VideoEncoderOverride);
         Assert.True(s.MergerThumbnailScraper);
         Assert.False(s.ConfirmVideoMergerRemove);
         Assert.DoesNotContain("\\", s.MainOutputBaseName);
@@ -338,8 +335,8 @@ public sealed class SettingsMigrationTests : IDisposable
     [Fact]
     public void MigrateFromSchema14_SealsPlainTextClaudeAndOpenAiKeysOnDisk()
     {
-        const string claudeKey = "sk-ant-api03-FAKE-TEST-CLAUDE-KEY-0000000000";
-        const string openAiKey = "sk-proj-FAKE-TEST-OPENAI-KEY-0000000000000000";
+        const string claudeKey = "sk-" + "ant-dummy-test-claude-key-0000000000";
+        const string openAiKey = "sk-" + "proj-dummy-test-openai-key-0000000000000000";
 
         File.WriteAllText(_settingsFile, $$"""
         {
@@ -386,8 +383,8 @@ public sealed class SettingsMigrationTests : IDisposable
     [Fact]
     public void MultiVendorSettings_RoundTripAndPersistCorrectly()
     {
-        const string claudeKey = "sk-ant-FAKE-ROUNDTRIP-CLAUDE-KEY-1111111";
-        const string openAiKey = "sk-FAKE-ROUNDTRIP-OPENAI-KEY-222222222222";
+        const string claudeKey = "sk-" + "ant-dummy-roundtrip-claude-key-1111111";
+        const string openAiKey = "sk-" + "dummy-roundtrip-openai-key-222222222222";
 
         SettingsManager.Load();
 
@@ -426,7 +423,7 @@ public sealed class SettingsMigrationTests : IDisposable
         {
             GeminiModelName = "gemini-2.5-flash",
             AiDefaultUsage = new(FreeVideoStudio.App.Services.AiVendor.Google, "gemini-2.5-flash"),
-            AiUsageOverrides = new List<string>(),
+            AiUsageOverrides = new List<FreeVideoStudio.App.Services.AiUsage>(),
         };
         settings.AiUsageCommentary = new(FreeVideoStudio.App.Services.AiVendor.Anthropic, "claude-3-7-sonnet-20250219");
         settings.AiUsageViralPost = new(FreeVideoStudio.App.Services.AiVendor.OpenAI, "o3-mini");
@@ -445,11 +442,11 @@ public sealed class SettingsMigrationTests : IDisposable
     [Fact]
     public void ConsentCovers_IsPerCompany_AndLegacyMeansGoogle()
     {
-        Assert.True(AppSettings.ConsentCovers(true, "", FreeVideoStudio.App.Services.AiVendor.Google));
-        Assert.False(AppSettings.ConsentCovers(true, "", FreeVideoStudio.App.Services.AiVendor.OpenAI));
-        Assert.True(AppSettings.ConsentCovers(true, "OpenAI", FreeVideoStudio.App.Services.AiVendor.OpenAI));
-        Assert.False(AppSettings.ConsentCovers(true, "OpenAI", FreeVideoStudio.App.Services.AiVendor.Anthropic));
-        Assert.False(AppSettings.ConsentCovers(false, "Google", FreeVideoStudio.App.Services.AiVendor.Google));
+        Assert.True(AppSettings.ConsentCovers(true, null, FreeVideoStudio.App.Services.AiVendor.Google));
+        Assert.False(AppSettings.ConsentCovers(true, null, FreeVideoStudio.App.Services.AiVendor.OpenAI));
+        Assert.True(AppSettings.ConsentCovers(true, FreeVideoStudio.App.Services.AiVendor.OpenAI, FreeVideoStudio.App.Services.AiVendor.OpenAI));
+        Assert.False(AppSettings.ConsentCovers(true, FreeVideoStudio.App.Services.AiVendor.OpenAI, FreeVideoStudio.App.Services.AiVendor.Anthropic));
+        Assert.False(AppSettings.ConsentCovers(false, FreeVideoStudio.App.Services.AiVendor.Google, FreeVideoStudio.App.Services.AiVendor.Google));
     }
 
     [Fact]

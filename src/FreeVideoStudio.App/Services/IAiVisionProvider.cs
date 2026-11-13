@@ -32,6 +32,8 @@ public enum AiProviderErrorKind
     BadRequest,
     Blocked,
     MalformedResponse,
+    /// <summary>AIANSWER_01 — the vendor stopped at its output length limit; retrying the same request cannot help.</summary>
+    Truncated,
 }
 
 /// <summary>
@@ -69,7 +71,8 @@ public class AiProviderException : Exception
 }
 
 /// <summary>A single image input for AI analysis.</summary>
-public sealed record AiImageInput(byte[] Data, string MimeType = "image/jpeg", string? Label = null);
+/// <remarks>AIREASONING_02 — <paramref name="Detail"/> is OpenAI's picture detail ("low" / "high"); null = auto. Other vendors ignore it.</remarks>
+public sealed record AiImageInput(byte[] Data, string MimeType = "image/jpeg", string? Label = null, string? Detail = null);
 
 /// <summary>A video input for AI analysis.</summary>
 public sealed record AiVideoInput(byte[] Data, string MimeType = "video/mp4", double Fps = 2.0);
@@ -114,10 +117,14 @@ public enum AiUsage
 /// never shown in Settings; it is gone. An old settings file that still carries it loads fine (unknown JSON
 /// members are ignored) and the field disappears on the next save.
 /// </summary>
-public sealed class AiUsageConfig
+public sealed class AiUsageConfig : Infrastructure.FreezableSettings
 {
-    public AiVendor Vendor { get; set; } = AiVendor.Google;
-    public string Model { get; set; } = "";
+    /// <summary>SETTINGSFREEZE_01 — read-only once part of the published settings snapshot.</summary>
+    public AiVendor Vendor { get => _vendor; set => Set(ref _vendor, value); }
+    private AiVendor _vendor = AiVendor.Google;
+
+    public string Model { get => _model; set => Set(ref _model, value); }
+    private string _model = "";
 
     public AiUsageConfig() { }
 

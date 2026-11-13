@@ -1,4 +1,6 @@
-﻿namespace FreeVideoStudio.Core.Media;
+﻿using System.Collections.Concurrent;
+
+namespace FreeVideoStudio.Core.Media;
 
 /// <summary>
 /// LIVE ZOOM PREVIEW — ONE IMPLEMENTATION, SHARED BY EVERY PREVIEW SURFACE IN THE SUITE.
@@ -191,7 +193,7 @@ public static class ZoomPreviewSimulator
 
         if (!string.IsNullOrEmpty(active.AiTrackingTrajectory) && p >= 0.999)
         {
-            var traj = AiTrajectorySmoother.SmoothedTrajectory.FromJson(active.AiTrackingTrajectory);
+            var traj = GetCachedTrajectory(active.AiTrackingTrajectory);
             if (traj != null && traj.Keyframes.Count > 0)
             {
                 double segStart = ((active.ZoomStartMs ?? active.StartMs) / 1000.0) - trimStartSec;
@@ -291,5 +293,33 @@ public static class ZoomPreviewSimulator
         int ix = Math.Max(0, Math.Min(sw - iw, (int)Math.Round((sw - survW) / 2.0)));
 
         return new Result($"{iw}x{ih}+{ix}+0", 0.0);
+    }
+
+    private const int TrajectoryCacheMaxEntries = 64;
+    private static readonly object TrajectoryCacheGate = new();
+    private static readonly Dictionary<string, AiTrajectorySmoother.SmoothedTrajectory> TrajectoryCache = new(StringComparer.Ordinal);
+    private static readonly Queue<string> TrajectoryCacheOrder = new();
+
+    /// <summary>Parses a trajectory JSON string at most once per unique payload across scrubbing ticks.</summary>
+    internal static AiTrajectorySmoother.SmoothedTrajectory? GetCachedTrajectory(string json)
+    {
+        if (string.IsNullOrEmpty(json)) return null;
+        lock (TrajectoryCacheGate)
+        {
+            if (TrajectoryCache.TryGetValue(json, out var hit)) return hit;
+        }
+
+        var parsed = AiTrajectorySmoother.SmoothedTrajectory.FromJson(json);
+        if (parsed == null) return null;
+
+        lock (TrajectoryCacheGate)
+        {
+            if (TrajectoryCache.TryGetValue(json, out var existing)) return existing;
+            if (TrajectoryCache.Count >= TrajectoryCacheMaxEntries && TrajectoryCacheOrder.TryDequeue(out string? oldest))
+                TrajectoryCache.Remove(oldest);
+            TrajectoryCache[json] = parsed;
+            TrajectoryCacheOrder.Enqueue(json);
+        }
+        return parsed;
     }
 }

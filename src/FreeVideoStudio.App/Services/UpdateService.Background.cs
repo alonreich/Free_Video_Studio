@@ -43,6 +43,7 @@ internal static partial class UpdateService
     /// <summary>Starts (or shows) the background update for <paramref name="release"/>.</summary>
     private static void StartBackgroundUpdate(Window owner, UpdateRelease release)
     {
+        if (DevelopmentEnvironment.IsActive) return;
         if (!TrySanitizeTagForPath(release.Tag, out string tagFolder))
         {
             RecordResult($"The latest release has an unusable version name ('{release.Tag}').");
@@ -130,6 +131,8 @@ internal static partial class UpdateService
     /// </summary>
     private static Process LaunchInstaller(PreparedUpdate prepared, bool noLaunch = false)
     {
+        if (DevelopmentEnvironment.IsActive)
+            throw new InvalidOperationException("Installation is disabled for a development copy.");
         var installer = new ProcessStartInfo(prepared.InstallerPath) { UseShellExecute = DevReleaseFolder is null };
         if (DevReleaseFolder is not null)
         {
@@ -234,20 +237,7 @@ internal static partial class UpdateService
         vm.LaterRequested += () =>
         {
             CloseToast();
-            lock (BackgroundGate)
-            {
-                if (_waitingInstaller is null && _preparedUpdate != null)
-                {
-                    try
-                    {
-                        _waitingInstaller = LaunchInstaller(_preparedUpdate, noLaunch: true);
-                    }
-                    catch (Exception ex)
-                    {
-                        RuntimeLog.Fail("UPDATE", $"Could not launch deferred installer: {ex.Message}");
-                    }
-                }
-            }
+            Dispatcher.UIThread.Post(EnsureInstallOnExit);
             if (MainWindowOrNull() is { } main)
                 FloatingNotice.Info(main, "The update will prompt for administrator permission (UAC) and install when you close Free Video Studio.");
         };

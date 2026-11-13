@@ -228,7 +228,8 @@ internal static unsafe partial class AuthenticodeVerifier
     /// <c>Process.Start</c>. <paramref name="anchorPath"/> is the currently running executable.
     /// </summary>
     /// <param name="detail">A one-line, user-safe explanation of the verdict, always populated.</param>
-    internal static TrustVerdict EvaluateUpdateCandidate(string candidatePath, string? anchorPath, out string detail)
+    internal static TrustVerdict EvaluateUpdateCandidate(string candidatePath, string? anchorPath, out string detail,
+        string? listedSha256 = null)
     {
         SignatureInfo pinned = Inspect(candidatePath);
         if (IsSignedByPinnedPublisher(pinned, out string pinDetail))
@@ -236,6 +237,8 @@ internal static unsafe partial class AuthenticodeVerifier
             detail = $"{pinDetail} (sha256 {Shorten(pinned.Thumbprint)}).";
             return TrustVerdict.Trusted;
         }
+        if (pinned.HasSignature && IsSharedPublisher(pinned.Subject))
+            return EvaluateSharedPublisher(candidatePath, pinned, listedSha256, out detail);
         if (pinned.HasSignature && !pinned.IntegrityValid)
         {
             detail = $"The downloaded file's signature did not validate: {pinned.Detail}";
@@ -273,6 +276,61 @@ internal static unsafe partial class AuthenticodeVerifier
         }
 
         detail = $"Signature valid and publisher matches this build (sha256 {Shorten(candidate.Thumbprint)}).";
+        return TrustVerdict.Trusted;
+    }
+
+    /// <summary>
+    /// SIGNPATH_01 — the free open-source signing certificate. Its publisher is "SignPath Foundation",
+    /// which signs MANY open-source programs, so its name proves nothing about which program a file is.
+    /// A file signed with it is trusted only when (1) Windows fully trusts the signature (public root,
+    /// intact, chain valid) AND (2) its SHA-256 equals the hash in the update list that the Free Video
+    /// Studio publisher root signed (<paramref name="listedSha256"/>, UPDATEPIN_01 / DIST-SMART). The
+    /// list stays the proof of WHICH file; the public signature only satisfies Windows. This is what lets
+    /// copies signed with the repository certificate install the first SignPath-signed release, and
+    /// stops "same publisher name" from being enough between two SignPath-signed files.
+    /// </summary>
+    internal const string SharedPublisherName = "SignPath Foundation";
+
+    /// <summary>SIGNPATH_01 — true when the signer's common name is <see cref="SharedPublisherName"/>.</summary>
+    internal static bool IsSharedPublisher(string? subject)
+    {
+        if (string.IsNullOrWhiteSpace(subject)) return false;
+        foreach (string part in subject.Split(','))
+        {
+            string p = part.Trim();
+            if (p.StartsWith("CN=", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(p[3..].Trim().Trim('"'), SharedPublisherName, StringComparison.Ordinal))
+                return true;
+        }
+        return false;
+    }
+
+    internal static TrustVerdict EvaluateSharedPublisher(string candidatePath, SignatureInfo info, string? listedSha256, out string detail)
+    {
+        if (!info.ChainValid)
+        {
+            detail = $"The SignPath Foundation signature did not validate: {info.Detail}";
+            return TrustVerdict.Rejected;
+        }
+        if (string.IsNullOrWhiteSpace(listedSha256))
+        {
+            detail = "The file is signed by SignPath Foundation, which signs many open-source programs, and no publisher-signed update list names it. Refusing to run it.";
+            return TrustVerdict.Rejected;
+        }
+        string actual;
+        try { actual = FreeVideoStudio.Core.Infrastructure.UpgradeFiles.Hash(candidatePath); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
+            detail = "The downloaded file could not be read for its fingerprint check.";
+            return TrustVerdict.Rejected;
+        }
+        if (!string.Equals(actual, listedSha256.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            detail = "The file is signed by SignPath Foundation but is not the file the publisher's signed update list names. Refusing to run it.";
+            return TrustVerdict.Rejected;
+        }
+        detail = $"Signed by SignPath Foundation for Free Video Studio and named in the publisher-signed update list (sha256 {Shorten(info.Thumbprint)}).";
         return TrustVerdict.Trusted;
     }
 

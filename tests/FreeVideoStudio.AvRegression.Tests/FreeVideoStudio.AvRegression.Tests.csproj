@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    AVREG_01 — the playback / sync / export-parity regression gate.
+    Real libmpv playback (null video+audio outputs) and real FFmpeg exports of generated marker media.
+    Run it through tests\run-av-tests.cmd, never by hand-reading the output (docs/README.md §0.3a).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- TESTOUT_01: dotnet test writes results only to logs\AV_Results (docs/05 SYS-STORAGE-TABLE). -->
+    <VSTestResultsDirectory>$(MSBuildThisFileDirectory)..\..\logs\AV_Results</VSTestResultsDirectory>
+    <IsTestProject>true</IsTestProject>
+    <NuGetAudit>false</NuGetAudit>
+    <NoWarn>$(NoWarn);xUnit1004</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+    <PackageReference Include="Avalonia.Headless.XUnit" Version="11.3.22" />
+    <ProjectReference Include="..\..\src\FreeVideoStudio.App\FreeVideoStudio.App.csproj" />
+    <ProjectReference Include="..\..\src\FreeVideoStudio.Core\FreeVideoStudio.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The real player engine, loaded by MpvWrapper's [LibraryImport("libmpv-2.dll")]. -->
+    <None Include="..\..\binaries\libmpv-2.dll" Link="libmpv-2.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\TestArtifactDirectory.cs" Link="TestArtifactDirectory.cs" />
+  </ItemGroup>
+</Project>

@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
@@ -409,6 +409,14 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         });
 
         ButtonClick("MagicWandButton", async (_, _) => await RunMagicWandAsync());
+        ButtonClick("CropToolAiSettingsButton", async (_, _) =>
+        {
+            if (await Controls.SettingsWindow.ShowSectionAsync(this, ViewModels.SettingsSection.Ai, Services.SettingsWindowServices.CreateDefault()))
+            {
+                s_wandCloudDeclinedThisSession = false;
+                UpdateMagicWandAvailabilityUi();
+            }
+        });
 
         ButtonClick("ZoomFitButton", (_, _) => ApplySnapshotZoom(null));
         ButtonClick("ZoomActualButton", (_, _) => { ApplySnapshotZoom(1.0); RecenterOnSelection(); });
@@ -1100,7 +1108,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
             if (!string.IsNullOrEmpty(startPath) && Directory.Exists(startPath))
             {
-                try { Environment.CurrentDirectory = startPath; } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
                 options.SuggestedStartLocation = await StorageProvider.TryGetFolderFromPathAsync(new Uri(startPath));
             }
         }
@@ -3886,7 +3893,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             });
 
 
-            string exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? "FreeVideoStudio.exe";
+            string exePath = Environment.ProcessPath ?? "FreeVideoStudio.exe";
 
             var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exePath, "run-ui") { UseShellExecute = false });
             if (p != null)

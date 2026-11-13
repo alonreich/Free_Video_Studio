@@ -18,11 +18,21 @@ public sealed class ApplicationPaths
 
     public string ProgramDataRoot { get; }
 
-    public string SessionStateFile => Path.Combine(ProgramDataRoot, "session_state.json");
+    private bool IsNormalDevelopment => DevelopmentEnvironment.ShareUserMedia &&
+        string.Equals(ProgramDataRoot, DevelopmentEnvironment.DataRoot, StringComparison.OrdinalIgnoreCase);
+    private bool IsProductionDefault => !DevelopmentEnvironment.IsActive &&
+        string.Equals(ProgramDataRoot, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppDirectoryName), StringComparison.OrdinalIgnoreCase);
+    public string PreferencesDirectory => IsNormalDevelopment ? DevelopmentEnvironment.TemporaryDataRoot : ProgramDataRoot;
+    public string SettingsFile => Path.Combine(PreferencesDirectory, "settings.json");
+    public string SessionStateFile => Path.Combine(PreferencesDirectory, "session_state.json");
 
     public string CropCoordinatesFile => Path.Combine(ProgramDataRoot, "crops_coordinations.conf");
 
-    public string LogsDirectory => Path.Combine(ProgramDataRoot, "logs");
+    public string LogsDirectory => Path.Combine(PreferencesDirectory, "logs");
+
+    public string VoiceOverDirectory => IsNormalDevelopment
+        ? Path.Combine(DevelopmentEnvironment.SystemTempRoot, "FreeVideoStudio_DEV", "voiceovers")
+        : Path.Combine(IsProductionDefault ? TempDirectory : ProgramDataRoot, "voiceovers");
 
     public string TempDirectory
     {
@@ -31,9 +41,9 @@ public sealed class ApplicationPaths
             string? overrideRoot = Environment.GetEnvironmentVariable(ProgramDataRootOverrideEnvironmentVariable);
             if (!string.IsNullOrWhiteSpace(overrideRoot))
             {
-                return Path.Combine(Path.GetTempPath(), "FreeVideoStudio_DEV");
+                return Path.Combine(PreferencesDirectory, "scratch", "work");
             }
-            return Path.Combine(Path.GetTempPath(), "FreeVideoStudio");
+            return Path.Combine(DevelopmentEnvironment.SystemTempRoot, "FreeVideoStudio");
         }
     }
 
@@ -63,7 +73,11 @@ public sealed class ApplicationPaths
     public string MergerSessionFile => Path.Combine(ProgramDataRoot, "merger_session.json");
 
     /// <summary>LANECACHE_02 — the Merger's filmstrip frames and waveform peaks, per clip, across sessions.</summary>
-    public string LaneCacheDirectory => Path.Combine(ProgramDataRoot, "cache", "lanes");
+    public string LaneCacheDirectory => Path.Combine(IsProductionDefault ? TempDirectory : PreferencesDirectory, "cache", "lanes");
+
+    /// <summary>AIREUSE_04 — finished AI answers that are worth keeping across launches (the Kill Tracker's
+    /// per-file scan), keyed by a hash of file identity + company + model. Disposable: a missing file is a re-scan.</summary>
+    public string AiAnswerCacheDirectory => Path.Combine(IsProductionDefault ? TempDirectory : PreferencesDirectory, "cache", "ai");
 
     public string InstallerReportFile => Path.Combine(TempDirectory, "FreeVideoStudio_Install_Report.txt");
 
@@ -77,9 +91,10 @@ public sealed class ApplicationPaths
     /// That fragmentation is exactly what made the "preserve my settings" upgrade option leaky:
     /// the uninstaller/upgrader had to know about every root, and it did not.
     ///
-    /// New small state files belong HERE. Do not create another root.
+    /// New small state files belong HERE. STORAGEPATHS_01 routes normal development UI state
+    /// to temporary preferences; profiles and crash recovery retain ProgramDataRoot.
     /// </summary>
-    public string UiStateDirectory => Path.Combine(ProgramDataRoot, "uistate");
+    public string UiStateDirectory => Path.Combine(PreferencesDirectory, "uistate");
 
     /// <summary>
     /// ISSUE_09 — the legacy %APPDATA% location, kept ONLY so existing installs can be migrated

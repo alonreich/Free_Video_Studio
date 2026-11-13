@@ -23,11 +23,10 @@ public partial class MainWindow
     /// <summary>AIELIM_02 — text of the timeline chip, null = hidden.</summary>
     private string? _aiEliminationStatus;
     private bool _aiEliminationStatusIsError;
+    private bool _isAiEliminationScanning;
 
     /// <summary>AIELIM_03 — the speed editor while it is open, so late scan results still reach it.</summary>
     private GranularSpeedEditorWindow? _openGranularEditor;
-
-    public IReadOnlyList<double> AiEliminationTimestamps => _aiEliminationTimestamps;
 
     public void SetAiEliminations(IEnumerable<double>? timestamps)
     {
@@ -72,7 +71,7 @@ public partial class MainWindow
             if (string.IsNullOrWhiteSpace(apiKey))
             {
                 RuntimeLog.Info("AIElimination", "AI Elimination Tracker enabled but no API key configured. Skipping scan.");
-                SetAiEliminationStatus("AI kill scan: no AI key (Settings › AI Features)", true, videoPath);
+                SetAiEliminationStatus("AI kill scan: no AI key (Settings › AI)", true, videoPath);
                 return;
             }
 
@@ -86,8 +85,21 @@ public partial class MainWindow
                 return;
             }
             string model = settings.GetEffectiveModel(AiUsage.EliminationTracker);
+            string vendorName = AiVisionProviders.DisplayName(config.Vendor);
+            var est = AiCostEstimator.EstimateKillTracker(config.Vendor, model, AiEliminationTrackerService.MomentBudget(durationSec));
+            string currentStep = $"Starting {vendorName} ({model})…";
+            var startedUtc = DateTime.UtcNow;
 
-            SetAiEliminationStatus("AI: scanning for kills…", false, videoPath);
+            _isAiEliminationScanning = true;
+            SetAiEliminationStatus($"AI ({vendorName} {model}): scanning… ({AiCostEstimator.FormatPreRunBanner(est, config.Vendor, model)})", false, videoPath);
+            using var elapsedTimer = new System.Threading.Timer(_ =>
+            {
+                if (cts.IsCancellationRequested || !_isAiEliminationScanning) return;
+                int secs = (int)(DateTime.UtcNow - startedUtc).TotalSeconds;
+                SetAiEliminationStatus($"AI: {currentStep} ({secs}s)", false, videoPath);
+            }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+
+            using var usage = AiUsageMeter.BeginTask("AI Kill Tracker", config.Vendor);
             var result = await Task.Run(() => AiEliminationTrackerService.ScanAsync(
                 ffmpegPath,
                 videoPath,
@@ -97,12 +109,20 @@ public partial class MainWindow
                 model,
                 status =>
                 {
+                    currentStep = status;
                     RuntimeLog.Info("AIElimination", status);
-                    if (!cts.IsCancellationRequested) SetAiEliminationStatus("AI: " + status, false, videoPath);
+                    if (!cts.IsCancellationRequested)
+                    {
+                        int secs = (int)(DateTime.UtcNow - startedUtc).TotalSeconds;
+                        SetAiEliminationStatus(secs >= 1 ? $"AI: {status} ({secs}s)" : "AI: " + status, false, videoPath);
+                    }
                 },
                 cts.Token), cts.Token).ConfigureAwait(false);
 
-            RuntimeLog.Info("AIElimination", $"Scan finished: {(result.Failed ? "FAILED — " : "")}{result.Summary} ({result.Markers.Count} marker(s), {result.MomentsChecked} moment(s) checked).");
+            _isAiEliminationScanning = false;
+            string usageSummary = usage.Tally.TotalTokens > 0 ? $" · {usage.SummaryWithEstimate(est)}" : "";
+            string usageChipNote = usage.Tally.TotalTokens > 0 ? $" ({usage.Tally.TotalTokens:N0} tokens)" : "";
+            RuntimeLog.Info("AIElimination", $"Scan finished: {(result.Failed ? "FAILED — " : "")}{result.Summary}{usageSummary} ({result.Markers.Count} marker(s), {result.MomentsChecked} moment(s) checked).");
             Dispatcher.UIThread.Post(() =>
             {
                 if (cts.IsCancellationRequested || _loadedVideoPath != videoPath) return;
@@ -113,24 +133,30 @@ public partial class MainWindow
                     _aiEliminationTimestamps.Add(m.TimestampSec);
                     _aiEliminationMarkers.Add(m);
                 }
-                _aiEliminationStatus = result.Failed ? "AI kill scan failed: " + result.Summary : "AI: " + result.Summary;
+                _aiEliminationStatus = result.Failed ? "AI kill scan failed: " + result.Summary : "AI: " + result.Summary + usageChipNote;
                 _aiEliminationStatusIsError = result.Failed;
                 QueueTimelineRedrawPass(DispatcherPriority.Background);
 
                 _openGranularEditor?.SetAiEliminations(_aiEliminationTimestamps);
                 if (result.Failed)
-                    Controls.FloatingNotice.Error(this, "AI Kill Tracker: " + result.Summary);
+                    Controls.FloatingNotice.Error(this, "AI Kill Tracker: " + result.Summary + usageSummary);
                 else if (result.Markers.Count > 0)
-                    Controls.FloatingNotice.Success(this, $"AI Kill Tracker: {result.Summary} Look for the red ✕ above the timeline.");
+                    Controls.FloatingNotice.Success(this, $"AI Kill Tracker: {result.Summary} Look for the red ✕ above the timeline.{usageSummary}");
                 else
-                    Controls.FloatingNotice.Info(this, "AI Kill Tracker: " + result.Summary);
+                    Controls.FloatingNotice.Info(this, "AI Kill Tracker: " + result.Summary + usageSummary);
             });
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            _isAiEliminationScanning = false;
+        }
         catch (Exception ex)
         {
-            RuntimeLog.Swallowed(ex);
-            SetAiEliminationStatus("AI kill scan failed.", true, videoPath);
+            _isAiEliminationScanning = false;
+            string reason = ex is AiProviderException pe ? pe.Message : "something unexpected stopped it. Try reopening the video.";
+            string reference = AiUsageMeter.LastTaskId;
+            RuntimeLog.Fail("AIElimination", $"Kill scan failed (reference {reference}): {ex.GetType().Name}: {ex.Message}");
+            SetAiEliminationStatus($"AI kill scan failed: {reason} (Reference: {reference})", true, videoPath);
         }
     }
 
@@ -182,6 +208,50 @@ public partial class MainWindow
 
         if (!string.IsNullOrEmpty(_aiEliminationStatus))
         {
+            Control chipContent;
+            if (_isAiEliminationScanning)
+            {
+                var panel = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
+                panel.Children.Add(new TextBlock
+                {
+                    Text = _aiEliminationStatus,
+                    FontSize = Infrastructure.ThemeManager.ScaledFontSize(10),
+                    Foreground = Infrastructure.ThemeResources.Brush(this, "AppTextPrimaryBrush", Avalonia.Media.Brushes.White),
+                    TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+                });
+                var cancelBtn = new TextBlock
+                {
+                    Text = "✕ Cancel",
+                    FontSize = Infrastructure.ThemeManager.ScaledFontSize(10),
+                    FontWeight = Avalonia.Media.FontWeight.Bold,
+                    Foreground = elimBrush,
+                    Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+                };
+                cancelBtn.PointerPressed += (_, e) =>
+                {
+                    e.Handled = true;
+                    _aiEliminationScanCts?.Cancel();
+                    _isAiEliminationScanning = false;
+                    SetAiEliminationStatus("AI kill scan cancelled", false, _loadedVideoPath);
+                };
+                panel.Children.Add(cancelBtn);
+                chipContent = panel;
+            }
+            else
+            {
+                chipContent = new TextBlock
+                {
+                    Text = _aiEliminationStatus,
+                    FontSize = Infrastructure.ThemeManager.ScaledFontSize(10),
+                    Foreground = _aiEliminationStatusIsError
+                        ? elimBrush
+                        : Infrastructure.ThemeResources.Brush(this, "AppTextPrimaryBrush", Avalonia.Media.Brushes.White),
+                    TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
+                };
+            }
+
             var chip = new Border
             {
                 Background = Infrastructure.ThemeResources.Brush(this, "AppOverlayBrush", Avalonia.Media.Brushes.Black),
@@ -192,15 +262,7 @@ public partial class MainWindow
                 IsHitTestVisible = true,
                 ZIndex = 499,
                 MaxWidth = Math.Max(140, canvasWidth * 0.5),
-                Child = new TextBlock
-                {
-                    Text = _aiEliminationStatus,
-                    FontSize = Infrastructure.ThemeManager.ScaledFontSize(10),
-                    Foreground = _aiEliminationStatusIsError
-                        ? elimBrush
-                        : Infrastructure.ThemeResources.Brush(this, "AppTextPrimaryBrush", Avalonia.Media.Brushes.White),
-                    TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
-                },
+                Child = chipContent,
             };
             ToolTip.SetTip(chip, _aiEliminationStatus);
             chip.Measure(Avalonia.Size.Infinity);

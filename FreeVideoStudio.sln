@@ -21,6 +21,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FvsVerify", "build\FvsVerif
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FvsVerify.Tests", "tests\FvsVerify.Tests\FvsVerify.Tests.csproj", "{D9BF411F-C464-4D97-A6E9-A49C461EB0BE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FreeVideoStudio.AvRegression.Tests", "tests\FreeVideoStudio.AvRegression.Tests\FreeVideoStudio.AvRegression.Tests.csproj", "{C0B99185-9112-4D76-A0F3-3473FF1834C6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -103,6 +105,18 @@ Global
 		{D9BF411F-C464-4D97-A6E9-A49C461EB0BE}.Release|x64.Build.0 = Release|Any CPU
 		{D9BF411F-C464-4D97-A6E9-A49C461EB0BE}.Release|x86.ActiveCfg = Release|Any CPU
 		{D9BF411F-C464-4D97-A6E9-A49C461EB0BE}.Release|x86.Build.0 = Release|Any CPU
+		{C0B99185-9112-4D76-A0F3-3473FF1834C6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C0B99185-9112-4D76-A0F3-3473FF1834C6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C0B99185-9112-4D76-A0F3-3473FF1834C6}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C0B99185-9112-4D76-A0F3-3473FF1834C6}.Debug|x64.Build.0 = Debug|Any CPU
+		{C0B99185-9112-4D76-A0F3-3473FF1834C6}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C0B99185-9112-4D76-A0F3-3473FF1834C6}.Debug|x86.Build.0 = Debug|Any CPU
+		{C0B99185-9112-4D76-A0F3-3473FF1834C6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C0B99185-9112-4D76-A0F3-3473FF1834C6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C0B99185-9112-4D76-A0F3-3473FF1834C6}.Release|x64.ActiveCfg = Release|Any CPU
+		{C0B99185-9112-4D76-A0F3-3473FF1834C6}.Release|x64.Build.0 = Release|Any CPU
+		{C0B99185-9112-4D76-A0F3-3473FF1834C6}.Release|x86.ActiveCfg = Release|Any CPU
+		{C0B99185-9112-4D76-A0F3-3473FF1834C6}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -114,5 +128,6 @@ Global
 		{E7F25202-40A3-4ECF-ABB4-89EAA16482E0} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{3C240D77-F212-424A-A471-5DA9C4A1BF1A} = {DEE5DD87-39C1-BF34-B639-A387DCCF972B}
 		{D9BF411F-C464-4D97-A6E9-A49C461EB0BE} = {DEE5DD87-39C1-BF34-B639-A387DCCF972B}
+		{C0B99185-9112-4D76-A0F3-3473FF1834C6} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

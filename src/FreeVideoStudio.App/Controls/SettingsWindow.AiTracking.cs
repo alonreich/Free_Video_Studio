@@ -1,22 +1,24 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
-using System.Threading;
 using Avalonia.Controls;
 using Avalonia.Media;
 using FreeVideoStudio.App.Infrastructure;
 using FreeVideoStudio.App.Services;
-using FreeVideoStudio.Core.Infrastructure;
+using FreeVideoStudio.App.ViewModels;
 
 namespace FreeVideoStudio.App.Controls;
 
+/// <summary>
+/// AIPROVIDER_UI_01 (docs/04 UI-AIZOOM, docs/05 SYS-AISETTINGS) — the AI tab's company/model row,
+/// the one key box with its saved-key list (SETKEYONE_01) and the About tab. SETTINGSDI_01: this file is PRESENTATION ONLY. Testing keys, listing
+/// models, changing which company a feature uses and the permission bookkeeping live in
+/// <see cref="SettingsViewModel"/> (through the injected services); here the results are drawn.
+/// SETNOCONSENTUI_01: there are no permission boxes any more — saving a key is the permission.
+/// </summary>
 public partial class SettingsWindow : Window
 {
-    private CancellationTokenSource? _aiSettingsCts;
-
-    /// <summary>Models listed live per company (Refresh), shared by the default row and every override row.</summary>
-    private readonly Dictionary<AiVendor, IReadOnlyList<string>> _liveModels = new();
-
     private static readonly (AiVendor Vendor, string Label)[] VendorItems =
     {
         (AiVendor.Google, "Google Gemini"),
@@ -24,397 +26,303 @@ public partial class SettingsWindow : Window
         (AiVendor.OpenAI, "OpenAI"),
     };
 
-    /// <summary>Plain names for the seven AI usages, as the Advanced list shows them.</summary>
-    internal static string UsageLabel(AiUsage usage) => usage switch
+    private static string BrushKey(StatusTone tone) => tone switch
     {
-        AiUsage.SubjectDiscovery => "AI Smart Zoom · finding the target",
-        AiUsage.DenseTracking => "AI Smart Zoom · following the target",
-        AiUsage.MagicWand => "Magic Wand (Crop Tool)",
-        AiUsage.Commentary => "AI Commentary",
-        AiUsage.MusicAutoFit => "AI Music Auto-Fit",
-        AiUsage.ViralPost => "Write my post",
-        AiUsage.EliminationTracker => "Mark my kills",
-        _ => usage.ToString(),
+        StatusTone.Warning => "AppWarningBrush",
+        StatusTone.Success => "AppSuccessBrush",
+        StatusTone.Danger => "AppDangerBrush",
+        _ => "AppTextMutedBrush",
     };
 
-    private void SetAiStatus(TextBlock? statusText, string text, string brushKey)
+    private void SetStatusText(TextBlock? statusText, string text, StatusTone tone)
     {
         if (statusText == null) return;
         statusText.Text = text;
-        statusText.Foreground = ThemeResources.Brush(this, brushKey, statusText.Foreground ?? Brushes.Gray);
+        statusText.Foreground = ThemeResources.Brush(this, BrushKey(tone), statusText.Foreground ?? Brushes.Gray);
     }
 
-    /// <summary>
-    /// AIPROVIDER_UI_01 (docs/04 UI-AIZOOM, docs/05 SYS-AISETTINGS) — multi-company AI. The keys,
-    /// switches, sliders and permissions are BOUND to the view-model (SETTINGSVM_01); this method wires
-    /// only what talks to the network (Test / Refresh), the browser links, and the company/model rows.
-    /// AICONSENT_02: the permission boxes are seeded and re-stamped with the company by the view-model.
-    /// </summary>
+    private static string VendorLabel(AiVendor v) => VendorItems.First(x => x.Vendor == v).Label;
+
     private void BuildAiTrackingUi()
     {
         var scope = this.FindNameScope();
         if (scope == null) return;
-        Closed += (_, _) => _aiSettingsCts?.Cancel();
 
-        WireKeyCard(scope, AiVendor.Google, "AiRemoveKeyBtn", "AiTestConnectionBtn", "AiConnectionStatusText", "AiGetFreeKeyBtn");
-        WireKeyCard(scope, AiVendor.Anthropic, "AiRemoveClaudeKeyBtn", "AiTestClaudeBtn", "AiClaudeStatusText", "AiGetClaudeKeyBtn");
-        WireKeyCard(scope, AiVendor.OpenAI, "AiRemoveOpenAiKeyBtn", "AiTestOpenAiBtn", "AiOpenAiStatusText", "AiGetOpenAiKeyBtn");
-
-        if (scope.Find("AiKeysExpander") is Expander keys) keys.IsExpanded = !Vm.HasAnyKey;
-
-        BuildAiDefaultAndOverridesUi(scope);
-        Vm.Reloaded += () => BuildAiDefaultAndOverridesUi(scope);
-    }
-
-    private void WireKeyCard(INameScope scope, AiVendor vendor, string removeName, string testName, string statusName, string getName)
-    {
-        var status = scope.Find(statusName) as TextBlock;
-        if (scope.Find(removeName) is Button remove)
+        if (scope.Find("AiSessionUsageText") is TextBlock sessionUsage)
         {
-            remove.Click += (_, _) =>
-            {
-                switch (vendor)
-                {
-                    case AiVendor.Google: Vm.GeminiApiKey = ""; break;
-                    case AiVendor.Anthropic: Vm.ClaudeApiKey = ""; break;
-                    default: Vm.OpenAiApiKey = ""; break;
-                }
-                SetAiStatus(status, "The key will be deleted when you press SAVE.", "AppWarningBrush");
-            };
+            sessionUsage.Text = AiUsageMeter.SessionSummary();
+            ToolTip.SetTip(sessionUsage, AiUsageMeter.SessionDetails());
         }
 
-        if (scope.Find(getName) is Button get)
+        if (scope.Find("AiKeysExpander") is Expander keys)
         {
-            get.Click += (_, _) =>
+            keys.IsExpanded = !Vm.HasAnyKey;
+            if (!Vm.HasAnyKey && keys.Parent is Panel from && scope.Find("AiKeysTopHost") is Panel top)
             {
-                if (vendor == AiVendor.Google) AiSetupWizardWindow.OpenAiStudio();
-                else if (vendor == AiVendor.Anthropic) AiVisionProviders.OpenAnthropicConsole();
-                else AiVisionProviders.OpenOpenAiPlatform();
-            };
+                from.Children.Remove(keys);
+                top.Children.Add(keys);
+            }
         }
 
-        if (scope.Find(testName) is not Button test) return;
-        test.Click += async (_, _) =>
+        if (scope.Find("AiDefaultRecommendedBadge") is TextBlock badge)
+            badge.Text = $"★ Recommended: {VendorLabel(AiVisionProviders.RecommendedVendor)} · {AiVisionProviders.RecommendedModel}";
+
+        WireAddKey(scope);
+        WireDefaultAiRow(scope);
+        BuildSavedKeyRows(scope);
+        Vm.Reloaded += () => { ShowDefaultAiRow(scope); BuildSavedKeyRows(scope); };
+        Vm.AiRoutingChanged += () => { ShowDefaultAiRow(scope); BuildSavedKeyRows(scope); };
+        Vm.PropertyChanged += (_, e) =>
         {
-            string key = Vm.PendingKey(vendor);
-            if (string.IsNullOrWhiteSpace(key))
-            {
-                SetAiStatus(status, "Paste a key first.", "AppWarningBrush");
-                return;
-            }
-            test.IsEnabled = false;
-            _aiSettingsCts?.Cancel();
-            _aiSettingsCts = new CancellationTokenSource();
-            try
-            {
-                if (vendor == AiVendor.Google)
-                {
-                    string model = Vm.GeminiTestModel;
-                    SetAiStatus(status, $"Contacting Google Gemini ({model})…", "AppTextMutedBrush");
-                    var (success, msg) = await GeminiClient.Shared.TestKeyAsync(key, model, _aiSettingsCts.Token);
-                    SetAiStatus(status, msg, success ? "AppSuccessBrush" : "AppDangerBrush");
-                }
-                else
-                {
-                    SetAiStatus(status, "Contacting the company…", "AppTextMutedBrush");
-                    var models = await AiVisionProviders.Get(vendor).ListModelsAsync(key, _aiSettingsCts.Token);
-                    SetAiStatus(status, $"Key works. {models.Count} model(s) available.", "AppSuccessBrush");
-                }
-            }
-            catch (AiProviderException ex)
-            {
-                RuntimeLog.Info("Settings", $"{vendor} key test failed: {ex.Kind}.");
-                SetAiStatus(status, ex.Message, "AppDangerBrush");
-            }
-            catch (OperationCanceledException ex) { CoreLogger.Swallowed(ex); }
-            catch (Exception ex)
-            {
-                CoreLogger.Warn("AI", $"{vendor} key test failed: {ex.Message}");
-                SetAiStatus(status, $"Connection failed: {ex.Message}", "AppDangerBrush");
-            }
-            finally { test.IsEnabled = true; }
+            if (e.PropertyName is nameof(SettingsViewModel.GeminiApiKey) or nameof(SettingsViewModel.ClaudeApiKey) or nameof(SettingsViewModel.OpenAiApiKey))
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => BuildSavedKeyRows(scope));
         };
     }
 
-    private AiUsageConfig PendingOwnConfig(AiUsage usage) => Vm.P.GetOwnUsageConfig(usage);
-
-    private bool IsOverridden(AiUsage usage) => Vm.P.AiUsageOverrides?.Contains(usage.ToString()) == true;
-
-    private IReadOnlyList<string> ModelsFor(AiVendor vendor)
-        => _liveModels.TryGetValue(vendor, out var live) && live.Count > 0 ? live : AiVisionProviders.GetKnownModels(vendor);
-
-    private bool _aiDefaultRowWired;
-    private readonly List<Action> _aiRowRefreshers = new();
-
     /// <summary>
-    /// AIDEFAULT_01 / AISETTINGS_UI_02 — the company row every feature follows, the per-feature override
-    /// rows, and key cards that show only for the companies actually in use (or that still hold a key).
-    /// Safe to call again after a restore / import (SETTINGSVM_01): the override rows are rebuilt and the
-    /// default row re-reads the pending values.
+    /// SETKEYONE_01 — ONE box for any AI key: the company is recognised from the key, the key is kept as
+    /// pending (saved by SAVE) and checked with that company straight away.
     /// </summary>
-    private void BuildAiDefaultAndOverridesUi(INameScope scope)
+    private void WireAddKey(INameScope scope)
     {
-        Vm.P.AiDefaultUsage ??= new AiUsageConfig(AiVendor.Google, GeminiClient.DefaultModel);
-        Vm.P.AiUsageOverrides ??= new List<string>();
-        _aiRowRefreshers.Clear();
+        var box = scope.Find("AiNewKeyTextBox") as TextBox;
+        var add = scope.Find("AiAddKeyBtn") as Button;
+        var status = scope.Find("AiAddKeyStatusText") as TextBlock;
+        if (box == null || add == null) return;
 
-        void UpdateKeyCards()
+        async System.Threading.Tasks.Task AddAsync()
         {
-            var needed = new HashSet<AiVendor> { Vm.P.AiDefaultUsage!.Vendor };
-            foreach (AiUsage u in AppSettings.AllAiUsages)
-                if (IsOverridden(u)) needed.Add(PendingOwnConfig(u).Vendor);
-            foreach (var (vendor, card) in new[] { (AiVendor.Google, "AiGeminiKeyCard"), (AiVendor.Anthropic, "AiClaudeKeyCard"), (AiVendor.OpenAI, "AiOpenAiKeyCard") })
-                if (scope.Find(card) is Control c)
-                    c.IsVisible = needed.Contains(vendor) || !string.IsNullOrWhiteSpace(Vm.PendingKey(vendor));
-            Vm.RaiseAiReady();
+            string? problem = Vm.AddKey(box.Text, out AiVendor vendor);
+            if (problem != null) { SetStatusText(status, problem, StatusTone.Warning); return; }
+            box.Text = "";
+            box.RevealPassword = false;
+            SetStatusText(status, $"{VendorLabel(vendor)} key added. Checking it… (it is saved when you press SAVE)", StatusTone.Muted);
+            await Vm.TestKeyAsync(vendor);
+            var result = Vm.StatusFor(vendor);
+            SetStatusText(status, $"{VendorLabel(vendor)}: {result.Text}", result.Tone);
         }
 
-        void FillModelCombo(ComboBox combo, AiUsageConfig cfg)
+        add.Click += (_, _) => _ = AddAsync();
+        box.AddHandler(Avalonia.Input.InputElement.KeyDownEvent, (object? _, Avalonia.Input.KeyEventArgs e) =>
         {
-            var list = ModelsFor(cfg.Vendor).Where(m => !string.IsNullOrWhiteSpace(m)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            if (string.IsNullOrWhiteSpace(cfg.Model)) cfg.Model = AiVisionProviders.GetDefaultModel(cfg.Vendor);
-            if (!list.Contains(cfg.Model, StringComparer.OrdinalIgnoreCase)) list.Insert(0, cfg.Model);
-            combo.ItemsSource = list;
-            combo.SelectedItem = list.First(m => string.Equals(m, cfg.Model, StringComparison.OrdinalIgnoreCase));
-        }
+            if (e.Key != Avalonia.Input.Key.Enter || e.KeyModifiers != Avalonia.Input.KeyModifiers.None) return;
+            e.Handled = true;
+            _ = AddAsync();
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
-        void WireVendorModel(ComboBox vendorCombo, ComboBox modelCombo, Func<AiUsageConfig> cfgOf)
-        {
-            vendorCombo.ItemsSource = VendorItems.Select(v => v.Label).ToList();
-            vendorCombo.SelectionChanged += (_, _) =>
-            {
-                var cfg = cfgOf();
-                int idx = vendorCombo.SelectedIndex;
-                if (idx < 0 || idx >= VendorItems.Length || VendorItems[idx].Vendor == cfg.Vendor) return;
-                cfg.Vendor = VendorItems[idx].Vendor;
-                cfg.Model = AiVisionProviders.GetDefaultModel(cfg.Vendor);
-                FillModelCombo(modelCombo, cfg);
-                UpdateKeyCards();
-            };
-            modelCombo.SelectionChanged += (_, _) =>
-            {
-                if (modelCombo.SelectedItem is string m && !string.IsNullOrWhiteSpace(m)) cfgOf().Model = m;
-            };
-        }
-
-        void ShowVendorModel(ComboBox vendorCombo, ComboBox modelCombo, AiUsageConfig cfg)
-        {
-            int vi = Array.FindIndex(VendorItems, v => v.Vendor == cfg.Vendor);
-            vendorCombo.SelectedIndex = vi >= 0 ? vi : 0;
-            FillModelCombo(modelCombo, cfg);
-        }
-
-        var defVendor = scope.Find("AiDefaultVendorCombo") as ComboBox;
-        var defModel = scope.Find("AiDefaultModelCombo") as ComboBox;
-        if (defVendor != null && defModel != null)
-        {
-            if (!_aiDefaultRowWired)
-            {
-                _aiDefaultRowWired = true;
-                WireVendorModel(defVendor, defModel, () => Vm.P.AiDefaultUsage!);
-
-                if (scope.Find("AiDefaultUseRecommendedBtn") is Button rec)
-                {
-                    rec.Click += (_, _) =>
-                    {
-                        Vm.P.AiDefaultUsage!.Vendor = AiVisionProviders.RecommendedVendor;
-                        Vm.P.AiDefaultUsage.Model = AiVisionProviders.RecommendedModel;
-                        ShowVendorModel(defVendor, defModel, Vm.P.AiDefaultUsage);
-                        UpdateKeyCards();
-                    };
-                }
-
-                if (scope.Find("AiDefaultRefreshBtn") is Button refresh)
-                {
-                    refresh.Click += async (_, _) =>
-                    {
-                        var vendors = new HashSet<AiVendor> { Vm.P.AiDefaultUsage!.Vendor };
-                        foreach (AiUsage u in AppSettings.AllAiUsages)
-                            if (IsOverridden(u)) vendors.Add(PendingOwnConfig(u).Vendor);
-                        refresh.IsEnabled = false;
-                        _aiSettingsCts?.Cancel();
-                        _aiSettingsCts = new CancellationTokenSource();
-                        var ct = _aiSettingsCts.Token;
-                        try
-                        {
-                            foreach (AiVendor v in vendors)
-                            {
-                                string key = Vm.PendingKey(v);
-                                if (string.IsNullOrWhiteSpace(key)) continue;
-                                try
-                                {
-                                    var models = await AiVisionProviders.Get(v).ListModelsAsync(key, ct);
-                                    if (models.Count > 0) _liveModels[v] = models;
-                                }
-                                catch (AiProviderException ex)
-                                {
-                                    CoreLogger.Warn("AI", $"Failed to refresh models for {v}: {ex.Message}");
-                                }
-                            }
-                            FillModelCombo(defModel, Vm.P.AiDefaultUsage!);
-                            foreach (var r in _aiRowRefreshers) r();
-                        }
-                        catch (OperationCanceledException ex) { CoreLogger.Swallowed(ex); }
-                        finally { refresh.IsEnabled = true; }
-                    };
-                }
-
-                Vm.PropertyChanged += (_, e) =>
-                {
-                    if (e.PropertyName is nameof(ViewModels.SettingsViewModel.GeminiApiKey)
-                        or nameof(ViewModels.SettingsViewModel.ClaudeApiKey)
-                        or nameof(ViewModels.SettingsViewModel.OpenAiApiKey))
-                        Avalonia.Threading.Dispatcher.UIThread.Post(UpdateKeyCards);
-                };
-            }
-            ShowVendorModel(defVendor, defModel, Vm.P.AiDefaultUsage);
-        }
-
-        if (scope.Find("AiOverridesPanel") is StackPanel panel)
-        {
-            panel.Children.Clear();
-            foreach (AiUsage usage in AppSettings.AllAiUsages)
-            {
-                AiUsage u = usage;
-                bool overridden = IsOverridden(u);
-                AiUsageConfig own = PendingOwnConfig(u);
-                if (!overridden)
-                {
-                    own.Vendor = Vm.P.AiDefaultUsage.Vendor;
-                    own.Model = Vm.P.AiDefaultUsage.Model;
-                }
-
-                var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto, 10, 160, 10, *") };
-                var check = new CheckBox { Content = UsageLabel(u), IsChecked = overridden, MinWidth = 250, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-                var vCombo = new ComboBox { HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch, IsEnabled = overridden };
-                var mCombo = new ComboBox { HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch, IsEnabled = overridden };
-                ToolTip.SetTip(check, "Ticked: this feature uses its own AI company and model. Unticked: it uses the AI company above.");
-                Avalonia.Automation.AutomationProperties.SetName(vCombo, UsageLabel(u) + " company");
-                Avalonia.Automation.AutomationProperties.SetName(mCombo, UsageLabel(u) + " model");
-                Grid.SetColumn(vCombo, 2);
-                Grid.SetColumn(mCombo, 4);
-                grid.Children.Add(check);
-                grid.Children.Add(vCombo);
-                grid.Children.Add(mCombo);
-                panel.Children.Add(grid);
-
-                WireVendorModel(vCombo, mCombo, () => PendingOwnConfig(u));
-                ShowVendorModel(vCombo, mCombo, own);
-                _aiRowRefreshers.Add(() => FillModelCombo(mCombo, PendingOwnConfig(u)));
-                check.IsCheckedChanged += (_, _) =>
-                {
-                    bool on = check.IsChecked == true;
-                    vCombo.IsEnabled = mCombo.IsEnabled = on;
-                    var overrides = Vm.P.AiUsageOverrides!;
-                    if (on)
-                    {
-                        if (!overrides.Contains(u.ToString())) overrides.Add(u.ToString());
-                    }
-                    else
-                    {
-                        overrides.Remove(u.ToString());
-                        var cfg = PendingOwnConfig(u);
-                        cfg.Vendor = Vm.P.AiDefaultUsage!.Vendor;
-                        cfg.Model = Vm.P.AiDefaultUsage.Model;
-                        ShowVendorModel(vCombo, mCombo, cfg);
-                    }
-                    UpdateKeyCards();
-                };
-            }
-
-            if (Vm.P.AiUsageOverrides.Count > 0 && scope.Find("AiAdvancedExpander") is Expander exp) exp.IsExpanded = true;
-        }
-
-        UpdateKeyCards();
+        if (scope.Find("AiGetFreeKeyBtn") is Button g) g.Click += (_, _) => AiSetupWizardWindow.OpenAiStudio();
+        if (scope.Find("AiGetClaudeKeyBtn") is Button c) c.Click += (_, _) => AiVisionProviders.OpenAnthropicConsole();
+        if (scope.Find("AiGetOpenAiKeyBtn") is Button o) o.Click += (_, _) => AiVisionProviders.OpenOpenAiPlatform();
     }
 
-    /// <summary>About tab: identity, system readouts and the manual update controls.</summary>
+    private readonly List<(KeyTestStatus Model, System.ComponentModel.PropertyChangedEventHandler Handler)> _keyRowHandlers = new();
+
+    /// <summary>SETKEYONE_01 — one row per key the window holds: the company, the last 4 characters, Test and Remove.</summary>
+    private void BuildSavedKeyRows(INameScope scope)
+    {
+        if (scope.Find("AiSavedKeysPanel") is not StackPanel panel) return;
+        foreach (var (m, h) in _keyRowHandlers) m.PropertyChanged -= h;
+        _keyRowHandlers.Clear();
+        panel.Children.Clear();
+        foreach (var (vendor, label) in VendorItems)
+        {
+            string key = Vm.PendingKey(vendor).Trim();
+            if (key.Length == 0) continue;
+            AiVendor v = vendor;
+            string tail = key.Length > 4 ? key[^4..] : key;
+            bool inUse = Vm.DefaultAi.Vendor == v;
+
+            var name = new TextBlock
+            {
+                Text = $"{label} key  ••••{tail}" + (inUse ? "   (used by every AI feature)" : ""),
+                FontWeight = FontWeight.SemiBold,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+            };
+            var state = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Avalonia.Thickness(0, 4, 0, 0) };
+            KeyTestStatus model = Vm.StatusFor(v);
+            SetStatusText(state, model.Text, model.Tone);
+            var test = new Button { Content = "Test", MinWidth = 70, IsEnabled = !model.IsBusy };
+            var remove = new Button { Content = "Remove", Margin = new Avalonia.Thickness(10, 0, 0, 0) };
+            test.Classes.Add("Secondary");
+            remove.Classes.Add("Secondary");
+            ToolTip.SetTip(test, $"Checks the {label} key with {label}.");
+            ToolTip.SetTip(remove, "Clears this key. It is deleted when you press SAVE.");
+            Avalonia.Automation.AutomationProperties.SetName(test, $"Test the {label} key");
+            Avalonia.Automation.AutomationProperties.SetName(remove, $"Remove the {label} key");
+
+            System.ComponentModel.PropertyChangedEventHandler onStatus = (_, e) =>
+            {
+                if (e.PropertyName is nameof(KeyTestStatus.Text) or nameof(KeyTestStatus.Tone)) SetStatusText(state, model.Text, model.Tone);
+                else if (e.PropertyName == nameof(KeyTestStatus.IsBusy)) test.IsEnabled = !model.IsBusy;
+            };
+            model.PropertyChanged += onStatus;
+            _keyRowHandlers.Add((model, onStatus));
+            test.Click += (_, _) => _ = Vm.TestKeyAsync(v);
+            remove.Click += (_, _) =>
+            {
+                Vm.RemoveKey(v);
+                SetStatusText(scope.Find("AiAddKeyStatusText") as TextBlock, $"The {label} key will be deleted when you press SAVE.", StatusTone.Warning);
+            };
+
+            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*, Auto, Auto"), RowDefinitions = new RowDefinitions("Auto, Auto") };
+            Grid.SetColumn(test, 1);
+            Grid.SetColumn(remove, 2);
+            Grid.SetRow(state, 1);
+            Grid.SetColumnSpan(state, 3);
+            grid.Children.Add(name);
+            grid.Children.Add(test);
+            grid.Children.Add(remove);
+            grid.Children.Add(state);
+            var card = new Border { Child = grid };
+            card.Classes.Add("Card");
+            panel.Children.Add(card);
+        }
+        Vm.RaiseAiReady();
+    }
+
+
+    private bool _showingRow;
+
+    private void FillVendorModel(ComboBox vendorCombo, ComboBox modelCombo, AiUsageConfig cfg)
+    {
+        _showingRow = true;
+        try
+        {
+            vendorCombo.ItemsSource ??= VendorItems.Select(v => v.Label).ToList();
+            int vi = Array.FindIndex(VendorItems, v => v.Vendor == cfg.Vendor);
+            vendorCombo.SelectedIndex = vi >= 0 ? vi : 0;
+            string current = Vm.EffectiveModel(cfg);
+            var list = Vm.ModelsFor(cfg.Vendor).Where(m => !string.IsNullOrWhiteSpace(m)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (!list.Contains(current, StringComparer.OrdinalIgnoreCase)) list.Insert(0, current);
+            modelCombo.ItemsSource = list;
+            modelCombo.SelectedItem = list.First(m => string.Equals(m, current, StringComparison.OrdinalIgnoreCase));
+        }
+        finally { _showingRow = false; }
+    }
+
+    private void WireDefaultAiRow(INameScope scope)
+    {
+        if (scope.Find("AiDefaultVendorCombo") is not ComboBox vendorCombo || scope.Find("AiDefaultModelCombo") is not ComboBox modelCombo) return;
+        var refreshStatus = scope.Find("AiDefaultRefreshStatusText") as TextBlock;
+        vendorCombo.SelectionChanged += (_, _) =>
+        {
+            if (_showingRow) return;
+            int idx = vendorCombo.SelectedIndex;
+            if (idx < 0 || idx >= VendorItems.Length || VendorItems[idx].Vendor == Vm.DefaultAi.Vendor) return;
+            Vm.SetDefaultAi(VendorItems[idx].Vendor, null);
+        };
+        modelCombo.SelectionChanged += (_, _) =>
+        {
+            if (_showingRow || modelCombo.SelectedItem is not string m || string.IsNullOrWhiteSpace(m)) return;
+            var cfg = Vm.DefaultAi;
+            if (string.Equals(cfg.Model, m, StringComparison.Ordinal)) return;
+            Vm.SetDefaultAi(cfg.Vendor, m);
+        };
+        if (scope.Find("AiDefaultUseRecommendedBtn") is Button rec) rec.Click += (_, _) => Vm.UseRecommendedAi();
+        if (scope.Find("AiDefaultRefreshBtn") is Button refresh)
+        {
+            refresh.Click += async (_, _) =>
+            {
+                refresh.IsEnabled = false;
+                if (refreshStatus != null)
+                {
+                    refreshStatus.IsVisible = true;
+                    SetStatusText(refreshStatus, $"Contacting {VendorLabel(Vm.DefaultAi.Vendor)} to fetch live models…", StatusTone.Muted);
+                }
+                try
+                {
+                    bool ok = await Vm.RefreshModelsAsync();
+                    if (ok) ShowDefaultAiRow(scope);
+                    if (refreshStatus != null && !string.IsNullOrWhiteSpace(Vm.LastModelRefreshMessage))
+                    {
+                        refreshStatus.IsVisible = true;
+                        SetStatusText(refreshStatus, Vm.LastModelRefreshMessage, ok ? StatusTone.Success : StatusTone.Warning);
+                    }
+                }
+                finally { refresh.IsEnabled = true; }
+            };
+        }
+        ShowDefaultAiRow(scope);
+    }
+
+    private void ShowDefaultAiRow(INameScope scope)
+    {
+        if (scope.Find("AiDefaultVendorCombo") is ComboBox v && scope.Find("AiDefaultModelCombo") is ComboBox m)
+            FillVendorModel(v, m, Vm.DefaultAi);
+        if (scope.Find("AiDefaultCapabilityText") is TextBlock cap)
+        {
+            cap.Text = Vm.DefaultAi.Vendor switch
+            {
+                AiVendor.Anthropic => "Anthropic Claude analyzes sampled still frames (no audio track). Best when you prefer Claude's vision & commentary style.",
+                AiVendor.OpenAI => "OpenAI analyzes sampled still frames (no audio track). Strong at visual framing and social copy.",
+                _ => "★ Recommended — Google Gemini watches video + hears audio, and includes a free tier.",
+            };
+        }
+    }
+
+
+    /// <summary>About tab: identity, system readouts and the manual update controls (SETTINGSDI_01: through IUpdateChecker).</summary>
     private void BuildAboutUi()
     {
         var scope = this.FindNameScope();
         if (scope == null) return;
+        var updates = _services.Updates;
         if (scope.Find("AboutVersionText") is TextBlock verText)
-            verText.Text = $"Version {DeploymentLifecycle.GetCurrentVersion()}";
+            verText.Text = $"Version {updates.CurrentVersion}";
 
         if (scope.Find("AboutPlatformText") is TextBlock platformText)
         {
             string os = System.Runtime.InteropServices.RuntimeInformation.OSDescription;
             string arch = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant();
-            platformText.Text = $".NET 9.0 ({os}, {arch}, NativeAOT)";
+            string kind = System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported ? "managed build" : "NativeAOT";
+            platformText.Text = $"{System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription} ({os}, {arch}, {kind})";
         }
 
-        if (scope.Find("AboutGpuText") is TextBlock gpuText)
-        {
-            string activeEncoder = SettingsManager.Instance.VideoEncoderOverride;
-            gpuText.Text = activeEncoder.Equals("Auto", StringComparison.OrdinalIgnoreCase)
-                ? "Automatic (graphics card preferred)"
-                : $"{activeEncoder} (picked by you)";
-        }
-
-        if (scope.Find("AboutStorageText") is TextBlock storageText) storageText.Text = _paths.ProgramDataRoot;
+        if (scope.Find("AboutStorageText") is TextBlock storageText) storageText.Text = _services.Paths.ProgramDataRoot;
 
         var statusText = scope.Find("UpdateStatusText") as TextBlock;
         var checkBtn = scope.Find("CheckUpdatesNowBtn") as Button;
         var lastCheckText = scope.Find("UpdateLastCheckText") as TextBlock;
         var skipPendingBtn = scope.Find("SkipPendingBtn") as Button;
-        void RefreshLastCheck()
+        var skippedBorder = scope.Find("SkippedReleaseBorder") as Border;
+        var skippedLabel = scope.Find("SkippedReleaseLabel") as TextBlock;
+
+        void Refresh()
         {
-            if (lastCheckText != null) lastCheckText.Text = UpdateService.DescribeLastCheck();
-            string? pending = UpdateService.PendingVersion;
+            if (lastCheckText != null) lastCheckText.Text = updates.DescribeLastCheck();
+            string? pending = updates.PendingVersion;
             if (skipPendingBtn != null)
             {
                 skipPendingBtn.IsVisible = pending != null;
                 skipPendingBtn.Content = pending != null ? $"Skip version {pending}" : "Skip this version";
             }
-        }
-        RefreshLastCheck();
-        if (skipPendingBtn != null)
-        {
-            skipPendingBtn.Click += (_, _) =>
+            if (skippedBorder != null)
             {
-                UpdateService.SkipPendingVersion();
-                RefreshLastCheck();
-            };
+                string skipped = updates.GetSkippedVersion();
+                skippedBorder.IsVisible = !string.IsNullOrWhiteSpace(skipped);
+                if (skippedLabel != null && skippedBorder.IsVisible) skippedLabel.Text = $"Skipped version: {skipped}";
+            }
         }
+        Refresh();
+
+        if (skipPendingBtn != null) skipPendingBtn.Click += (_, _) => { updates.SkipPendingVersion(); Refresh(); };
 
         if (scope.Find("WhatsNewBtn") is Button whatsNewBtn)
         {
             whatsNewBtn.Click += (_, _) =>
             {
-                try
-                {
-                    using var _ = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                        { FileName = UpdateService.ReleaseNotesPageUrl(), UseShellExecute = true });
-                }
-                catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
-                {
-                    RuntimeLog.Swallowed(ex);
-                    if (statusText != null) statusText.Text = "The release notes page could not be opened: " + UpdateService.ReleasesPageUrl;
-                }
+                if (!ShellLauncher.TryOpen(updates.ReleaseNotesUrl, "Settings") && statusText != null)
+                    statusText.Text = "The release notes page could not be opened: " + updates.ReleasesUrl;
             };
         }
-
-        var skippedBorder = scope.Find("SkippedReleaseBorder") as Border;
-        var skippedLabel = scope.Find("SkippedReleaseLabel") as TextBlock;
-        void RefreshSkippedBorder()
-        {
-            if (skippedBorder == null) return;
-            string skipped = UpdateService.GetSkippedVersion();
-            if (!string.IsNullOrWhiteSpace(skipped))
-            {
-                if (skippedLabel != null) skippedLabel.Text = $"Skipped version: {skipped}";
-                skippedBorder.IsVisible = true;
-            }
-            else skippedBorder.IsVisible = false;
-        }
-        RefreshSkippedBorder();
 
         if (scope.Find("ClearSkipBtn") is Button clearSkipBtn)
         {
             clearSkipBtn.Click += (_, _) =>
             {
-                UpdateService.ClearSkippedVersion();
-                RefreshSkippedBorder();
+                updates.ClearSkippedVersion();
+                Refresh();
                 if (statusText != null) statusText.Text = "The skipped version will be offered again.";
             };
         }
@@ -427,19 +335,17 @@ public partial class SettingsWindow : Window
                 if (statusText != null) statusText.Text = "Checking for updates…";
                 try
                 {
-                    await UpdateService.CheckManualAsync(this, msg =>
-                    {
-                        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                        {
-                            if (statusText != null) statusText.Text = msg;
-                        });
-                    });
+                    await updates.CheckNowAsync(this, msg =>
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (statusText != null) statusText.Text = msg; }));
+                }
+                catch (Exception ex)
+                {
+                    Core.Abstractions.Faults.Degraded("UPDATE", "The update check did not finish. The app keeps working; try again later.", ex);
                 }
                 finally
                 {
                     checkBtn.IsEnabled = true;
-                    RefreshSkippedBorder();
-                    RefreshLastCheck();
+                    Refresh();
                 }
             };
         }

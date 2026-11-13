@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 
 namespace FreeVideoStudio.Core.Media;
@@ -32,7 +33,8 @@ public sealed record MergeEditorState(
     double FreezeDurationS,
     IReadOnlyList<CutRange> Cuts,
     IReadOnlyList<MemePlacement> Memes,
-    double BaseSpeed);
+    double BaseSpeed,
+    CaptionTrack? Captions = null);
 
 /// <summary>The whole merge as ONE editor source.</summary>
 public sealed class MergeEditorSource
@@ -85,6 +87,86 @@ public sealed class MergeEditorSource
                .Append(',').Append((c.MergedFrames / (double)CompositeTimeline.MergeFps).ToString("0.######", ci));
         }
         return new MergeEditorSource(clips, tl.TotalMergedFrames * FrameMs, url.ToString());
+    }
+
+    /// <summary>Length of the silent file <see cref="PreviewUrl"/> repeats under a soundless clip.</summary>
+    public const double SilenceChunkSec = 10.0;
+
+    /// <summary>
+    /// MERGEPREVIEW_SILENT_01 — the preview URL when some clips have NO sound track. mpv's EDL assumes
+    /// every segment has the same tracks; a soundless clip leaves a hole in the audio clock (mpv logs
+    /// "Invalid audio PTS") and the picture races through that clip at ~1.5x, then the playhead jumps.
+    /// So the URL gets a SECOND, audio-only stream: each clip's own audio, or <paramref name="silencePath"/>
+    /// (a <see cref="SilenceChunkSec"/> silent file, repeated) under a soundless clip. The caller then
+    /// selects that stream's audio track (<see cref="SilentStreamAudioTrack"/>). When every clip has
+    /// sound, or no silent file is available, this is exactly <see cref="MpvUrl"/>.
+    /// </summary>
+    public static (string Url, bool UsesAudioStream) PreviewUrl(CompositeTimeline tl, Func<string, bool> hasAudio, string? silencePath)
+    {
+        var plain = Build(tl).MpvUrl;
+        var live = tl.Clips.Where(c => c.MergedFrames > 0).ToList();
+        if (string.IsNullOrEmpty(silencePath) || live.All(c => hasAudio(c.Path))) return (plain, false);
+
+        var ci = CultureInfo.InvariantCulture;
+        static string Entry(string path, double start, double length, IFormatProvider ci) =>
+            "%" + Encoding.UTF8.GetByteCount(path).ToString(ci) + "%" + path + "," + start.ToString("0.######", ci) + "," + length.ToString("0.######", ci);
+        var audio = new List<string>();
+        foreach (var c in live)
+        {
+            double len = c.MergedFrames / (double)CompositeTimeline.MergeFps;
+            if (hasAudio(c.Path)) { audio.Add(Entry(c.Path, c.KeepInUs / 1_000_000.0, len, ci)); continue; }
+            for (double done = 0; done < len - 1e-6; done += SilenceChunkSec)
+                audio.Add(Entry(silencePath, 0, Math.Min(SilenceChunkSec, len - done), ci));
+        }
+        return ("edl://!new_stream;" + plain["edl://".Length..] + ";!new_stream;" + string.Join(";", audio), true);
+    }
+
+    /// <summary>
+    /// MERGEPREVIEW_SILENT_01 — writes (once) the small silent FLAC <see cref="PreviewUrl"/> repeats under
+    /// soundless clips into <paramref name="directory"/>; returns its path, or null when it cannot be made.
+    /// </summary>
+    public static async System.Threading.Tasks.Task<string?> EnsureSilenceFileAsync(string ffmpegPath, string directory)
+    {
+        try
+        {
+            string path = System.IO.Path.Combine(directory, "merge-preview-silence-48k.flac");
+            if (System.IO.File.Exists(path) && new System.IO.FileInfo(path).Length > 0) return path;
+            System.IO.Directory.CreateDirectory(directory);
+            string tmp = path + ".part.flac";
+            var psi = new System.Diagnostics.ProcessStartInfo(ffmpegPath) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true };
+            foreach (string a in new[] { "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+                                         "-t", SilenceChunkSec.ToString(CultureInfo.InvariantCulture), "-c:a", "flac", tmp })
+                psi.ArgumentList.Add(a);
+            var r = await AsyncProcessRunner.RunAsync(psi).ConfigureAwait(false);
+            if (r.ExitCode != 0 || !System.IO.File.Exists(tmp)) return null;
+            System.IO.File.Move(tmp, path, overwrite: true);
+            return path;
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            Infrastructure.CoreLogger.Swallowed(ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// MERGEPREVIEW_SILENT_01 — the audio track of the audio-only stream: the LAST audio track mpv lists
+    /// (the first stream may or may not expose one, depending on whether its first clip has sound).
+    /// <paramref name="trackListJson"/> is mpv's <c>track-list</c> property. Null when none is listed.
+    /// </summary>
+    public static int? SilentStreamAudioTrack(string? trackListJson)
+    {
+        if (string.IsNullOrWhiteSpace(trackListJson)) return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(trackListJson);
+            int? last = null;
+            foreach (var t in doc.RootElement.EnumerateArray())
+                if (t.TryGetProperty("type", out var type) && type.GetString() == "audio" && t.TryGetProperty("id", out var id))
+                    last = id.GetInt32();
+            return last;
+        }
+        catch (System.Text.Json.JsonException ex) { Infrastructure.CoreLogger.Swallowed(ex); return null; }
     }
 
     /// <summary>The clip that owns merged position <paramref name="ms"/>. A boundary belongs to the clip that STARTS there; the very end to the last clip.</summary>
@@ -148,7 +230,7 @@ public sealed class MergeEditorSource
         segments.Sort((a, b) => a.StartMs.CompareTo(b.StartMs));
         cuts.Sort((a, b) => a.StartMs.CompareTo(b.StartMs));
         memes.Sort((a, b) => a.AtSourceSecRelative.CompareTo(b.AtSourceSecRelative));
-        return new MergeEditorState(segments, freezeAt, freezeDur, cuts, memes, edl.BaseSpeed);
+        return new MergeEditorState(segments, freezeAt, freezeDur, cuts, memes, edl.BaseSpeed, edl.Captions);
     }
 
 
@@ -220,7 +302,12 @@ public sealed class MergeEditorSource
                 Effects = old with { Speed = speed[i], Cuts = cuts[i], Memes = memes[i], Freezes = keptFreezes },
             };
         }
-        return edl with { Clips = clips, BaseSpeed = st.BaseSpeed > 0 && double.IsFinite(st.BaseSpeed) ? st.BaseSpeed : edl.BaseSpeed };
+        return edl with
+        {
+            Clips = clips,
+            BaseSpeed = st.BaseSpeed > 0 && double.IsFinite(st.BaseSpeed) ? st.BaseSpeed : edl.BaseSpeed,
+            Captions = st.Captions,
+        };
     }
 
     /// <summary>

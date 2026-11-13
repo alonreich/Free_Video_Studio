@@ -219,12 +219,6 @@ public partial class MainWindow
                     ? _musicWizardResult.MusicFilePaths
                     : (_musicWizardResult?.MusicFilePath != null ? new[] { _musicWizardResult.MusicFilePath } : null));
 
-            if (!string.IsNullOrEmpty(attribution))
-            {
-                var attrDlg = new FreeVideoStudio.App.Controls.MusicAttributionDialogWindow();
-                attrDlg.SetAttributionText(attribution);
-                await attrDlg.ShowDialog(this);
-            }
 
             var dlg = new FreeVideoStudio.App.Controls.FinishedDialogWindow();
             dlg.SetOutputPath(result.OutputPath ?? string.Empty);
@@ -443,14 +437,14 @@ public partial class MainWindow
 
     /// <summary>
     /// SETDEFAULTS_01 — Settings › Editing › "Same as last time" remembers what this export used,
-    /// so the next fresh video starts the same way. Written only when a start value follows the
-    /// last choice; a failed write is logged and never blocks the export.
+    /// so the next fresh video starts the same way. SETLASTALWAYS_01: written on EVERY export, so a row
+    /// switched to "Same as last time" later still starts from the latest export; a failed write is
+    /// logged and never blocks the export.
     /// </summary>
     private static void RememberStartChoices(FreeVideoStudio.App.Models.ExportPayload payload, int qualityIdx)
     {
         try
         {
-            if (!Infrastructure.SettingsManager.Instance.Defaults.RemembersAnything) return;
             Infrastructure.SettingsManager.Update(s => s.Defaults.RememberChoices(
                 payload.IsMobileFormat, payload.ShowTeammates, payload.EnableFades, payload.BaseSpeed, qualityIdx));
         }

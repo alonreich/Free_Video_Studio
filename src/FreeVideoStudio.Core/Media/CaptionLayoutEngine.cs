@@ -42,7 +42,6 @@ public static class CaptionLayoutEngine
     public const int PortraitHeight = 1920;
     public const int PortraitVoidTop = 150;
     public const int PortraitVoidBottom = 150;
-    public const int PortraitContentHeight = 1620;
 
     public const int LandscapeWidth = 1920;
     public const int LandscapeHeight = 1080;
@@ -179,6 +178,13 @@ public static class CaptionLayoutEngine
             positionedLines);
     }
 
+    /// <summary>
+    /// CAPTIONFIT_01 — clamps Y into [lo, hi]; on a frame too short for both margins (hi &lt; lo, e.g. a
+    /// 180p clip) the box is centred instead. Math.Clamp threw there and the whole export failed.
+    /// </summary>
+    private static double Fit(double value, double lo, double hi, int outputH, double boxHeight) =>
+        hi >= lo ? Math.Clamp(value, lo, hi) : Math.Max(0.0, (outputH - boxHeight) / 2.0);
+
     private static double ComputeDefaultBoxY(int outputH, double boxHeight, bool isPortrait, CaptionPosition position)
     {
         double defaultY = outputH * DefaultCenterFraction - boxHeight / 2.0;
@@ -189,16 +195,16 @@ public static class CaptionLayoutEngine
             {
                 CaptionPosition.Top => PortraitVoidTop + 40.0,
                 CaptionPosition.BottomVoid => (outputH - PortraitVoidBottom) + ((PortraitVoidBottom - boxHeight) / 2.0),
-                CaptionPosition.Middle => Math.Clamp(middleY, PortraitVoidTop + 20.0, outputH - PortraitVoidBottom - boxHeight - 20.0),
-                _ => Math.Clamp(defaultY, PortraitVoidTop + 20.0, outputH - PortraitVoidBottom - boxHeight - 20.0),
+                CaptionPosition.Middle => Fit(middleY, PortraitVoidTop + 20.0, outputH - PortraitVoidBottom - boxHeight - 20.0, outputH, boxHeight),
+                _ => Fit(defaultY, PortraitVoidTop + 20.0, outputH - PortraitVoidBottom - boxHeight - 20.0, outputH, boxHeight),
             };
         }
 
         return position switch
         {
             CaptionPosition.Top => 60.0,
-            CaptionPosition.Middle => Math.Clamp(middleY, 40.0, outputH - boxHeight - 40.0),
-            _ => Math.Clamp(defaultY, 40.0, outputH - boxHeight - 40.0),
+            CaptionPosition.Middle => Fit(middleY, 40.0, outputH - boxHeight - 40.0, outputH, boxHeight),
+            _ => Fit(defaultY, 40.0, outputH - boxHeight - 40.0, outputH, boxHeight),
         };
     }
 

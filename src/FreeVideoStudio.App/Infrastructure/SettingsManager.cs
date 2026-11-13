@@ -43,27 +43,80 @@ public static class FontScaleExtensions
     };
 }
 
-public class AppSettings
+/// <summary>
+/// SETTINGSFREEZE_01 — the published settings snapshot is READ-ONLY.
+///
+/// <para>
+/// <see cref="SettingsManager.Instance"/> and the <see cref="SettingsManager.Committed"/> payload used to
+/// be ordinary mutable objects shared by every window: "mutate only through Update" was a comment plus
+/// a regex test that cannot see aliases kept across methods or nested objects (KeyBinds, Defaults, AI
+/// configs). Every settings object now derives from this base. A draft — what <see cref="SettingsManager.Update"/>
+/// hands its patch, a JSON clone, a view-model's pending copy — is writable as before. The snapshot is
+/// <see cref="Freeze"/>-ed (recursively) before it is published, after which ANY property write throws
+/// and names the property, so a stray write is a loud defect instead of a silent divergence between
+/// what the screen shows, what is saved and what the app uses.
+/// </para>
+/// </summary>
+public abstract class FreezableSettings
 {
+    /// <summary>True once this object is part of the published snapshot.</summary>
+    [JsonIgnore]
+    public bool IsFrozen { get; private set; }
+
+    /// <summary>Makes this object (and, in overrides, every settings object it owns) read-only. Idempotent.</summary>
+    public virtual void Freeze() => IsFrozen = true;
+
+    /// <summary>The guarded setter every settings property uses.</summary>
+    protected void Set<T>(ref T field, T value, [System.Runtime.CompilerServices.CallerMemberName] string property = "")
+    {
+        if (IsFrozen)
+        {
+            throw new InvalidOperationException(
+                $"SETTINGSFREEZE_01 — '{GetType().Name}.{property}' was written on the published settings snapshot. " +
+                "Change settings through SettingsManager.Update(...), or work on a copy.");
+        }
+        field = value;
+    }
+}
+
+public class AppSettings : FreezableSettings
+{
+    /// <summary>SETTINGSFREEZE_01 — freezes this snapshot and every settings object it owns.</summary>
+    public override void Freeze()
+    {
+        if (IsFrozen) return;
+        KeyBinds?.Freeze();
+        Defaults?.Freeze();
+        AiDefaultUsage?.Freeze();
+        foreach (AiUsage usage in AllAiUsages) GetOwnUsageConfig(usage).Freeze();
+        base.Freeze();
+    }
+
     /// <summary>
     /// Bumped whenever a field is renamed/removed or its meaning changes. <see cref="SettingsManager.Load"/>
     /// uses it to migrate instead of silently reverting the user to defaults. A file with a
     /// HIGHER version than this build understands is left untouched on disk and loaded
     /// best-effort, so downgrading the app never destroys a newer config.
     /// </summary>
-    public int SchemaVersion { get; set; } = SettingsManager.CurrentSchemaVersion;
+    public int SchemaVersion { get => _schemaVersionField; set => Set(ref _schemaVersionField, value); }
+    private int _schemaVersionField = SettingsManager.CurrentSchemaVersion;
 
-    public KeyBinds KeyBinds { get; set; } = new();
-    public DefaultValues Defaults { get; set; } = new();
-    public int Volume { get; set; } = 100;
-    public string ActiveMaskOverlay { get; set; } = "Fortnite";
+    public KeyBinds KeyBinds { get => _keyBindsField; set => Set(ref _keyBindsField, value); }
+    private KeyBinds _keyBindsField = new();
+    public DefaultValues Defaults { get => _defaultsField; set => Set(ref _defaultsField, value); }
+    private DefaultValues _defaultsField = new();
+    public int Volume { get => _volumeField; set => Set(ref _volumeField, value); }
+    private int _volumeField = 100;
+    public string ActiveMaskOverlay { get => _activeMaskOverlayField; set => Set(ref _activeMaskOverlayField, value); }
+    private string _activeMaskOverlayField = "Fortnite";
 
     /// <summary>
     /// CROPEDIT_01 — The last deliberately chosen HUD mask profile edited in Crop Tools.
     /// Separate from <see cref="ActiveMaskOverlay"/> (which is the playback/export default).
     /// Default empty. Additive (missing reads as empty), no schema bump.
     /// </summary>
-    public string LastEditedCropProfile { get; set; } = "";
+    public string LastEditedCropProfile { get => _lastEditedCropProfileField; set => Set(ref _lastEditedCropProfileField, value); }
+    private string _lastEditedCropProfileField = "";
 
     /// <summary>
     /// AI SMART ZOOM — Google Gemini API key used for universal subject vision tracking, in CLEAR text,
@@ -93,7 +146,8 @@ public class AppSettings
     /// <see cref="GeminiApiKey"/>; this exists only so the serializer can round-trip the sealed form.
     /// </summary>
     [JsonPropertyName("GeminiApiKey")]
-    public string GeminiApiKeyStored { get; set; } = "";
+    public string GeminiApiKeyStored { get => _geminiApiKeyStoredField; set => Set(ref _geminiApiKeyStoredField, value); }
+    private string _geminiApiKeyStoredField = "";
 
     /// <summary>The last stored value and its opened form, swapped as ONE object so threads never mix them.</summary>
     private sealed record KeyCache(string Stored, string Clear);
@@ -124,7 +178,8 @@ public class AppSettings
     /// KEYPROTECT_01 / AISETTINGS_01 — settings.json representation of ClaudeApiKey: dpapi1: + DPAPI blob.
     /// </summary>
     [JsonPropertyName("ClaudeApiKey")]
-    public string ClaudeApiKeyStored { get; set; } = "";
+    public string ClaudeApiKeyStored { get => _claudeApiKeyStoredField; set => Set(ref _claudeApiKeyStoredField, value); }
+    private string _claudeApiKeyStoredField = "";
     private KeyCache? _claudeKeyCache;
 
     /// <summary>
@@ -152,7 +207,8 @@ public class AppSettings
     /// KEYPROTECT_01 / AISETTINGS_01 — settings.json representation of OpenAiApiKey: dpapi1: + DPAPI blob.
     /// </summary>
     [JsonPropertyName("OpenAiApiKey")]
-    public string OpenAiApiKeyStored { get; set; } = "";
+    public string OpenAiApiKeyStored { get => _openAiApiKeyStoredField; set => Set(ref _openAiApiKeyStoredField, value); }
+    private string _openAiApiKeyStoredField = "";
     private KeyCache? _openAiKeyCache;
 
     /// <summary>Helper to retrieve the clear-text API key for any vendor.</summary>
@@ -179,7 +235,7 @@ public class AppSettings
     public AiUsageConfig AiUsageSubjectDiscovery
     {
         get => _aiUsageSubjectDiscovery ??= new(AiVendor.Google, GeminiModelName);
-        set => _aiUsageSubjectDiscovery = value ?? new(AiVendor.Google, GeminiModelName);
+        set => Set<AiUsageConfig?>(ref _aiUsageSubjectDiscovery, value ?? new(AiVendor.Google, GeminiModelName));
     }
     private AiUsageConfig? _aiUsageSubjectDiscovery = new(AiVendor.Google, GeminiClient.DefaultModel);
 
@@ -187,7 +243,7 @@ public class AppSettings
     public AiUsageConfig AiUsageTracking
     {
         get => _aiUsageTracking ??= new(AiVendor.Google, GeminiModelName);
-        set => _aiUsageTracking = value ?? new(AiVendor.Google, GeminiModelName);
+        set => Set<AiUsageConfig?>(ref _aiUsageTracking, value ?? new(AiVendor.Google, GeminiModelName));
     }
     private AiUsageConfig? _aiUsageTracking = new(AiVendor.Google, GeminiClient.DefaultModel);
 
@@ -195,7 +251,7 @@ public class AppSettings
     public AiUsageConfig AiUsageMagicWand
     {
         get => _aiUsageMagicWand ??= new(AiVendor.Google, GeminiModelName);
-        set => _aiUsageMagicWand = value ?? new(AiVendor.Google, GeminiModelName);
+        set => Set<AiUsageConfig?>(ref _aiUsageMagicWand, value ?? new(AiVendor.Google, GeminiModelName));
     }
     private AiUsageConfig? _aiUsageMagicWand = new(AiVendor.Google, GeminiClient.DefaultModel);
 
@@ -203,7 +259,7 @@ public class AppSettings
     public AiUsageConfig AiUsageCommentary
     {
         get => _aiUsageCommentary ??= new(AiVendor.Google, GeminiModelName);
-        set => _aiUsageCommentary = value ?? new(AiVendor.Google, GeminiModelName);
+        set => Set<AiUsageConfig?>(ref _aiUsageCommentary, value ?? new(AiVendor.Google, GeminiModelName));
     }
     private AiUsageConfig? _aiUsageCommentary = new(AiVendor.Google, GeminiClient.DefaultModel);
 
@@ -211,7 +267,7 @@ public class AppSettings
     public AiUsageConfig AiUsageMusicAutoFit
     {
         get => _aiUsageMusicAutoFit ??= new(AiVendor.Google, GeminiModelName);
-        set => _aiUsageMusicAutoFit = value ?? new(AiVendor.Google, GeminiModelName);
+        set => Set<AiUsageConfig?>(ref _aiUsageMusicAutoFit, value ?? new(AiVendor.Google, GeminiModelName));
     }
     private AiUsageConfig? _aiUsageMusicAutoFit = new(AiVendor.Google, GeminiClient.DefaultModel);
 
@@ -219,7 +275,7 @@ public class AppSettings
     public AiUsageConfig AiUsageViralPost
     {
         get => _aiUsageViralPost ??= new(AiVendor.Google, GeminiModelName);
-        set => _aiUsageViralPost = value ?? new(AiVendor.Google, GeminiModelName);
+        set => Set<AiUsageConfig?>(ref _aiUsageViralPost, value ?? new(AiVendor.Google, GeminiModelName));
     }
     private AiUsageConfig? _aiUsageViralPost = new(AiVendor.Google, GeminiClient.DefaultModel);
 
@@ -227,7 +283,7 @@ public class AppSettings
     public AiUsageConfig AiUsageEliminationTracker
     {
         get => _aiUsageEliminationTracker ??= new(AiVendor.Google, GeminiModelName);
-        set => _aiUsageEliminationTracker = value ?? new(AiVendor.Google, GeminiModelName);
+        set => Set<AiUsageConfig?>(ref _aiUsageEliminationTracker, value ?? new(AiVendor.Google, GeminiModelName));
     }
     private AiUsageConfig? _aiUsageEliminationTracker = new(AiVendor.Google, GeminiClient.DefaultModel);
 
@@ -235,23 +291,33 @@ public class AppSettings
     /// AI Elimination Tracker — automatically scans video in background upon load to detect and mark eliminations (✕) on timeline.
     /// Default false (OFF).
     /// </summary>
-    public bool AiEliminationTrackerEnabled { get; set; } = false;
+    public bool AiEliminationTrackerEnabled { get => _aiEliminationTrackerEnabledField; set => Set(ref _aiEliminationTrackerEnabledField, value); }
+    private bool _aiEliminationTrackerEnabledField = false;
 
     /// <summary>
     /// Modern Viral Post Helper — automatically drafts high-engagement titles, captions, and hashtags on the Export Finished screen.
     /// Default true (ON).
     /// </summary>
-    public bool AiViralPostHelperEnabled { get; set; } = true;
+    public bool AiViralPostHelperEnabled { get => _aiViralPostHelperEnabledField; set => Set(ref _aiViralPostHelperEnabledField, value); }
+    private bool _aiViralPostHelperEnabledField = true;
 
     /// <summary>
     /// AIDEFAULT_01 (docs/05 SYS-AISETTINGS) — the ONE AI provider + model every AI feature uses unless it is
     /// listed in <see cref="AiUsageOverrides"/>. Null on a settings file written before this existed; it is then
     /// derived from the per-feature values by <see cref="EnsureAiDefault"/> (no schema bump, additive).
     /// </summary>
-    public AiUsageConfig? AiDefaultUsage { get; set; }
+    public AiUsageConfig? AiDefaultUsage { get => _aiDefaultUsageField; set => Set(ref _aiDefaultUsageField, value); }
+    private AiUsageConfig? _aiDefaultUsageField;
 
     /// <summary>AIDEFAULT_01 — <see cref="AiUsage"/> names that keep their OWN vendor/model (Settings › AI Features › Advanced).</summary>
-    public List<string>? AiUsageOverrides { get; set; }
+    /// <remarks>SETTINGSTYPES_01 — typed and immutable; replace the whole list to change it.</remarks>
+    [JsonConverter(typeof(AiUsageListJsonConverter))]
+    public IReadOnlyList<AiUsage>? AiUsageOverrides
+    {
+        get => _aiUsageOverridesField;
+        set => Set(ref _aiUsageOverridesField, value is null ? null : value.Distinct().ToList().AsReadOnly());
+    }
+    private IReadOnlyList<AiUsage>? _aiUsageOverridesField;
 
     /// <summary>All seven AI usages, in Settings order.</summary>
     public static readonly AiUsage[] AllAiUsages =
@@ -261,7 +327,7 @@ public class AppSettings
     };
 
     public bool IsUsageOverridden(AiUsage usage)
-        => AiUsageOverrides != null && AiUsageOverrides.Contains(usage.ToString());
+        => AiUsageOverrides != null && AiUsageOverrides.Contains(usage);
 
     /// <summary>
     /// AIDEFAULT_01 — fills <see cref="AiDefaultUsage"/> / <see cref="AiUsageOverrides"/> for an older file: the
@@ -284,7 +350,7 @@ public class AppSettings
         AiUsageOverrides ??= own
             .Where(x => x.Config.Vendor != AiDefaultUsage.Vendor
                      || !string.Equals((x.Config.Model ?? "").Trim(), (AiDefaultUsage.Model ?? "").Trim(), StringComparison.OrdinalIgnoreCase))
-            .Select(x => x.Usage.ToString())
+            .Select(x => x.Usage)
             .ToList();
         return true;
     }
@@ -315,8 +381,8 @@ public class AppSettings
         ArgumentNullException.ThrowIfNull(config);
         if (AiDefaultUsage != null)
         {
-            AiUsageOverrides ??= new List<string>();
-            if (!AiUsageOverrides.Contains(usage.ToString())) AiUsageOverrides.Add(usage.ToString());
+            if (!IsUsageOverridden(usage))
+                AiUsageOverrides = (AiUsageOverrides ?? Array.Empty<AiUsage>()).Append(usage).ToList();
         }
         switch (usage)
         {
@@ -347,21 +413,33 @@ public class AppSettings
     }
 
     /// <summary>AI SMART ZOOM — Gemini vision model name (default <see cref="FreeVideoStudio.App.Services.GeminiClient.DefaultModel"/>).</summary>
-    public string GeminiModelName { get; set; } = FreeVideoStudio.App.Services.GeminiClient.DefaultModel;
+    public string GeminiModelName { get => _geminiModelNameField; set => Set(ref _geminiModelNameField, value); }
+    private string _geminiModelNameField = FreeVideoStudio.App.Services.GeminiClient.DefaultModel;
 
     /// <summary>
     /// AIGAME_01 — the kind of footage AI SMART ZOOM is looking at (a <see cref="FreeVideoStudio.Core.Media.AiGameProfile"/>
     /// name). Drives the prompts, the own-character exclusion and the default HUD avoid zones.
     /// Additive (missing reads as the default), so no schema bump.
     /// </summary>
-    public string AiTrackingGameProfile { get; set; } = FreeVideoStudio.Core.Media.AiGameProfiles.Default.ToString();
+    [JsonConverter(typeof(AiGameProfileJsonConverter))]
+    public FreeVideoStudio.Core.Media.AiGameProfile AiTrackingGameProfile { get => _aiTrackingGameProfileField; set => Set(ref _aiTrackingGameProfileField, value); }
+    private FreeVideoStudio.Core.Media.AiGameProfile _aiTrackingGameProfileField = FreeVideoStudio.Core.Media.AiGameProfiles.Default;
 
     /// <summary>
     /// AIZOOMCONSENT_01 — true once the user agreed that AI SMART ZOOM may send still frames and short,
     /// low-resolution, silent clips of the selected segment to Google Gemini. Default false: the first
     /// AI SMART ZOOM press explains what is sent and asks. Additive, no schema bump. Never a credential.
     /// </summary>
-    public bool AiZoomCloudConsent { get; set; }
+    public bool AiZoomCloudConsent { get => _aiZoomCloudConsentField; set => Set(ref _aiZoomCloudConsentField, value); }
+    private bool _aiZoomCloudConsentField;
+
+    /// <summary>
+    /// AIAPPROVE_01 — AI runs whose ESTIMATED price is below this many US dollars start without the
+    /// "Ready to send" question. 0 (the default) = always ask. Set by the question's "don't ask under $0.05"
+    /// button; an estimate with no known price is always asked. Additive, no schema bump.
+    /// </summary>
+    public double AiAutoApproveUnderUsd { get => _aiAutoApproveUnderUsdField; set => Set(ref _aiAutoApproveUnderUsdField, value); }
+    private double _aiAutoApproveUnderUsdField;
 
     /// <summary>
     /// AIHUD_05 — true once the user has agreed, in the Crop Tool, that the Magic Wand may send ONE
@@ -369,14 +447,16 @@ public class AppSettings
     /// only. Additive field (missing on disk reads as false), so no schema bump is required.
     /// Holds a yes/no only — never a credential.
     /// </summary>
-    public bool AiMagicWandCloudConsent { get; set; }
+    public bool AiMagicWandCloudConsent { get => _aiMagicWandCloudConsentField; set => Set(ref _aiMagicWandCloudConsentField, value); }
+    private bool _aiMagicWandCloudConsentField;
 
     /// <summary>
     /// AICOMMENTARY_CONSENT_01 — true once the user agreed that AI COMMENTARY may send video clips
     /// and gameplay audio to the configured AI provider. Default false: the first AI COMMENTARY press
     /// explains what is sent and asks. Additive, no schema bump. Never a credential.
     /// </summary>
-    public bool AiCommentaryCloudConsent { get; set; }
+    public bool AiCommentaryCloudConsent { get => _aiCommentaryCloudConsentField; set => Set(ref _aiCommentaryCloudConsentField, value); }
+    private bool _aiCommentaryCloudConsentField;
 
     /// <summary>
     /// AICONSENT_02 — WHICH company each of the three consents above was given for (an <see cref="AiVendor"/> name).
@@ -384,7 +464,9 @@ public class AppSettings
     /// sound, Claude / OpenAI get still frames), so switching company asks again. Empty = a consent from before
     /// this field existed, when only Google could be chosen: it counts for Google only. Additive, no schema bump.
     /// </summary>
-    public string AiZoomCloudConsentVendor { get; set; } = "";
+    [JsonConverter(typeof(ConsentVendorJsonConverter))]
+    public AiVendor? AiZoomCloudConsentVendor { get => _aiZoomCloudConsentVendorField; set => Set(ref _aiZoomCloudConsentVendorField, value); }
+    private AiVendor? _aiZoomCloudConsentVendorField;
 
     /// <summary>
     /// AICOMMENTARY_REMEMBER_01 — the AI Commentary options the user picked last time (tone, caption style,
@@ -392,12 +474,18 @@ public class AppSettings
     /// Empty / null = never chosen (the window's own defaults). Additive, no schema bump. Game type is the shared
     /// <see cref="AiTrackingGameProfile"/> (AIPROFILE_ONE_01).
     /// </summary>
-    public string AiCommentaryLastTone { get; set; } = "";
-    public string AiCommentaryLastStyle { get; set; } = "";
-    public string AiCommentaryLastPosition { get; set; } = "";
-    public string AiCommentaryLastLanguage { get; set; } = "";
-    public bool? AiCommentaryLastEntireTimeline { get; set; }
-    public string AiCommentaryLastNotes { get; set; } = "";
+    public string AiCommentaryLastTone { get => _aiCommentaryLastToneField; set => Set(ref _aiCommentaryLastToneField, value); }
+    private string _aiCommentaryLastToneField = "";
+    public string AiCommentaryLastStyle { get => _aiCommentaryLastStyleField; set => Set(ref _aiCommentaryLastStyleField, value); }
+    private string _aiCommentaryLastStyleField = "";
+    public string AiCommentaryLastPosition { get => _aiCommentaryLastPositionField; set => Set(ref _aiCommentaryLastPositionField, value); }
+    private string _aiCommentaryLastPositionField = "";
+    public string AiCommentaryLastLanguage { get => _aiCommentaryLastLanguageField; set => Set(ref _aiCommentaryLastLanguageField, value); }
+    private string _aiCommentaryLastLanguageField = "";
+    public bool? AiCommentaryLastEntireTimeline { get => _aiCommentaryLastEntireTimelineField; set => Set(ref _aiCommentaryLastEntireTimelineField, value); }
+    private bool? _aiCommentaryLastEntireTimelineField;
+    public string AiCommentaryLastNotes { get => _aiCommentaryLastNotesField; set => Set(ref _aiCommentaryLastNotesField, value); }
+    private string _aiCommentaryLastNotesField = "";
 
     /// <summary>
     /// COMMENTARYMIX_01 — the remembered commentary "brain": the one-click style last picked and the four slider
@@ -405,23 +493,35 @@ public class AppSettings
     /// whether swearing is allowed. CAPTIONLOOK_01 / CAPTIONSIZE_01 — the text look and size. Additive (missing
     /// reads as "never chosen"), so no schema bump.
     /// </summary>
-    public string AiCommentaryLastPreset { get; set; } = "";
-    public int? AiCommentaryLastFunny { get; set; }
-    public int? AiCommentaryLastSarcastic { get; set; }
-    public int? AiCommentaryLastEnergy { get; set; }
-    public int? AiCommentaryLastTactical { get; set; }
-    public string AiCommentaryLastChattiness { get; set; } = "";
-    public bool? AiCommentaryLastAllowSwearing { get; set; }
-    public string AiCommentaryLastLook { get; set; } = "";
-    public string AiCommentaryLastSize { get; set; } = "";
-    public string AiMagicWandCloudConsentVendor { get; set; } = "";
-    public string AiCommentaryCloudConsentVendor { get; set; } = "";
+    public string AiCommentaryLastPreset { get => _aiCommentaryLastPresetField; set => Set(ref _aiCommentaryLastPresetField, value); }
+    private string _aiCommentaryLastPresetField = "";
+    public int? AiCommentaryLastFunny { get => _aiCommentaryLastFunnyField; set => Set(ref _aiCommentaryLastFunnyField, value); }
+    private int? _aiCommentaryLastFunnyField;
+    public int? AiCommentaryLastSarcastic { get => _aiCommentaryLastSarcasticField; set => Set(ref _aiCommentaryLastSarcasticField, value); }
+    private int? _aiCommentaryLastSarcasticField;
+    public int? AiCommentaryLastEnergy { get => _aiCommentaryLastEnergyField; set => Set(ref _aiCommentaryLastEnergyField, value); }
+    private int? _aiCommentaryLastEnergyField;
+    public int? AiCommentaryLastTactical { get => _aiCommentaryLastTacticalField; set => Set(ref _aiCommentaryLastTacticalField, value); }
+    private int? _aiCommentaryLastTacticalField;
+    public string AiCommentaryLastChattiness { get => _aiCommentaryLastChattinessField; set => Set(ref _aiCommentaryLastChattinessField, value); }
+    private string _aiCommentaryLastChattinessField = "";
+    public bool? AiCommentaryLastAllowSwearing { get => _aiCommentaryLastAllowSwearingField; set => Set(ref _aiCommentaryLastAllowSwearingField, value); }
+    private bool? _aiCommentaryLastAllowSwearingField;
+    public string AiCommentaryLastLook { get => _aiCommentaryLastLookField; set => Set(ref _aiCommentaryLastLookField, value); }
+    private string _aiCommentaryLastLookField = "";
+    public string AiCommentaryLastSize { get => _aiCommentaryLastSizeField; set => Set(ref _aiCommentaryLastSizeField, value); }
+    private string _aiCommentaryLastSizeField = "";
+    [JsonConverter(typeof(ConsentVendorJsonConverter))]
+    public AiVendor? AiMagicWandCloudConsentVendor { get => _aiMagicWandCloudConsentVendorField; set => Set(ref _aiMagicWandCloudConsentVendorField, value); }
+    private AiVendor? _aiMagicWandCloudConsentVendorField;
+    [JsonConverter(typeof(ConsentVendorJsonConverter))]
+    public AiVendor? AiCommentaryCloudConsentVendor { get => _aiCommentaryCloudConsentVendorField; set => Set(ref _aiCommentaryCloudConsentVendorField, value); }
+    private AiVendor? _aiCommentaryCloudConsentVendorField;
 
     /// <summary>AICONSENT_02 — true when <paramref name="given"/> was granted for <paramref name="vendor"/>.</summary>
-    public static bool ConsentCovers(bool given, string? consentVendor, AiVendor vendor)
-        => given && (string.IsNullOrEmpty(consentVendor)
-            ? vendor == AiVendor.Google
-            : string.Equals(consentVendor, vendor.ToString(), StringComparison.OrdinalIgnoreCase));
+    /// <remarks>SETTINGSTYPES_01 — a missing stamp (a pre-AICONSENT_02 file) means the permission was given to Google.</remarks>
+    public static bool ConsentCovers(bool given, AiVendor? consentVendor, AiVendor vendor)
+        => given && (consentVendor ?? AiVendor.Google) == vendor;
 
     /// <summary>
     /// AIMODELS_02 — moves every saved model name that a vendor has retired (or is retiring) to that vendor's
@@ -445,16 +545,9 @@ public class AppSettings
     }
 
     /// <summary>AI SMART ZOOM — Base tight zoom multiplier (default 2.2x, range 1.5x - 4.0x).</summary>
-    public double AiZoomBaseScale { get; set; } = 2.2;
+    public double AiZoomBaseScale { get => _aiZoomBaseScaleField; set => Set(ref _aiZoomBaseScaleField, value); }
+    private double _aiZoomBaseScaleField = 2.2;
 
-    /// <summary>AI SMART ZOOM — Minimum wide zoom multiplier during fast motion (default 1.3x, range 1.1x - 2.0x).</summary>
-    public double AiZoomMinScale { get; set; } = 1.3;
-
-    /// <summary>AI SMART ZOOM — Whether to avoid active HUD overlay areas when framing the subject.</summary>
-    public bool AiZoomAvoidHud { get; set; } = true;
-
-    /// <summary>AI SMART ZOOM — Percentage of frame width deadband to filter out micro-jitter on still targets (default 2.0%).</summary>
-    public double AiZoomDeadbandPercent { get; set; } = 2.0;
 
     /// <summary>
     /// ISSUE_04 — Main App export destination. Empty means "resolve the real Downloads folder
@@ -462,20 +555,22 @@ public class AppSettings
     /// missing/unwritable) the chosen folder is stored here and becomes the new default.
     /// Each sub-application keeps its OWN destination — do not merge these two fields.
     /// </summary>
-    public string MainOutputDirectory { get; set; } = "";
+    public string MainOutputDirectory { get => _mainOutputDirectoryField; set => Set(ref _mainOutputDirectoryField, value); }
+    private string _mainOutputDirectoryField = "";
 
     /// <summary>ISSUE_04 — Video Merger export destination. Independent of <see cref="MainOutputDirectory"/>.</summary>
-    public string MergerOutputDirectory { get; set; } = "";
+    public string MergerOutputDirectory { get => _mergerOutputDirectoryField; set => Set(ref _mergerOutputDirectoryField, value); }
+    private string _mergerOutputDirectoryField = "";
 
     /// <summary>
     /// OUTNAME_01 — Main App automatic file-name base. Exports are saved as
-    /// <c>&lt;base&gt;-1.mp4</c>, <c>&lt;base&gt;-2.mp4</c> … Edited in Settings › Output Files.
+    /// <c>&lt;base&gt;-1.mp4</c>, <c>&lt;base&gt;-2.mp4</c> … Edited in Settings › Files &amp; Folders. The Video
+    /// Merger uses the same name plus "-merged" (SETNAMEONE_01).
     /// Sanitized by <see cref="FreeVideoStudio.Core.Media.OutputFileNaming.Sanitize"/>.
     /// </summary>
-    public string MainOutputBaseName { get; set; } = FreeVideoStudio.Core.Media.OutputFileNaming.MainDefaultBaseName;
+    public string MainOutputBaseName { get => _mainOutputBaseNameField; set => Set(ref _mainOutputBaseNameField, value); }
+    private string _mainOutputBaseNameField = FreeVideoStudio.Core.Media.OutputFileNaming.MainDefaultBaseName;
 
-    /// <summary>OUTNAME_01 — Video Merger automatic file-name base. Independent of <see cref="MainOutputBaseName"/>.</summary>
-    public string MergerOutputBaseName { get; set; } = FreeVideoStudio.Core.Media.OutputFileNaming.MergerDefaultBaseName;
 
     /// <summary>
     /// G03 — user override for which chip encodes the final video.
@@ -492,7 +587,9 @@ public class AppSettings
     /// bundled FFmpeg, <c>EncoderManager.EncoderPreflightError</c> blocks the export with a clear
     /// message instead of silently doing something else.
     /// </summary>
-    public string VideoEncoderOverride { get; set; } = "Auto";
+    [JsonConverter(typeof(EncoderPreferenceJsonConverter))]
+    public EncoderPreference VideoEncoderOverride { get => _videoEncoderOverrideField; set => Set(ref _videoEncoderOverrideField, value); }
+    private EncoderPreference _videoEncoderOverrideField = EncoderPreference.Auto;
 
     /// <summary>
     /// AUTO-UPDATE — master switch for the in-app update suggestor. TRUE by default: the app
@@ -502,7 +599,8 @@ public class AppSettings
     /// always reflects the truth and can re-enable the feature at any time. FALSE means no
     /// network call, no prompt, no nag — ever.
     /// </summary>
-    public bool AutoUpdateChecks { get; set; } = true;
+    public bool AutoUpdateChecks { get => _autoUpdateChecksField; set => Set(ref _autoUpdateChecksField, value); }
+    private bool _autoUpdateChecksField = true;
 
     /// <summary>
     /// UPDATECONSENT_01 — true once the user has answered "Check for updates automatically?" (or
@@ -510,64 +608,69 @@ public class AppSettings
     /// itself, whatever <see cref="AutoUpdateChecks"/> says. Additive (missing reads as false), so
     /// no schema bump: every existing install is asked once too.
     /// </summary>
-    public bool UpdateConsentAsked { get; set; }
+    public bool UpdateConsentAsked { get => _updateConsentAskedField; set => Set(ref _updateConsentAskedField, value); }
+    private bool _updateConsentAskedField;
 
     /// <summary>
     /// Master switch for automatically downloading update packages in the background. Default true.
     /// When false, the updater notifies the user when an update is found instead of downloading automatically.
     /// </summary>
-    public bool AutoDownloadUpdates { get; set; } = true;
+    public bool AutoDownloadUpdates { get => _autoDownloadUpdatesField; set => Set(ref _autoDownloadUpdatesField, value); }
+    private bool _autoDownloadUpdatesField = true;
 
-    /// <summary>
-    /// Update delivery channel: "Stable" (default) or "Beta" / "Preview".
-    /// </summary>
-    public string UpdateChannel { get; set; } = "Stable";
-
-    /// <summary>
-    /// Whether to avoid automatic background downloads on metered connections. Default true.
-    /// </summary>
-    public bool AvoidMeteredNetworkUpdates { get; set; } = true;
 
     /// <summary>
     /// ISSUE_13 — the suite is a dark-first video tool and its Light palette is the weaker of the
     /// two, so a fresh install starts in Dark rather than inheriting whatever the OS happens to
     /// be set to. Users who want Light still get it from Settings > Appearance > Theme.
     /// </summary>
-    public ThemeMode ThemeMode { get; set; } = ThemeMode.Dark;
-    public FontScale FontScale { get; set; } = FontScale.Normal;
+    public ThemeMode ThemeMode { get => _themeModeField; set => Set(ref _themeModeField, value); }
+    private ThemeMode _themeModeField = ThemeMode.Dark;
+    public FontScale FontScale { get => _fontScaleField; set => Set(ref _fontScaleField, value); }
+    private FontScale _fontScaleField = FontScale.Normal;
 
-    public bool ConfirmVideoMergerRemove { get; set; } = false;
-    public bool ConfirmVideoMergerClearAll { get; set; } = true;
+    public bool ConfirmVideoMergerRemove { get => _confirmVideoMergerRemoveField; set => Set(ref _confirmVideoMergerRemoveField, value); }
+    private bool _confirmVideoMergerRemoveField = false;
+    public bool ConfirmVideoMergerClearAll { get => _confirmVideoMergerClearAllField; set => Set(ref _confirmVideoMergerClearAllField, value); }
+    private bool _confirmVideoMergerClearAllField = true;
 
     /// <summary>
     /// SCRAPER_05 — Video Merger "Thumbnail Scraper": remove the tagged 0.1 s thumbnail intro from
     /// clips 2..N when merging. On for new installs, and forced back on by the v8 migration.
     /// </summary>
-    public bool MergerThumbnailScraper { get; set; } = true;
+    public bool MergerThumbnailScraper { get => _mergerThumbnailScraperField; set => Set(ref _mergerThumbnailScraperField, value); }
+    private bool _mergerThumbnailScraperField = true;
 
     /// <summary>
     /// CLIPLEVEL_01 — Settings › Merger: even out the volume between merged clips (each clip is
     /// gained toward the queue's median measured loudness, ±12 dB). Default OFF: clips keep their
     /// recorded level unless the user asks.
     /// </summary>
-    public bool MergerMatchClipLoudness { get; set; } = false;
+    public bool MergerMatchClipLoudness { get => _mergerMatchClipLoudnessField; set => Set(ref _mergerMatchClipLoudnessField, value); }
+    private bool _mergerMatchClipLoudnessField = false;
 
     /// <summary>
     /// VOLMUTE_01 — the suite-wide preview mute (speaker button in all three apps), remembered
     /// across launches. Separate from the master level, so unmuting restores the level exactly.
     /// </summary>
-    public bool PreviewMuted { get; set; } = false;
-    public bool ConfirmCropToolReset { get; set; } = true;
-    public bool ConfirmCropToolDelete { get; set; } = true;
+    public bool PreviewMuted { get => _previewMutedField; set => Set(ref _previewMutedField, value); }
+    private bool _previewMutedField = false;
+    public bool ConfirmCropToolReset { get => _confirmCropToolResetField; set => Set(ref _confirmCropToolResetField, value); }
+    private bool _confirmCropToolResetField = true;
+    public bool ConfirmCropToolDelete { get => _confirmCropToolDeleteField; set => Set(ref _confirmCropToolDeleteField, value); }
+    private bool _confirmCropToolDeleteField = false;
 
     /// <summary>ISSUE_01/ISSUE_12 — ask before deleting the selected speed segment.</summary>
-    public bool ConfirmGranularDeleteSegment { get; set; } = true;
+    public bool ConfirmGranularDeleteSegment { get => _confirmGranularDeleteSegmentField; set => Set(ref _confirmGranularDeleteSegmentField, value); }
+    private bool _confirmGranularDeleteSegmentField = false;
 
     /// <summary>ISSUE_01/ISSUE_12 — ask before wiping every speed segment and pending selection.</summary>
-    public bool ConfirmGranularClearAll { get; set; } = true;
+    public bool ConfirmGranularClearAll { get => _confirmGranularClearAllField; set => Set(ref _confirmGranularClearAllField, value); }
+    private bool _confirmGranularClearAllField = false;
 
     /// <summary>ISSUE_12 — ask before the Main App's CANCEL button closes the application.</summary>
-    public bool ConfirmMainAppCancel { get; set; } = true;
+    public bool ConfirmMainAppCancel { get => _confirmMainAppCancelField; set => Set(ref _confirmMainAppCancelField, value); }
+    private bool _confirmMainAppCancelField = true;
 
     /// <summary>
     /// CUT_01 / DIALOG_02 — confirm before deleting a section from the middle of the clip, and
@@ -579,7 +682,8 @@ public class AppSettings
     /// It is safe to default off precisely BECAUSE the Speed Editor now has undo — a cut made by
     /// accident is one Ctrl+Z away, which is not true of the confirmations that default on.
     /// </summary>
-    public bool ConfirmMainAppCut { get; set; } = false;
+    public bool ConfirmMainAppCut { get => _confirmMainAppCutField; set => Set(ref _confirmMainAppCutField, value); }
+    private bool _confirmMainAppCutField = false;
 
     /// <summary>
     /// ISSUE_02 — ask before leaving the Main App for the Video Merger / Crop Tools, which closes
@@ -592,7 +696,8 @@ public class AppSettings
     /// did not exist. MainWindow.ConfirmToolSwitchAsync is the reader it was always missing: the
     /// prompt now requires BOTH this flag AND HasUnsavedWork().
     /// </summary>
-    public bool ConfirmMainAppSwitchTool { get; set; } = true;
+    public bool ConfirmMainAppSwitchTool { get => _confirmMainAppSwitchToolField; set => Set(ref _confirmMainAppSwitchToolField, value); }
+    private bool _confirmMainAppSwitchToolField = true;
 
     /// <summary>
     /// CAPTIONWIPE_01 — should the text strip's caption survive into the next video?
@@ -609,7 +714,8 @@ public class AppSettings
     ///
     /// Read only through MainWindow.ClearOverlayTextForNextVideo.
     /// </summary>
-    public bool KeepOverlayTextBetweenVideos { get; set; } = false;
+    public bool KeepOverlayTextBetweenVideos { get => _keepOverlayTextBetweenVideosField; set => Set(ref _keepOverlayTextBetweenVideosField, value); }
+    private bool _keepOverlayTextBetweenVideosField = false;
 
     /// <summary>
     /// ISSUE_07 — ask before DELETE removes a recorded voice-over take. The take's .wav is
@@ -617,28 +723,32 @@ public class AppSettings
     /// to FALSE deliberately, unlike the eight flags above, so power users keep the one-click
     /// workflow and only people who have been bitten switch it on.
     /// </summary>
-    public bool ConfirmVoiceOverDeleteTake { get; set; } = false;
+    public bool ConfirmVoiceOverDeleteTake { get => _confirmVoiceOverDeleteTakeField; set => Set(ref _confirmVoiceOverDeleteTakeField, value); }
+    private bool _confirmVoiceOverDeleteTakeField = true;
 
     /// <summary>
     /// ISSUE_04 — ask before the finished-export dialog's EXIT APP / NEW FILE buttons act. They
     /// sit 16px from the harmless OPEN FOLDER at the same size, and they end the session or wipe
     /// the project. Also defaults to FALSE for the same reason as above.
     /// </summary>
-    public bool ConfirmFinishedDialogExit { get; set; } = false;
+    public bool ConfirmFinishedDialogExit { get => _confirmFinishedDialogExitField; set => Set(ref _confirmFinishedDialogExitField, value); }
+    private bool _confirmFinishedDialogExitField = false;
 
     /// <summary>
     /// Meme System §1/§3: the unified meme asset directory. Empty = use the default
     /// (MyVideos\FreeVideoStudio\Memes, MEMEFOLDER_02). Changed via Settings → Meme folder.
     /// Always resolve through <see cref="MemeDirectory.GetActive"/> — never read this raw.
     /// </summary>
-    public string MemeDirectoryPath { get; set; } = "";
+    public string MemeDirectoryPath { get => _memeDirectoryPathField; set => Set(ref _memeDirectoryPathField, value); }
+    private string _memeDirectoryPathField = "";
 
     /// <summary>
     /// What to do when an uploaded video hides sudden peaks far above its own average — the
     /// "quiet gameplay, then an explosion takes the viewer's head off" case. Set from the warning
     /// dialog, reversible from Settings → Audio.
     /// </summary>
-    public AudioFixPrompt PeakFlatteningPrompt { get; set; } = AudioFixPrompt.Ask;
+    public AudioFixPrompt PeakFlatteningPrompt { get => _peakFlatteningPromptField; set => Set(ref _peakFlatteningPromptField, value); }
+    private AudioFixPrompt _peakFlatteningPromptField = AudioFixPrompt.Ask;
 
     /// <summary>
     /// AUDIO_06 — master switch for the app's own button/UI sound effects.
@@ -651,50 +761,29 @@ public class AppSettings
     ///
     /// Read only through <see cref="UiSoundEffect"/>; nothing else should gate on it.
     /// </summary>
-    public bool UiSoundsEnabled { get; set; } = true;
+    public bool UiSoundsEnabled { get => _uiSoundsEnabledField; set => Set(ref _uiSoundsEnabledField, value); }
+    private bool _uiSoundsEnabledField = true;
 
     /// <summary>
     /// AUDIO_06 — UI sound effect level, 0-100. 0 is equivalent to
     /// <see cref="UiSoundsEnabled"/> = false. Defaults to 70 rather than 100: the previous
     /// engine had no attenuation at all and played every clip at full scale.
     /// </summary>
-    public int UiSoundVolume { get; set; } = 70;
+    public int UiSoundVolume { get => _uiSoundVolumeField; set => Set(ref _uiSoundVolumeField, value); }
+    private int _uiSoundVolumeField = 70;
 
-
-    /// <summary>VOPROT_02 — who decides "Protect VoiceOver Recording from Game-Play Sound".</summary>
-    public VoiceProtectionMode VoiceProtectGameMode { get; set; } = VoiceProtectionMode.RememberLastChoice;
-
-    /// <summary>VOPROT_02 — who decides "Protect VoiceOver Recording from Music".</summary>
-    public VoiceProtectionMode VoiceProtectMusicMode { get; set; } = VoiceProtectionMode.RememberLastChoice;
 
     /// <summary>
-    /// VOPROT_02 — the last game-protection choice the user applied, used only under
-    /// <see cref="VoiceProtectionMode.RememberLastChoice"/>. VODEFAULTS_01: new users keep
-    /// gameplay at its chosen level; an explicitly saved choice always wins.
+    /// VOPROT_02 — the last game-protection choice the user applied; the Voice Over Studio starts
+    /// from it. SETVOICEONE_01: the Settings "Always on / Always off" lock was removed, so the studio
+    /// always starts the way it was left. VODEFAULTS_01: new users keep gameplay at its chosen level.
     /// </summary>
-    public bool VoiceProtectGameLast { get; set; } = false;
+    public bool VoiceProtectGameLast { get => _voiceProtectGameLastField; set => Set(ref _voiceProtectGameLastField, value); }
+    private bool _voiceProtectGameLastField = false;
 
     /// <summary>VOPROT_02 — the last music-protection choice the user applied. See above.</summary>
-    public bool VoiceProtectMusicLast { get; set; } = true;
-}
-
-/// <summary>
-/// VOPROT_02 — how one of the Voice Over Studio's protection checkboxes is decided.
-///
-/// Three states, not a bool, for the same reason as <see cref="AudioFixPrompt"/>: "do not keep
-/// asking me" is two different wishes, and collapsing them makes one group of users fight the
-/// setting on every project.
-///
-/// ⚠️ The order here IS the Settings combo-box index. Keep the two in step.
-/// </summary>
-public enum VoiceProtectionMode
-{
-    /// <summary>Start from whatever the user chose last time. Default.</summary>
-    RememberLastChoice,
-    /// <summary>Always on, and the checkbox is shown ticked and disabled.</summary>
-    AlwaysOn,
-    /// <summary>Always off, and the checkbox is shown clear and disabled.</summary>
-    AlwaysOff
+    public bool VoiceProtectMusicLast { get => _voiceProtectMusicLastField; set => Set(ref _voiceProtectMusicLastField, value); }
+    private bool _voiceProtectMusicLastField = true;
 }
 
 /// <summary>
@@ -731,12 +820,26 @@ public static class MemeDirectory
             FreeVideoStudio.Core.Infrastructure.ApplicationPaths.ProgramDataRootOverrideEnvironmentVariable));
 
     private static string MediaRoot(Environment.SpecialFolder productionFolder) =>
-        IsDevSandbox
-            ? Path.Combine(Path.GetTempPath(), "FreeVideoStudio_DEV", "media")
+        IsDevSandbox && !FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.ShareUserMedia
+            ? Path.Combine(FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.DataRoot!, "media")
             : Environment.GetFolderPath(productionFolder);
 
-    /// <summary>Where background music lives. Sandboxed in dev — see the note above.</summary>
-    public static string GetMusicRoot() => MediaRoot(Environment.SpecialFolder.MyMusic);
+    /// <summary>DEVSHAREMEDIA_01: normal dev launches share the Windows Music folder.</summary>
+    public static string GetMusicRoot()
+    {
+        string music = FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.ShareUserMedia
+            ? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic)
+            : MediaRoot(Environment.SpecialFolder.MyMusic);
+        return ProtectedFolderGate.CanWrite(music) ? music : OwnMediaFolder("Music");
+    }
+
+    /// <summary>
+    /// CFASAFE_01 — the app's own media folder (<c>…\FreeVideoStudio\Media\Memes</c> or <c>\Music</c>),
+    /// used only while Windows' "Controlled folder access" refuses the app in Videos / Music
+    /// (<see cref="ProtectedFolderGate"/>). Not created here.
+    /// </summary>
+    public static string OwnMediaFolder(string kind) => Path.Combine(
+        FreeVideoStudio.Core.Infrastructure.ApplicationPaths.CreateDefault().ProgramDataRoot, "Media", kind);
 
     /// <summary>Where images/memes live. Sandboxed in dev — see the note above.</summary>
     public static string GetVideosRoot() => MediaRoot(Environment.SpecialFolder.MyVideos);
@@ -745,23 +848,57 @@ public static class MemeDirectory
     /// MEMEFOLDER_02 — folder names on disk never contain spaces. "Free Video Studio" is the
     /// DISPLAY name; folders use <see cref="FreeVideoStudio.Core.Infrastructure.ApplicationPaths.AppDirectoryName"/>.
     /// </summary>
-    public static string GetDefault() => Path.Combine(
-        GetVideosRoot(), FreeVideoStudio.Core.Infrastructure.ApplicationPaths.AppDirectoryName, "Memes");
+    public static string GetDefault()
+    {
+        string inVideos = Path.Combine(
+            GetVideosRoot(), FreeVideoStudio.Core.Infrastructure.ApplicationPaths.AppDirectoryName, "Memes");
+
+        if (!FreeVideoStudio.Core.Infrastructure.ControlledFolderAccess.MayBlock(inVideos)) return inVideos;
+        string own = OwnMediaFolder("Memes");
+        bool allowed = ProtectedFolderGate.CanWrite(GetVideosRoot());
+        if (Directory.Exists(inVideos)) return inVideos;
+        if (Directory.Exists(own)) return own;
+        return allowed ? inVideos : own;
+    }
 
     /// <summary>MEMEFOLDER_02 — the spaced default used by every build before this change.</summary>
     public static string GetLegacyDefault() => Path.Combine(GetVideosRoot(), "Free Video Studio", "Memes");
 
-    /// <summary>Resolves the active directory (settings override or default) and ensures it exists.</summary>
-    public static string GetActive()
+    /// <summary>
+    /// MEMEPURE_01 — PURE: the folder a configured value means ("" = the default). No disk access,
+    /// no settings writes, no migration. Use <see cref="EnsureActiveExists"/> where the folder must exist.
+    /// </summary>
+    public static string ResolveActive(string? configuredPath) =>
+        string.IsNullOrWhiteSpace(configuredPath) ? GetDefault() : configuredPath!;
+
+    /// <summary>MEMEPURE_01 — the active folder for the saved setting. Read-only: never creates, moves or saves anything.</summary>
+    public static string GetActive() => ResolveActive(SettingsManager.Instance.MemeDirectoryPath);
+
+    /// <summary>MEMEPURE_01 — the active folder, created if missing. The ONLY creating entry point; callers that write or scan use it.</summary>
+    public static string EnsureActiveExists()
     {
-        EnsureLegacyDefaultMigrated();
-        string configured = SettingsManager.Instance.MemeDirectoryPath;
-        string dir = string.IsNullOrWhiteSpace(configured) ? GetDefault() : configured;
+        string dir = GetActive();
         try { Directory.CreateDirectory(dir); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
         return dir;
     }
 
     private static readonly object _migrationGate = new();
+    private static System.Threading.Tasks.Task? _migration;
+
+    /// <summary>
+    /// MEMEPURE_01 — starts the one-time legacy-folder move OFF the UI thread (idempotent) and returns
+    /// it. Called explicitly from app startup; every reader that enumerates or writes the meme folder
+    /// awaits <see cref="WhenReadyAsync"/> first, so no reader can see a half-moved folder.
+    /// </summary>
+    public static System.Threading.Tasks.Task StartLegacyMigration()
+    {
+        lock (_migrationGate)
+            return _migration ??= System.Threading.Tasks.Task.Run(EnsureLegacyDefaultMigrated);
+    }
+
+    /// <summary>MEMEPURE_01 — completes when the legacy move (if any) is finished. Never faults.</summary>
+    public static System.Threading.Tasks.Task WhenReadyAsync() => StartLegacyMigration();
+
     private static volatile bool _migrationDone;
 
     /// <summary>
@@ -769,8 +906,10 @@ public static class MemeDirectory
     /// <c>Videos\FreeVideoStudio\Memes</c>, once per process, before anyone can read the folder.
     ///
     /// <list type="bullet">
-    /// <item>Runs inside <see cref="GetActive"/>, so the scan, the starter delivery and a recovery
-    /// restore all see either the old layout or the finished move — never a half-moved folder.</item>
+    /// <item>MEMEPURE_01: runs once from <see cref="StartLegacyMigration"/> (app startup, thread pool),
+    /// and the scan, the starter delivery and a recovery restore await <see cref="WhenReadyAsync"/>,
+    /// so they see either the old layout or the finished move — never a half-moved folder. It no
+    /// longer hides inside the folder lookup.</item>
     /// <item>A Settings override that points AT the old default is cleared, so the user follows the
     /// move. Any other custom folder is the user's and is left alone.</item>
     /// <item>Never overwrites: a same-named file already in the new folder wins. An identical copy
@@ -798,6 +937,12 @@ public static class MemeDirectory
                 {
                     SettingsManager.Update(s => s.MemeDirectoryPath = "");
                     RuntimeLog.Info("Memes", "Meme folder setting pointed at the old default; it now follows the new default.");
+                }
+
+                if (Directory.Exists(legacy) && !ProtectedFolderGate.CanWrite(GetVideosRoot()))
+                {
+                    RuntimeLog.Info("Memes", "Meme folder move postponed: Windows 'Controlled folder access' is protecting Videos.");
+                    return;
                 }
 
                 int moved = MoveFolderContents(legacy, current);
@@ -894,19 +1039,30 @@ public static class MemeDirectory
     }
 }
 
-public class KeyBinds
+public class KeyBinds : FreezableSettings
 {
-    public Key PlayPause { get; set; } = Key.Space;
-    public Key MarkStart { get; set; } = Key.OemOpenBrackets;
-    public Key MarkEnd { get; set; } = Key.OemCloseBrackets;
-    public Key SeekForward { get; set; } = Key.Right;
-    public Key SeekBackward { get; set; } = Key.Left;
-    public Key VolumeUp { get; set; } = Key.Up;
-    public Key VolumeDown { get; set; } = Key.Down;
-    public Key FineSeekForward { get; set; } = Key.Right;
-    public Key FineSeekBackward { get; set; } = Key.Left;
-    public Key AggressiveVolumeUp { get; set; } = Key.Up;
-    public Key AggressiveVolumeDown { get; set; } = Key.Down;
+    public Key PlayPause { get => _playPauseField; set => Set(ref _playPauseField, value); }
+    private Key _playPauseField = Key.Space;
+    public Key MarkStart { get => _markStartField; set => Set(ref _markStartField, value); }
+    private Key _markStartField = Key.OemOpenBrackets;
+    public Key MarkEnd { get => _markEndField; set => Set(ref _markEndField, value); }
+    private Key _markEndField = Key.OemCloseBrackets;
+    public Key SeekForward { get => _seekForwardField; set => Set(ref _seekForwardField, value); }
+    private Key _seekForwardField = Key.Right;
+    public Key SeekBackward { get => _seekBackwardField; set => Set(ref _seekBackwardField, value); }
+    private Key _seekBackwardField = Key.Left;
+    public Key VolumeUp { get => _volumeUpField; set => Set(ref _volumeUpField, value); }
+    private Key _volumeUpField = Key.Up;
+    public Key VolumeDown { get => _volumeDownField; set => Set(ref _volumeDownField, value); }
+    private Key _volumeDownField = Key.Down;
+    public Key FineSeekForward { get => _fineSeekForwardField; set => Set(ref _fineSeekForwardField, value); }
+    private Key _fineSeekForwardField = Key.Right;
+    public Key FineSeekBackward { get => _fineSeekBackwardField; set => Set(ref _fineSeekBackwardField, value); }
+    private Key _fineSeekBackwardField = Key.Left;
+    public Key AggressiveVolumeUp { get => _aggressiveVolumeUpField; set => Set(ref _aggressiveVolumeUpField, value); }
+    private Key _aggressiveVolumeUpField = Key.Up;
+    public Key AggressiveVolumeDown { get => _aggressiveVolumeDownField; set => Set(ref _aggressiveVolumeDownField, value); }
+    private Key _aggressiveVolumeDownField = Key.Down;
 }
 
 public enum CheckboxDefaultBehavior
@@ -926,23 +1082,31 @@ public enum ValueDefaultBehavior
 /// Default initial values applied when the app freshly opens.
 /// Edited via the Settings window → "Defaults" tab.
 /// </summary>
-public class DefaultValues
+public class DefaultValues : FreezableSettings
 {
     /// <summary>Default speed multiplier (e.g. 1.1 = 1.1x). Range 0.1–4.0</summary>
-    public double DefaultSpeed { get; set; } = 1.1;
-    public ValueDefaultBehavior SpeedBehavior { get; set; } = ValueDefaultBehavior.FixedValue;
+    public double DefaultSpeed { get => _defaultSpeedField; set => Set(ref _defaultSpeedField, value); }
+    private double _defaultSpeedField = 1.1;
+    public ValueDefaultBehavior SpeedBehavior { get => _speedBehaviorField; set => Set(ref _speedBehaviorField, value); }
+    private ValueDefaultBehavior _speedBehaviorField = ValueDefaultBehavior.FixedValue;
 
     /// <summary>Default Portrait Mode checkbox state</summary>
-    public bool PortraitMode { get; set; } = true;
-    public CheckboxDefaultBehavior PortraitBehavior { get; set; } = CheckboxDefaultBehavior.RememberLast;
+    public bool PortraitMode { get => _portraitModeField; set => Set(ref _portraitModeField, value); }
+    private bool _portraitModeField = true;
+    public CheckboxDefaultBehavior PortraitBehavior { get => _portraitBehaviorField; set => Set(ref _portraitBehaviorField, value); }
+    private CheckboxDefaultBehavior _portraitBehaviorField = CheckboxDefaultBehavior.RememberLast;
 
     /// <summary>Default Show Teammates checkbox state</summary>
-    public bool ShowTeammates { get; set; } = false;
-    public CheckboxDefaultBehavior ShowTeammatesBehavior { get; set; } = CheckboxDefaultBehavior.AlwaysOff;
+    public bool ShowTeammates { get => _showTeammatesField; set => Set(ref _showTeammatesField, value); }
+    private bool _showTeammatesField = false;
+    public CheckboxDefaultBehavior ShowTeammatesBehavior { get => _showTeammatesBehaviorField; set => Set(ref _showTeammatesBehaviorField, value); }
+    private CheckboxDefaultBehavior _showTeammatesBehaviorField = CheckboxDefaultBehavior.AlwaysOff;
 
     /// <summary>Default Disable Fade checkbox state</summary>
-    public bool EnableFade { get; set; } = true;
-    public CheckboxDefaultBehavior EnableFadeBehavior { get; set; } = CheckboxDefaultBehavior.AlwaysOn;
+    public bool EnableFade { get => _enableFadeField; set => Set(ref _enableFadeField, value); }
+    private bool _enableFadeField = true;
+    public CheckboxDefaultBehavior EnableFadeBehavior { get => _enableFadeBehaviorField; set => Set(ref _enableFadeBehaviorField, value); }
+    private CheckboxDefaultBehavior _enableFadeBehaviorField = CheckboxDefaultBehavior.AlwaysOn;
 
     /// <summary>
     /// QUALITY_01 — the quality TIER a new project starts on (index into QualityLadder.Tiers),
@@ -950,14 +1114,17 @@ public class DefaultValues
     /// clip length, which is the defect the tier ladder exists to remove.
     /// An index written by an older build is clamped on the way in, not rejected.
     /// </summary>
-    public int QualityIndex { get; set; } = 8;
-    public ValueDefaultBehavior QualityBehavior { get; set; } = ValueDefaultBehavior.FixedValue;
+    public int QualityIndex { get => _qualityIndexField; set => Set(ref _qualityIndexField, value); }
+    private int _qualityIndexField = 8;
+    public ValueDefaultBehavior QualityBehavior { get => _qualityBehaviorField; set => Set(ref _qualityBehaviorField, value); }
+    private ValueDefaultBehavior _qualityBehaviorField = ValueDefaultBehavior.FixedValue;
 
     /// <summary>
     /// PEAKSAFE_01 — master switch for the PEAK TAMER (softening sudden loud moments in the
     /// gameplay). The always-on true-peak safety limiter is not affected by it.
     /// </summary>
-    public bool AutoSpikeFlattening { get; set; } = true;
+    public bool AutoSpikeFlattening { get => _autoSpikeFlatteningField; set => Set(ref _autoSpikeFlatteningField, value); }
+    private bool _autoSpikeFlatteningField = true;
 
     /// <summary>
     /// AUDIO_09 — the master switch for BOTH sidechain ducking and EQ carving.
@@ -978,7 +1145,8 @@ public class DefaultValues
     /// DUCKSTRENGTH_01 — LEGACY (schema ≤ 12). Replaced by the two separate switches below; read
     /// only by the v13 migration, which copies it into both. Kept so old files still deserialize it.
     /// </summary>
-    public bool AudioProtection { get; set; } = true;
+    public bool AudioProtection { get => _audioProtectionField; set => Set(ref _audioProtectionField, value); }
+    private bool _audioProtectionField = true;
 
     /// <summary>
     /// DUCKSTRENGTH_01 — Settings › Sound &amp; Music › "Music vs. game sound". Volume ducking (the
@@ -987,18 +1155,22 @@ public class DefaultValues
     /// (0-100, 50 = the tuned out-of-the-box value; see SidechainCompressNode.RatioFor). OFF here
     /// wins over the Music Wizard's per-video checkbox.
     /// </summary>
-    public bool DuckingEnabled { get; set; } = true;
-    public bool CarvingEnabled { get; set; } = true;
-    public int DuckingStrength { get; set; } = FreeVideoStudio.Core.Media.SidechainCompressNode.DefaultStrength;
-    public int CarvingStrength { get; set; } = FreeVideoStudio.Core.Media.SidechainCompressNode.DefaultStrength;
+    public bool DuckingEnabled { get => _duckingEnabledField; set => Set(ref _duckingEnabledField, value); }
+    private bool _duckingEnabledField = true;
+    public bool CarvingEnabled { get => _carvingEnabledField; set => Set(ref _carvingEnabledField, value); }
+    private bool _carvingEnabledField = true;
+    public int DuckingStrength { get => _duckingStrengthField; set => Set(ref _duckingStrengthField, value); }
+    private int _duckingStrengthField = FreeVideoStudio.Core.Media.SidechainCompressNode.DefaultStrength;
+    public int CarvingStrength { get => _carvingStrengthField; set => Set(ref _carvingStrengthField, value); }
+    private int _carvingStrengthField = FreeVideoStudio.Core.Media.SidechainCompressNode.DefaultStrength;
     
-    /// <summary>Whether to remember the music and video volume set in the music wizard</summary>
-    public bool RememberMusicVolumes { get; set; } = true;
 
     /// <summary>Default zoom-in ramp: true = SLOW (gradual), false = INSTANT (hard cut).</summary>
-    public bool DefaultZoomSlow { get; set; } = false;
+    public bool DefaultZoomSlow { get => _defaultZoomSlowField; set => Set(ref _defaultZoomSlowField, value); }
+    private bool _defaultZoomSlowField = false;
     /// <summary>Default freeze-image hold duration in seconds (matches the preset buttons 0.5–3.0).</summary>
-    public double DefaultFreezeDurationS { get; set; } = 1.0;
+    public double DefaultFreezeDurationS { get => _defaultFreezeDurationSField; set => Set(ref _defaultFreezeDurationSField, value); }
+    private double _defaultFreezeDurationSField = 1.0;
 
     /// <summary>
     /// SETDEFAULTS_01 — the speed used last time (written at export), read only when
@@ -1008,10 +1180,12 @@ public class DefaultValues
     /// <see cref="PortraitMode"/>, <see cref="ShowTeammates"/> and <see cref="EnableFade"/> now hold
     /// the LAST choice for their RememberLast behaviour; Always On/Off ignores them.
     /// </summary>
-    public double LastSpeed { get; set; } = 1.1;
+    public double LastSpeed { get => _lastSpeedField; set => Set(ref _lastSpeedField, value); }
+    private double _lastSpeedField = 1.1;
 
     /// <summary>SETDEFAULTS_01 — the quality tier used last time (see <see cref="LastSpeed"/>).</summary>
-    public int LastQualityIndex { get; set; } = 8;
+    public int LastQualityIndex { get => _lastQualityIndexField; set => Set(ref _lastQualityIndexField, value); }
+    private int _lastQualityIndexField = 8;
 
     /// <summary>SETDEFAULTS_01 — the ONE resolver every "fresh video" path reads.</summary>
     public static bool Resolve(CheckboxDefaultBehavior behavior, bool lastChoice) => behavior switch
@@ -1027,22 +1201,19 @@ public class DefaultValues
     public double StartSpeed => SpeedBehavior == ValueDefaultBehavior.RememberLast ? LastSpeed : DefaultSpeed;
     public int StartQualityIndex => QualityBehavior == ValueDefaultBehavior.RememberLast ? LastQualityIndex : QualityIndex;
 
-    /// <summary>True when any start value follows "same as last time", i.e. an export must be remembered.</summary>
-    public bool RemembersAnything =>
-        PortraitBehavior == CheckboxDefaultBehavior.RememberLast
-        || ShowTeammatesBehavior == CheckboxDefaultBehavior.RememberLast
-        || EnableFadeBehavior == CheckboxDefaultBehavior.RememberLast
-        || SpeedBehavior == ValueDefaultBehavior.RememberLast
-        || QualityBehavior == ValueDefaultBehavior.RememberLast;
-
-    /// <summary>SETDEFAULTS_01 — records the choices of a started export for the RememberLast behaviours.</summary>
+    /// <summary>
+    /// SETDEFAULTS_01 / SETLASTALWAYS_01 — records the choices of a started export, ALWAYS. The values are
+    /// only READ while a row is on "Same as last time" (the Start* resolvers above), so recording them
+    /// unconditionally is harmless and means switching a row to "Same as last time" later picks up the
+    /// latest export — it used to pick up whatever was stored when the row was last on that choice.
+    /// </summary>
     public void RememberChoices(bool portrait, bool showTeammates, bool enableFade, double speed, int qualityIndex)
     {
-        if (PortraitBehavior == CheckboxDefaultBehavior.RememberLast) PortraitMode = portrait;
-        if (ShowTeammatesBehavior == CheckboxDefaultBehavior.RememberLast) ShowTeammates = showTeammates;
-        if (EnableFadeBehavior == CheckboxDefaultBehavior.RememberLast) EnableFade = enableFade;
-        if (SpeedBehavior == ValueDefaultBehavior.RememberLast) LastSpeed = Math.Clamp(speed, 0.1, 4.0);
-        if (QualityBehavior == ValueDefaultBehavior.RememberLast) LastQualityIndex = qualityIndex;
+        PortraitMode = portrait;
+        ShowTeammates = showTeammates;
+        EnableFade = enableFade;
+        LastSpeed = Math.Clamp(speed, 0.1, 4.0);
+        LastQualityIndex = qualityIndex;
     }
 }
 
@@ -1052,7 +1223,6 @@ public class DefaultValues
 [JsonSerializable(typeof(CheckboxDefaultBehavior))]
 [JsonSerializable(typeof(ValueDefaultBehavior))]
 [JsonSerializable(typeof(AudioFixPrompt))]
-[JsonSerializable(typeof(VoiceProtectionMode))]
 [JsonSerializable(typeof(ThemeMode))]
 [JsonSerializable(typeof(FontScale))]
 [JsonSerializable(typeof(AiUsageConfig))]
@@ -1101,7 +1271,7 @@ public static class SettingsManager
     /// </summary>
     public const int CurrentSchemaVersion = 14;
 
-    private static string SettingsPath => Path.Combine(FreeVideoStudio.Core.Infrastructure.ApplicationPaths.CreateDefault().ProgramDataRoot, "settings.json");
+    private static string SettingsPath => FreeVideoStudio.Core.Infrastructure.ApplicationPaths.CreateDefault().SettingsFile;
 
     /// <summary>
     /// SETTINGSATOMIC_01 — cross-PROCESS lock. settings.json is shared by the Main App, the
@@ -1128,7 +1298,39 @@ public static class SettingsManager
     /// </summary>
     internal static Action? TransactionReadCompletedForTests;
 
-    public static AppSettings Instance { get; private set; } = new AppSettings();
+    /// <summary>
+    /// The published settings snapshot. SETTINGSFREEZE_01: frozen — reading is free, writing throws.
+    /// Change settings with <see cref="Update"/>; work on a copy with <see cref="Snapshot"/>.
+    /// </summary>
+    public static AppSettings Instance { get; private set; } = FrozenDefaults();
+
+    private static AppSettings FrozenDefaults()
+    {
+        var d = new AppSettings();
+        d.Freeze();
+        return d;
+    }
+
+    /// <summary>SETTINGSFREEZE_01 — a private, WRITABLE copy of the current snapshot (a draft nobody else sees).</summary>
+    public static AppSettings Snapshot() =>
+        JsonSerializer.Deserialize(JsonSerializer.Serialize(Instance, SettingsJsonContext.Default.AppSettings), SettingsJsonContext.Default.AppSettings)
+        ?? new AppSettings();
+
+    /// <summary>
+    /// Test seam: publishes a patched copy of the snapshot in memory only (no disk, no mutex), exactly
+    /// like a committed transaction would. Replaces tests writing to <see cref="Instance"/> directly.
+    /// </summary>
+    internal static void ReplaceInstanceForTests(Action<AppSettings> patch)
+    {
+        ArgumentNullException.ThrowIfNull(patch);
+        lock (SerializeGate)
+        {
+            AppSettings next = Snapshot();
+            patch(next);
+            next.Freeze();
+            Instance = next;
+        }
+    }
 
     /// <summary>
     /// True when the last <see cref="Load"/> found an unreadable settings file and quarantined
@@ -1215,6 +1417,7 @@ public static class SettingsManager
                 }
             }
 
+            next.Freeze();
             Instance = next;
             committed = next;
         }
@@ -1246,10 +1449,6 @@ public static class SettingsManager
         s.AutoUpdateChecks = allowed;
         s.UpdateConsentAsked = true;
     });
-
-    public static bool SetAutoDownloadUpdates(bool enabled) => Update(s => s.AutoDownloadUpdates = enabled);
-    public static bool SetUpdateChannel(string channel) => Update(s => s.UpdateChannel = channel);
-    public static bool SetAvoidMeteredNetworkUpdates(bool avoid) => Update(s => s.AvoidMeteredNetworkUpdates = avoid);
 
     public static void Load()
     {
@@ -1291,6 +1490,7 @@ public static class SettingsManager
                     }
                 }
 
+                loaded.Freeze();
                 Instance = loaded;
                 RuntimeLog.Info("Settings", $"Settings loaded (schema v{loaded.SchemaVersion}).");
             }
@@ -1525,7 +1725,6 @@ public static class SettingsManager
 
         if (from < 4)
         {
-            if (string.IsNullOrWhiteSpace(loaded.VideoEncoderOverride)) loaded.VideoEncoderOverride = "Auto";
             from = 4;
         }
 
@@ -1563,8 +1762,6 @@ public static class SettingsManager
             if (loaded.GeminiApiKeyStored is null) loaded.GeminiApiKeyStored = "";
             if (string.IsNullOrWhiteSpace(loaded.GeminiModelName)) loaded.GeminiModelName = FreeVideoStudio.App.Services.GeminiClient.DefaultModel;
             if (loaded.AiZoomBaseScale <= 0) loaded.AiZoomBaseScale = 2.2;
-            if (loaded.AiZoomMinScale <= 0) loaded.AiZoomMinScale = 1.3;
-            if (loaded.AiZoomDeadbandPercent <= 0) loaded.AiZoomDeadbandPercent = 2.0;
             from = 10;
         }
 
@@ -1572,8 +1769,6 @@ public static class SettingsManager
         {
             loaded.MainOutputBaseName = FreeVideoStudio.Core.Media.OutputFileNaming.Sanitize(
                 loaded.MainOutputBaseName, FreeVideoStudio.Core.Media.OutputFileNaming.MainDefaultBaseName);
-            loaded.MergerOutputBaseName = FreeVideoStudio.Core.Media.OutputFileNaming.Sanitize(
-                loaded.MergerOutputBaseName, FreeVideoStudio.Core.Media.OutputFileNaming.MergerDefaultBaseName);
             from = 11;
         }
 

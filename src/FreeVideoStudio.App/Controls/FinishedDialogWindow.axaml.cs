@@ -87,7 +87,7 @@ public partial class FinishedDialogWindow : Window
         var el = e.Source as StyledElement;
         while (el != null)
         {
-            if (el is Button) return;
+            if (el is Button || el is TextBox) return;
             if (el is Control c && c.Name == "ResizeGrip") return;
             el = el.Parent;
         }
@@ -129,7 +129,7 @@ public partial class FinishedDialogWindow : Window
     {
         try
         {
-            Process.Start(new ProcessStartInfo
+            Services.ShellLauncher.Launch(new ProcessStartInfo
             {
                 FileName = "https://web.whatsapp.com",
                 UseShellExecute = true
@@ -144,7 +144,7 @@ public partial class FinishedDialogWindow : Window
     {
         try
         {
-            Process.Start(new ProcessStartInfo
+            Services.ShellLauncher.Launch(new ProcessStartInfo
             {
                 FileName = "https://www.instagram.com/",
                 UseShellExecute = true
@@ -158,13 +158,21 @@ public partial class FinishedDialogWindow : Window
 
     private void OnYouTubeClicked(object? sender, RoutedEventArgs e)
     {
+        _ = HandleYouTubeClickedAsync();
+    }
+
+    private async System.Threading.Tasks.Task HandleYouTubeClickedAsync()
+    {
         try
         {
             if (!string.IsNullOrEmpty(_attributionText))
             {
                 _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(_attributionText);
+                var attrDlg = new MusicAttributionDialogWindow();
+                attrDlg.SetAttributionText(_attributionText);
+                await attrDlg.ShowDialog(this);
             }
-            Process.Start(new ProcessStartInfo
+            Services.ShellLauncher.Launch(new ProcessStartInfo
             {
                 FileName = "https://studio.youtube.com/",
                 UseShellExecute = true
@@ -178,13 +186,21 @@ public partial class FinishedDialogWindow : Window
 
     private void OnTikTokClicked(object? sender, RoutedEventArgs e)
     {
+        _ = HandleTikTokClickedAsync();
+    }
+
+    private async System.Threading.Tasks.Task HandleTikTokClickedAsync()
+    {
         try
         {
             if (!string.IsNullOrEmpty(_attributionText))
             {
                 _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(_attributionText);
+                var attrDlg = new MusicAttributionDialogWindow();
+                attrDlg.SetAttributionText(_attributionText);
+                await attrDlg.ShowDialog(this);
             }
-            Process.Start(new ProcessStartInfo
+            Services.ShellLauncher.Launch(new ProcessStartInfo
             {
                 FileName = "https://www.tiktok.com/creator-center/upload",
                 UseShellExecute = true
@@ -225,7 +241,7 @@ public partial class FinishedDialogWindow : Window
             {
                 var psi = new ProcessStartInfo { FileName = "explorer.exe", UseShellExecute = false };
                 psi.ArgumentList.Add("/select," + _outputPath);
-                Process.Start(psi);
+                Services.ShellLauncher.Launch(psi);
             }
         }
         catch (Exception ex)

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -189,6 +189,7 @@ public sealed record MergeEdl
     public double BaseSpeed { get; init; } = 1.0;
     public EdlThumbnail? Thumbnail { get; init; }
     public EdlMusic? Music { get; init; }
+    public CaptionTrack? Captions { get; init; }
 
     public static readonly MergeEdl Empty = new();
 
@@ -199,10 +200,11 @@ public sealed record MergeEdl
            && ScraperEnabled == other.ScraperEnabled
            && BaseSpeed == other.BaseSpeed
            && Equals(Thumbnail, other.Thumbnail)
-           && Equals(Music, other.Music);
+           && Equals(Music, other.Music)
+           && Equals(Captions, other.Captions);
 
     public override int GetHashCode()
-        => HashCode.Combine(Version, EdlHash.Of(Clips, Array.Empty<int>(), Array.Empty<int>()), ScraperEnabled, BaseSpeed, Thumbnail, Music);
+        => HashCode.Combine(Version, EdlHash.Of(Clips, Array.Empty<int>(), Array.Empty<int>()), ScraperEnabled, BaseSpeed, Thumbnail, Music, Captions);
 
     /// <summary>Index of the clip with <paramref name="clipId"/>, or -1.</summary>
     public int IndexOf(Guid clipId)
@@ -291,4 +293,18 @@ internal static class EdlHash
 [JsonSerializable(typeof(EdlEffects))]
 [JsonSerializable(typeof(EdlMusic))]
 [JsonSerializable(typeof(EdlMeme))]
+[JsonSerializable(typeof(CaptionTrack))]
+[JsonSerializable(typeof(CaptionLine))]
+[JsonSerializable(typeof(CaptionWord))]
+[JsonSerializable(typeof(CaptionStyle))]
+[JsonSerializable(typeof(CaptionPosition))]
+[JsonSerializable(typeof(CaptionTone))]
+[JsonSerializable(typeof(CaptionLook))]
+[JsonSerializable(typeof(CaptionSize))]
+[JsonSerializable(typeof(IReadOnlyList<CaptionLine>))]
+[JsonSerializable(typeof(IReadOnlyList<CaptionWord>))]
+[JsonSerializable(typeof(IReadOnlyList<string>))]
+[JsonSerializable(typeof(List<CaptionLine>))]
+[JsonSerializable(typeof(List<CaptionWord>))]
+[JsonSerializable(typeof(List<string>))]
 public partial class MergeEdlJsonContext : JsonSerializerContext { }

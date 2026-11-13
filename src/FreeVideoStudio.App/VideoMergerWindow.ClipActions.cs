@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -144,6 +144,7 @@ public partial class VideoMergerWindow
         foreach (var (from, to) in QueueRowOps.MoveSteps(rows, direction))
             VideoQueue.Move(from, to);
         if (ResolveQueueRows(ids) is { } moved) SelectQueueRows(moved);
+        RedrawTimelineSelection();
         return true;
     }
 
@@ -243,17 +244,39 @@ public partial class VideoMergerWindow
     {
         var queue = VideoQueue.ToList();
         if (queue.Count == 0) return;
-        var infos = new List<MergeClipInfo>(queue.Count);
+        var sources = new List<MergeClipSource>(queue.Count);
+        var introTags = new List<double>(queue.Count);
         foreach (var p in queue)
         {
-            if (!MergeClipAnalyzer.TryGetCompleted(p, out var info)) return;
-            infos.Add(info);
+            if (MergeClipAnalyzer.TryGetCompleted(p, out var info) && info.DurationSec > 0)
+            {
+                sources.Add(new MergeClipSource(info.Path, info.DurationSec, info.IntroSec));
+                introTags.Add(info.IntroSec);
+            }
+            else if (_knownClipTiming.TryGetValue(p, out var timing) && timing.DurationSec > 0)
+            {
+                sources.Add(new MergeClipSource(p, timing.DurationSec, timing.IntroSec));
+                introTags.Add(timing.IntroSec);
+            }
+            else
+            {
+                var existing = _timeline.Clips.FirstOrDefault(c => SameVideoPath(c.Path, p));
+                if (existing.Path != null && existing.ContentEndSec > 0)
+                {
+                    int oldIdx = _timeline.Clips.ToList().FindIndex(c => SameVideoPath(c.Path, p));
+                    double intro = oldIdx >= 0 && oldIdx < _timelineIntroTags.Count ? _timelineIntroTags[oldIdx] : existing.RemovedIntroSec;
+                    sources.Add(new MergeClipSource(existing.Path, existing.ContentEndSec, intro));
+                    introTags.Add(intro);
+                }
+                else return;
+            }
+
         }
         if (_thumbPath != null && !queue.Any(p => SameVideoPath(p, _thumbPath))) _thumbPath = null;
 
         _timelineVersion++;
-        var sources = infos.Select(i => new MergeClipSource(i.Path, i.DurationSec, i.IntroSec)).ToList();
-        ApplyTimeline(MergedTimeline.Build(sources, _scraperEnabled, _thumbPath != null), infos.Select(i => i.IntroSec).ToList());
+
+        ApplyTimeline(MergedTimeline.Build(sources, _scraperEnabled, _thumbPath != null), introTags);
         RefreshLanes();
         RedrawTimelineSelection();
     }
@@ -267,6 +290,27 @@ public partial class VideoMergerWindow
     internal void TriggerDropForTesting(Avalonia.Input.DragEventArgs e) => VideoList_Drop(VideoListCtl, e);
     internal static Avalonia.Input.DataFormat<string> VideoItemFormatForTesting => VideoItemFormat;
     internal void TriggerClipActionsKeyDownForTesting(KeyEventArgs e) => ClipActionsKeyDown(this, e);
-    internal bool MoveQueueClipsForTesting(IReadOnlyList<Guid> ids, int direction) => MoveQueueClips(ids, direction);
     internal bool RemoveQueueClipsForTesting(IReadOnlyList<Guid> ids) => RemoveQueueClips(ids);
+    internal Canvas? BlocksLaneCtlForTesting => BlocksLaneCtl;
+    internal bool TickMergedPlaybackForTesting() => TickMergedPlayback();
+    internal void SetTimelineForTesting(MergedTimeline timeline)
+    {
+        _timeline = timeline;
+        _timelineReady = timeline.Clips.Count > 0;
+        foreach (var c in timeline.Clips) _knownClipTiming[c.Path] = (c.ContentEndSec, c.RemovedIntroSec);
+    }
+    internal MergedTimeline TimelineForTesting => _timeline;
+    internal void SetVideoHostForTesting(MpvVideoView host) => _videoHost = host;
+    internal void TriggerEndClipChipForTesting(int from, double commitX)
+    {
+        _chipFrom = from;
+        _draggingClipChip = true;
+        _chipPressed = true;
+        var markers = MarkersCanvasCtl ?? BlocksLaneCtl ?? new Canvas();
+        EndClipChip(markers, commitX);
+    }
+    internal void RedrawTimelineSelectionForTesting() => RedrawTimelineSelection();
+    internal bool MergedEndReachedForTesting => _mergedEndReached;
+    internal void SetMergedEndReachedForTesting(bool reached) => _mergedEndReached = reached;
+    internal void SetLoadedEdlForTesting(string edlUrl, int graceTicks = 0) { _edlUrl = edlUrl; _clipLoadGraceTicks = graceTicks; }
 }

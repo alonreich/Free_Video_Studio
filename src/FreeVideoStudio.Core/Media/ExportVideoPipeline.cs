@@ -16,7 +16,8 @@ public sealed partial class ExportVideoPipeline
     private static readonly HashSet<string> AudioFilters =
         ["anull", "anullsrc", "atrim", "asetpts", "aresample", "aformat", "atempo", "rubberband", "afade",
          "volume", "asplit", "amix", "adelay", "apad", "loudnorm", "alimiter", "equalizer",
-         "highpass", "lowpass", "agate", "acrossover", "sidechaincompress"];
+         "highpass", "lowpass", "agate", "acrossover", "sidechaincompress",
+         "aevalsrc"];
 
     private ExportVideoPipeline(string encoder, string graph, bool gpu, string reason)
     {

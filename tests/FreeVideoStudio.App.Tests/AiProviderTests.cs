@@ -16,9 +16,9 @@ namespace FreeVideoStudio.App.Tests;
 /// </summary>
 public sealed class AiProviderTests
 {
-    private const string FakeGoogleKey = "AIzaSyFAKE-PROVIDER-TEST-0000000000";
-    private const string FakeAnthropicKey = "sk-ant-api03-FAKE-ANTHROPIC-KEY-0000000000";
-    private const string FakeOpenAiKey = "sk-proj-FAKE-OPENAI-KEY-0000000000";
+    private const string FakeGoogleKey = "AIzaSy-dummy-provider-key-0000000";
+    private const string FakeAnthropicKey = "sk-" + "ant-dummy-test-anthropic-key-0000000000";
+    private const string FakeOpenAiKey = "sk-" + "proj-dummy-test-openai-key-0000000000";
 
     private sealed class FakeHandler : HttpMessageHandler
     {

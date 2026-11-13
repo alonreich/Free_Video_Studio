@@ -8,18 +8,7 @@ namespace FreeVideoStudio.Core.Media;
 /// </summary>
 public static class CanvasMath
 {
-    public const int FinalWidth = CoordinateConstants.PortraitW;
-    public const int FinalHeight = CoordinateConstants.PortraitH;
-
-    public const int ContentWidth = CoordinateConstants.ContentW;
-    public const int ContentHeight = CoordinateConstants.ContentH;
-    public const int ContentOffsetY = CoordinateConstants.PaddingTop;
-
-    public const int BackendWidth = CoordinateConstants.InternalW;
-    public const int BackendHeight = CoordinateConstants.InternalH;
-
     public static Frac BackendScale => CoordinateConstants.BackendScale;
-    public static double BackendScaleDouble => (double)CoordinateConstants.InternalW / CoordinateConstants.PortraitW;
 
     public static JsonArray ProtectCropDrift(string regionName, JsonArray crop)
     {

@@ -31,7 +31,13 @@ public partial class SettingsWindow
         _ => "General",
     };
 
-    private void OnRestoreTab(object? sender, RoutedEventArgs e)
+    private void OnRestoreTab(object? sender, RoutedEventArgs e) => _ = RestoreTabAsync();
+
+    /// <summary>
+    /// SETRESTORECONFIRM_01 — "Restore this tab" asks first, like "Reset all settings": the only other
+    /// way back was CANCEL, which also throws away the changes on every OTHER tab.
+    /// </summary>
+    private async System.Threading.Tasks.Task RestoreTabAsync()
     {
         var section = CurrentSection;
         if (section == SettingsSection.About)
@@ -39,6 +45,11 @@ public partial class SettingsWindow
             SetFooterStatus("The About tab has nothing to restore.");
             return;
         }
+        bool ok = await ConfirmDialogWindow.AskAsync(this,
+            $"Put every setting on the '{SectionName(section)}' tab back to how it was when the app was installed?\n\n" +
+            "Your other tabs are not touched. Nothing changes until you press SAVE.",
+            "Restore this tab?", "RESTORE TAB", "CANCEL", destructive: false);
+        if (!ok) return;
         Vm.RestoreSection(section);
         Vm.OutputFilesStatus = "";
         SetFooterStatus($"'{SectionName(section)}' is back to the original settings. Press SAVE to keep this, or CANCEL to undo.");
@@ -56,20 +67,6 @@ public partial class SettingsWindow
         Vm.RestoreAll();
         SetFooterStatus("All settings are back to the original values. Press SAVE to keep this, or CANCEL to undo.");
     }
-
-    private void OnRemoveAllKeys(object? sender, RoutedEventArgs e) => _ = RemoveAllKeysAsync();
-
-    private async System.Threading.Tasks.Task RemoveAllKeysAsync()
-    {
-        bool ok = await ConfirmDialogWindow.AskAsync(this,
-            "Delete the saved Google, Anthropic and OpenAI keys from this computer?\n\n" +
-            "AI features stop working until you paste a key again. The keys are deleted when you press SAVE.",
-            "Remove all AI keys?", "REMOVE KEYS", "CANCEL", destructive: true);
-        if (!ok) return;
-        Vm.RemoveAllKeys();
-        SetFooterStatus("All AI keys will be deleted when you press SAVE.");
-    }
-
 
     private void SetBackupStatus(string text)
     {
@@ -91,9 +88,8 @@ public partial class SettingsWindow
             });
             string? path = file?.TryGetLocalPath();
             if (string.IsNullOrWhiteSpace(path)) return;
-            File.WriteAllText(path, Vm.ExportBackupJson());
-            SetBackupStatus($"Saved: {Path.GetFileName(path)} (AI keys were left out).");
-            RuntimeLog.Info("Settings", "Settings backup written.");
+            string message = await Vm.WriteBackupFileAsync(path);
+            if (message.Length > 0) SetBackupStatus(message);
         }
         catch (Exception ex)
         {
@@ -116,12 +112,9 @@ public partial class SettingsWindow
             });
             string? path = files != null && files.Count > 0 ? files[0].TryGetLocalPath() : null;
             if (string.IsNullOrWhiteSpace(path)) return;
-            var info = new FileInfo(path);
-            if (info.Length > 2_000_000) { SetBackupStatus("⚠ That file is far too big to be a settings backup."); return; }
-            string? error = Vm.ImportBackupJson(File.ReadAllText(path));
-            if (error != null) { SetBackupStatus("⚠ " + error); return; }
-            SetBackupStatus($"Loaded: {Path.GetFileName(path)}. Look it over, then press SAVE to keep it (or CANCEL to forget it).");
-            SetFooterStatus("Backup loaded. Press SAVE to keep it.");
+            var (ok, message) = await Vm.ImportBackupFileAsync(path);
+            if (message.Length > 0) SetBackupStatus(message);
+            if (ok) SetFooterStatus("Backup loaded. Press SAVE to keep it.");
         }
         catch (Exception ex)
         {

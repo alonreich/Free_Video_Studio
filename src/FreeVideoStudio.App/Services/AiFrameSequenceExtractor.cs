@@ -69,15 +69,21 @@ public static class AiFrameSequenceExtractor
                 pattern
             }) psi.ArgumentList.Add(arg);
 
+            log?.Invoke($"FFmpeg: sampling frames ({durationSec.ToString("0.0", ci)}s @ {fps} fps, {targetWidth}px wide)…");
             var (exitCode, _, stderr) = await AsyncProcessRunner.RunAsync(psi, TimeSpan.FromSeconds(30), ct).ConfigureAwait(false);
+            string[] extractedFiles = Directory.GetFiles(tempDir, "frame_*.jpg")
+                .OrderBy(f => f, StringComparer.Ordinal)
+                .ToArray();
+
+            if (exitCode != 0 && extractedFiles.Length == 0)
+            {
+                string detail = FreeVideoStudio.Core.Diagnostics.SecretRedactor.RedactSecrets(GeminiClient.Truncate(stderr, 240));
+                throw new InvalidOperationException($"FFmpeg failed to extract frames (exit {exitCode}): {detail}");
+            }
             if (exitCode != 0)
             {
                 log?.Invoke($"Warning: FFmpeg frame sampling returned exit code {exitCode}: {GeminiClient.Truncate(stderr, 200)}");
             }
-
-            string[] extractedFiles = Directory.GetFiles(tempDir, "frame_*.jpg")
-                .OrderBy(f => f, StringComparer.Ordinal)
-                .ToArray();
 
             var result = new List<AiImageInput>(extractedFiles.Length);
             double interval = fps > 0 ? 1.0 / fps : 0.5;
@@ -136,7 +142,7 @@ public static class AiFrameSequenceExtractor
     public static int GetMaxImagesPerRequest(AiVendor vendor) => vendor switch
     {
         AiVendor.Google => 100,
-        AiVendor.Anthropic => 60,
+        AiVendor.Anthropic => 20,
         AiVendor.OpenAI => 50,
         _ => DefaultMaxImagesPerRequest,
     };

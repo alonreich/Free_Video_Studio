@@ -6,7 +6,11 @@
 
 | Source File Path | Key Classes, Records & Controls | Core Bound Methods, Properties & Symbols | Subsystem Domain Role |
 | :--- | :--- | :--- | :--- |
-| `src/FreeVideoStudio.App/Infrastructure/AppServices.cs` | `AppServices`, `AvaloniaWindowProvider` | `Initialize`, `Current`, `COMPOSITION_01`, `COMPOSITION_02` | The one place the object graph is built. |
+| `src/FreeVideoStudio.App/Infrastructure/AppServices.cs` | `AppServices`, `AvaloniaWindowProvider` | `Initialize`, `Current`, `SettingsWindow`, `COMPOSITION_01`, `COMPOSITION_02` | The one place the object graph is built. |
+| `src/FreeVideoStudio.App/Services/SettingsWindowServices.cs` | `SettingsWindowServices`, `ISettingsStore`, `IAiKeyValidator`, `IEncoderCatalog`, `ISettingsBackupStore`, `IUpdateChecker`, `ISessionStateSink` | `CreateDefault`, `SETTINGSDI_01`, `SETBACKUPIO_01` | The Settings window's seams. **⚠ CO-GOVERNED BY: 04** |
+| `src/FreeVideoStudio.App/AvaloniaApp.axaml.cs` | `AvaloniaApp` | `OnDispatcherUnhandledException`, `IsProcessCorrupting`, `ASYNCSAFE_01` | Last-line UI-thread fault hook. |
+| `src/FreeVideoStudio.App/Infrastructure/CtsSlot.cs` | `CtsSlot` | `Renew`, `Cancel`, `Dispose`, `CTSSLOT_01` | One disposing cancellation slot per operation. |
+| `src/FreeVideoStudio.App/Services/ShellLauncher.cs` | `ShellLauncher` | `Launch`, `TryOpen`, `SHELLLAUNCH_01` | Every shell launch; releases the process handle at once. |
 | `src/FreeVideoStudio.Core/Abstractions/Fault.cs` | `FaultTier`, `Fault` | `Recoverable`, `Degraded`, `Fatal`, `FAULTTIER_01` | Failure classification vocabulary. |
 | `src/FreeVideoStudio.Core/Abstractions/IFaultSink.cs` | `IFaultSink`, `FaultSinkExtensions`, `NullFaultSink` | `Report`, `Guard`, `GuardAsync`, `GuardValue` | The one destination for a caught exception. |
 | `src/FreeVideoStudio.App/Services/UserFacingFaultSink.cs` | `UserFacingFaultSink`, `AvaloniaUserNotifier` | `Report`, `ShouldSurface`, `FAULTSTORM_01`, `Notify` | Fault → log / pill / dialog routing table. |
@@ -16,8 +20,12 @@
 | `src/FreeVideoStudio.App/Abstractions/IFilePickerService.cs` | `IFilePickerService`, `FilePickerRequest` | `SaveFileAsync`, `OpenFileAsync`, `INJSEAM_04`, `FilePickerRequest` | OS file-dialog seam. |
 | `src/FreeVideoStudio.App/Services/StorageProviderFilePicker.cs` | `StorageProviderFilePicker` | `PICKERMEMORY_01`, `SaveFileAsync`, `OpenFileAsync`, `StorageProviderFilePicker` | Picker implementation + directory memory. **⚠ CO-GOVERNED BY: 05** |
 | `tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs` | `ArchitectureRuleTests` | `ARCHTEST_01`, `ASYNCUI_01`, `ASYNCUI_02`, `NoControlCarriesBothCommandAndClick` | The specs' rules, made executable. |
+| `tests/TestHarness.ps1`, `tests/TestHarness.Tests.ps1`, `tests/run-av-tests.ps1`, `tests/run-all-tests.cmd` | Test gate | `TESTGATE_01`, `TESTCLEAN_01`, `TESTOUT_01`, `Get-TestSuiteRoot`, `Enter-SuiteOutput`, `Reset-TestOutputs` | Fail-closed result validation; every suite writes only to `logs\<Suite>_Results\`, replaced per suite (README GOV-TESTOUT); 05 SYS-STORAGE-TABLE. |
+| `tests/TestArtifactDirectory.cs`, `tests/*/TestOutputSuite.cs` | Test output owner | `TESTOUT_01`, `TESTCLEAN_02`, `SuiteWork`, `Begin`, `PrepareSuite`, `Reset` | C#/xUnit and standalone checks write only to their `logs\<Suite>_Results\work`; `TestArtifactDirectoryTests.NoTestWritesOutsideTheLogsSuiteFolders`. |
+| `tests/DesktopPreviewSmoke/Program.cs`, `tests/DesktopPreviewSmoke/MergerSmokeApp.cs` | Desktop smoke applications | `TESTDESKTOP_01`, `MERGERBOUNDARY_01` | Actual GPU output and actual merger window playback across joins; 01 TL-COMPOSITE, 04 UI-MERGERQUEUE/UI-GPUPRESENT2. |
+| `src/FreeVideoStudio.App/ViewModels/VoiceOverGainViewModel.cs` | `VoiceOverGainViewModel` | `Percent`, `Gain`, `ResetCommand`, `CanEdit` | Voice gain bindings; co-governed by 02 AUD-VOICEOVER and 04 UI-THEME. |
 | `build/FvsBuild/CodeSigning.cs` | `CodeSigning` | `SignIfNeeded`, `SIGNMANDATE_01` | Signing mandate. **⚠ CO-GOVERNED BY: 05** |
-| `dev.cmd` | Developer Harness | `VERIFY_PATCHES`, `VERIFYHALT_01` | Fix-sentinel enforcement. **⚠ CO-GOVERNED BY: 05** |
+| `dev.cmd` | Developer Harness | `DEVVERIFY_01`, `SYS-VERIFYTOOL`, `VERIFYHALT_01` | Direct FvsVerify invocation and failure propagation before cleanup. **⚠ CO-GOVERNED BY: 05** |
 | `src/FreeVideoStudio.Core/Abstractions/Faults.cs` | `Faults` | `Install`, `Recoverable`, `Degraded`, `Fatal`, `FAULTTIER_02` | Ambient fault channel installed once from the composition root. |
 | `src/FreeVideoStudio.App/Services/FaultCounters.cs` | `FaultCounters` | `Record`, `Describe`, `LOGVIS_01` | Per-session fault totals by tier and area, printed in the diagnostic bundle. |
 | `tests/FreeVideoStudio.Core.Tests/WindowsOnlyFactAttribute.cs` | `WindowsOnlyFactAttribute` | `Skip`, `CITEST_01` | Windows-only tests skip, not fail, off Windows. |
@@ -57,6 +65,21 @@
   | `INJSEAM_02` | `IClock` | wall time, so the 24h update throttle and the 14-day log trim are testable without sleeping |
   | `INJSEAM_03` | `IUserNotifier` / `IActiveWindowProvider` | a live Avalonia `Window`, so a view-model needs no dispatcher |
   | `INJSEAM_04` | `IFilePickerService` | native OS dialogs, so Save/Open Project can be regression-tested |
+  | `SETTINGSDI_01` | `SettingsWindowServices` (`ISettingsStore`, `IAiKeyValidator`, `IEncoderCatalog`, `ISettingsBackupStore`, `IUpdateChecker`, `ISessionStateSink`) | the settings file, the AI companies, the FFmpeg chip probe, backup files, the updater and the session-state store, so the Settings view-model (save, key tests, routing, backups) is testable without a window, the internet, a GPU or real files. Built once in `AppServices.Initialize` (`AppServices.SettingsWindow`); `CreateDefault()` exists only where no root is in reach |
+
+* **`ASYNCSAFE_01` — no UI-thread fault ends the process unless the runtime is unusable.** Avalonia
+  event handlers that do async work are `void` forwarders to a `Task` method whose whole body reports
+  through `Faults` (`OnVideoDrop`, `RdpFixButton_Click`, `InitializeMpv` were `async void` with no
+  catch). `AvaloniaApp` also installs `Dispatcher.UIThread.UnhandledException` as the last line of
+  defence: a fault is reported as `Degraded` and marked handled; only process-corrupting exceptions
+  (`IsProcessCorrupting`: out-of-memory, access violation, …) are let through.
+* **`CTSSLOT_01` / `SHELLLAUNCH_01` — native-resource hygiene.** A per-operation cancellation source is
+  held in a `CtsSlot` (renewing cancels AND disposes the previous source; the owner disposes the slot
+  on close). Every shell launch goes through `ShellLauncher`, which disposes the returned `Process`
+  wrapper at once (the launched program is unaffected), so no native process handle waits for a
+  finaliser.
+* **`VIRALVM_01` — the Finished screen's AI post** runs in `ViralPostViewModel` (generator injectable);
+  `FinishedDialogWindow` only draws its `ViralPostView`.
 
   ⚠️ `FileProjectStore` is a **forward**, not a second implementation. The atomic-write protocol, the `.bak` cascade and the amputation rule stay in `ProjectStore`/`ProjectSerializer` under spec 06. `05_SYSTEM_LIFECYCLE_STORAGE.md` §4c is explicit: *never reimplement this sequence at a call site*.
 
@@ -154,7 +177,7 @@ plumbing change does not happen. The vocabulary was right and the route was miss
   | `ZoompanFilterIsNeverEmitted` | Invariant #4 | **clean — 0** |
   | `UnexplainedEmptyCatchBlocksDoNotIncrease` | `FAULTTIER_01` | ratchet, baseline **25** |
   | `EveryCatchBlockReportsSomewhere` | `FAULTTIER_02` | ratchet, baseline **7** (seven reporting-path files exempt by name; injected `IFaultSink` `.Recoverable/.Degraded/.Fatal(` calls count as reporting) |
-  | `EveryProductionSourceFileCarriesTheSpecContract` | `SPEC_GOVERNANCE.md` §4 | **clean — 0** (121 fixed; see §4) |
+  | Repeated source-header presence rule | `SPEC_GOVERNANCE.md` §4 | Retired by SPECROUTING_02; domain maps and fix sentinels remain required. |
   | `BlockingWaitsOnAsyncCodeDoNotIncrease` | `ASYNCUI_01` | ratchet, baseline **5** |
   | `AsyncVoidMethodsDoNotIncrease` | `ASYNCUI_02` | ratchet, baseline **31** |
   | `ServiceLocatorUsageDoesNotIncrease` | `COMPOSITION_02` | ratchet, baseline **3** |
@@ -242,11 +265,16 @@ CI runs the sentinels on Linux first (~40s, fails fast), then builds and tests o
 then proves the NativeAOT publish links on `main` — AOT failures do not appear in `dotnet build`,
 only at publish, in the linker.
 
+`CODEEXPORT_01`: the sentinel job also runs the Python source-export regression suite
+(`python -B -m unittest discover -s tests/DeveloperTools.Tests -v`). It guards coverage,
+credential filtering, encoding failures, attachment limits and preservation of previous exports;
+the contract lives in 05 SYS-CODEEXPORT.
+
 ---
 
 ## 4. Findings Closed By This Specification  {#COMP-FINDINGS}
 
-* **`SPEC_GOVERNANCE.md` §4 was unenforced: 121 of the 188 source files then present carried no `[SPEC CONTRACT]` sentinel** — 64% of the codebase was invisible to the routing protocol that governs it. Every file carries it now, mapped to its governing spec via `docs/README.md` §3, with co-governed files naming every binding spec and stating that reading one is not compliance. `EveryProductionSourceFileCarriesTheSpecContract` keeps it that way, so the count is enforced rather than recorded.
+* **SPECROUTING_02 (2026-11-01):** per user direction, repeated `[SPEC CONTRACT]` source headers and their presence-only architecture test are retired. Governing specs, the read-and-cite duty, file/domain maps, behavioral tests and fix-specific sentinels remain mandatory (SPEC_GOVERNANCE.md §4).
 
 * **`VERIFYHALT_01` — `VERIFY_PATCHES` was a no-op.** The subroutine built its `MISSING` list correctly and then returned. `MISSING` was **assigned in two places and read in none**, so all 133 fix sentinels were checked and the answer discarded. The mechanism `05` §4a calls "halts loudly if one is absent" could not halt, and could not be loud.
   Two defects, both closed: the unread variable, and `exit /b 1` inside a `call`ed subroutine returning from the *subroutine* rather than the script — so the call site now tests `if errorlevel 1`.

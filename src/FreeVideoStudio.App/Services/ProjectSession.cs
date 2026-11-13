@@ -1,4 +1,4 @@
-
+﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -50,7 +50,7 @@ namespace FreeVideoStudio.App.Services;
 /// The one exception is <see cref="AutosaveTick"/>: it is invoked from a dispatcher timer and
 /// captures its snapshot on the UI thread, but (AUTOSAVEBG_01) the atomic write, the hardware
 /// flush and the history sidecar run on the thread pool, and only the dirty-flag update is
-/// marshalled back. Explicit saves stay synchronous and share an ordered write gate with it.
+/// marshalled back. Explicit saves await the same ordered background I/O queue.
 /// </para>
 /// </summary>
 public sealed class ProjectSession
@@ -139,13 +139,17 @@ public sealed class ProjectSession
 
     /// <summary>
     /// AUTOSAVEBG_01 — serialises every project write (explicit or background) and orders them.
-    /// Each write takes a sequence number on the UI thread when it is ISSUED; under the gate, a
-    /// write older than the last committed one is skipped. An autosave issued before a Ctrl+S
-    /// therefore cannot land on top of it, and the UI never waits on a Task to guarantee that.
+    /// The UI appends work to a task chain. Each worker awaits its predecessor off-thread;
+    /// an autosave issued before Ctrl+S cannot land on top of it. UI completion uses a generation
+    /// and sequence stamp so delayed results cannot replace a newer document or clear new edits.
     /// </summary>
-    private readonly object _ioGate = new();
+    private Task _ioTail = Task.CompletedTask;
+    private bool _explicitIoPending;
+    private readonly bool _hasFastMask;
     private long _writeSequence;
-    private long _committedSequence;
+    private long _publishedSequence;
+    private long _sessionGeneration;
+    private long _navigationGeneration;
 
     /// <summary>
     /// UNDO_21 — re-entrancy guard. Applying an undone document writes ~20 view-model properties,
@@ -180,7 +184,8 @@ public sealed class ProjectSession
         _hasUnsavedWork = hasUnsavedWork ?? throw new ArgumentNullException(nameof(hasUnsavedWork));
 
         _readLiveMask = readLiveMask ?? (static () => null);
-        _readLiveMaskFast = readLiveMaskFast ?? _readLiveMask;
+        _readLiveMaskFast = readLiveMaskFast ?? (static () => null);
+        _hasFastMask = readLiveMaskFast is not null;
         _readMergeQueue = readMergeQueue ?? (static () => null);
 
         _sidecar = sidecar ?? UndoSidecarStore.CreateDefault(Core.Infrastructure.ApplicationPaths.CreateDefault());
@@ -229,6 +234,7 @@ public sealed class ProjectSession
     /// </summary>
     public void BeginHistory()
     {
+        _sessionGeneration++;
         _history = new UndoStack<ProjectDocument>(Capture());
         _history.Changed += (_, _) => Raise();
         Raise();
@@ -287,14 +293,18 @@ public sealed class ProjectSession
 
 
     /// <summary>Ctrl+S. Falls through to Save As when the project has never been written.</summary>
-    public async Task<bool> SaveAsync()
+    public Task<bool> SaveAsync() => RunCommandAsync(SaveCoreAsync);
+
+    private async Task<bool> SaveCoreAsync()
     {
-        if (string.IsNullOrWhiteSpace(CurrentPath)) return await SaveAsAsync();
-        return WriteTo(CurrentPath!, announce: true);
+        if (string.IsNullOrWhiteSpace(CurrentPath)) return await SaveAsCoreAsync();
+        return await WriteToAsync(CurrentPath!, announce: true);
     }
 
     /// <summary>Ctrl+Shift+S.</summary>
-    public async Task<bool> SaveAsAsync()
+    public Task<bool> SaveAsAsync() => RunCommandAsync(SaveAsCoreAsync);
+
+    private async Task<bool> SaveAsCoreAsync()
     {
         if (!_viewModel.HasLoadedVideo)
         {
@@ -302,6 +312,7 @@ public sealed class ProjectSession
             return false;
         }
 
+        long session = _sessionGeneration;
         string suggested = SuggestFileName();
 
         string? chosen = await _picker.SaveFileAsync(new FilePickerRequest(
@@ -311,18 +322,22 @@ public sealed class ProjectSession
             Extension: "fvsproj",
             StartDirectoryKey: "last_project_dir.txt"));
 
-        if (chosen is null) return false;
+        if (chosen is null || session != _sessionGeneration) return false;
 
-        return WriteTo(_store.NormalizeExtension(chosen), announce: true);
+        return await WriteToAsync(_store.NormalizeExtension(chosen), announce: true);
     }
 
     /// <summary>
     /// Ctrl+O. Prompts about unsaved work first — losing an hour of edits to a mis-click on Open is
     /// the same defect as losing it on close, and the same guard closes both.
     /// </summary>
-    public async Task<bool> OpenAsync()
+    public Task<bool> OpenAsync() => RunCommandAsync(OpenCoreAsync);
+
+    private async Task<bool> OpenCoreAsync()
     {
+        long navigation = ++_navigationGeneration;
         if (!await ConfirmDiscardAsync("Open another project")) return false;
+        long session = _sessionGeneration, generation = _editGeneration;
 
         string? chosen = await _picker.OpenFileAsync(new FilePickerRequest(
             Title: "Open project",
@@ -333,7 +348,19 @@ public sealed class ProjectSession
 
         if (chosen is null) return false;
 
-        ProjectDocument? document = _store.Load(chosen, out string? error, out bool fromBackup);
+        var loaded = await EnqueueIo(() =>
+        {
+            ProjectDocument? value = _store.Load(chosen, out string? problem, out bool backup);
+            return (Document: value, Error: problem, FromBackup: backup,
+                Integrity: value?.CheckSource() ?? SourceIntegrity.Unknown,
+                History: value is null ? null : _sidecar.Load(chosen, HistoryFingerprint(value)));
+        });
+        if (navigation != _navigationGeneration || session != _sessionGeneration || generation != _editGeneration)
+        {
+            _notifier.Notify("The editor changed while that project was opening. Open it again when you are ready.", NoticeKind.Warning);
+            return false;
+        }
+        var (document, error, fromBackup, check, history) = loaded;
 
         if (document is null)
         {
@@ -351,7 +378,6 @@ public sealed class ProjectSession
                 NoticeKind.Warning);
         }
 
-        SourceIntegrity check = document.CheckSource();
         if (check == SourceIntegrity.Missing)
         {
             _faults.Fatal("PROJECT",
@@ -369,13 +395,14 @@ public sealed class ProjectSession
                 NoticeKind.Warning);
         }
 
+        _sessionGeneration++;
+        _probedSource = (document.Source.FilePath, document.Source.SizeBytes, document.Source.ModifiedUtcSeconds);
         Apply(document);
         CurrentPath = chosen;
         _dirty = false;
         _history = new UndoStack<ProjectDocument>(document);
         _history.Changed += (_, _) => Raise();
 
-        UndoSidecar? history = _sidecar.Load(chosen, HistoryFingerprint(document));
         if (history is not null)
         {
             _history.Restore(history.Undo, history.Redo);
@@ -405,8 +432,8 @@ public sealed class ProjectSession
     ///
     /// <para>
     /// ⚠️ ONE WRITE IN FLIGHT. A tick that finds the previous write unfinished skips; the next
-    /// interval retries. Every write (this one and <see cref="WriteTo"/>) passes the ordered
-    /// <see cref="_ioGate"/>, so an older autosave can never land on top of a newer explicit save.
+    /// interval retries. Every write (this one and <see cref="WriteToAsync"/>) passes the ordered
+    /// <see cref="_ioTail"/>, so an older autosave can never land on top of a newer explicit save.
     /// </para>
     /// </summary>
     public void AutosaveTick()
@@ -418,7 +445,7 @@ public sealed class ProjectSession
         _lastAutosaveUtc = _clock.UtcNow;
 
         string savePath = CurrentPath!;
-        long generation = _editGeneration;
+        long generation = _editGeneration, session = _sessionGeneration;
         ProjectDocument snapshot = Capture(forExplicitSave: false);
 
         string? fingerprint = null;
@@ -426,7 +453,7 @@ public sealed class ProjectSession
         UndoEntry<ProjectDocument>[]? redo = null;
         if (_history is { } history)
         {
-            fingerprint = HistoryFingerprint(history.Current);
+            fingerprint = HistoryFingerprint(snapshot);
             undo = history.UndoEntries.ToArray();
             redo = history.RedoEntries.ToArray();
         }
@@ -434,33 +461,11 @@ public sealed class ProjectSession
         SynchronizationContext? ui = SynchronizationContext.Current;
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _autosaveCompletion = completion.Task;
-        long sequence = ++_writeSequence;
-
-        Task<ProjectIoResult> io = Task.Run(() =>
+        Task<ProjectIoResult> io = EnqueueIo(() =>
         {
-            lock (_ioGate)
-            {
-                if (sequence < _committedSequence) return ProjectIoResult.Ok(savePath);
-
-                ProjectIoResult result;
-                try
-                {
-                    result = _store.Save(snapshot, savePath);
-                }
-                catch (Exception ex)
-                {
-                    RuntimeLog.Swallowed(ex);
-                    result = ProjectIoResult.Fail(ex.Message);
-                }
-
-                if (result.Success)
-                {
-                    _committedSequence = sequence;
-                    if (fingerprint is not null) _sidecar.Save(savePath, fingerprint, undo!, redo!);
-                }
-
-                return result;
-            }
+            ProjectIoResult result = SaveSnapshot(snapshot, savePath);
+            if (result.Success && fingerprint is not null) _sidecar.Save(savePath, fingerprint, undo!, redo!);
+            return result;
         });
         _autosaveIo = io;
 
@@ -472,7 +477,7 @@ public sealed class ProjectSession
 
             void Finish()
             {
-                try { CompleteAutosave(result, savePath, generation); }
+                try { CompleteAutosave(result, savePath, generation, session); }
                 catch (Exception ex) { RuntimeLog.Swallowed(ex); }
                 finally { completion.TrySetResult(); }
             }
@@ -486,7 +491,7 @@ public sealed class ProjectSession
     /// AUTOSAVEBG_01 — the UI-thread half of a background autosave. A failure is Fatal, as it was
     /// when the write was synchronous: the user believes their work is on disk and it is not.
     /// </summary>
-    private void CompleteAutosave(ProjectIoResult result, string savePath, long generation)
+    private void CompleteAutosave(ProjectIoResult result, string savePath, long generation, long session)
     {
         if (!result.Success)
         {
@@ -496,7 +501,7 @@ public sealed class ProjectSession
             return;
         }
 
-        if (generation != _editGeneration) return;
+        if (session != _sessionGeneration || generation != _editGeneration) return;
         if (!string.Equals(CurrentPath, savePath, StringComparison.OrdinalIgnoreCase)) return;
 
         _dirty = false;
@@ -551,6 +556,8 @@ public sealed class ProjectSession
                 NoticeKind.Warning);
         }
 
+        _sessionGeneration++;
+        _probedSource = (document.Source.FilePath, document.Source.SizeBytes, document.Source.ModifiedUtcSeconds);
         Apply(document);
         CurrentPath = null;
         _dirty = false;
@@ -568,6 +575,9 @@ public sealed class ProjectSession
     {
         try
         {
+            try { await _ioTail; }
+            catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+            await PendingAutosave;
             if (!IsDirty) return true;
 
             bool save = await _notifier.ConfirmAsync(
@@ -578,17 +588,13 @@ public sealed class ProjectSession
 
             if (!save) return true;
 
-            if (await SaveForExitAsync()) return true;
-
-            return true;
+            return await SaveForExitAsync() && !IsDirty;
         }
         catch (Exception ex)
         {
-            _faults.Recoverable("PROJECT",
-            $"The unsaved-changes prompt failed during '{action}'; allowing it to proceed rather than "
-            + $"blocking the window. {ex.GetType().Name}: {ex.Message}", ex);
+            _faults.Fatal("PROJECT", $"Your work could not be saved before '{action}'. The editor remains open; retry or explicitly discard changes.", ex);
             global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
-            return true;
+            return false;
         }
     }
 
@@ -607,31 +613,13 @@ public sealed class ProjectSession
     /// not have the second silently destroy the first.
     /// </para>
     /// </summary>
-    private Task<bool> SaveForExitAsync()
+    private async Task<bool> SaveForExitAsync()
     {
         if (!string.IsNullOrWhiteSpace(CurrentPath))
-            return Task.FromResult(WriteTo(CurrentPath!, announce: true));
-
+            return await WriteToAsync(CurrentPath!, announce: true);
         string? video = _viewModel.LoadedVideoPath;
-        if (string.IsNullOrWhiteSpace(video))
-        {
-            return Task.FromResult(true);
-        }
-
-        string? directory = Path.GetDirectoryName(video);
-        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
-            directory = Path.GetDirectoryName(Environment.ProcessPath) ?? ".";
-
-        string stem = Path.GetFileNameWithoutExtension(video);
-        string path = Path.Combine(directory!, stem + ProjectDocument.FileExtension);
-
-        for (int i = 2; i <= 1000 && File.Exists(path); i++)
-            path = Path.Combine(directory!, $"{stem} ({i}){ProjectDocument.FileExtension}");
-
-        if (!WriteTo(path, announce: false)) return Task.FromResult(false);
-
-        _notifier.Notify($"Saved to {Path.GetFileName(path)} next to your video.", NoticeKind.Success);
-        return Task.FromResult(true);
+        if (string.IsNullOrWhiteSpace(video)) return true;
+        return await WriteToAsync(null, announce: true, closeVideo: video);
     }
 
     /// <summary>
@@ -658,10 +646,9 @@ public sealed class ProjectSession
     public ProjectDocument Capture() => Capture(forExplicitSave: false);
 
     /// <summary>
-    /// EDITHOT_01 — <paramref name="forExplicitSave"/> is true only for a save the user asked for.
-    /// Only that path touches the disk: it re-reads the live HUD mask under its mutex and re-stats the
-    /// source file. Edit ticks, undo/redo and autosave use the in-memory snapshots, so they never
-    /// block the UI thread (North Star #6).
+    /// PROJECTIO_01 — capture is always memory-only. The compatibility parameter
+    /// <paramref name="forExplicitSave"/> does not request disk access; explicit writes refresh
+    /// source metadata and the live mask on the ordered background worker.
     /// </summary>
     public ProjectDocument Capture(bool forExplicitSave)
     {
@@ -679,7 +666,7 @@ public sealed class ProjectSession
 
         return new ProjectDocument
         {
-            Source = ProbeSourceCached(path, timeline.LoadedVideoDurationMs, width, height, fps, forExplicitSave),
+            Source = ProbeSourceCached(path, timeline.LoadedVideoDurationMs, width, height, fps),
             BaseSpeed = timeline.BaseSpeed,
             SourceCutStartMs = cutStartMs,
             TrimmedDurationMs = trimmedMs,
@@ -706,7 +693,7 @@ public sealed class ProjectSession
                 PortraitMode = _viewModel.IsPortraitMode,
                 HardwareMode = "Auto",
             },
-            Mask = forExplicitSave ? ReadLiveMaskSafely() : ReadLiveMaskFastSafely(),
+            Mask = ReadLiveMaskFastSafely(),
             Merge = ReadMergeQueueSafely(),
             Captions = _viewModel.CaptionTrack,
             Title = string.IsNullOrWhiteSpace(path) ? "Untitled" : Path.GetFileNameWithoutExtension(path),
@@ -836,24 +823,15 @@ public sealed class ProjectSession
     }
 
 
-    private SourceClip ProbeSourceCached(string path, double durationMs, int width, int height, double fps, bool refresh)
+    private SourceClip ProbeSourceCached(string path, double durationMs, int width, int height, double fps)
     {
-        if (refresh || _probedSource is not { } cached || !string.Equals(cached.Path, path, StringComparison.OrdinalIgnoreCase))
-        {
-            SourceClip probed = SourceClip.Probe(path, durationMs, width, height, fps);
-            _probedSource = (path, probed.SizeBytes, probed.ModifiedUtcSeconds);
-            return probed;
-        }
-
+        var cached = _probedSource;
+        bool matches = cached.HasValue && string.Equals(cached.Value.Path, path, StringComparison.OrdinalIgnoreCase);
         return new SourceClip
         {
-            FilePath = path,
-            DurationMs = durationMs,
-            Width = width,
-            Height = height,
-            Fps = fps,
-            SizeBytes = cached.Size,
-            ModifiedUtcSeconds = cached.Modified,
+            FilePath = path, DurationMs = durationMs, Width = width, Height = height, Fps = fps,
+            SizeBytes = matches ? cached!.Value.Size : 0,
+            ModifiedUtcSeconds = matches ? cached!.Value.Modified : 0,
         };
     }
 
@@ -865,41 +843,116 @@ public sealed class ProjectSession
             _readLiveMaskFast,
             fallback: null);
 
-    private bool WriteTo(string path, bool announce, bool explicitSave = true)
+    private async Task<bool> WriteToAsync(string? path, bool announce, string? closeVideo = null)
     {
-        ProjectDocument document = Capture(forExplicitSave: explicitSave);
-
-        long sequence = ++_writeSequence;
-        ProjectIoResult result;
-        lock (_ioGate)
+        ProjectDocument document = Capture();
+        long session = _sessionGeneration, generation = _editGeneration, sequence = ++_writeSequence;
+        var undo = _history?.UndoEntries.ToArray();
+        var redo = _history?.RedoEntries.ToArray();
+        string? fingerprint = _history is { } history ? HistoryFingerprint(history.Current) : null;
+        var saved = await EnqueueIo(() =>
         {
-            result = _store.Save(document, path);
-
-            if (result.Success)
+            string? target = path;
+            string? reserved = null;
+            try
             {
-                _committedSequence = sequence;
-
-                if (_history is { } history)
-                    _sidecar.Save(path, HistoryFingerprint(history.Current), history);
+                if (target is null)
+                {
+                    string directory = Path.GetDirectoryName(closeVideo!) ?? ".";
+                    string stem = Path.GetFileNameWithoutExtension(closeVideo!);
+                    for (int i = 1; i <= 1000; i++)
+                    {
+                        string candidate = Path.Combine(directory, stem + (i == 1 ? "" : $" ({i})") + ProjectDocument.FileExtension);
+                        try
+                        {
+                            using var claim = new FileStream(candidate, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                            reserved = target = candidate;
+                            break;
+                        }
+                        catch (IOException ex) when (File.Exists(candidate)) { RuntimeLog.Swallowed(ex); }
+                    }
+                    if (target is null) throw new IOException("No unused project name was available beside the video.");
+                }
+                SourceClip source = document.Source;
+                ProjectDocument refreshed = document with
+                {
+                    Source = SourceClip.Probe(source.FilePath, source.DurationMs, source.Width, source.Height, source.Fps),
+                    Mask = _hasFastMask ? document.Mask : ReadLiveMaskSafely(),
+                };
+                ProjectIoResult result = SaveSnapshot(refreshed, target);
+                if (result.Success)
+                {
+                    reserved = null;
+                    if (fingerprint is not null) _sidecar.Save(target, HistoryFingerprint(refreshed), undo!, redo!);
+                }
+                return (Result: result, Document: refreshed);
             }
-        }
-
-        if (!result.Success)
+            catch (Exception ex)
+            {
+                RuntimeLog.Swallowed(ex);
+                return (Result: ProjectIoResult.Fail(ex.Message), Document: document);
+            }
+            finally
+            {
+                if (reserved is not null)
+                {
+                    try { if (new FileInfo(reserved).Length == 0) File.Delete(reserved); }
+                    catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+                }
+            }
+        });
+        if (!saved.Result.Success)
         {
-            _faults.Fatal("PROJECT",
-                "Your project could not be saved, so nothing was written." + Environment.NewLine +
-                Environment.NewLine + (result.Error ?? "The file could not be written."));
+            _faults.Fatal("PROJECT", "Your project could not be saved. Your edits remain open." + Environment.NewLine + saved.Result.Error);
             return false;
         }
-
-        CurrentPath = path;
-        _dirty = false;
-        _lastAutosaveUtc = _clock.UtcNow;
-
-        Raise();
-
-        if (announce) _notifier.Notify($"Saved {Path.GetFileNameWithoutExtension(path)}", NoticeKind.Success);
+        if (session == _sessionGeneration && sequence >= _publishedSequence)
+        {
+            _publishedSequence = sequence;
+            CurrentPath = saved.Result.Path;
+            _probedSource = (saved.Document.Source.FilePath, saved.Document.Source.SizeBytes, saved.Document.Source.ModifiedUtcSeconds);
+            if (generation == _editGeneration) _dirty = false;
+            _lastAutosaveUtc = _clock.UtcNow;
+            Raise();
+        }
+        if (announce) _notifier.Notify($"Saved {Path.GetFileNameWithoutExtension(saved.Result.Path)}", NoticeKind.Success);
         return true;
+    }
+
+    private ProjectIoResult SaveSnapshot(ProjectDocument document, string path)
+    {
+        try { return _store.Save(document, path); }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); return ProjectIoResult.Fail(ex.Message); }
+    }
+
+    private async Task<bool> RunCommandAsync(Func<Task<bool>> command)
+    {
+        if (_explicitIoPending)
+        {
+            _notifier.Notify("A project operation is still running. Please try again when it finishes.", NoticeKind.Info);
+            return false;
+        }
+        _explicitIoPending = true;
+        try { return await command(); }
+        catch (Exception ex)
+        {
+            _faults.Fatal("PROJECT", "The project operation could not finish. Your edits remain open.", ex);
+            return false;
+        }
+        finally { _explicitIoPending = false; }
+    }
+
+    private Task<T> EnqueueIo<T>(Func<T> work)
+    {
+        Task previous = _ioTail;
+        Task<T> next = Task.Run(async () =>
+        {
+            try { await previous.ConfigureAwait(false); }
+            catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+            return work();
+        });
+        _ioTail = next;
+        return next;
     }
 
     private string SuggestFileName()

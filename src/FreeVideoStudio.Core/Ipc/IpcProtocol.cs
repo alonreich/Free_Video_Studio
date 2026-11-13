@@ -114,7 +114,7 @@ public static class IpcProtocol
         }
     }
 
-    public static string PipeName => $"FreeVideoStudio_StateIpc_{UserScope}";
+    public static string PipeName => $"FreeVideoStudio_StateIpc_{UserScope}{DevelopmentEnvironment.ScopeSuffix}";
     /// <summary>
     /// IPCLEASE_01 — THE SINGLE-SERVER LEASE. IT IS THE OPEN HANDLE, NOT AN ACQUIRED LOCK.
     ///
@@ -150,7 +150,7 @@ public static class IpcProtocol
     /// takes the IPC test suite with them. Do not substitute one.
     /// ══════════════════════════════════════════════════════════════════════════════════════════
     /// </summary>
-    public static string ServerMutexName => $@"Local\FreeVideoStudio_IpcServerMutex_{UserScope}";
+    public static string ServerMutexName => $@"Local\FreeVideoStudio_IpcServerMutex_{UserScope}{DevelopmentEnvironment.ScopeSuffix}";
 
     public static bool IsConnectedClientTrusted(NamedPipeServerStream server)
     {
@@ -355,6 +355,11 @@ public static class IpcProtocol
             }, stream);
 
             await client.ConnectAsync(cts.Token).ConfigureAwait(false);
+            if (!PipeAccess.IsServerTrusted(client))
+            {
+                CoreLogger.Fail("IpcClient", $"{request} refused: the state pipe is served by a different user account.");
+                return null;
+            }
             await WriteFrameAsync(client, request, payload, cts.Token).ConfigureAwait(false);
             return await ReadFrameAsync(client, cts.Token).ConfigureAwait(false);
         }
@@ -382,12 +387,6 @@ public static class IpcProtocol
         {
             client?.Dispose();
         }
-    }
-
-    public static void WriteJsonFrame(Stream stream, IpcOpcode opcode, JsonObject? obj)
-    {
-        byte[] payload = ToUtf8Bytes(obj);
-        WriteFrame(stream, opcode, payload);
     }
 
     public static async ValueTask WriteJsonFrameAsync(Stream stream, IpcOpcode opcode, JsonObject? obj, CancellationToken ct = default)

@@ -12,26 +12,9 @@
 
 ---
 
-## 0. Routing (do this first, it is nearly free)
-Do NOT read every spec. Route once, read one.
-* Know the FILE -> `docs/README.md` §3.
-* Know only a SYMBOL, CONSTANT or ENGINEERING TAG -> grep `docs/INDEX.md`.
-* Landed on a row marked `⚠` -> that file is CO-GOVERNED; read every spec the row names.
-
-## 0a. CRITICAL AGENT MANDATE: STRICT BAN ON `Build.cmd` (CLOUD PUBLISH)
-**ALL AUTONOMOUS AI AGENTS ARE STRICTLY FORBIDDEN FROM EVER RUNNING `.\Build.cmd` OR `Build.cmd`.**
-
-* **`.\Build.cmd` Officially Publishes to Git Cloud:**
-  Running `.\Build.cmd` executes `FvsBuild` in production release mode, which creates release tags and **OFFICIALLY PUBLISHES A NEW PUBLIC VERSION ON GITHUB CLOUD**, making it instantly live and downloadable to everyone worldwide.
-* **MANDATORY LOCAL BUILD SCRIPT: `.\dev_build.cmd`:**
-  If an AI agent needs to perform a full build test, NativeAOT compilation verification, or packaging test, it **MUST ONLY USE `.\dev_build.cmd`** (or `dotnet build` / `dotnet test`).
-  `.\dev_build.cmd` passes `--dev` to `FvsBuild`:
-  - Builds strictly locally.
-  - Zero git tags created.
-  - Zero GitHub releases created or updated.
-  - Zero cloud network publishing.
-* **Prohibition Severity:** Any automated or agent execution of `.\Build.cmd` is classified as a severe operational violation.
-* **The release gate is not a licence.** Since RELGATE_01 `Build.cmd` refuses a dirty, unpushed or off-branch checkout and lint-failing notes, and asks a human to type `PUBLISH` (09 DIST-RELEASEGATE). That protects releases from mistakes; it does not make running it acceptable for an agent.
+## 0. Routing, Build.cmd Ban
+Route once, read one: grep `docs/INDEX.md` for the file, symbol or tag; `⚠` rows are co-governed (§2).
+Never run `Build.cmd` and how to build/test instead: `docs/README.md` §0.1 and §0.4 (canonical).
 
 ## 1. Absolute Stop-and-Read Mandate
 Developers and autonomous AI agents are strictly forbidden from inspecting, generating, refactoring, or modifying code in any source file (`.cs`, `.axaml`, `.cmd`, `.ps1`) without first loading, reading, and citing its mapped specification file from `docs/`. Speculative code modifications without active specification verification are classified as critical system defects.
@@ -51,13 +34,13 @@ Every code edit proposal, refactor plan, or architectural implementation block s
 [SCOPE CLAMP]: <Explicit confirmation of the precise method, struct, or file altered with zero outside side-effects>
 ```
 
-## 4. In-Code Source Sentinel
-Every production C# and AXAML code-behind source file across `src/` must carry the following immutable contract block at Line 1:
-```csharp
-// [SPEC CONTRACT] STRICT GOVERNANCE:
-// Forbidden to modify without reading: docs/0X_<MAPPED_SPEC>.md
-// Invariants, constants, and threading models must match spec bit-for-bit.
-```
+## 4. Specification Routing Without Repeated Source Headers
+`SPECROUTING_02` (user-approved 2026-11-01): production files do not require repeated
+`[SPEC CONTRACT]` headers. Keep the governing specifications in `docs/INDEX.md`, the domain
+mini-maps; read and cite them before code changes (§1–§3 still apply).
+Do not add boilerplate headers to satisfy a test. The former header-presence architecture test
+is retired by this explicit rule change. Fix-specific sentinel markers in `build/sentinels.txt`
+and behavioral tests remain required; they are distinct from the removed routing boilerplate.
 
 ## 5. Specification Invariant Audit Verification
 When audits or tests reveal discrepancies between text documentation and active C# implementation:
@@ -65,11 +48,7 @@ When audits or tests reveal discrepancies between text documentation and active 
 2. Obsolete workflows (e.g., legacy checkmark-based zoom models) must be purged from documentation and replaced with live production invariants (e.g., ZOOMLIVE continuous gestures).
 3. Critical unwritten defenses present in source code (e.g., WASAPI 3-second preview clock aborts, render thread OpenGL deadlock mitigations, sub-pixel pointer capture releases, atomic file replacement safeguards) must be codified directly into the governing specifications.
 
-## 6. Mandatory Change Logging & Project Map Staging (CHANGELOG_01 / RELNOTES_01)
-Every autonomous AI agent modifying application source code, UI elements, workflows, build tooling, tests or architectural structure must record the change before concluding (`docs/README.md` §0.3, `09_DISTRIBUTION_AND_RELEASE.md` DIST-RELEASENOTES):
-1. **Technical log:** an entry under `## Unreleased` in `docs/changes.md` — date, engineering tag, what changed and why, files touched.
-2. **User notes:** under the FIXED staging heading `## Upcoming` at the top of `docs/CHANGELOG.md` (never a guessed `## vYYYY.MM.DD.xxxx` heading — the build picks the version at release time). Plain, short, oversimplified English for the end user, `**Headline:** one or two sentences`. Technical jargon, internal method names, class names, file names and engineering tags are strictly forbidden. Merge with an existing bullet rather than adding a near-duplicate; at most 15 bullets. Purely internal changes need no user bullet.
-3. **Lint & retention are mechanical:** the release gate refuses notes that fail `ReleaseChangelog.LintUserNotes` (RELNOTES_02); an official release promotes `## Upcoming` / `## Unreleased` to `## v<version> — <date>` and keeps 5 releases in `docs/CHANGELOG.md` and 10 in `docs/changes.md`, moving older ones to `docs/CHANGELOG_ARCHIVE.md` / `docs/changes_ARCHIVE.md` (RELRECORD_01). Never prune or rename sections by hand. CI's `Release records` job fails a code change that does not touch `docs/changes.md` (CHANGELOG_02).
-4. **Automated Release Pipeline Integration:** When an official release is published via `Build.cmd` / `FvsBuild`, `ReleaseGate.PrepareNotes` takes the `## Upcoming` bullets as the GitHub release notes, which the in-app update card (`UpdateToastWindow`, RELNOTES_03) shows as "What's new".
-5. **Project Map Sync:** If new files, classes, or architecture rules are introduced or removed, the repository map (`docs/README.md` §5 — formerly `project_structure.txt`, which is now only a pointer) and `docs/INDEX.md` must be updated in tandem.
-6. **Mandatory Completion Block:** An AI agent is strictly forbidden from finishing a task or committing code without completing this change-logging step.
+## 6. Change Logging, Map Sync & Storage Inventory
+Canonical in `docs/README.md` §0.1 (STORAGEPATHS_01) and §0.3 (CHANGELOG_01 / RELNOTES_01 / RELRECORD_01):
+`changes.md` `## Unreleased` + `CHANGELOG.md` `## Upcoming`, `docs/REPO_MAP.md` + `docs/INDEX.md` §1 in step,
+storage table 05 SYS-STORAGE-TABLE. Finishing a task without them is forbidden.

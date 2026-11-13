@@ -96,11 +96,6 @@ public static class ThemeManager
     /// </summary>
     public static double ScaledFontSize(double baseSize) => Math.Round(baseSize * _currentFontMultiplier, 1);
 
-    /// <summary>
-    /// Returns the current font-size multiplier (1.0 = normal).
-    /// </summary>
-    public static double CurrentFontMultiplier => _currentFontMultiplier;
-
     private static void ApplyFontMultiplierToAllWindows()
     {
         if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)

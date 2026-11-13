@@ -834,15 +834,20 @@ public class ProcessWorker : IDisposable
 
                 if (mixMusicAfterMeme)
                 {
+                    double windowStart = introDurationSec + (musicTracks.Count > 0 ? musicTracks[0].TimelineStartDelay : 0);
                     for (int i = 0; i < musicTracks.Count; i++)
                     {
+                        double windowEnd = windowStart + musicTracks[i].Duration;
                         double shift = MemeTimeInsertedBefore(
                             introDurationSec + musicTracks[i].TimelineStartDelay, landsAfter: false);
+                        double inside = memes.Where(m => m.CutOutputSec >= windowStart - 1e-9 && m.CutOutputSec < windowEnd - 1e-9)
+                                             .Sum(m => m.DurationSec);
                         musicTracks[i] = musicTracks[i] with
                         {
-                            Duration = musicTracks[i].Duration + memeTotalDuration,
-                            TimelineStartDelay = musicTracks[i].TimelineStartDelay + shift
+                            Duration = musicTracks[i].Duration + inside,
+                            TimelineStartDelay = introDurationSec + musicTracks[i].TimelineStartDelay + shift
                         };
+                        windowStart = windowEnd;
                     }
                 }
 
@@ -1047,7 +1052,7 @@ public class ProcessWorker : IDisposable
                                 var pieces = VoiceOverSplice.Place(voStartOutSec, voiceDurations[take.Path], gDur, introDurationSec,
                                     memes.Select(m => (m.CutOutputSec - introDurationSec, m.DurationSec)));
                                 string postMemeLabel = $"[vo_delayed_{t}]";
-                                coreFilters.AddRange(VoiceOverSplice.Filters(inputIdx, postMemeLabel, $"vo_splice{t}", pieces));
+                                coreFilters.AddRange(VoiceOverSplice.Filters(inputIdx, postMemeLabel, $"vo_splice{t}", pieces, take.Gain));
                                 voMixedLabels.Add(postMemeLabel);
                                 musicProtectionWindows.AddRange(pieces.Select(p => (p.OutputStartSec, p.OutputStartSec + p.DurationSec)));
                                 continue;
@@ -1064,7 +1069,7 @@ public class ProcessWorker : IDisposable
                             int delayMs = Math.Max(0, (int)Math.Round(voDelaySec * 1000.0));
                             string delayLabel = $"[vo_delayed_{t}]";
                             
-                            coreFilters.Add($"[{inputIdx}:a]aresample=48000:async=1,{trimFilter}adelay={delayMs}|{delayMs}{delayLabel}");
+                            coreFilters.Add($"[{inputIdx}:a]{VoiceOverLevel.Filter(take.Gain)},aresample=48000:async=1,{trimFilter}adelay={delayMs}|{delayMs}{delayLabel}");
                             voMixedLabels.Add(delayLabel);
                         }
                         if (mixMusicAfterMeme && musicProtectionWindows.Count > 0)
@@ -1090,6 +1095,25 @@ public class ProcessWorker : IDisposable
 
                 string? finalVoLabelScope = effectiveTakes.Count > 0 ? "[vo_mixed_all]" : null;
 
+                string? freezeDipBody = null, freezeDipFinal = null;
+                if (musicTracks.Count > 0 && SpeedSegments != null && SpeedSegments.Any(sg => sg.Speed < 0.01))
+                {
+                    var freezeWindows = OutputTimeline.Create(
+                        actualExtractEndMs - actualExtractStartMs,
+                        SpeedSegments,
+                        SpeedFactor,
+                        actualExtractStartMs,
+                        cuts: exportCuts).FreezeOutputRanges();
+                    freezeDipBody = FreezeSoundEffect.MusicDipPulse(freezeWindows);
+                    freezeDipFinal = FreezeSoundEffect.MusicDipPulse(freezeWindows.Select(w =>
+                    {
+                        double shift = introDurationSec + memes
+                            .Where(m => m.CutOutputSec - introDurationSec <= w.StartOutputSec + 1e-6)
+                            .Sum(m => m.DurationSec);
+                        return (w.StartOutputSec + shift, w.EndOutputSec + shift);
+                    }));
+                }
+
                 string currentALabel = aPreparedPad;
                 if (!mixMusicAfterMeme)
                 {
@@ -1109,7 +1133,8 @@ public class ProcessWorker : IDisposable
                         musicLeadFadeIn: MusicLeadFadeIn,
                         musicTailFadeOut: MusicTailFadeOut,
                         voiceOverLabel: effectiveTakes.Count > 0 ? (effectiveTakes.Count > 1 ? "[vo_mixed_all]" : "[vo_delayed_0]") : null,
-                        voiceProtectMusicPulse: VoiceOverProtectFromMusic ? voicePulseExpr : null);
+                        voiceProtectMusicPulse: VoiceOverProtectFromMusic ? voicePulseExpr : null,
+                        freezeMusicDipPulse: freezeDipBody);
 
                     foreach (var part in built.chains)
                     {
@@ -1417,12 +1442,13 @@ public class ProcessWorker : IDisposable
                         48000,
                         musicTracks,
                         1,
-                        gDur + memeTotalDuration,
+                        renderDurationSec + memeTotalDuration,
                         aOutputFinal,
                         musicLeadFadeIn: MusicLeadFadeIn,
                         musicTailFadeOut: MusicTailFadeOut,
                         voiceOverLabel: effectiveTakes.Count > 0 ? (effectiveTakes.Count > 1 ? "[vo_mixed_all]" : "[vo_delayed_0]") : null,
-                        voiceProtectMusicPulse: VoiceOverProtectFromMusic ? voiceMusicPulseExpr : null);
+                        voiceProtectMusicPulse: VoiceOverProtectFromMusic ? voiceMusicPulseExpr : null,
+                        freezeMusicDipPulse: freezeDipFinal);
 
                     foreach (var part in built.chains)
                     {
@@ -2153,15 +2179,7 @@ public class ProcessWorker : IDisposable
 
                 try
                 {
-                    try
-                    {
-                        File.Move(corePath, finalOutput, overwrite: true);
-                    }
-                    catch (IOException)
-                    {
-                        File.Copy(corePath, finalOutput, true);
-                        try { File.Delete(corePath); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
-                    }
+                    await FinalOutputCommit.MoveAsync(corePath, finalOutput, overwrite: true).ConfigureAwait(false);
                 }
                 catch (Exception copyEx)
                 {
@@ -2843,4 +2861,4 @@ public class ProcessWorker : IDisposable
 
 public record VoiceOverTake(string Path, double StartSec, double OutputOffsetSec = 0,
     double? DurationSec = null, double? RecordedEndSec = null, string? TimingSignature = null,
-    bool NeedsTimingReview = false);
+    bool NeedsTimingReview = false, double Gain = 1.0);

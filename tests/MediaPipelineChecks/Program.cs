@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
 using FreeVideoStudio.Core.Ipc;
 using FreeVideoStudio.Core.Media;
+using FreeVideoStudio.Testing;
 
 if (args.Length == 5 && args[0] == "--libavframe-cold")
 {
@@ -32,8 +33,8 @@ if (args.Length == 4 && args[0] == "--libav-cold")
 string root = Directory.GetCurrentDirectory();
 string ffmpeg = Path.Combine(root, "binaries", "ffmpeg.exe");
 if (!File.Exists(ffmpeg)) throw new InvalidOperationException("Run from the workspace root.");
-string work = Path.Combine(root, "tests", "MediaPipelineChecks", "artifacts", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss"));
-Directory.CreateDirectory(work);
+using var outputLease = TestArtifactDirectory.Begin(root,
+    args.Contains("--libav-soak") ? "DecoderSoak" : "Media", out string work);
 Directory.CreateDirectory(Path.Combine(work, "temp"));
 Environment.SetEnvironmentVariable("TMP", Path.Combine(work, "temp"));
 Environment.SetEnvironmentVariable("TEMP", Path.Combine(work, "temp"));

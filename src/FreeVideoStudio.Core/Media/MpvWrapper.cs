@@ -1,4 +1,4 @@
-
+﻿
 using System;
 using System.Globalization;
 using System.Runtime.InteropServices;
@@ -28,6 +28,33 @@ public static partial class MpvWrapper
 
     [LibraryImport(LibraryName, StringMarshalling = StringMarshalling.Utf8)]
     public static partial int mpv_command_string(nint ctx, string args);
+
+    [LibraryImport(LibraryName)]
+    private static partial int mpv_command_async(nint ctx, ulong replyUserdata, nint arguments);
+
+    [LibraryImport(LibraryName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int mpv_get_property_async(nint ctx, ulong replyUserdata, string name, MpvFormat format);
+
+    public static int CommandAsync(nint handle, ulong replyUserdata, string[] arguments)
+    {
+        nint[] strings = new nint[arguments.Length];
+        nint argv = Marshal.AllocHGlobal((arguments.Length + 1) * nint.Size);
+        try
+        {
+            for (int i = 0; i < arguments.Length; i++)
+            {
+                strings[i] = Marshal.StringToCoTaskMemUTF8(arguments[i]);
+                Marshal.WriteIntPtr(argv, i * nint.Size, strings[i]);
+            }
+            Marshal.WriteIntPtr(argv, arguments.Length * nint.Size, nint.Zero);
+            return mpv_command_async(handle, replyUserdata, argv);
+        }
+        finally
+        {
+            foreach (nint value in strings) if (value != nint.Zero) Marshal.FreeCoTaskMem(value);
+            Marshal.FreeHGlobal(argv);
+        }
+    }
 
     [LibraryImport(LibraryName, StringMarshalling = StringMarshalling.Utf8)]
     public static partial int mpv_set_property_string(nint ctx, string name, string data);
@@ -62,7 +89,12 @@ public static partial class MpvWrapper
         None = 0,
         Shutdown = 1,
         LogMessage = 2,
+        GetPropertyReply = 3,
+        SetPropertyReply = 4,
+        CommandReply = 5,
+        StartFile = 6,
         EndFile = 7,
+        FileLoaded = 8,
         Seek = 20,
         PlaybackRestart = 21,
         PropertyChange = 22,
@@ -112,14 +144,6 @@ public static partial class MpvWrapper
     }
 
 
-    /// <summary>Sets the 'pause' property.</summary>
-    public static void SetPause(nint handle, bool pause)
-    {
-        if (handle != nint.Zero)
-            mpv_set_property_string(handle, "pause", pause ? "yes" : "no");
-    }
-
-
     /// <summary>Sets the 'volume' property (integer 0–100+).</summary>
     public static void SetVolume(nint handle, int volume)
     {
@@ -165,37 +189,6 @@ public static partial class MpvWrapper
         if (handle == nint.Zero) return;
         string safePath = path.Replace("\\", "\\\\").Replace("\"", "\\\"");
         mpv_command_string(handle, $"loadfile \"{safePath}\"");
-    }
-
-    /// <summary>
-    /// AICAPTION_EXPORT_01 — loads an ASS subtitle file into libmpv (sub-add) for live preview.
-    /// </summary>
-    public static void AddSubtitles(nint handle, string path, bool select = true)
-    {
-        if (handle == nint.Zero) return;
-        string safePath = path.Replace("\\", "\\\\").Replace("\"", "\\\"");
-        string flag = select ? "select" : "auto";
-        mpv_command_string(handle, $"sub-add \"{safePath}\" {flag}");
-    }
-
-    /// <summary>
-    /// AICAPTION_EXPORT_01 — removes subtitle tracks from libmpv preview.
-    /// </summary>
-    public static void RemoveSubtitles(nint handle)
-    {
-        if (handle == nint.Zero) return;
-        mpv_command_string(handle, "sub-remove");
-    }
-
-    /// <summary>
-    /// Sets the 'start' property independently BEFORE a loadfile, per project
-    /// IPC rule (mpv ignores options embedded in the loadfile command).
-    /// </summary>
-    public static void SetStartPosition(nint handle, double seconds)
-    {
-        if (handle != nint.Zero)
-            mpv_set_property_string(handle, "start",
-                seconds > 0 ? seconds.ToString(CultureInfo.InvariantCulture) : "0");
     }
 
 
