@@ -160,6 +160,8 @@ jobs:
     needs: sentinels
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true  # CILFS_01: binaries/ffmpeg.exe and the libav DLLs are LFS objects; without this the tests start a pointer file
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -221,6 +223,8 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true  # CILFS_01
 
       - uses: actions/setup-dotnet@v4
         with:
