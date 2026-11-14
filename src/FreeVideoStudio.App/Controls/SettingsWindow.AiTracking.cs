@@ -68,6 +68,8 @@ public partial class SettingsWindow : Window
             badge.Text = $"★ Recommended: {VendorLabel(AiVisionProviders.RecommendedVendor)} · {AiVisionProviders.RecommendedModel}";
 
         WireAddKey(scope);
+        WireAiModeRow(scope);
+        BuildLocalAiUi(scope);
         WireDefaultAiRow(scope);
         BuildSavedKeyRows(scope);
         Vm.Reloaded += () => { ShowDefaultAiRow(scope); BuildSavedKeyRows(scope); };
@@ -94,15 +96,58 @@ public partial class SettingsWindow : Window
         {
             string? problem = Vm.AddKey(box.Text, out AiVendor vendor);
             if (problem != null) { SetStatusText(status, problem, StatusTone.Warning); return; }
+            SetStatusText(status, $"Checking the {VendorLabel(vendor)} key…", StatusTone.Muted);
+            add.IsEnabled = false;
+            KeyTestResult? check;
+            try { check = await Vm.TestKeyAsync(vendor); }
+            finally { add.IsEnabled = true; }
+            if (check is not { Success: true } && check is not { Unverified: true })
+            {
+                Vm.UndoAddKey();
+                string why = check?.Message ?? "The key could not be checked.";
+                SetStatusText(status, $"{VendorLabel(vendor)} key not saved: {why}", check is { Cancelled: true } ? StatusTone.Muted : StatusTone.Danger);
+                return;
+            }
             box.Text = "";
             box.RevealPassword = false;
-            SetStatusText(status, $"{VendorLabel(vendor)} key added. Checking it… (it is saved when you press SAVE)", StatusTone.Muted);
-            await Vm.TestKeyAsync(vendor);
-            var result = Vm.StatusFor(vendor);
-            SetStatusText(status, $"{VendorLabel(vendor)}: {result.Text}", result.Tone);
+            if (!Vm.SaveKeysNow())
+            {
+                SetStatusText(status, $"The {VendorLabel(vendor)} key could not be saved. Try again.", StatusTone.Danger);
+                return;
+            }
+            _showAiModeRow?.Invoke();
+            SetStatusText(status, check.Success
+                ? $"{VendorLabel(vendor)} key saved. {check.Message}"
+                : $"{VendorLabel(vendor)} key saved, but it could not be checked now ({check.Message}). Press Test later.",
+                check.Success ? StatusTone.Success : StatusTone.Warning);
         }
 
         add.Click += (_, _) => _ = AddAsync();
+        if (scope.Find("AiChatGptSignInBtn") is Button chatGpt)
+        {
+            chatGpt.Click += async (_, _) =>
+            {
+                chatGpt.IsEnabled = false;
+                SetStatusText(status, "Opening ChatGPT in your browser. Finish signing in there…", StatusTone.Muted);
+                ChatGptSignInResult result;
+                try { result = await ChatGptAuth.SignInAsync(null, System.Threading.CancellationToken.None); }
+                finally { chatGpt.IsEnabled = true; }
+                if (!result.Success)
+                {
+                    SetStatusText(status, result.Message, result.Cancelled ? StatusTone.Muted : StatusTone.Danger);
+                    return;
+                }
+                if (!Vm.KeyReadyFor(AiUsage.ViralPost) || string.IsNullOrWhiteSpace(Vm.PendingKey(Vm.DefaultAi.Vendor)) || Vm.DefaultAi.Vendor == AiVendor.OpenAI)
+                {
+                    var planModels = await AiKeyValidator.Instance.ListModelsAsync(AiVendor.OpenAI, ChatGptAuth.CredentialMarker, System.Threading.CancellationToken.None);
+                    Vm.SetDefaultAi(AiVendor.OpenAI, planModels.Count > 0 ? AiVisionProviders.PickReplacement(AiVendor.OpenAI, planModels, null) : null);
+                }
+                Vm.SaveKeysNow();
+                BuildSavedKeyRows(scope);
+                _showAiModeRow?.Invoke();
+                SetStatusText(status, result.Message + " AI features now use your ChatGPT plan.", StatusTone.Success);
+            };
+        }
         box.AddHandler(Avalonia.Input.InputElement.KeyDownEvent, (object? _, Avalonia.Input.KeyEventArgs e) =>
         {
             if (e.Key != Avalonia.Input.Key.Enter || e.KeyModifiers != Avalonia.Input.KeyModifiers.None) return;
@@ -113,6 +158,36 @@ public partial class SettingsWindow : Window
         if (scope.Find("AiGetFreeKeyBtn") is Button g) g.Click += (_, _) => AiSetupWizardWindow.OpenAiStudio();
         if (scope.Find("AiGetClaudeKeyBtn") is Button c) c.Click += (_, _) => AiVisionProviders.OpenAnthropicConsole();
         if (scope.Find("AiGetOpenAiKeyBtn") is Button o) o.Click += (_, _) => AiVisionProviders.OpenOpenAiPlatform();
+    }
+
+    /// <summary>AIMODE_01 — "How AI works: …" and Change…; keys the walk-through saved are copied into this window so SAVE keeps them.</summary>
+    private void WireAiModeRow(INameScope scope)
+    {
+        void ShowMode()
+        {
+            AiMode saved = SettingsManager.Instance.AiMode;
+            if (scope.Find("AiModeCard") is Control card)
+                card.IsVisible = AiSetup.PcAvailable || AiSetup.UsesPc(saved);
+            if (scope.Find("AiModeStatusText") is TextBlock t)
+                t.Text = "How AI works: " + AiSetup.DisplayName(AiSetup.CurrentIsComplete() ? AiSetup.Current() : AiMode.NotChosen);
+            Vm.OnlineAiOff = saved == AiMode.LocalOnly;
+        }
+        _showAiModeRow = () => { ShowMode(); BuildSavedKeyRows(scope); };
+        if (scope.Find("AiModeChangeBtn") is Button change)
+        {
+            change.Click += async (_, _) =>
+            {
+                await AiModeWindow.RunAsync(this);
+                var s = SettingsManager.Instance;
+                Vm.GeminiApiKey = s.GeminiApiKey ?? string.Empty;
+                Vm.ClaudeApiKey = s.ClaudeApiKey ?? string.Empty;
+                Vm.OpenAiApiKey = s.OpenAiApiKey ?? string.Empty;
+                BuildSavedKeyRows(scope);
+                ShowMode();
+                _showLocalAiCard?.Invoke();
+            };
+        }
+        ShowMode();
     }
 
     private readonly List<(KeyTestStatus Model, System.ComponentModel.PropertyChangedEventHandler Handler)> _keyRowHandlers = new();
@@ -131,10 +206,11 @@ public partial class SettingsWindow : Window
             AiVendor v = vendor;
             string tail = key.Length > 4 ? key[^4..] : key;
             bool inUse = Vm.DefaultAi.Vendor == v;
+            string use = Vm.OnlineAiOff ? "   (not used: On this PC only)" : inUse ? "   (used by every AI feature)" : "";
 
             var name = new TextBlock
             {
-                Text = $"{label} key  ••••{tail}" + (inUse ? "   (used by every AI feature)" : ""),
+                Text = $"{label} key  ••••{tail}" + use,
                 FontWeight = FontWeight.SemiBold,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,
@@ -142,12 +218,14 @@ public partial class SettingsWindow : Window
             var state = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Avalonia.Thickness(0, 4, 0, 0) };
             KeyTestStatus model = Vm.StatusFor(v);
             SetStatusText(state, model.Text, model.Tone);
+            if (!model.IsBusy && AiKeyHealth.IsNotWorking(v, key))
+                SetStatusText(state, "This key stopped working (it may have expired or been deleted). Paste a new key above, or press Test to try it again.", StatusTone.Danger);
             var test = new Button { Content = "Test", MinWidth = 70, IsEnabled = !model.IsBusy };
             var remove = new Button { Content = "Remove", Margin = new Avalonia.Thickness(10, 0, 0, 0) };
             test.Classes.Add("Secondary");
             remove.Classes.Add("Secondary");
             ToolTip.SetTip(test, $"Checks the {label} key with {label}.");
-            ToolTip.SetTip(remove, "Clears this key. It is deleted when you press SAVE.");
+            ToolTip.SetTip(remove, "Deletes this key from this PC (asks first).");
             Avalonia.Automation.AutomationProperties.SetName(test, $"Test the {label} key");
             Avalonia.Automation.AutomationProperties.SetName(remove, $"Remove the {label} key");
 
@@ -159,10 +237,18 @@ public partial class SettingsWindow : Window
             model.PropertyChanged += onStatus;
             _keyRowHandlers.Add((model, onStatus));
             test.Click += (_, _) => _ = Vm.TestKeyAsync(v);
-            remove.Click += (_, _) =>
+            remove.Click += async (_, _) =>
             {
+                bool last = VendorItems.Count(x => Vm.PendingKey(x.Vendor).Trim().Length > 0) <= 1;
+                if (!await ConfirmDialogWindow.AskAsync(this,
+                        $"Delete the {label} key from this PC?" + (last ? "\n\nIt is your only AI key. Online AI features stop working until you add a key again." : ""),
+                        "Delete AI Key", "Delete", "Keep", destructive: true)) return;
                 Vm.RemoveKey(v);
-                SetStatusText(scope.Find("AiAddKeyStatusText") as TextBlock, $"The {label} key will be deleted when you press SAVE.", StatusTone.Warning);
+                bool saved = Vm.SaveKeysNow();
+                _showAiModeRow?.Invoke();
+                SetStatusText(scope.Find("AiAddKeyStatusText") as TextBlock,
+                    saved ? $"The {label} key was deleted." : $"The {label} key could not be deleted. Try again.",
+                    saved ? StatusTone.Muted : StatusTone.Danger);
             };
 
             var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*, Auto, Auto"), RowDefinitions = new RowDefinitions("Auto, Auto") };
@@ -178,7 +264,52 @@ public partial class SettingsWindow : Window
             card.Classes.Add("Card");
             panel.Children.Add(card);
         }
+        if (ChatGptAuth.IsSignedIn) panel.Children.Add(BuildChatGptRow(scope));
         Vm.RaiseAiReady();
+    }
+
+    private Border BuildChatGptRow(INameScope scope)
+    {
+        string email = ChatGptAuth.SignedInEmail;
+        bool inUse = Vm.DefaultAi.Vendor == AiVendor.OpenAI;
+        var name = new TextBlock
+        {
+            Text = $"ChatGPT plan{(email.Length > 0 ? $"  ({email})" : "")}" + (Vm.OnlineAiOff ? "   (not used: On this PC only)" : inUse ? "   (used by every AI feature)" : "   (used when OpenAI is picked)"),
+            FontWeight = FontWeight.SemiBold,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+        };
+        var state = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Avalonia.Thickness(0, 4, 0, 0) };
+        if (AiKeyHealth.IsNotWorking(AiVendor.OpenAI, ChatGptAuth.CredentialMarker))
+            SetStatusText(state, "Your ChatGPT sign-in has ended. Press Continue with ChatGPT below to sign in again.", StatusTone.Danger);
+        else
+            SetStatusText(state, "Signed in with ChatGPT. AI features use your plan, with no extra charge. OpenAI requests use the plan even if an OpenAI key is saved.", StatusTone.Success);
+        var usage = new Button { Content = "Manage usage", Margin = new Avalonia.Thickness(10, 0, 0, 0) };
+        var signOut = new Button { Content = "Sign out", Margin = new Avalonia.Thickness(10, 0, 0, 0) };
+        usage.Classes.Add("Secondary");
+        signOut.Classes.Add("Secondary");
+        ToolTip.SetTip(usage, "Opens chatgpt.com/settings/usage, where you can see your plan's limit or set one for this app.");
+        ToolTip.SetTip(signOut, "Stops this app from using your ChatGPT plan.");
+        usage.Click += (_, _) => ShellLauncher.TryOpen(ChatGptAuth.ManageUsageUrl, "ChatGPT usage");
+        signOut.Click += async (_, _) =>
+        {
+            signOut.IsEnabled = false;
+            string message = await ChatGptAuth.SignOutAsync(System.Threading.CancellationToken.None);
+            BuildSavedKeyRows(scope);
+            FloatingNotice.Info(this, message);
+        };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*, Auto, Auto"), RowDefinitions = new RowDefinitions("Auto, Auto") };
+        Grid.SetColumn(usage, 1);
+        Grid.SetColumn(signOut, 2);
+        Grid.SetRow(state, 1);
+        Grid.SetColumnSpan(state, 3);
+        grid.Children.Add(name);
+        grid.Children.Add(usage);
+        grid.Children.Add(signOut);
+        grid.Children.Add(state);
+        var card = new Border { Child = grid };
+        card.Classes.Add("Card");
+        return card;
     }
 
 

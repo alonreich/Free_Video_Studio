@@ -79,7 +79,7 @@ public sealed class GeminiProvider : IAiVisionProvider
                 effectiveReasoning = null;
                 CoreLogger.Info("GEMINI", $"Model '{model}' refused the thinking setting; retrying with its default.");
             }
-            catch (GeminiException ex) when (pass < 2 && video != null && includeFps && AiAnswerGuard.IsFpsRejection(ex))
+            catch (GeminiException ex) when (pass < 2 && video is { AllowFpsFallback: true } && includeFps && AiAnswerGuard.IsFpsRejection(ex))
             {
                 userLog?.Invoke($"Google Gemini ({model}) rejected custom FPS metadata — retrying clip with default sampling…");
                 CoreLogger.Info("GEMINI", "Retrying generateContent without videoMetadata.fps...");
@@ -156,6 +156,7 @@ public sealed class GeminiProvider : IAiVisionProvider
             w.WriteStartObject("generationConfig");
             if (temperature is double t) w.WriteNumber("temperature", Math.Clamp(t, 0, 2));
             w.WriteString("responseMimeType", "application/json");
+            if (video?.MediaResolution is { Length: > 0 } mediaResolution) w.WriteString("mediaResolution", mediaResolution);
 
             if (!string.IsNullOrWhiteSpace(jsonSchema))
             {

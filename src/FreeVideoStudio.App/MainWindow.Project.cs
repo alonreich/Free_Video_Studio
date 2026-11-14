@@ -143,6 +143,16 @@ public partial class MainWindow
     /// its work still in memory.
     /// </para>
     /// </summary>
+    internal Func<Task<bool>>? StopExportDecisionSeam;
+
+    private async Task<bool> ConfirmStopExportOnCloseAsync()
+    {
+        if (_exportCoordinator.State != Services.ExportState.Running) return true;
+        return await (StopExportDecisionSeam?.Invoke() ?? Controls.ConfirmDialogWindow.AskAsync(this,
+            "Your video is still being made. If you close now, the export stops and the video will not be finished.",
+            "Stop the export?", "Stop and close", "Keep exporting", destructive: true));
+    }
+
     private async Task<bool> ConfirmProjectDiscardOnCloseAsync()
     {
         await SettleVoiceTimingAsync();

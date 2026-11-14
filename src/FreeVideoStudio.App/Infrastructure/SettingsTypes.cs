@@ -122,3 +122,11 @@ public sealed class AiUsageListJsonConverter : JsonConverter<IReadOnlyList<AiUsa
         writer.WriteEndArray();
     }
 }
+
+/// <summary>AIMODE_01 — "How should AI work?" on disk (its enum name); unknown text reads as NotChosen.</summary>
+public sealed class AiModeJsonConverter : JsonConverter<AiMode>
+{
+    private static readonly LenientEnumConverter<AiMode> Inner = new(AiMode.NotChosen);
+    public override AiMode Read(ref Utf8JsonReader r, Type t, JsonSerializerOptions o) => Inner.Read(ref r, t, o);
+    public override void Write(Utf8JsonWriter w, AiMode v, JsonSerializerOptions o) => Inner.Write(w, v, o);
+}

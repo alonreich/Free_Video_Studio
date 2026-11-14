@@ -392,9 +392,22 @@
                         <TabItem Header="AI" Name="AiFeaturesTab">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
                                 <StackPanel Classes="Page" Spacing="14">
-                                    <TextBlock Classes="Hint" Margin="0,4,0,0" Text="AI runs in the cloud with your own key. Nothing is sent until you use an AI feature."/>
+                                    <!-- AIMODE_01 — "How should AI work?" can be changed here at any time. -->
+                                    <Border Classes="Card" Name="AiModeCard">
+                                        <Grid ColumnDefinitions="*, Auto">
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Name="AiModeStatusText" FontWeight="SemiBold" Text="How AI works: Not set up yet"/>
+                                                <TextBlock Classes="Hint" TextWrapping="Wrap" Text="On this PC, online, or both. Nothing is sent until you use an AI feature."/>
+                                            </StackPanel>
+                                            <Button Name="AiModeChangeBtn" Grid.Column="1" Classes="Primary" Content="Change…" Cursor="Hand" VerticalAlignment="Center"
+                                                    ToolTip.Tip="Opens the short walk-through: pick On this PC, Online, or Both."/>
+                                        </Grid>
+                                    </Border>
                                     <Border Classes="Card" BorderBrush="{DynamicResource AppWarningBrush}" IsVisible="{Binding Vm.AiNeedsKey}">
                                         <TextBlock Classes="Hint" Foreground="{DynamicResource AppWarningBrush}" Text="Add an AI key in 'AI keys' first. Greyed-out features switch on as soon as their company has a key."/>
+                                    </Border>
+                                    <Border Classes="Card" BorderBrush="{DynamicResource AppWarningBrush}" IsVisible="{Binding Vm.OnlineAiOff}">
+                                        <TextBlock Classes="Hint" TextWrapping="Wrap" Foreground="{DynamicResource AppWarningBrush}" Text="You chose 'On this PC only', so the online features below are switched off and your keys are not used. Press Change… above to use them."/>
                                     </Border>
                                     <!-- SETKEYSFIRST_01 — the "AI keys" panel moves here (top) when no key is saved yet. -->
                                     <StackPanel Name="AiKeysTopHost"/>
@@ -413,7 +426,15 @@
                                             <CheckBox Name="AiEliminationTrackerCheckBox" FontWeight="SemiBold" Content="Mark my kills on the timeline"
                                                       IsChecked="{Binding Vm.AiEliminationTrackerEnabled, Mode=TwoWay}"
                                                       ToolTip.Tip="When a video opens, the AI looks at its loudest action moments and puts a red ✕ above the timeline at each of YOUR kills. Click a ✕ to jump there.&#x0a;&#x0a;To do that it sends 2 still pictures per loud moment (at most 60 per video) to your AI company."/>
-                                            <TextBlock Classes="Hint" Text="Puts a red ✕ above the timeline at each of your kills. Sends up to 60 still pictures per video to your AI company."/>
+                                            <TextBlock Classes="Hint" Text="Puts a red ✕ above the timeline at each of your kills. Sends up to 120 still pictures (2 per checked moment) per video, or per clip in the Video Merger, to your AI company. A scan estimated under 5 cents starts by itself; a dearer one waits until you click the chip above the timeline. Right-click the chip to scan again."/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Classes="Card">
+                                        <StackPanel Spacing="6">
+                                            <CheckBox Name="AiAskBeforeRunCheckBox" FontWeight="SemiBold" Content="Ask me before each AI run"
+                                                      IsChecked="{Binding Vm.AiAskBeforeEveryRun, Mode=TwoWay}"
+                                                      ToolTip.Tip="On: AI Smart Zoom and AI Commentary show what is sent and the estimated price before they start.&#x0a;Off: runs estimated under $0.05 start without asking (the same as the &quot;don't ask under $0.05&quot; button)."/>
+                                            <TextBlock Classes="Hint" Text="When this is off, AI runs that cost less than about 5 cents start without asking. A run whose price is not known always asks."/>
                                         </StackPanel>
                                     </Border>
                                     <TextBlock Classes="Hint" Text="Always available where you work: AI SMART ZOOM and AI COMMENTARY in the Speed Editor, MAGIC WAND in the Crop Tool, and AI Auto-Fit in the Add Music wizard. Saving a key lets them send pictures and short clips to that company."/>
@@ -458,11 +479,16 @@
                                                               IsChecked="{Binding #AiNewKeyTextBox.RevealPassword, Mode=TwoWay}" AutomationProperties.Name="Show the key"
                                                               ToolTip.Tip="Shows the key as letters so you can check it. It goes back to dots when you leave this tab."/>
                                                 <Button Name="AiAddKeyBtn" Grid.Column="2" Classes="Primary" Content="Add key" Cursor="Hand" MinWidth="90"
-                                                        ToolTip.Tip="Recognises the company, checks the key with it, and keeps it (saved when you press SAVE)."/>
+                                                        ToolTip.Tip="Recognises the company, saves the key right away, and checks it with that company."/>
                                             </Grid>
                                             <TextBlock Name="AiAddKeyStatusText" Classes="Hint" Text="" TextWrapping="Wrap"/>
                                             <!-- One row per saved key (built in SettingsWindow.AiTracking.cs). -->
                                             <StackPanel Name="AiSavedKeysPanel" Spacing="8"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <Button Name="AiChatGptSignInBtn" Classes="Primary" Content="Continue with ChatGPT" Cursor="Hand"
+                                                        ToolTip.Tip="ChatGPT Plus or Pro: use your plan in this app, with no key and no extra charge. Your browser opens to sign in."/>
+                                                <TextBlock Classes="Hint" Text="No key needed with ChatGPT Plus or Pro." VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                            </StackPanel>
                                             <StackPanel Orientation="Horizontal" Spacing="10">
                                                 <TextBlock Classes="Hint" Text="No key yet? Get one:" VerticalAlignment="Center"/>
                                                 <Button Name="AiGetFreeKeyBtn" Classes="Secondary" Content="Google (free)" Cursor="Hand" ToolTip.Tip="Opens Google AI Studio in your browser, where you can make a free key."/>
@@ -482,6 +508,23 @@
                                             </Grid>
                                             <Slider Name="AiBaseZoomSlider" Minimum="1.5" Maximum="4.0" TickFrequency="0.1" IsSnapToTickEnabled="True" SmallChange="0.1" LargeChange="0.5" Value="{Binding Vm.AiZoomBaseScale, Mode=TwoWay}" AutomationProperties.Name="Zoom strength"/>
                                             <TextBlock Classes="Hint" Text="The camera follows the game you picked on the Editing tab."/>
+                                            <TextBlock Classes="Hint" TextWrapping="Wrap" Text="In phone format (9:16) the zoom stops at about 1.6x, so the player stays in the picture."/>
+                                        </StackPanel>
+                                    </Expander>
+
+                                    <!-- LOCALAI_01 — optional Local AI pack: AI Smart Zoom follows the target on this computer. -->
+                                    <Expander Name="LocalAiExpander" Header="PC AI (follow targets on this computer)" HorizontalAlignment="Stretch"
+                                              ToolTip.Tip="An optional download that lets AI SMART ZOOM follow the target on your own PC: free, and the video is not sent online. Switch it on with Change… at the top of this tab.">
+                                        <StackPanel Spacing="6" Margin="0,8,0,0">
+                                            <TextBlock Classes="Hint" TextWrapping="Wrap"
+                                                       Text="With the PC AI, AI SMART ZOOM follows the target on your own computer: no cost, and the video never leaves your PC. Online AI is then used only to find who is in the block (3 pictures), and not at all when you follow your own zoom box."/>
+                                            <TextBlock Name="LocalAiStatusText" TextWrapping="Wrap" FontWeight="SemiBold"/>
+                                            <ProgressBar Name="LocalAiProgress" Minimum="0" Maximum="100" Height="6" IsVisible="False"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Button Name="LocalAiInstallBtn" Classes="Primary" Content="Reinstall" Cursor="Hand" IsVisible="False"/>
+                                                <Button Name="LocalAiCancelBtn" Classes="Secondary" Content="Cancel" Cursor="Hand" IsVisible="False"/>
+                                                <Button Name="LocalAiRemoveBtn" Classes="Secondary" Content="Remove" Cursor="Hand"/>
+                                            </StackPanel>
                                         </StackPanel>
                                     </Expander>
                                 </StackPanel>

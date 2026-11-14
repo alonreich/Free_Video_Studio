@@ -1689,8 +1689,34 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
 
     private bool _videoPipelineShutDown;
 
+    private bool _closePromptOpen;
+
     protected override async void OnClosing(Avalonia.Controls.WindowClosingEventArgs e)
     {
+        if (!_isSafeToClose && _mergeCts != null && !_mergeCts.IsCancellationRequested)
+        {
+            e.Cancel = true;
+            if (_closePromptOpen) return;
+            _closePromptOpen = true;
+            bool stop;
+            try
+            {
+                stop = await Controls.ConfirmDialogWindow.AskAsync(this,
+                    "Your clips are still being joined. If you close now, the merge stops and the video will not be finished.",
+                    "Stop the merge?", "Stop and close", "Keep merging", destructive: true);
+            }
+            finally { _closePromptOpen = false; }
+            if (!stop)
+            {
+                RuntimeLog.Info("MERGER", "Close cancelled — the user chose to let the running merge finish.");
+                return;
+            }
+            RuntimeLog.Info("MERGER", "Close confirmed during a merge; cancelling it.");
+            try { _mergeCts?.Cancel(); _activeMergerWorker?.Cancel(); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+            Avalonia.Threading.Dispatcher.UIThread.Post(Close);
+            return;
+        }
+
         _mergerSizeWorker?.Dispose();
         CancelPreviewInitialization();
         _previewGate.MarkStopped();

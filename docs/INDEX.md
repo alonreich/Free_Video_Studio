@@ -43,7 +43,14 @@ Voiceover timing additions (all listed specs govern these files):
 ⚠️ **This list is NOT exhaustive.** Source-file routing headers (`[SPEC CONTRACT]`) and their test were retired (SPECROUTING_02, `SPEC_GOVERNANCE.md` §4). For an unlisted file, grep the spec Code Mini-Maps (`docs/0*_*.md`); if no spec names it, treat that as a routing gap, not as permission, and add it here (README §0.3 rule 3).
 
 ```
-  AiSetupWizardWindow.axaml.cs               04
+  AiSetupWizardWindow.axaml.cs               04 UI-AIMODE
+  AiModeWindow.cs                            04 UI-AIMODE
+  DialogChrome.cs                            04 UI-AIMODE
+  AiZoomStartWindow.cs                       04 UI-AIZOOM (AIZOOMSTART_01)
+  AiEaseOfUseTests.cs                        04 UI-AIEASE
+  AiCameraSmoothnessTests.cs                 01 TL-AITRACKING (AICAMSMOOTH_01)
+  AiSetup.cs                                 04 UI-AIMODE
+  AiModeTests.cs                             04 UI-AIMODE
   AiSubjectPickerWindow.axaml.cs             04
 ⚠ AiTrajectorySmoother.cs                    01 03
   AGENTS.md                                  GOV | README.md §0 (pointer only, ONBOARD_01)
@@ -76,6 +83,8 @@ Voiceover timing additions (all listed specs govern these files):
   AiResultCache.cs                           05 SYS-AISETTINGS §7.7 (AIREUSE_03)
   AiDiagnostics.cs                           05 SYS-AISETTINGS (AIDIAGNOSTICS_03)
   AiAudit3Tests.cs                           05 SYS-AISETTINGS §7.7 (AIAUDIT_04)
+  AiAudit5Tests.cs                           05 SYS-AIAUDIT5 (AIAUDIT_05)
+  UxAuditTests.cs                            04 §4 UI-SAFEGUARDS | 04 §1 UI-THEME (EXPORTCLOSE_01, CROPSAVEERR_01, SEGROWTHEME_01)
   AiFrameSequenceExtractor.cs                05 SYS-AISETTINGS
   CommentaryService.cs                       05 SYS-AISETTINGS
   FvsBuild/Program.cs                        05 09
@@ -184,7 +193,29 @@ Voiceover timing additions (all listed specs govern these files):
   AiMusicAutoFitTests.cs                     02 AUD-MUSICWIN | 05 SYS-AISETTINGS
   AiViralPostService.cs                      04 UI-MERGER-MULTISELECT | 05 SYS-AISETTINGS
   AiViralPostTests.cs                        04 UI-MERGER-MULTISELECT | 05 SYS-AISETTINGS
-  AiEliminationTrackerService.cs             01 TL-AITRACKING | 05 SYS-AISETTINGS
+  AiEliminationTrackerService.cs             01 TL-AITRACKING (KILLGATE_01) | 05 SYS-AISETTINGS
+  AiKeyHealth.cs                             05 §7.7 SYS-AIAUDIT4 (AIKEYHEALTH_01)
+  ChatGptAuth.cs                             05 §7.7 SYS-AIAUDIT4 (CHATGPTSIGNIN_01) | 05 SYS-STORAGE-TABLE
+  ChatGptPlanTransport.cs                    05 §7.7 SYS-AIAUDIT4 (CHATGPTPLAN_01)
+  ChatGptSignInTests.cs                      05 §7.7 SYS-AIAUDIT4
+  AiReviewFixTests.cs                        05 §7.7 SYS-AIAUDIT4
+  QaAuditFixTests.cs                         05 §7.7 SYS-AIAUDIT4 | 07 UNDO-RULES
+  HudOverlayEventDetector.cs                 01 TL-AITRACKING (KILLGATE_01, AIELIM_06)
+⚠ LocalTrackingService.cs                   01 TL-LOCALTRACK | 04 UI-AIZOOM | 05 SYS-LOCALAI
+  LocalTrackingMath.cs                       01 TL-LOCALTRACK
+⚠ LocalSubjectTracker.cs                    01 TL-LOCALTRACK | 05 SYS-LOCALAI
+⚠ Sam2BoxTracker.cs                         01 TL-LOCALTRACK | 05 SYS-LOCALAI
+  SceneCutDetector.cs                        01 TL-LOCALTRACK (SCENECUT_01)
+  RawVideoFrameReader.cs                     01 TL-LOCALTRACK
+  OrtRuntime.cs                              05 SYS-LOCALAI
+⚠ LocalAiPack.cs                            05 SYS-LOCALAI | 09 DIST-LOCALAIPACK
+⚠ LocalAiPackManifest.cs                    05 SYS-LOCALAI | 09 DIST-LOCALAIPACK
+⚠ LocalAiPackFiles.cs                       05 SYS-LOCALAI | 09 DIST-LOCALAIPACK
+⚠ LocalAiPackService.cs                     05 SYS-LOCALAI | 09 DIST-LOCALAIPACK
+⚠ SettingsWindow.LocalAi.cs                 04 UI-AIZOOM (UI-SETTINGS-LOCALAI) | 05 SYS-LOCALAI
+  developer_tools/local_ai_pack/*.py         09 DIST-LOCALAIPACK
+  LocalAiTests.cs, OrtRuntimeTests           01 TL-LOCALTRACK | 05 SYS-LOCALAI
+  LocalAiAppTests.cs                         04 UI-AIZOOM | 01 TL-LOCALTRACK
   AiEliminationTrackerTests.cs               01 TL-AITRACKING | 05 SYS-AISETTINGS
   MainWindow.AiElimination.cs                01 TL-AITRACKING | 05 SYS-AISETTINGS
   FinishedDialogWindow.AiViral.cs            04 UI-MERGER-MULTISELECT | 05 SYS-AISETTINGS
@@ -1542,6 +1573,13 @@ ZOOM_01                                      04   [code-only: CropToolWindow.axa
 CROPZOOMRESET_01                             04 §4 UI-SAFEGUARDS
 CROPSAVEPROMPT_02                            04 §4 UI-SAFEGUARDS
 CROPUNSAVED_01                               04 §4 UI-SAFEGUARDS | 06 §5 PROJ-DISK
+UNSAVEDPROJ_01                               06 §9 PROJ-CLOSEGUARD | 04 §4 UI-SAFEGUARDS
+PROJECTLABEL_01                              06 §9 PROJ-CLOSEGUARD
+EXPORTCLOSE_01                               04 §4 UI-SAFEGUARDS   [StopExportDecisionSeam]
+DIALOGTIP_01                                 04 §4 UI-SAFEGUARDS   [ConfirmDialogWindow.SetButtonText]
+CROPSAVEERR_01                               04 §4 UI-SAFEGUARDS   [CropToolWindow.DescribeSaveFailure]
+SEGROWTHEME_01                               04 §1 UI-THEME        [GranularSpeedEditorWindow.PaintToken]
+SEGROWA11Y_01                                04 §1 UI-THEME        [GranularSpeedEditorWindow.SegmentRowBorder]
 CROPEDIT_01                                  05 §4 SYS-RECOVERY
 CROPPROFILE_01                               05 §4 SYS-RECOVERY
 CROPCONFIRM_01                               04 §4 UI-SAFEGUARDS
@@ -1629,6 +1667,42 @@ AIHUDERRORS_01                               05 §7.7 SYS-AIAUDIT4 | 04 UI-AIHUD
 AITRACE_01                                   05 §7.7 SYS-AIAUDIT4
 AIELIM_04                                    05 §7.7 SYS-AIAUDIT4 | 04 UI-AIZOOM
 AIELIM_05                                    05 §7.7 SYS-AIAUDIT4
+AIELIM_06                                    01 TL-AITRACKING (Kill Tracker on-screen check)
+AIELIMERR_01                                 05 §7.7 SYS-AIAUDIT4 (Kill Tracker connection-check errors)
+AIELIMOWNER_01                               05 §7.7 SYS-AIAUDIT4 (scan owns its scanning state)
+AIREFOWN_01                                  05 §7.7 SYS-AIAUDIT4 (own task Reference)
+AIMUSICDEADLINE_01                           04 UI-MUSICWIZARD
+AIREWRITEKILLS_01                            04 UI-MERGER-KILLS
+MUSICREMOVEUNDO_01                           07 UNDO-RULES (UNDO_20)
+AIKEYHEALTH_01                               05 §7.7 SYS-AIAUDIT4 (rejected keys blocked)
+AIGEMINIMODELS_02                            05 §7.7 SYS-AIAUDIT4 (Google model list and prices)
+AIELIMFAST_01                                05 §7.7 SYS-AIAUDIT4 (faster Kill Tracker)
+AIELIMASK_01                                 05 §7.7 SYS-AIAUDIT4 (ask before a dear scan)
+AIELIMRESCAN_01                              05 §7.7 SYS-AIAUDIT4 (scan again)
+AIMERGESTOP_01                               05 §7.7 SYS-AIAUDIT4 | 04 UI-MERGER-KILLS
+AIASKTOGGLE_01                               04 §13b UI-AIAPPROVE
+AIVIRALPCONLY_01                             05 §7.7 SYS-AIAUDIT4
+AICONNECTCLIP_01                             04 UI-AIEASE (one-click connect)
+CHATGPTSIGNIN_01                             05 §7.7 SYS-AIAUDIT4 | 04 UI-AIEASE | 05 SYS-STORAGE-TABLE
+CHATGPTPLAN_01                               05 §7.7 SYS-AIAUDIT4
+KILLGATE_01                                  01 TL-AITRACKING
+LOCALAI_01                                   05 §7.8 SYS-LOCALAI | 04 UI-AIZOOM
+LOCALAIPACK_01                               09 DIST-LOCALAIPACK | 05 SYS-LOCALAI
+LOCALTRACK_01                                01 §11b TL-LOCALTRACK
+LOCALMEMORY_01                               01 §11b TL-LOCALTRACK
+AIMODE_01                                    04 UI-AIMODE ("How should AI work?")
+AIMODEHEAL_01                                04 UI-AIEASE
+AIZOOMSTART_01                               04 UI-AIEASE
+AICAMSMOOTH_01                               01 TL-AITRACKING
+OWNBODY_01                                   01 §11b TL-LOCALTRACK | 01 TL-AITRACKING
+AIPLACEMENT_01                               05 §7 (where AI work runs: local vs online)
+SCENECUT_01                                  01 §11b TL-LOCALTRACK
+TEXTTARGET_01                                04 UI-AIZOOM | 01 TL-AITRACKING
+FVS_LOCAL_AI_PACK_DIR                        05 SYS-LOCALAI (development only)
+FVS_TEST_ORT_DIR                             05 SYS-LOCALAI (opt-in interop test)
+FVS_TEST_LOCALAI_DIR                         05 SYS-LOCALAI (opt-in real-model test)
+LOCALAITEST_01                               05 SYS-LOCALAI | README GOV-AVGATE
+LocalAiPackFiles.Released                    09 DIST-LOCALAIPACK | 05 SYS-LOCALAI
 AIMERGEKILLS_01                              04 §13c UI-MERGER-KILLS
 AIPROGRESS_02                                05 §7.7 SYS-AIAUDIT4 | 04 UI-AIZOOM
 AIPARITY_02                                  03 FFM-ZOOMGRAPH | 01 TL-AITRACKING

@@ -1080,6 +1080,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         _aiEliminationTimestamps.Clear();
         _aiEliminationMarkers.Clear();
         _aiEliminationStatus = null;
+        _aiEliminationStartAction = null;
         _aiEliminationScanCts?.Cancel();
         _musicWizardResult = null;
         StopMusicPreview();
@@ -2096,33 +2097,50 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     protected override void OnKeyDown(Avalonia.Input.KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (e.Key == Avalonia.Input.Key.Delete && _isMusicBlockFocused)
+        if (e.Key == Avalonia.Input.Key.Delete && _isMusicBlockFocused && !e.Handled)
         {
-            _musicWizardResult = null;
-            SetMusicButtonActive(false);
-            UpdateTimelineMarkers();
+            RemoveBackgroundMusic("Delete key");
             e.Handled = true;
         }
     }
 
+    private bool _closePromptOpen;
+
     protected override async void OnClosing(Avalonia.Controls.WindowClosingEventArgs e)
     {
-        _mainSizeWorker?.Dispose();
         StopMusicPreview();
         _ = StopPreviewMixPlaybackAsync();
         if (_isSafeToClose)
         {
+            _mainSizeWorker?.Dispose();
             base.OnClosing(e);
             return;
         }
 
         e.Cancel = true;
+        if (_closePromptOpen) return;
 
-        if (!await ConfirmProjectDiscardOnCloseAsync())
+        _closePromptOpen = true;
+        try
         {
-            RuntimeLog.Info("UI", "Close cancelled — the user chose to keep unsaved project work.");
-            return;
+            if (!await ConfirmStopExportOnCloseAsync())
+            {
+                RuntimeLog.Info("UI", "Close cancelled — the user chose to let the running export finish.");
+                return;
+            }
+
+            if (!await ConfirmProjectDiscardOnCloseAsync())
+            {
+                RuntimeLog.Info("UI", "Close cancelled — the user chose to keep unsaved project work.");
+                return;
+            }
         }
+        finally
+        {
+            _closePromptOpen = false;
+        }
+
+        _mainSizeWorker?.Dispose();
 
         _recovery.MarkCleanShutdownIntent();
         _aiEliminationScanCts?.Cancel();

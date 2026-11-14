@@ -156,11 +156,11 @@ public static class AiViralPostService
             {
                 durationSec = cached.DurationSec;
                 images = cached.Images;
-                statusCallback?.Invoke($"Reused {images.Count} cached stills from exported video…");
+                statusCallback?.Invoke("Using the pictures taken earlier…");
             }
             else
             {
-                statusCallback?.Invoke("Measuring exported video length…");
+                statusCallback?.Invoke("Checking your video…");
                 durationSec = await AiFfmpeg.ProbeDurationSecAsync(ffmpegPath, videoPath, runCt).ConfigureAwait(false);
                 if (durationSec <= 0) durationSec = 30.0;
 
@@ -170,7 +170,7 @@ public static class AiViralPostService
                 {
                     runCt.ThrowIfCancellationRequested();
                     double t = Math.Clamp(durationSec * fracs[i], 0.2, Math.Max(0.2, durationSec - 0.2));
-                    statusCallback?.Invoke($"Extracting still {i + 1} of {fracs.Length} ({t:0.0}s)…");
+                    statusCallback?.Invoke($"Taking picture {i + 1} of {fracs.Length}…");
                     string tempPath = Path.Combine(Path.GetTempPath(), $"fvs_viral_frame_{Guid.NewGuid():N}.jpg");
                     tempFrames.Add(tempPath);
 
@@ -213,7 +213,7 @@ public static class AiViralPostService
                 Return strictly a JSON object matching the requested schema.
                 """;
 
-            statusCallback?.Invoke($"Asking {vendorName} ({effectiveModel}) to write title, caption & hashtags…");
+            statusCallback?.Invoke($"Asking {vendorName} to write a title, caption and hashtags…");
             string jsonResponse = await provider.GenerateJsonAsync(
                 apiKey,
                 effectiveModel,
@@ -222,13 +222,13 @@ public static class AiViralPostService
                 video: null,
                 ViralPostJsonSchema,
                 options: GeminiCallOptions.Creative,
-                userLog: beat => statusCallback?.Invoke($"{vendorName} ({effectiveModel}): {beat}"),
+                userLog: beat => statusCallback?.Invoke($"{vendorName}: {beat}"),
                 ct: runCt).ConfigureAwait(false);
 
             ViralPostResult? post = TryParseJsonResponse(jsonResponse);
             if (post == null)
             {
-                RuntimeLog.Fail("AI_VIRAL", GeminiClient.Redact(
+                RuntimeLog.Fail("AI_VIRAL", AiDiagnostics.Tag + GeminiClient.Redact(
                     $"{vendorName} ({effectiveModel}) unparseable viral post response. Prompt excerpt: {Truncate(prompt, 400)} | Raw response: {Truncate(jsonResponse, 1200)}",
                     apiKey));
                 return new ViralPostOutcome(ViralPostStatus.Failed, null, "The AI's answer could not be read. Try again.");
@@ -246,12 +246,12 @@ public static class AiViralPostService
         }
         catch (AiProviderException ex)
         {
-            RuntimeLog.Fail("AI_VIRAL", GeminiClient.Redact($"{ex.Vendor} {ex.Kind}: {ex.Message} {ex.Detail}", apiKey));
+            RuntimeLog.Fail("AI_VIRAL", AiDiagnostics.Tag + GeminiClient.Redact($"{ex.Vendor} {ex.Kind}: {ex.Message} {ex.Detail}", apiKey));
             return new ViralPostOutcome(ViralPostStatus.Failed, null, ex.Message);
         }
         catch (Exception ex)
         {
-            RuntimeLog.Fail("AI_VIRAL", GeminiClient.Redact($"{ex.GetType().Name}: {ex.Message}", apiKey));
+            RuntimeLog.Fail("AI_VIRAL", AiDiagnostics.Tag + GeminiClient.Redact($"{ex.GetType().Name}: {ex.Message}", apiKey));
             return new ViralPostOutcome(ViralPostStatus.Failed, null, "Something went wrong while writing the post. Try again.");
         }
         finally

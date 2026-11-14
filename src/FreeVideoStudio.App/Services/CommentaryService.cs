@@ -34,7 +34,8 @@ public sealed record CommentaryRequest(
     IReadOnlyList<double>? KillTimesSec = null,
     string? RewriteOf = null,
     CaptionLook Look = CaptionLook.Outline,
-    CaptionSize Size = CaptionSize.Medium)
+    CaptionSize Size = CaptionSize.Medium,
+    int Parallelism = CommentaryService.MaxParallelParts)
 {
     /// <summary>
     /// COMMENTARYMIX_01 — the slider mix that drives the prompt; a request made with only a tone uses that tone's
@@ -99,6 +100,18 @@ public static class CommentaryService
 
     /// <summary>AICOMMENTARY_ESTIMATE_01 — a typical part's round trip (clip prep + AI answer), for the estimate only.</summary>
     public const double TypicalSecondsPerPart = 12.0;
+
+    public const int MaxParallelParts = 2;
+
+    public const string ParallelTag = "AIPARALLEL_01";
+
+    internal static Exception? FirstRealFailure(IEnumerable<Task> tasks)
+    {
+        foreach (var t in tasks)
+            if (t.IsFaulted && t.Exception?.InnerException is { } inner && inner is not OperationCanceledException)
+                return inner;
+        return null;
+    }
 
     /// <summary>
     /// Plans even overlapping chunks of at most <paramref name="maxChunkSec"/> with <paramref name="overlapSec"/> overlap.
@@ -190,11 +203,23 @@ public static class CommentaryService
                 chunks.Count);
         }
 
-        try
+        var partLines = new List<CaptionLine>?[chunks.Count];
+        var sentPart = new bool[chunks.Count];
+        int width = Math.Clamp(request.Parallelism, 1, MaxParallelParts);
+        using var lanes = new SemaphoreSlim(width, width);
+        using var askLane = new SemaphoreSlim(1, 1);
+        using var stopAll = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        int lanesReduced = 0;
+        int partsDone = 0;
+
+        async Task RunPartAsync(int i)
         {
-            for (int i = 0; i < chunks.Count; i++)
+            var ct = stopAll.Token;
+            await lanes.WaitAsync(ct).ConfigureAwait(false);
+            bool releaseLane = true;
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                ct.ThrowIfCancellationRequested();
                 var chunk = chunks[i];
                 double chunkStartSec = request.StartSec + chunk.Start;
                 double chunkEndSec = request.StartSec + chunk.End;
@@ -204,8 +229,9 @@ public static class CommentaryService
                 if (cuts.Sum(c => c.End - c.Start) >= chunkDurSec - 0.05)
                 {
                     consoleLog?.Invoke($"Commentary: part {i + 1} of {chunks.Count} is cut from the finished video — nothing sent.");
-                    continue;
+                    return;
                 }
+                sentPart[i] = true;
 
                 string statusMsg = $"Writing captions · part {i + 1} of {chunks.Count} ({chunk.Start:0.0}s – {chunk.End:0.0}s)…";
                 progress?.Report(statusMsg);
@@ -217,22 +243,23 @@ public static class CommentaryService
                     killTimesInPart: KillTimesForPart(request.KillTimesSec, chunkStartSec, chunkEndSec),
                     rewriteOf: request.RewriteOf);
 
-                PartMedia media = await PreparePartMediaAsync(request, chunkStartSec, chunkDurSec, cuts, consoleLog, cancellationToken).ConfigureAwait(false);
+                PartMedia media = await PreparePartMediaAsync(request, chunkStartSec, chunkDurSec, cuts, consoleLog, ct).ConfigureAwait(false);
 
                 List<CaptionLine>? chunkLines = null;
                 for (int attempt = 0; ; attempt++)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
+                    ct.ThrowIfCancellationRequested();
                     AiProviderException failure;
                     try
                     {
-                        string responseJson = await SendPartAsync(request, provider, apiKey, effectiveModel, prompt, media, consoleLog, cancellationToken).ConfigureAwait(false);
-                        if (TryParseCommentaryResponse(responseJson, chunkStartSec, chunkEndSec, ref lineIdCounter, out var parsed))
+                        string responseJson = await SendPartAsync(request, provider, apiKey, effectiveModel, prompt, media, consoleLog, ct).ConfigureAwait(false);
+                        int localId = 1;
+                        if (TryParseCommentaryResponse(responseJson, chunkStartSec, chunkEndSec, ref localId, out var parsed))
                         {
                             chunkLines = parsed;
                             break;
                         }
-                        RuntimeLog.Warn("AiCommentary", FreeVideoStudio.Core.Diagnostics.SecretRedactor.RedactSecrets(
+                        RuntimeLog.Warn("AiCommentary", AiDiagnostics.Tag + FreeVideoStudio.Core.Diagnostics.SecretRedactor.RedactSecrets(
                             $"Part {i + 1} returned unusable JSON ({responseJson.Length} chars). Prompt excerpt: {GeminiClient.Truncate(prompt, 300)} | Raw response: {GeminiClient.Truncate(responseJson, 800)}"));
                         failure = new AiProviderException(request.Vendor, AiProviderErrorKind.MalformedResponse,
                             $"{vendorName}'s answer for this part could not be used.");
@@ -242,25 +269,32 @@ public static class CommentaryService
                         failure = ex;
                     }
 
-                    if (attempt == 0 && failure.Kind is AiProviderErrorKind.MalformedResponse or AiProviderErrorKind.Blocked)
+                    if (failure.Kind == AiProviderErrorKind.RateLimited && width > 1 && Interlocked.Exchange(ref lanesReduced, 1) == 0)
+                    {
+                        releaseLane = false;
+                        consoleLog?.Invoke("Commentary: the AI company asked to slow down — sending one part at a time from now on.");
+                    }
+                    if (attempt == 0 && AiAnswerGuard.IsFeatureRetryable(failure))
                     {
                         consoleLog?.Invoke($"Commentary: part {i + 1} failed ({failure.Message}) — retrying once.");
                         continue;
                     }
                     consoleLog?.Invoke($"Commentary: part {i + 1} failed ({failure.Message}).");
-                    AiPartFailureChoice choice = onPartFailed == null
-                        ? AiPartFailureChoice.Skip
-                        : await onPartFailed(i + 1, chunks.Count, failure).ConfigureAwait(false);
+                    AiPartFailureChoice choice;
+                    await askLane.WaitAsync(ct).ConfigureAwait(false);
+                    try
+                    {
+                        choice = onPartFailed == null
+                            ? AiPartFailureChoice.Skip
+                            : await onPartFailed(i + 1, chunks.Count, failure).ConfigureAwait(false);
+                    }
+                    finally { askLane.Release(); }
                     if (choice == AiPartFailureChoice.Retry) continue;
                     if (choice == AiPartFailureChoice.Stop) throw failure;
                     break;
                 }
 
-                if (chunkLines == null)
-                {
-                    failed++;
-                    continue;
-                }
+                if (chunkLines == null) return;
                 if (personality.Tactical >= CommentaryPersonality.LongLinesFromTactical)
                 {
                     int before = chunkLines.Count;
@@ -269,13 +303,59 @@ public static class CommentaryService
                         consoleLog?.Invoke($"Commentary: part {i + 1}: {before - chunkLines.Count} unsure line(s) left out (TACTICAL_01).");
                 }
                 consoleLog?.Invoke($"Commentary: part {i + 1} yielded {chunkLines.Count} line(s).");
-                rawLines.AddRange(chunkLines);
+                partLines[i] = chunkLines;
+                int done = Interlocked.Increment(ref partsDone);
+                progress?.Report($"Writing captions · {done} of {chunks.Count} parts done…");
+            }
+            finally
+            {
+                if (releaseLane) lanes.Release();
             }
         }
-        catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested && rawLines.Count > 0 && ex is not CommentaryCancelledException)
+
+        void Collect()
         {
-            throw new CommentaryCancelledException(Finish());
+            rawLines.Clear();
+            failed = 0;
+            lineIdCounter = 1;
+            for (int i = 0; i < chunks.Count; i++)
+            {
+                if (partLines[i] is { } lines)
+                    foreach (var l in lines) rawLines.Add(l with { Id = lineIdCounter++ });
+                else if (sentPart[i]) failed++;
+            }
         }
+
+        var partTasks = new Task[chunks.Count];
+        for (int i = 0; i < chunks.Count; i++)
+        {
+            int index = i;
+            partTasks[i] = Task.Run(async () =>
+            {
+                try { await RunPartAsync(index).ConfigureAwait(false); }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    try { stopAll.Cancel(); } catch (ObjectDisposedException disposed) { RuntimeLog.Swallowed(disposed); }
+                    throw;
+                }
+            });
+        }
+        try
+        {
+            await Task.WhenAll(partTasks).ConfigureAwait(false);
+        }
+        catch (Exception) when (FirstRealFailure(partTasks) is { } real)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(real).Throw();
+            throw;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            Collect();
+            if (rawLines.Count > 0) throw new CommentaryCancelledException(Finish());
+            throw;
+        }
+        Collect();
 
         if (failed == chunks.Count)
             throw new AiProviderException(request.Vendor, AiProviderErrorKind.MalformedResponse,
@@ -296,6 +376,19 @@ public static class CommentaryService
     private sealed record PartMedia(AiVideoInput? Video, IReadOnlyList<AiImageInput> Frames);
 
     /// <summary>AICOMMENTARY_CUTS_01 — cut stretches of a part, in seconds from the PART's start.</summary>
+    public static IReadOnlyList<(double Start, double End)> SentParts(OutputTimeline? timeline, double timelineOffsetSec, double startSec, double durationSec)
+    {
+        var sent = new List<(double Start, double End)>();
+        foreach (var chunk in PlanChunks(durationSec))
+        {
+            double a = startSec + chunk.Start, b = startSec + chunk.End;
+            var cuts = CutSpansInPart(timeline, timelineOffsetSec, a, b);
+            if (cuts.Sum(c => c.End - c.Start) >= chunk.End - chunk.Start - 0.05) continue;
+            sent.Add(chunk);
+        }
+        return sent;
+    }
+
     internal static IReadOnlyList<(double Start, double End)> CutSpansInPart(OutputTimeline? timeline, double timelineOffsetSec, double absStartSec, double absEndSec)
     {
         var list = new List<(double, double)>();

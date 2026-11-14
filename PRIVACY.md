@@ -15,6 +15,12 @@ The app connects to the internet **only** in these cases:
 
 The app never uploads your videos anywhere by itself, never sells or shares data, and keeps your API keys
 encrypted on this computer only (Windows DPAPI, readable only by your Windows account).
+While the "Connect your AI" window is open and you have pressed its key-page button, it reads your
+clipboard on this computer to pick up a key you copy; it uses only text that looks like an AI key, never logs it,
+and stops when the window closes.
+If you choose **Continue with ChatGPT**, you sign in on OpenAI's own page in your browser. The app keeps the sign-in
+(tokens and your ChatGPT account e-mail) encrypted on this computer only, uses it only to send the AI features' requests
+to OpenAI on your ChatGPT plan, and deletes the tokens when you press Sign out.
 
 **Uninstalling** removes the program, its shortcuts and its settings (Windows › Settings › Apps › Free Video Studio › Uninstall).
 

@@ -211,8 +211,31 @@ public class AppSettings : FreezableSettings
     private string _openAiApiKeyStoredField = "";
     private KeyCache? _openAiKeyCache;
 
-    /// <summary>Helper to retrieve the clear-text API key for any vendor.</summary>
-    public string GetApiKey(AiVendor vendor) => vendor switch
+    /// <summary>
+    /// AIMODE_01 — what the user chose on "How should AI work?" (NotChosen until setup finished). Additive (missing reads
+    /// as NotChosen), so no schema bump.
+    /// </summary>
+    [JsonConverter(typeof(AiModeJsonConverter))]
+    public AiMode AiMode { get => _aiModeField; set => Set(ref _aiModeField, value); }
+    private AiMode _aiModeField = AiMode.NotChosen;
+
+    /// <summary>
+    /// The clear-text API key a FEATURE may use. AIMODE_01: empty while "On this PC only" is chosen, so no feature can
+    /// send anything online; the saved key itself stays (<see cref="GetStoredApiKey"/>).
+    /// </summary>
+    public string GetApiKey(AiVendor vendor)
+    {
+        if (AiMode == AiMode.LocalOnly) return string.Empty;
+        if (vendor == AiVendor.OpenAI && FreeVideoStudio.App.Services.ChatGptAuth.IsSignedIn) return FreeVideoStudio.App.Services.ChatGptAuth.CredentialMarker;
+        return GetStoredApiKey(vendor);
+    }
+
+    public bool HasAiCredential(AiVendor vendor)
+        => !string.IsNullOrWhiteSpace(GetStoredApiKey(vendor))
+           || (vendor == AiVendor.OpenAI && FreeVideoStudio.App.Services.ChatGptAuth.IsSignedIn);
+
+    /// <summary>The saved clear-text API key for any vendor, whatever the AI mode (setup and Settings only).</summary>
+    public string GetStoredApiKey(AiVendor vendor) => vendor switch
     {
         AiVendor.Google => GeminiApiKey,
         AiVendor.Anthropic => ClaudeApiKey,

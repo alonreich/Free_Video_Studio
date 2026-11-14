@@ -816,19 +816,14 @@ public partial class MainWindow
 
             var removeMusicMenu = new Avalonia.Controls.ContextMenu();
             var removeMusicItem = new Avalonia.Controls.MenuItem { Header = "Remove Music", Icon = new TextBlock { Text = "🗑️", Margin = new Avalonia.Thickness(0,0,5,0) } };
-            removeMusicItem.Click += (s, ev) => {
-                _musicWizardResult = null;
-                SetMusicButtonActive(false);
-                UpdateTimelineMarkers();
-            };
+            removeMusicItem.Click += (s, ev) => RemoveBackgroundMusic("timeline menu");
             removeMusicMenu.ItemsSource = new[] { removeMusicItem };
             musicRect.ContextMenu = removeMusicMenu;
 
             musicRect.KeyDown += (s, e) => {
                 if (e.Key == Avalonia.Input.Key.Delete) {
-                    _musicWizardResult = null;
-                    SetMusicButtonActive(false);
-                    UpdateTimelineMarkers();
+                    RemoveBackgroundMusic("Delete key");
+                    e.Handled = true;
                 }
             };
 
@@ -1688,6 +1683,19 @@ public partial class MainWindow
             _isTimerUpdatingSlider = false;
             ShowPlayheadBadge(newEndSec, slider.Value);
         }
+    }
+
+    internal const string MusicRemoveUndoTag = "MUSICREMOVEUNDO_01";
+
+    private void RemoveBackgroundMusic(string how)
+    {
+        if (_musicWizardResult == null && !_isMusicActive) return;
+        _musicWizardResult = null;
+        SetMusicButtonActive(false);
+        UpdateTimelineMarkers();
+        SaveRecoveryState(label: "remove music");
+        ShowTacticalFeedback("Music removed");
+        RuntimeLog.Info("UI", $"User removed background music ({how}).");
     }
 
 }

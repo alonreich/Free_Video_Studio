@@ -26,7 +26,9 @@ public static class AiVisionProviders
     public const AiVendor RecommendedVendor = AiVendor.Google;
     public const string RecommendedModel = GeminiClient.DefaultModel;
 
-    public static readonly string[] KnownGoogleModels = { GeminiClient.DefaultModel, "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-flash-latest" };
+    public static readonly string[] KnownGoogleModels = { GeminiClient.DefaultModel, "gemini-4-hydrogen", "gemini-4-argon", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite" };
+
+    private static readonly string[] RetiredGoogleExact = { "gemini-3.7-flash", "gemini-3.5-flash" };
     public static readonly string[] KnownAnthropicModels = { ClaudeProvider.DefaultModelName, "claude-haiku-5-5", "claude-opus-5-5" };
     public static readonly string[] KnownOpenAiModels = { OpenAiProvider.DefaultModelName, "gpt-6.1-sol", "gpt-6-astra" };
 
@@ -45,6 +47,7 @@ public static class AiVisionProviders
         string m = (model ?? string.Empty).Trim();
         if (m.StartsWith("models/", StringComparison.Ordinal)) m = m["models/".Length..];
         if (m.Length == 0) return false;
+        if (vendor == AiVendor.Google && RetiredGoogleExact.Contains(m, StringComparer.OrdinalIgnoreCase)) return true;
         string[] prefixes = vendor switch
         {
             AiVendor.Anthropic => RetiredAnthropicPrefixes,

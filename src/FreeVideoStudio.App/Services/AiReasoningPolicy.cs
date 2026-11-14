@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace FreeVideoStudio.App.Services;
@@ -16,7 +16,7 @@ internal static class AiReasoningPolicy
     /// <summary>The thinking setting for <paramref name="usage"/>; null = the vendor's default.</summary>
     internal static AiReasoningConfig? For(AiUsage usage) => usage switch
     {
-        AiUsage.EliminationTracker or AiUsage.MagicWand => new AiReasoningConfig(AiReasoningLevel.Low),
+        AiUsage.EliminationTracker or AiUsage.MagicWand or AiUsage.MusicAutoFit or AiUsage.SubjectDiscovery => new AiReasoningConfig(AiReasoningLevel.Low),
         _ => null,
     };
 
@@ -33,6 +33,8 @@ internal static class AiReasoningPolicy
         AiUsage.MagicWand or AiUsage.EliminationTracker => "high",
         _ => null,
     };
+
+    internal const string PickTasksTag = "AIREASONING_03";
 
     internal static bool IsRejectedBy(AiVendor vendor, string model)
     {

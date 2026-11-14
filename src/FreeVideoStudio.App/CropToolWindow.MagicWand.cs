@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
@@ -48,6 +48,10 @@ public partial class CropToolWindow
 
     /// <summary>Set by STOP so a cancelled run says "stopped" rather than nothing.</summary>
     private bool _wandStopRequested;
+
+    private bool _wandSnapshotShown;
+
+    private const string WandSetupTag = "WANDSETUP_01";
 
     /// <summary>
     /// WANDPROGRESSIVE_01 — the offline finds are already on screen and only the AI is still pending.
@@ -139,11 +143,14 @@ public partial class CropToolWindow
         var cfg = s.GetUsageConfig(AiUsage.MagicWand);
         bool hasKey = !string.IsNullOrWhiteSpace(s.GetApiKey(cfg.Vendor));
         string providerName = AiVisionProviders.DisplayName(cfg.Vendor);
+        SetVisible("WandAddAiButton", _wandSnapshotShown && !hasKey && s.AiMode != AiMode.LocalOnly);
         if (!_wandRunning)
         {
             SetStatus(hasKey
-                ? $"AI ready: {providerName} ({s.GetEffectiveModel(AiUsage.MagicWand)}). Click Magic Wand to detect HUD pieces."
-                : "Offline Magic Wand ready (or connect an AI provider in Settings › AI for cloud HUD suggestions).");
+                ? $"Magic Wand ready, with extra suggestions from {providerName}. Press MAGIC WAND to find the HUD pieces."
+                : s.AiMode == AiMode.LocalOnly
+                    ? "Magic Wand ready. Press MAGIC WAND to find the HUD pieces."
+                    : "Magic Wand ready. Press MAGIC WAND to find the HUD pieces. (Press Add AI suggestions… for extra ideas from an AI.)");
         }
     }
 
@@ -213,8 +220,9 @@ public partial class CropToolWindow
             if (useAi)
             {
                 wandEstimate = AiCostEstimator.EstimateMagicWand(wandCfg.Vendor, wandModel);
-                _wandActiveAiLabel = $"{wandProviderName} ({wandModel})";
-                _wandActiveEstimateBanner = AiCostEstimator.FormatPreRunBanner(wandEstimate, wandCfg.Vendor, wandModel);
+                usage.SetEstimate(wandEstimate);
+                _wandActiveAiLabel = wandProviderName;
+                _wandActiveEstimateBanner = AiCostEstimator.PlainCostShort(wandEstimate, wandCfg.Vendor, wandModel);
             }
             else
             {
@@ -224,8 +232,8 @@ public partial class CropToolWindow
 
             SetContent("MagicWandButton", "ANALYSING…");
             SetWizardState(3, "Refine Box", useAi
-                ? $"Step 1: Scanning clip locally for HUD pieces, then asking {_wandActiveAiLabel} ({_wandActiveEstimateBanner})…"
-                : "Scanning clip locally for HUD pieces.");
+                ? $"Step 1: Looking for HUD pieces on this PC, then asking {_wandActiveAiLabel} ({_wandActiveEstimateBanner})…"
+                : "Looking for HUD pieces on this PC…");
 
             ShowWandOverlay();
 
@@ -319,7 +327,7 @@ public partial class CropToolWindow
             string aiNote = result.AiOutcome == AiHudOutcome.Success && (aiOnly + confirmed) > 0
                 ? $" {shortProv} agreed on {confirmed} (✓) and suggested {aiOnly} more (dashed)."
                 : string.Empty;
-            string usageNote = usage.Tally.TotalTokens > 0 ? $" [{usage.SummaryWithEstimate(wandEstimate)}]" : string.Empty;
+            string usageNote = usage.Tally.TotalTokens > 0 ? " " + usage.PlainSummary() : string.Empty;
             SetStatusSuccess($"Found {candidates.Count} HUD piece{(candidates.Count == 1 ? "" : "s")}.{aiNote}{usageNote} " +
                              "Click a box to select it, adjust it, then label it — nothing is added until you do.");
         }
@@ -368,7 +376,7 @@ public partial class CropToolWindow
         SetContent("MagicWandButton", "\u23F9 STOP AI SUGGESTIONS");
         string providerName = _wandActiveAiLabel ?? WandDetection.AiService?.ProviderName ?? "The AI";
         string estNote = string.IsNullOrEmpty(_wandActiveEstimateBanner) ? "" : $" ({_wandActiveEstimateBanner})";
-        SetStatusSuccess($"Found {local.Count} HUD piece{(local.Count == 1 ? "" : "s")} offline. Step 2: Waiting for {providerName}{estNote} — you can start reviewing now.");
+        SetStatusSuccess($"Found {local.Count} HUD piece{(local.Count == 1 ? "" : "s")} on this PC. Step 2: Waiting for {providerName}{estNote}. You can start checking them now.");
     }
 
     private string? _wandActiveAiLabel;

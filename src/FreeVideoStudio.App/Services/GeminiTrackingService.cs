@@ -100,13 +100,10 @@ public sealed record AiTrackingRequest(
 /// </summary>
 public sealed class GeminiModelSession
 {
-    private readonly GeminiClient _client;
     private readonly string _apiKey;
-    private readonly Action<string>? _log;
-    private bool _fallbackTried;
 
     public AiVendor Vendor { get; }
-    public IAiVisionProvider? Provider { get; }
+    public IAiVisionProvider Provider { get; }
     public string ApiKey => _apiKey;
     public string VendorName => Vendor switch
     {
@@ -119,48 +116,30 @@ public sealed class GeminiModelSession
         string apiKey,
         string? model,
         Action<string>? log = null,
-        GeminiClient? client = null,
         AiVendor vendor = AiVendor.Google,
         IAiVisionProvider? provider = null)
     {
-        _client = client ?? GeminiClient.Shared;
         _apiKey = apiKey ?? string.Empty;
-        _log = log;
         Vendor = vendor;
-        Provider = provider ?? (vendor != AiVendor.Google ? AiVisionProviders.Get(vendor) : null);
+        IsInjected = provider != null;
+        Provider = provider ?? AiVisionProviders.Get(vendor);
         string resolved = vendor switch
         {
             AiVendor.Anthropic => ClaudeProvider.ResolveModel(model),
             AiVendor.OpenAI => OpenAiProvider.ResolveModel(model),
             _ => GeminiClient.ResolveModel(model),
         };
-        Model = AiVisionProviders.EffectiveModel(vendor, resolved);
+        Model = AiVisionProviders.EffectiveModel(vendor, resolved, _apiKey);
     }
 
-    public string Model { get; private set; }
+    public string Model { get; }
+
+    public bool IsInjected { get; }
 
     public bool HasKey => !string.IsNullOrWhiteSpace(_apiKey);
 
     /// <summary>Sanitises text bound for a log with THIS session's key.</summary>
     public string Redact(string? text) => GeminiClient.Redact(text, _apiKey);
-
-    public async Task<string> GenerateAsync(byte[] body, CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await _client.GenerateAsync(_apiKey, Model, body, GeminiCallOptions.Tracking, _log, cancellationToken).ConfigureAwait(false);
-        }
-        catch (AiProviderException ex) when (ex.Kind == AiProviderErrorKind.ModelNotFound && !_fallbackTried)
-        {
-            _fallbackTried = true;
-            var provider = Provider ?? AiVisionProviders.Get(Vendor);
-            string? fallback = await AiVisionProviders.FindLiveReplacementAsync(provider, _apiKey, Model, _log, cancellationToken).ConfigureAwait(false);
-            if (fallback == null) throw;
-            _log?.Invoke($"Model '{Model}' is not available for your key — using '{fallback}' for this run. Choose a model in Settings › AI Features to make this permanent.");
-            Model = fallback;
-            return await _client.GenerateAsync(_apiKey, Model, body, GeminiCallOptions.Tracking, _log, cancellationToken).ConfigureAwait(false);
-        }
-    }
 }
 
 /// <summary>
@@ -324,50 +303,6 @@ public static class GeminiTrackingService
     }
 
 
-    /// <summary>B4 — generateContent body: prompt, media parts, temperature 0 (omitted for Gemini 3+, AITEMP_02), JSON MIME type and a response schema.</summary>
-    internal static byte[] BuildRequest(string prompt, IReadOnlyList<(string MimeType, byte[] Data, double? Fps)> media, Action<Utf8JsonWriter> writeSchema, string? model = null)
-    {
-        int size = 4096 + prompt.Length * 2;
-        foreach (var m in media) size += m.Data.Length * 4 / 3 + 64;
-        var buffer = new ArrayBufferWriter<byte>(size);
-        using (var w = new Utf8JsonWriter(buffer))
-        {
-            w.WriteStartObject();
-            w.WriteStartArray("contents");
-            w.WriteStartObject();
-            w.WriteStartArray("parts");
-            w.WriteStartObject();
-            w.WriteString("text", prompt);
-            w.WriteEndObject();
-            foreach (var m in media)
-            {
-                w.WriteStartObject();
-                w.WriteStartObject("inlineData");
-                w.WriteString("mimeType", m.MimeType);
-                w.WriteBase64String("data", m.Data);
-                w.WriteEndObject();
-                if (m.Fps is double fps)
-                {
-                    w.WriteStartObject("videoMetadata");
-                    w.WriteNumber("fps", fps);
-                    w.WriteEndObject();
-                }
-                w.WriteEndObject();
-            }
-            w.WriteEndArray();
-            w.WriteEndObject();
-            w.WriteEndArray();
-            w.WriteStartObject("generationConfig");
-            if (!GeminiClient.PrefersDefaultTemperature(model)) w.WriteNumber("temperature", 0);
-            w.WriteString("responseMimeType", "application/json");
-            w.WritePropertyName("responseSchema");
-            writeSchema(w);
-            w.WriteEndObject();
-            w.WriteEndObject();
-        }
-        return buffer.WrittenSpan.ToArray();
-    }
-
     private static void Typed(Utf8JsonWriter w, string name, string type, bool nullable = false)
     {
         w.WriteStartObject(name);
@@ -429,7 +364,8 @@ public static class GeminiTrackingService
         string frame1Path, string frame2Path, string frame3Path,
         GeminiModelSession session, AiGameProfile profile,
         Action<string>? consoleLog = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? targetDescription = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         consoleLog?.Invoke($"Sending 3 candidate frames to {session.VendorName} for subject discovery…");
@@ -441,26 +377,21 @@ public static class GeminiTrackingService
             media.Add(("image/jpeg", await File.ReadAllBytesAsync(f, cancellationToken).ConfigureAwait(false), null));
         }
 
-        string discoveryPrompt = AiTrackingPrompts.Discovery(profile);
+        string discoveryPrompt = AiTrackingPrompts.Discovery(profile, targetDescription);
         string reuseKey = AiResultCache.Key("discovery-v1", session.Vendor.ToString(), session.Model, discoveryPrompt,
             Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(media[0].Item2)),
             Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(media[1].Item2)),
             Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(media[2].Item2)));
         string text = await AiResultCache.RunAsync(reuseKey, async () =>
         {
-            if (session.Vendor == AiVendor.Google && session.Provider == null)
-            {
-                byte[] body = BuildRequest(discoveryPrompt, media, WriteDiscoverySchema, session.Model);
-                return await session.GenerateAsync(body, cancellationToken).ConfigureAwait(false);
-            }
-            var provider = session.Provider ?? AiVisionProviders.Get(session.Vendor);
+            var provider = session.Provider;
             var images = new List<AiImageInput>(3);
             for (int i = 0; i < media.Count; i++)
             {
                 images.Add(new AiImageInput(media[i].Item2, "image/jpeg", $"[Candidate Still {i + 1}]"));
             }
-            return await provider.GenerateJsonAsync(session.ApiKey, session.Model, discoveryPrompt, images, null, DiscoveryJsonSchema, null, GeminiCallOptions.Tracking, consoleLog, cancellationToken).ConfigureAwait(false);
-        }, answer => AiAnswerGuard.IsReadableJson(answer), cancellationToken, consoleLog, refresh: session.Provider != null).ConfigureAwait(false);
+            return await provider.GenerateJsonAsync(session.ApiKey, session.Model, discoveryPrompt, images, null, DiscoveryJsonSchema, AiReasoningPolicy.For(AiUsage.SubjectDiscovery), GeminiCallOptions.Tracking, consoleLog, cancellationToken).ConfigureAwait(false);
+        }, answer => AiAnswerGuard.IsReadableJson(answer), cancellationToken, consoleLog, refresh: session.IsInjected).ConfigureAwait(false);
         CoreLogger.Info("AI-Discovery", session.Redact($"{session.VendorName} discovery answer ({text.Length} chars): {GeminiClient.Truncate(text, 800)}"));
 
         List<DiscoveredSubject> raw = ParseDiscovery(text, session.VendorName);
@@ -528,12 +459,13 @@ public static class GeminiTrackingService
         GeminiModelSession session,
         AiGameProfile profile,
         Action<string>? consoleLog = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? targetDescription = null)
     {
         var (f1, f2, f3, t1, t2, t3) = await ExtractThreeCandidateFramesAsync(
             videoPath, sourceStartSec, sourceDurationSec, cancellationToken).ConfigureAwait(false);
 
-        var subjects = await DiscoverSubjectsAsync(f1, f2, f3, session, profile, consoleLog, cancellationToken).ConfigureAwait(false);
+        var subjects = await DiscoverSubjectsAsync(f1, f2, f3, session, profile, consoleLog, cancellationToken, targetDescription).ConfigureAwait(false);
         if (subjects.Count > 0)
             return new AiDiscoveryResult(subjects, f1, f2, f3, t1, t2, t3, 0);
 
@@ -561,7 +493,7 @@ public static class GeminiTrackingService
                     videoPath, probeStart, probeDuration, cancellationToken).ConfigureAwait(false);
                 pf1 = n1; pf2 = n2; pf3 = n3;
 
-                var probeSubjects = await DiscoverSubjectsAsync(pf1, pf2, pf3, session, profile, consoleLog, cancellationToken).ConfigureAwait(false);
+                var probeSubjects = await DiscoverSubjectsAsync(pf1, pf2, pf3, session, profile, consoleLog, cancellationToken, targetDescription).ConfigureAwait(false);
                 if (probeSubjects.Count > 0)
                 {
                     consoleLog?.Invoke($"Found {probeSubjects.Count} target(s) {delta.ToString("0.0", CultureInfo.InvariantCulture)}s after the segment start.");
@@ -626,7 +558,8 @@ public static class GeminiTrackingService
         IProgress<string>? statusProgress = null,
         Action<string>? consoleLog = null,
         CancellationToken cancellationToken = default,
-        Func<int, int, AiProviderException, Task<AiPartFailureChoice>>? onPartFailed = null)
+        Func<int, int, AiProviderException, Task<AiPartFailureChoice>>? onPartFailed = null,
+        IProgress<double>? fraction = null)
     {
         ArgumentNullException.ThrowIfNull(req);
         ArgumentNullException.ThrowIfNull(session);
@@ -644,7 +577,7 @@ public static class GeminiTrackingService
                 consoleLog?.Invoke($"Attached a close-up of '{(string.IsNullOrWhiteSpace(target.Label) ? "the target" : target.Label)}' ({refCrop.Length / 1024} KB) as the visual reference.");
         }
 
-        bool directFrameSampling = !(session.Vendor == AiVendor.Google && session.Provider == null);
+        bool directFrameSampling = !AiVisionProviders.WatchesVideoWithAudio(session.Vendor);
         var chunks = PlanChunks(req.SourceDurationSec);
         var all = new List<RawSubjectWaypoint>();
         (int ymin, int xmin, int ymax, int xmax) box = (target.Ymin, target.Xmin, target.Ymax, target.Xmax);
@@ -683,6 +616,7 @@ public static class GeminiTrackingService
                 mp4 = await SliceAsync(req.VideoPath, req.SourceStartSec + cs, sliceLen, consoleLog, cancellationToken).ConfigureAwait(false);
             }
 
+            fraction?.Report((k + 0.25) / chunks.Count);
             double observedInChunk = k == 0 ? Math.Clamp(observedAt - cs, 0, sliceLen) : 0;
             statusProgress?.Report($"Step 3 of 4 · Following '{(string.IsNullOrWhiteSpace(target.Label) ? "the target" : target.Label)}'{part}…");
 
@@ -702,8 +636,8 @@ public static class GeminiTrackingService
                 }
                 catch (AiProviderException ex) when (IsPartFailure(ex))
                 {
-                    CoreLogger.Warn("AI-Tracking", session.Redact($"Part {k + 1}/{chunks.Count} failed ({ex.Kind}): {ex.Message} {ex.Detail}"));
-                    if (partAttempt == 0)
+                    CoreLogger.Warn("AI-Tracking", AiDiagnostics.Tag + session.Redact($"Part {k + 1}/{chunks.Count} failed ({ex.Kind}): {ex.Message} {ex.Detail}"));
+                    if (partAttempt == 0 && AiAnswerGuard.IsFeatureRetryable(ex))
                     {
                         consoleLog?.Invoke($"Part {k + 1} of {chunks.Count} failed ({ex.Message}) — trying it once more…");
                         continue;
@@ -722,6 +656,7 @@ public static class GeminiTrackingService
                 }
             }
 
+            fraction?.Report((k + 1.0) / chunks.Count);
             int sanitized = SanitizeWaypointsAgainstLocalPlayer(waypoints, k == 0 ? target : null, box, req.Profile, consoleLog);
             if (sanitized > 0) consoleLog?.Invoke($"Ignored {sanitized} point(s) that jumped onto the player's own character.");
 
@@ -762,6 +697,19 @@ public static class GeminiTrackingService
             or AiProviderErrorKind.Overloaded or AiProviderErrorKind.Network or AiProviderErrorKind.RateLimited
             or AiProviderErrorKind.Truncated or AiProviderErrorKind.BadRequest;
 
+    public const string OneProviderTag = "AIGEMINIONE_01";
+
+    public static string? TrackingMediaResolution { get; set; }
+
+    internal static readonly string GeminiTrackingSchemaText = SchemaText(WriteTrackingSchema);
+
+    private static string SchemaText(Action<Utf8JsonWriter> write)
+    {
+        var buffer = new ArrayBufferWriter<byte>(512);
+        using (var w = new Utf8JsonWriter(buffer)) write(w);
+        return System.Text.Encoding.UTF8.GetString(buffer.WrittenSpan);
+    }
+
     public const string TrackingJsonSchema = "{\"type\":\"ARRAY\",\"items\":{\"type\":\"OBJECT\",\"properties\":{\"time\":{\"type\":\"NUMBER\"},\"visible\":{\"type\":\"BOOLEAN\"},\"cx\":{\"type\":\"INTEGER\"},\"cy\":{\"type\":\"INTEGER\"},\"w\":{\"type\":\"INTEGER\"},\"h\":{\"type\":\"INTEGER\"}},\"required\":[\"time\",\"visible\"]}}";
 
     private static async Task<List<RawSubjectWaypoint>> TrackChunkAsync(
@@ -773,18 +721,19 @@ public static class GeminiTrackingService
         string prompt = AiTrackingPrompts.Tracking(profile, label, box, observedAt, refCrop != null, interval, sliceLen);
 
         string text;
-        if (session.Vendor == AiVendor.Google && session.Provider == null)
+        if (AiVisionProviders.WatchesVideoWithAudio(session.Vendor))
         {
-            var media = new List<(string, byte[], double?)>(2);
-            if (refCrop != null) media.Add(("image/jpeg", refCrop, null));
-            media.Add(("video/mp4", mp4 ?? throw new InvalidOperationException("MP4 slice missing for Gemini tracking."), useFps ? TrackingFps : null));
-
-            byte[] body = BuildRequest(prompt, media, WriteTrackingSchema, session.Model);
-            text = await session.GenerateAsync(body, ct).ConfigureAwait(false);
+            var refImages = refCrop != null
+                ? new[] { new AiImageInput(refCrop, "image/jpeg") }
+                : Array.Empty<AiImageInput>();
+            var clip = new AiVideoInput(mp4 ?? throw new InvalidOperationException("MP4 slice missing for Gemini tracking."), "video/mp4",
+                useFps ? TrackingFps : 0, TrackingMediaResolution, AllowFpsFallback: false);
+            text = await session.Provider.GenerateJsonAsync(session.ApiKey, session.Model, prompt, refImages, clip,
+                GeminiTrackingSchemaText, null, GeminiCallOptions.Tracking, consoleLog, ct).ConfigureAwait(false);
         }
         else
         {
-            var provider = session.Provider ?? AiVisionProviders.Get(session.Vendor);
+            var provider = session.Provider;
             var sampledFrames = preSampledFrames
                 ?? (mp4 != null
                     ? await AiFrameSequenceExtractor.SampleFramesFromMp4BytesAsync(mp4, TrackingFps, targetWidth: 640, log: consoleLog, ct: ct).ConfigureAwait(false)
@@ -820,7 +769,7 @@ public static class GeminiTrackingService
         }
         catch (JsonException ex)
         {
-            CoreLogger.Warn("AI-Tracking", FreeVideoStudio.Core.Diagnostics.SecretRedactor.RedactSecrets(
+            CoreLogger.Warn("AI-Tracking", AiDiagnostics.Tag + FreeVideoStudio.Core.Diagnostics.SecretRedactor.RedactSecrets(
                 $"{vendorName} tracking JSON parse error ({ex.Message}). Raw answer: {GeminiClient.Truncate(text, 800)}"));
             throw new GeminiException(GeminiErrorKind.MalformedResponse,
                 $"{vendorName}'s tracking answer could not be read. Please try again.", GeminiClient.Truncate(ex.Message, 200));

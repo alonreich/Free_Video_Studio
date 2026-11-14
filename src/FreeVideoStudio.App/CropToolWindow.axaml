@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:FreeVideoStudio.App"
         xmlns:controls="clr-namespace:FreeVideoStudio.App.Controls"
@@ -505,6 +505,7 @@
                                      map, and scores real contours per HUD role. ShowSnapshotPanel
                                      un-hides it; it is only meaningful on a frozen frame. -->
                                 <Button Name="MagicWandButton" Classes="Secondary" Content="&#x1FA84; MAGIC WAND" MinWidth="150" ToolTip.Tip="Let the computer look through the whole clip and find the HUD pieces for you. Click a box it finds to label it." IsVisible="False" Cursor="Hand" />
+                                <Button Name="WandAddAiButton" Classes="Secondary" Content="Add AI suggestions…" Margin="8,0,0,0" IsVisible="False" Cursor="Hand" AutomationProperties.Name="Add AI suggestions" ToolTip.Tip="Connect an AI company so the Magic Wand can also suggest HUD pieces. Sends only the frozen frame." />
                                 <!-- BACKTOVIDEO_01 - the BACK TO VIDEO button was here and is deleted.
                                      It did one thing, ShowVideoPanel, and PLAY now does that: pressing
                                      play while a frame is frozen returns to the moving video and

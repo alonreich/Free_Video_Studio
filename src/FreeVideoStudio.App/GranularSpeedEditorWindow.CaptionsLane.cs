@@ -446,6 +446,14 @@ public partial class GranularSpeedEditorWindow
         return new ContextMenu { ItemsSource = new object[] { rewrite, edit, new Separator(), delete } };
     }
 
+    internal const string RewriteKillTimesTag = "AIREWRITEKILLS_01";
+
+    internal static double[]? ShiftKillTimes(IReadOnlyList<double> killTimes, double shiftSec)
+        => killTimes.Count > 0 ? killTimes.Select(t => t + shiftSec).ToArray() : null;
+
+    private double[]? RewriteKillTimes(double shiftSec)
+        => ShiftKillTimes(_aiEliminationTimestamps, _edit.IsMergeMode ? shiftSec : 0);
+
     private async Task RegenerateCaptionLineAsync(int lineId, double startSec, double endSec)
     {
         if (_edit.CaptionTrack == null || _aiCommentaryRunning || _isAiCommentaryPreviewing) return;
@@ -505,7 +513,7 @@ public partial class GranularSpeedEditorWindow
             Timeline: OutTimeline(),
             TimelineOffsetSec: timelineOffsetSec,
             Personality: Services.CommentaryPersonalitySettings.Remembered(settings, track.Tone),
-            KillTimesSec: _aiEliminationTimestamps.Count > 0 ? _aiEliminationTimestamps.ToArray() : null,
+            KillTimesSec: RewriteKillTimes(requestStartSec - startSec),
             RewriteOf: oldText,
             Look: track.Look,
             Size: track.Size);

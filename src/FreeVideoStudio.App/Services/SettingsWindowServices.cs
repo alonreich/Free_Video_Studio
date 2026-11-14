@@ -34,7 +34,7 @@ public sealed class SettingsManagerStore : ISettingsStore
 }
 
 /// <summary>SETTINGSDI_01 — the outcome of checking an AI key with its company.</summary>
-public sealed record KeyTestResult(bool Success, string Message, bool Cancelled = false, IReadOnlyList<string>? Models = null);
+public sealed record KeyTestResult(bool Success, string Message, bool Cancelled = false, IReadOnlyList<string>? Models = null, bool Unverified = false);
 
 /// <summary>SETTINGSDI_01 — talks to the AI companies about keys and models.</summary>
 public interface IAiKeyValidator
@@ -59,47 +59,55 @@ public sealed class AiKeyValidator : IAiKeyValidator
     {
         if (string.IsNullOrWhiteSpace(key)) return new KeyTestResult(false, "Paste a key first.");
         string vendorName = AiVisionProviders.DisplayName(vendor);
+        AiKeyHealth.Clear(vendor, key);
+        string model = ModelToCheck(vendor, googleModel);
+        IReadOnlyList<string> models = Array.Empty<string>();
         try
         {
-            if (vendor == AiVendor.Google)
-            {
-                string resolvedModel = GeminiClient.ResolveModel(googleModel);
-                progress?.Invoke($"Sending quick test request to {vendorName} ({resolvedModel})…");
-                var (success, message) = await GeminiClient.Shared.TestKeyAsync(key, googleModel, ct).ConfigureAwait(false);
-                if (!success) return new KeyTestResult(false, message);
-                progress?.Invoke($"Fetching available {vendorName} models for your key…");
-                IReadOnlyList<string> googleModels = Array.Empty<string>();
-                try { googleModels = await AiVisionProviders.Get(vendor).ListModelsAsync(key, ct).ConfigureAwait(false); }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-                catch (Exception ex) { RuntimeLog.Swallowed(ex); }
-                if (googleModels.Count > 0)
-                    progress?.Invoke($"Verified! {vendorName} returned {googleModels.Count} live model(s).");
-                return new KeyTestResult(true, message, Models: googleModels);
-            }
-            progress?.Invoke($"Connecting to {vendorName} and checking available models…");
-            var models = await AiVisionProviders.Get(vendor).ListModelsAsync(key, ct).ConfigureAwait(false);
-            if (models.Count == 0)
-            {
-                return new KeyTestResult(false, $"{vendorName} accepted the key, but returned 0 vision models.");
-            }
-            progress?.Invoke($"Verified! {vendorName} returned {models.Count} model(s).");
-            return new KeyTestResult(true, $"Key works. {models.Count} model(s) available.", Models: models);
+            progress?.Invoke($"Checking the key with {vendorName}…");
+            models = await AiVisionProviders.Get(vendor).ListModelsAsync(key, ct).ConfigureAwait(false);
+            if (vendor != AiVendor.Google && models.Count == 0)
+                return new KeyTestResult(false, $"{vendorName} accepted the key, but this key cannot use any AI model that looks at pictures. Check your plan or billing with {vendorName}.");
+            progress?.Invoke($"Checking that {model} can read a picture…");
+            await AiPreflight.EnsureAsync(vendor, key, model, ct).ConfigureAwait(false);
+            progress?.Invoke("The key works.");
+            return new KeyTestResult(true, $"Key works with {model}.", Models: models);
         }
         catch (OperationCanceledException ex)
         {
             CoreLogger.Swallowed(ex);
             return new KeyTestResult(false, "Not tested yet", Cancelled: true);
         }
+        catch (AiProviderException ex) when (ex.IsTransient)
+        {
+            RuntimeLog.Info("Settings", $"{vendor} key test could not finish: {ex.Kind}.");
+            return new KeyTestResult(false, $"Could not check the key right now: {ex.Message}", Models: models, Unverified: true);
+        }
         catch (AiProviderException ex)
         {
             RuntimeLog.Info("Settings", $"{vendor} key test failed: {ex.Kind}.");
-            return new KeyTestResult(false, ex.Message);
+            return new KeyTestResult(false, ex.Message, Models: models);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or System.IO.IOException or System.Text.Json.JsonException)
         {
             CoreLogger.Warn("AI", $"{vendor} key test failed: {ex.Message}");
-            return new KeyTestResult(false, $"Connection failed: {ex.Message}");
+            return new KeyTestResult(false, $"Could not reach {vendorName}. Check your internet and try again.", Models: models, Unverified: ex is not System.Text.Json.JsonException);
         }
+    }
+
+    internal const string KeyCheckTag = "AIKEYCHECK_01";
+
+    internal static string ModelToCheck(AiVendor vendor, string? model)
+    {
+        string m = (model ?? string.Empty).Trim();
+        bool belongs = m.Length > 0 && vendor switch
+        {
+            AiVendor.Google => m.StartsWith("gemini", StringComparison.OrdinalIgnoreCase) || m.StartsWith("models/", StringComparison.OrdinalIgnoreCase),
+            AiVendor.Anthropic => m.StartsWith("claude", StringComparison.OrdinalIgnoreCase),
+            _ => !m.StartsWith("gemini", StringComparison.OrdinalIgnoreCase) && !m.StartsWith("claude", StringComparison.OrdinalIgnoreCase) && !m.StartsWith("models/", StringComparison.OrdinalIgnoreCase),
+        };
+        string chosen = belongs ? AiVisionProviders.ReplaceRetired(vendor, m) : AiVisionProviders.GetDefaultModel(vendor);
+        return vendor == AiVendor.Google ? GeminiClient.ResolveModel(chosen) : chosen;
     }
 
     public async Task<IReadOnlyList<string>> ListModelsAsync(AiVendor vendor, string key, CancellationToken ct)

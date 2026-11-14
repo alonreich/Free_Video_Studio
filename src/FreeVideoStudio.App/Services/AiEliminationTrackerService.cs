@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using FreeVideoStudio.Core.Infrastructure;
+using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
@@ -23,7 +24,10 @@ public sealed record AiEliminationScanResult(
     IReadOnlyList<AiEliminationMarker> Markers,
     bool Failed,
     string Summary,
-    int MomentsChecked);
+    int MomentsChecked)
+{
+    public bool AccountProblem { get; init; }
+}
 
 /// <summary>
 /// Smart Hybrid AI Elimination Tracker.
@@ -39,6 +43,27 @@ public static class AiEliminationTrackerService
 {
     /// <summary>AIELIM_03 — the fewest moments checked in one video (short clips).</summary>
     public const int MinMomentBudget = 24;
+
+    internal const string PreflightErrorTag = "AIELIMERR_01";
+
+    internal const string ScanAgainTag = "AIELIMRESCAN_01";
+
+    internal static string PartialSummary(int kills, bool failed) => (kills switch
+    {
+        0 => "No kills of yours found in this part.",
+        1 => "1 kill found in this part.",
+        _ => $"{kills} kills found in this part.",
+    }) + (failed ? " (Some checks failed.)" : "");
+
+    public static bool HasSavedScan(string videoPath, double durationSec, AiVendor vendor, string? model)
+    {
+        string effectiveModel = !string.IsNullOrWhiteSpace(model) ? model : AiVisionProviders.Get(vendor).DefaultModel;
+        string key = $"{VideoFingerprint(videoPath, durationSec)}|{vendor}|{effectiveModel}";
+        return TryGetCached(s_scanCache, key) != null || AiAnswerDiskStore.Read("kills", key) != null;
+    }
+
+    public static int MomentBudgetForRanges(IEnumerable<double> rangeSeconds)
+        => rangeSeconds.Where(s => s > 0.05).Sum(MomentBudget);
 
     /// <summary>AIELIM_03 — the most moments checked in one video (the loudest ones), whatever its length.</summary>
     public const int MaxMoments = 60;
@@ -57,7 +82,15 @@ public static class AiEliminationTrackerService
     public const int FrameWidth = 1280;
 
     /// <summary>Moments per AI request (each moment is two images).</summary>
-    public const int MomentsPerRequest = 6;
+    public const int MomentsPerRequest = 10;
+
+    public const int ParallelBatches = 3;
+
+    internal const string FastScanTag = "AIELIMFAST_01";
+
+    public const int ParallelExtractions = 3;
+
+    public const string RangeTag = "AIMERGEKILLS_02";
 
     /// <summary>Where the two frames of a moment are taken, after the loud sound.</summary>
     public static readonly double[] FrameOffsetsSec = { 0.4, 1.2 };
@@ -143,7 +176,10 @@ public static class AiEliminationTrackerService
         string apiKey,
         string? model = null,
         Action<string>? statusCallback = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        double? rangeStartSec = null,
+        double? rangeEndSec = null,
+        bool refresh = false)
     {
         if (string.IsNullOrWhiteSpace(videoPath) || !File.Exists(videoPath))
             throw new FileNotFoundException("Video file not found", videoPath);
@@ -157,50 +193,107 @@ public static class AiEliminationTrackerService
         string effectiveModel = !string.IsNullOrWhiteSpace(model) ? model : provider.DefaultModel;
         string vendorName = AiVisionProviders.DisplayName(vendor);
         string fp = VideoFingerprint(videoPath, durationSec);
-        string scanKey = $"{fp}|{vendor}|{effectiveModel}";
+        double scanFrom = Math.Clamp(rangeStartSec ?? 0, 0, durationSec);
+        double scanTo = Math.Clamp(rangeEndSec ?? durationSec, scanFrom, durationSec);
+        bool partial = scanFrom > 0.01 || scanTo < durationSec - 0.01;
+        if (scanTo - scanFrom <= 0.05) return new AiEliminationScanResult(Array.Empty<AiEliminationMarker>(), false, "No kills found.", 0);
+        string scanKey = partial
+            ? $"{fp}|{vendor}|{effectiveModel}|{scanFrom.ToString("0.00", CultureInfo.InvariantCulture)}-{scanTo.ToString("0.00", CultureInfo.InvariantCulture)}"
+            : $"{fp}|{vendor}|{effectiveModel}";
+        string wholeKey = $"{fp}|{vendor}|{effectiveModel}";
+        if (refresh)
+        {
+            lock (s_cacheLock) { s_scanCache.Remove(scanKey); s_scanCache.Remove(wholeKey); }
+            statusCallback?.Invoke("Scanning again — the saved result is not reused.");
+        }
+        if (!refresh && partial && (TryGetCached(s_scanCache, wholeKey) ?? FromJson(AiAnswerDiskStore.Read("kills", wholeKey))) is { } wholeScan)
+        {
+            var inside = wholeScan.Markers.Where(m => m.TimestampSec >= scanFrom && m.TimestampSec <= scanTo).ToList();
+            statusCallback?.Invoke($"Reused the earlier kill scan ({inside.Count} kills here) — no new AI request.");
+            return wholeScan with { Markers = inside, Summary = PartialSummary(inside.Count, wholeScan.Failed) };
+        }
 
-        if (TryGetCached(s_scanCache, scanKey) is { } cachedScan)
+        if (!refresh && TryGetCached(s_scanCache, scanKey) is { } cachedScan)
         {
             statusCallback?.Invoke($"Reused the earlier kill scan ({cachedScan.Markers.Count} kills) — no new AI request.");
             return cachedScan;
         }
-        if (FromJson(AiAnswerDiskStore.Read("kills", scanKey)) is { } savedScan)
+        if (!refresh && FromJson(AiAnswerDiskStore.Read("kills", scanKey)) is { } savedScan)
         {
             StoreCached(s_scanCache, s_scanOrder, scanKey, savedScan);
             statusCallback?.Invoke($"Reused the saved kill scan ({savedScan.Markers.Count} kills) — no new AI request.");
             return savedScan;
         }
 
+        AiKeyHealth.ThrowIfBlocked(vendor, apiKey);
         var tempFiles = new List<string>();
+        bool hasAudio = true;
+        using var localCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var extractGate = new SemaphoreSlim(ParallelExtractions, ParallelExtractions);
+        Task preflight = Task.Run(() => AiPreflight.EnsureAsync(vendor, apiKey, effectiveModel, ct, null), ct);
+        bool preflightAwaited = false;
+        Task[]? pendingExtraction = null;
         try
         {
-            IReadOnlyList<double>? peaks = TryGetCached(s_peakCache, fp);
-            if (peaks != null)
+            statusCallback?.Invoke("Step 1 of 3 — on this PC: listening for loud moments and watching for kill-feed pop-ups…");
+            IReadOnlyList<double>? cachedPeaks = TryGetCached(s_peakCache, fp);
+            string tempPcm = Path.Combine(Path.GetTempPath(), $"fvs_elim_pcm_{Guid.NewGuid():N}.raw");
+            if (cachedPeaks == null) tempFiles.Add(tempPcm);
+            Task<IReadOnlyList<double>> peaksTask = cachedPeaks != null
+                ? Task.FromResult(cachedPeaks)
+                : Task.Run(async () =>
+                {
+                    hasAudio = await AiFfmpeg.HasAudioStreamAsync(ffmpegPath, videoPath, localCts.Token).ConfigureAwait(false);
+                    IReadOnlyList<double> found = hasAudio
+                        ? await DetectAudioPeaksAsync(ffmpegPath, videoPath, durationSec, tempPcm, localCts.Token).ConfigureAwait(false)
+                        : Array.Empty<double>();
+                    if (found.Count > 0) StoreCached(s_peakCache, s_peakOrder, fp, found);
+                    return found;
+                }, localCts.Token);
+            Task<IReadOnlyList<OverlayEvent>?> overlaysTask = Task.Run(() => ScanOverlaysAsync(ffmpegPath, videoPath, durationSec, fp, localCts.Token), localCts.Token);
+            Task localWork = Task.WhenAll(peaksTask, overlaysTask);
+            if (await Task.WhenAny(localWork, preflight).ConfigureAwait(false) == preflight && preflight.IsFaulted)
             {
-                statusCallback?.Invoke($"Step 1 of 3 — reused {peaks.Count} cached loud audio peaks…");
+                localCts.Cancel();
+                preflightAwaited = true;
+                try { await localWork.ConfigureAwait(false); }
+                catch (OperationCanceledException) { }
+                await preflight.ConfigureAwait(false);
             }
-            else
+            await localWork.ConfigureAwait(false);
+            IReadOnlyList<double> peaks = peaksTask.Result;
+            IReadOnlyList<OverlayEvent>? overlays = overlaysTask.Result;
+
+            if (peaks.Count == 0 && (overlays == null || overlays.Count == 0))
+                return new AiEliminationScanResult(Array.Empty<AiEliminationMarker>(), false,
+                    hasAudio
+                        ? "No loud action moments in this video, so there was nothing to check."
+                        : "This video has no sound and nothing popped up on screen, so nothing was checked.", 0);
+
+            int budget = MomentBudget(scanTo - scanFrom);
+            if (partial)
             {
-                statusCallback?.Invoke("Step 1 of 3 — listening for loud audio action moments…");
-                string tempPcm = Path.Combine(Path.GetTempPath(), $"fvs_elim_pcm_{Guid.NewGuid():N}.raw");
-                tempFiles.Add(tempPcm);
-
-                if (!await AiFfmpeg.HasAudioStreamAsync(ffmpegPath, videoPath, ct).ConfigureAwait(false))
-                    return new AiEliminationScanResult(Array.Empty<AiEliminationMarker>(), true,
-                        "This video has no sound, and the kill scan finds kills by listening for shots — nothing was checked.", 0);
-
-                peaks = await DetectAudioPeaksAsync(ffmpegPath, videoPath, durationSec, tempPcm, ct).ConfigureAwait(false);
-                if (peaks.Count > 0) StoreCached(s_peakCache, s_peakOrder, fp, peaks);
+                peaks = peaks.Where(t => t >= scanFrom && t <= scanTo).ToList();
+                overlays = overlays?.Where(o => o.TimeSec >= scanFrom && o.TimeSec <= scanTo).ToList();
+                if (peaks.Count == 0 && (overlays == null || overlays.Count == 0))
+                    return new AiEliminationScanResult(Array.Empty<AiEliminationMarker>(), false,
+                        "No loud action moments in this part, so there was nothing to check.", 0);
             }
+            var plan = KillMomentPlanner.Build(peaks, overlays, budget);
+            var moments = plan.Moments.ToList();
+            if (moments.Count == 0)
+                return new AiEliminationScanResult(Array.Empty<AiEliminationMarker>(), false,
+                    "No loud moment had anything pop up on screen with it, so there was nothing to ask the AI about.", 0);
 
-            if (peaks.Count == 0)
-                return new AiEliminationScanResult(Array.Empty<AiEliminationMarker>(), false, "No loud action moments in this video, so there was nothing to check.", 0);
+            statusCallback?.Invoke("Checking your AI connection…");
+            preflightAwaited = true;
+            await preflight.ConfigureAwait(false);
 
-            await AiPreflight.EnsureAsync(vendor, apiKey, effectiveModel, ct, statusCallback).ConfigureAwait(false);
-
-            int budget = MomentBudget(durationSec);
-            var moments = peaks.Take(budget).OrderBy(t => t).ToList();
-            RuntimeLog.Info("AI_ELIM", $"{peaks.Count} loud moment(s) found; checking the loudest {moments.Count} (budget {budget} for {durationSec:0}s).");
+            RuntimeLog.Info("AI_ELIM", plan.GateUsed
+                ? $"{peaks.Count} loud moment(s), {overlays!.Count} on-screen pop-up(s): checking {moments.Count} (sound + pop-up {plan.AudioConfirmed}, pop-up only {plan.SilentAdded}, sound only skipped {plan.AudioDropped}; budget {budget} for {durationSec:0}s)."
+                : $"{peaks.Count} loud moment(s) found; checking the loudest {moments.Count} (budget {budget} for {durationSec:0}s; no on-screen pop-ups to confirm with).");
+            if (plan.GateUsed && plan.AudioDropped > 0)
+                statusCallback?.Invoke($"Skipped {plan.AudioDropped} loud moment{(plan.AudioDropped == 1 ? "" : "s")} where nothing appeared on screen — fewer AI requests.");
 
             var markers = new List<AiEliminationMarker>();
             int batches = (moments.Count + MomentsPerRequest - 1) / MomentsPerRequest;
@@ -210,39 +303,70 @@ public static class AiEliminationTrackerService
             var est = AiCostEstimator.EstimateKillTracker(vendor, effectiveModel, moments.Count);
             statusCallback?.Invoke($"Step 2 of 3 — {moments.Count} moments in {batches} batch{(batches == 1 ? "" : "es")} ({AiCostEstimator.FormatPreRunBanner(est, vendor, effectiveModel)})…");
 
+            var stateGate = new object();
+            bool slowDown = false;
+
+            var batchFrameTimes = new List<double>[batches];
+            var batchFramePaths = new List<string>[batches];
             for (int b = 0; b < batches; b++)
+            {
+                batchFrameTimes[b] = new List<double>();
+                batchFramePaths[b] = new List<string>();
+                for (int k = b * MomentsPerRequest; k < Math.Min(moments.Count, (b + 1) * MomentsPerRequest); k++)
+                    for (int f = 0; f < FrameOffsetsSec.Length; f++)
+                    {
+                        batchFrameTimes[b].Add(Math.Min(Math.Max(0, durationSec - 0.05), moments[k] + FrameOffsetsSec[f]));
+                        batchFramePaths[b].Add(Path.Combine(Path.GetTempPath(), $"fvs_elim_frame_{Guid.NewGuid():N}.jpg"));
+                    }
+                tempFiles.AddRange(batchFramePaths[b]);
+            }
+            statusCallback?.Invoke($"Step 2 of 3 — taking {moments.Count * FrameOffsetsSec.Length} pictures on this PC…");
+            var extraction = new Task<bool[]>[batches];
+            for (int b = 0; b < batches; b++)
+            {
+                int bb = b;
+                extraction[b] = Task.Run(async () =>
+                {
+                    await extractGate.WaitAsync(localCts.Token).ConfigureAwait(false);
+                    try
+                    {
+                        return await AiFfmpeg.ExtractFramesJpegAsync(ffmpegPath, videoPath, batchFrameTimes[bb], batchFramePaths[bb], localCts.Token, FrameWidth).ConfigureAwait(false);
+                    }
+                    finally { extractGate.Release(); }
+                }, localCts.Token);
+            }
+            pendingExtraction = extraction;
+
+            async Task<string?> RunBatchAsync(int b)
             {
                 ct.ThrowIfCancellationRequested();
                 int batchStart = b * MomentsPerRequest;
                 int batchEnd = Math.Min(moments.Count, (b + 1) * MomentsPerRequest);
                 string span = $"{FormatClock(moments[batchStart])}–{FormatClock(moments[batchEnd - 1])}";
-                statusCallback?.Invoke($"Batch {b + 1} of {batches} — extracting frames ({span})…");
 
                 var images = new List<AiImageInput>();
                 var momentTimes = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
-                for (int k = batchStart; k < batchEnd; k++)
+                var frameTimes = batchFrameTimes[b];
+                var framePaths = batchFramePaths[b];
+                bool[] extracted = await extraction[b].ConfigureAwait(false);
+                for (int k = batchStart, slot = 0; k < batchEnd; k++)
                 {
                     string id = $"M{k + 1}";
-                    double t = moments[k];
                     bool any = false;
-                    for (int f = 0; f < FrameOffsetsSec.Length; f++)
+                    for (int f = 0; f < FrameOffsetsSec.Length; f++, slot++)
                     {
-                        double ft = Math.Min(Math.Max(0, durationSec - 0.05), t + FrameOffsetsSec[f]);
-                        string jpg = Path.Combine(Path.GetTempPath(), $"fvs_elim_frame_{Guid.NewGuid():N}.jpg");
-                        tempFiles.Add(jpg);
-                        if (!await AiFfmpeg.ExtractFrameJpegAsync(ffmpegPath, videoPath, ft, jpg, ct, FrameWidth).ConfigureAwait(false)) continue;
-                        byte[] data = await File.ReadAllBytesAsync(jpg, ct).ConfigureAwait(false);
-                        images.Add(new AiImageInput(data, "image/jpeg", $"[Moment {id} · frame {(char)('A' + f)} · {ft.ToString("0.0", CultureInfo.InvariantCulture)}s]",
+                        if (!extracted[slot]) continue;
+                        byte[] data = await File.ReadAllBytesAsync(framePaths[slot], ct).ConfigureAwait(false);
+                        images.Add(new AiImageInput(data, "image/jpeg", $"[Moment {id} · frame {(char)('A' + f)} · {frameTimes[slot].ToString("0.0", CultureInfo.InvariantCulture)}s]",
                             AiReasoningPolicy.ImageDetail(AiUsage.EliminationTracker)));
                         any = true;
                     }
-                    if (any) momentTimes[id] = t;
+                    if (any) momentTimes[id] = moments[k];
                 }
                 if (images.Count == 0)
                 {
-                    failedBatches++;
-                    lastError = "Pictures could not be read. Try reopening the video.";
-                    continue;
+                    lock (stateGate) { failedBatches++; lastError = "Pictures could not be read. Try reopening the video."; }
+                    return null;
                 }
 
                 string prompt = BuildPrompt(momentTimes.Keys);
@@ -256,35 +380,63 @@ public static class AiEliminationTrackerService
                         ct: ct).ConfigureAwait(false);
                     if (!TryParseMomentResults(json, momentTimes, out var found, out string? parseError))
                     {
-                        failedBatches++;
-                        lastError = $"{vendorName} sent an unreadable answer ({parseError}). Try again or pick another model in Settings › AI.";
-                        RuntimeLog.Fail("AI_ELIM", GeminiClient.Redact(
+                        lock (stateGate)
+                        {
+                            failedBatches++;
+                            lastError = $"{vendorName} sent an unreadable answer ({parseError}). Try again or pick another model in Settings › AI.";
+                        }
+                        RuntimeLog.Fail("AI_ELIM", AiDiagnostics.Tag + GeminiClient.Redact(
                             $"{vendorName} ({effectiveModel}) unreadable JSON in batch {b + 1}/{batches} ({parseError}). Prompt excerpt: {Truncate(prompt, 400)} | Raw response: {Truncate(json, 1200)}",
                             apiKey));
                     }
                     else
                     {
-                        checkedMoments += momentTimes.Count;
-                        if (momentTimes.Count < batchEnd - batchStart)
+                        lock (stateGate)
                         {
-                            failedBatches++;
-                            lastError = "Some pictures could not be read.";
+                            checkedMoments += momentTimes.Count;
+                            if (momentTimes.Count < batchEnd - batchStart)
+                            {
+                                failedBatches++;
+                                lastError = "Some pictures could not be read.";
+                            }
+                            markers.AddRange(found);
                         }
-                        markers.AddRange(found);
                         RuntimeLog.Info("AI_ELIM", $"Batch {b + 1}/{batches}: {found.Count} kill(s) in {momentTimes.Count} moment(s).");
                     }
                 }
                 catch (AiProviderException ex) when (ex.Kind is AiProviderErrorKind.InvalidKey or AiProviderErrorKind.PermissionDenied
                                                          or AiProviderErrorKind.ModelNotFound or AiProviderErrorKind.QuotaExhausted)
                 {
-                    RuntimeLog.Fail("AI_ELIM", GeminiClient.Redact($"{ex.Vendor} {ex.Kind}: {ex.Message} {ex.Detail}", apiKey));
-                    return new AiEliminationScanResult(markers, true, ex.Message, moments.Count);
+                    RuntimeLog.Fail("AI_ELIM", AiDiagnostics.Tag + GeminiClient.Redact($"{ex.Vendor} {ex.Kind}: {ex.Message} {ex.Detail}", apiKey));
+                    return ex.Message;
                 }
                 catch (AiProviderException ex)
                 {
-                    failedBatches++;
-                    lastError = ex.Message;
-                    RuntimeLog.Fail("AI_ELIM", GeminiClient.Redact($"{ex.Vendor} {ex.Kind}: {ex.Message} {ex.Detail}", apiKey));
+                    lock (stateGate)
+                    {
+                        failedBatches++;
+                        lastError = ex.Message;
+                        if (ex.Kind == AiProviderErrorKind.RateLimited) slowDown = true;
+                    }
+                    RuntimeLog.Fail("AI_ELIM", AiDiagnostics.Tag + GeminiClient.Redact($"{ex.Vendor} {ex.Kind}: {ex.Message} {ex.Detail}", apiKey));
+                }
+                return null;
+            }
+
+            for (int b = 0; b < batches;)
+            {
+                ct.ThrowIfCancellationRequested();
+                int width;
+                lock (stateGate) width = slowDown ? 1 : ParallelBatches;
+                int take = Math.Min(width, batches - b);
+                var group = new Task<string?>[take];
+                for (int g = 0; g < take; g++) group[g] = RunBatchAsync(b + g);
+                string?[] accountErrors = await Task.WhenAll(group).ConfigureAwait(false);
+                b += take;
+                if (accountErrors.FirstOrDefault(e => e != null) is { } accountError)
+                {
+                    lock (stateGate) markers.Sort((x, y) => x.TimestampSec.CompareTo(y.TimestampSec));
+                    return new AiEliminationScanResult(markers, true, accountError, moments.Count) { AccountProblem = true };
                 }
             }
 
@@ -312,13 +464,25 @@ public static class AiEliminationTrackerService
         {
             throw;
         }
+        catch (AiProviderException ex)
+        {
+            RuntimeLog.Fail("AI_ELIM", AiDiagnostics.Tag + GeminiClient.Redact($"{PreflightErrorTag} {ex.Vendor} {ex.Kind}: {ex.Message} {ex.Detail}", apiKey));
+            throw;
+        }
         catch (Exception ex)
         {
-            RuntimeLog.Fail("AI_ELIM", GeminiClient.Redact($"{ex.GetType().Name}: {ex.Message}", apiKey));
+            RuntimeLog.Fail("AI_ELIM", AiDiagnostics.Tag + GeminiClient.Redact($"{ex.GetType().Name}: {ex.Message}", apiKey));
             return new AiEliminationScanResult(Array.Empty<AiEliminationMarker>(), true, "The kill scan could not read this video.", 0);
         }
         finally
         {
+            if (!preflightAwaited) _ = preflight.ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
+            if (pendingExtraction != null)
+            {
+                localCts.Cancel();
+                try { await Task.WhenAll(pendingExtraction).ConfigureAwait(false); }
+                catch (Exception ex) when (ex is OperationCanceledException or IOException or InvalidOperationException) { RuntimeLog.Swallowed(ex); }
+            }
             foreach (string file in tempFiles)
             {
                 if (File.Exists(file))
@@ -475,6 +639,31 @@ public static class AiEliminationTrackerService
 
     private static string Truncate(string? s, int max)
         => string.IsNullOrEmpty(s) ? "" : (s.Length <= max ? s : s[..max] + "…");
+
+
+    private static readonly Dictionary<string, IReadOnlyList<OverlayEvent>> s_overlayCache = new(StringComparer.Ordinal);
+    private static readonly Queue<string> s_overlayOrder = new();
+
+    /// <summary>KILLGATE_01 — the on-screen pop-up events of this video (cached per video); null when the scan could not run.</summary>
+    internal static async Task<IReadOnlyList<OverlayEvent>?> ScanOverlaysAsync(string ffmpegPath, string videoPath, double durationSec, string fingerprint, CancellationToken ct)
+    {
+        if (TryGetCached(s_overlayCache, fingerprint) is { } cached) return cached;
+        try
+        {
+            var events = await HudOverlayEventDetector.ScanAsync(ffmpegPath, videoPath, durationSec, ct).ConfigureAwait(false);
+            StoreCached(s_overlayCache, s_overlayOrder, fingerprint, events);
+            return events;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            RuntimeLog.Swallowed(ex);
+            return null;
+        }
+    }
 
     /// <summary>
     /// Computes audio energy RMS in 250ms windows across 8kHz 16-bit mono PCM and returns peak timestamps

@@ -25,6 +25,7 @@ public sealed class ApplicationPaths
     public string PreferencesDirectory => IsNormalDevelopment ? DevelopmentEnvironment.TemporaryDataRoot : ProgramDataRoot;
     public string SettingsFile => Path.Combine(PreferencesDirectory, "settings.json");
     public string SessionStateFile => Path.Combine(PreferencesDirectory, "session_state.json");
+    public string ChatGptSignInFile => Path.Combine(PreferencesDirectory, "chatgpt_signin.dat");
 
     public string CropCoordinatesFile => Path.Combine(ProgramDataRoot, "crops_coordinations.conf");
 
@@ -78,6 +79,10 @@ public sealed class ApplicationPaths
     /// <summary>AIREUSE_04 — finished AI answers that are worth keeping across launches (the Kill Tracker's
     /// per-file scan), keyed by a hash of file identity + company + model. Disposable: a missing file is a re-scan.</summary>
     public string AiAnswerCacheDirectory => Path.Combine(IsProductionDefault ? TempDirectory : PreferencesDirectory, "cache", "ai");
+
+    /// <summary>LOCALAI_01 — the optional Local AI pack (ONNX Runtime, DirectML, tracking model), installed only when the
+    /// user asks for it in Settings › AI. Persistent, ~250 MB, never inside the program folder.</summary>
+    public string LocalAiDirectory => Path.Combine(ProgramDataRoot, "LocalAi");
 
     public string InstallerReportFile => Path.Combine(TempDirectory, "FreeVideoStudio_Install_Report.txt");
 

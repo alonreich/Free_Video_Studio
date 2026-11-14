@@ -8,6 +8,7 @@
 | :--- | :--- | :--- | :--- |
 | `src/FreeVideoStudio.Core/Infrastructure/RuntimePayloadManifest.cs` | `RuntimePayloadManifest` | `FromFolder`, `Read`, `Write`, `SYS-PAYLOADSPLIT` | Runtime fingerprint. |
 | `src/FreeVideoStudio.App/Services/UpdateService.cs` | `UpdateService` | `QueryLatestReleaseAsync`, `ReleasesPageUrl`, `SYS-PAYLOADSPLIT` (retired here, COMPACTGONE_01) | Which release to update to. **⚠ CO-GOVERNED BY: 05** |
+| `src/FreeVideoStudio.Core/LocalAi/LocalAiPackManifest.cs`, `LocalAiPackFiles.cs`, `developer_tools/local_ai_pack/*.py` | `LocalAiPackManifest`, `LocalAiPackFile` | `ReleaseTag`, `ReleaseBaseUrl`, `PackVersion`, `Files`, `LOCALAIPACK_01`, `DIST-LOCALAIPACK` | Pinned optional Local AI pack and its builder. **⚠ CO-GOVERNED BY: 05** |
 | `src/FreeVideoStudio.Core/Infrastructure/SmartUpdateManifest.cs` | `SmartUpdateManifest`, `SmartPlan`, `SmartFile`, `SmartPatch` | `Parse`, `Plan`, `Sign`, `VerifySignature(requireCurrentSigner)`, `AssetSha256`, `RevokedSigners`, `DIST-SMART`, `ASSETHASH_01`, `REVOKE_01`, `SIGNEXPIRY_01` | The signed per-file list of a release. |
 | `src/FreeVideoStudio.Core/Infrastructure/BinaryDelta.cs` | `BinaryDelta` | `Create`, `Apply`, `ApplyFile`, `StreamBufferSize`, `BINDELTA_01`, `BINDELTA_02` | Binary patch for the main program. |
 | `src/FreeVideoStudio.Core/Infrastructure/BrotliFile.cs` | `BrotliFile` | `CompressFile`, `DecompressFile(maxBytes)`, `ASSETHASH_01` | Per-file asset compression; size-capped decompression. |
@@ -416,6 +417,16 @@ installer, upgrade path, signing story.
   unless `Program Files\FreeVideoStudio\FreeVideoStudio.exe` is the new version; logs are uploaded. Run it
   before making a draft public. It writes nothing. ⚠️ Its first run is itself the verification of the
   workflow (a hosted runner has no prior install, UAC is off there): read the logs once.
+
+## 3h. The Optional Local AI Pack  {#DIST-LOCALAIPACK}
+* **`LOCALAIPACK_01`.** The Local AI pack (`05` SYS-LOCALAI) is NOT part of the installer, the smart update or the program: North Star #1 and NODROPPER_01 stand. The user downloads it on purpose from Settings › AI.
+* **Where it is published:** the GitHub release `localai-v1` of this repository, created as a **pre-release** so `/releases/latest` (the app's update channel, SETNOBETA_01) can never pick it up. A new pack = a new tag (`localai-v2`) and `LocalAiPackManifest.PackVersion` / `ReleaseTag` bumped together; old packs stay downloadable for older app versions.
+* **Pinning:** the program carries every file's URL, byte length and SHA-256 (`LocalAiPackFiles.cs`, generated). A file whose bytes differ is deleted and nothing is installed; the installed copy is re-checked before each use. Replacing an asset on the release therefore breaks the pin on purpose — publish a new tag instead.
+* **Building it (human, never CI, never `Build.cmd`):**
+  1. `developer_tools/local_ai_pack/export_sam2_onnx.py --checkpoint sam2.1_hiera_small.pt --out <folder>` (needs PyTorch + the `sam2` package; writes the two float16 `.onnx` files in the model contract of `LocalAiPackManifest`).
+  2. `developer_tools/local_ai_pack/build_pack.py --pack <folder>` downloads `onnxruntime.dll` (NuGet `Microsoft.ML.OnnxRuntime.DirectML` 1.22.0) and `DirectML.dll` (NuGet `Microsoft.AI.DirectML` 1.15.4) from nuget.org, refuses either unless its Authenticode signature is valid and Microsoft's, writes `LocalAiPackFiles.cs`, and prints the `gh release create … --prerelease` / `gh release upload` commands. It publishes nothing.
+  3. A human runs those two commands, then runs `build_pack.py --pack <folder> --released` (same files, same pins, `Released = true`) and commits `LocalAiPackFiles.cs` with a `changes.md` entry. Until `Released` is true the app says "not published yet", Install is disabled and online AI is used, even when the pins are already filled in.
+* **Antivirus hygiene:** the DLLs keep their Microsoft signatures; the `.onnx` files are data; nothing is unpacked from an archive, embedded in the program or started as a process; files land in the user's own AppData folder after a user click, and are loaded by full path.
 
 ## 4. Repository Weight  {#DIST-REPOWEIGHT}
 

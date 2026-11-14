@@ -65,6 +65,7 @@ These come from the editor's `PushUndo`. They were paid for in bug reports. Do n
 * **`UNDO_20` — one entry point records an edit.** `MainWindow.PushProjectEdit(label, gestureKey)` → `ProjectSession.PushEdit`
   records the state AFTER the edit with the label the user reads in the undo notice; every Main App
   edit goes through it (the Video Merger's equivalent is `MERGEUNDO_01`, `docs/06` item 5).
+  `MUSICREMOVEUNDO_01`: every way of removing background music (Delete on the music block, its right-click "Remove Music", the EDIT/REMOVE prompt) goes through `MainWindow.RemoveBackgroundMusic` → `SaveRecoveryState("remove music")`, so it is one undo step, marks the project changed and refreshes recovery and the size estimate.
 
 ---
 

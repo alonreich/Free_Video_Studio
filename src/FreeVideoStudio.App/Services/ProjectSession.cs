@@ -318,7 +318,7 @@ public sealed class ProjectSession
         string? chosen = await _picker.SaveFileAsync(new FilePickerRequest(
             Title: "Save project",
             SuggestedFileName: suggested,
-            ExtensionLabel: "Clip Studio project",
+            ExtensionLabel: "Free Video Studio project",
             Extension: "fvsproj",
             StartDirectoryKey: "last_project_dir.txt"));
 
@@ -342,7 +342,7 @@ public sealed class ProjectSession
         string? chosen = await _picker.OpenFileAsync(new FilePickerRequest(
             Title: "Open project",
             SuggestedFileName: null,
-            ExtensionLabel: "Clip Studio project",
+            ExtensionLabel: "Free Video Studio project",
             Extension: "fvsproj",
             StartDirectoryKey: "last_project_dir.txt"));
 
@@ -580,15 +580,16 @@ public sealed class ProjectSession
             await PendingAutosave;
             if (!IsDirty) return true;
 
-            bool save = await _notifier.ConfirmAsync(
-                "Unsaved changes",
-                $"You have changes that are not saved. {action} without saving them?",
-                "Save first",
-                "Discard changes");
+            var choice = await _notifier.AskSaveChangesAsync(
+                "Save your changes?",
+                $"You have changes that are not saved. Save them before you {action.ToLowerInvariant()}?");
 
-            if (!save) return true;
-
-            return await SaveForExitAsync() && !IsDirty;
+            return choice switch
+            {
+                ConfirmDialogWindow.SaveChangesChoice.Discard => true,
+                ConfirmDialogWindow.SaveChangesChoice.Save => await SaveForExitAsync() && !IsDirty,
+                _ => false
+            };
         }
         catch (Exception ex)
         {

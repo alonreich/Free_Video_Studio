@@ -129,7 +129,7 @@ public partial class VideoMergerWindow
             editor.AvailableMemes = memes;
             editor.MergeSource = source;
             using var killScanCts = new System.Threading.CancellationTokenSource();
-            _ = ScanMergeClipsForKillsAsync(source, editor, killScanCts.Token);
+            _ = ScanMergeClipsForKillsAsync(source, editor, killScanCts);
             await editor.ShowDialog(this);
             killScanCts.Cancel();
 
@@ -181,47 +181,106 @@ public partial class VideoMergerWindow
     /// handed to the speed editor in MERGED seconds, so the ✕ markers appear there and AI Commentary gets the
     /// kill timings for clips of the Merger too. Runs in the background; closing the editor stops it.
     /// </summary>
-    private async Task ScanMergeClipsForKillsAsync(MergeEditorSource source, GranularSpeedEditorWindow editor, System.Threading.CancellationToken ct)
+    internal const string AiMergeStopTag = "AIMERGESTOP_01";
+
+    private async Task ScanMergeClipsForKillsAsync(MergeEditorSource source, GranularSpeedEditorWindow editor, System.Threading.CancellationTokenSource cts)
     {
+        var ct = cts.Token;
+        void Status(string? text, string? detail, bool isError, bool running)
+            => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                if (ct.IsCancellationRequested && running) return;
+                editor.SetKillScanStatus(text, detail, isError, running ? () => { try { cts.Cancel(); } catch (ObjectDisposedException disposed) { RuntimeLog.Swallowed(disposed); } } : null);
+            });
+        string? currentRef = null;
         try
         {
             var settings = Infrastructure.SettingsManager.Instance;
             if (!settings.AiEliminationTrackerEnabled) return;
             var config = settings.GetUsageConfig(Services.AiUsage.EliminationTracker);
             string apiKey = settings.GetApiKey(config.Vendor);
-            if (string.IsNullOrWhiteSpace(apiKey)) return;
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                Status(settings.AiMode == Services.AiMode.LocalOnly
+                    ? "AI kill scan needs online AI (Settings › AI › How AI works)"
+                    : "AI kill scan: no AI key (Settings › AI)", null, true, false);
+                return;
+            }
             string model = settings.GetEffectiveModel(Services.AiUsage.EliminationTracker);
             string ffmpeg = FreeVideoStudio.Core.Infrastructure.BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries");
+            string vendorName = Services.AiVisionProviders.DisplayName(config.Vendor);
+
+            var keptRanges = source.Clips.Select(c => Math.Max(0, c.KeepOutUs - c.KeepInUs) / 1_000_000.0 + 2.0).ToList();
+            var est = Services.AiPreflight.WithCheck(
+                Services.AiCostEstimator.EstimateKillTracker(config.Vendor, model, Services.AiEliminationTrackerService.MomentBudgetForRanges(keptRanges)),
+                config.Vendor, apiKey, model);
+            string costNote = $"{vendorName} · {Services.AiCostEstimator.PlainCostShort(est, config.Vendor, model)} (estimate)";
+            var startedUtc = DateTime.UtcNow;
+            Status("AI: looking for your kills…", costNote, false, true);
 
             var mergedSec = new System.Collections.Generic.List<double>();
+            int failedClips = 0;
+            string? lastFailure = null;
+            string? lastFailureRef = null;
+            decimal usedUsd = 0;
+            bool anyUsage = false;
             foreach (var clip in source.Clips)
             {
                 ct.ThrowIfCancellationRequested();
                 if (!System.IO.File.Exists(clip.Path)) continue;
                 double durationSec = await Services.AiFfmpeg.ProbeDurationSecAsync(ffmpeg, clip.Path, ct);
                 if (durationSec <= 0) continue;
+                double from = Math.Max(0, clip.KeepInUs / 1_000_000.0 - 1.5);
+                double to = Math.Min(durationSec, clip.KeepOutUs / 1_000_000.0 + 0.5);
+                if (to <= from) continue;
+                int clipNo = clip.Index + 1;
                 using var usage = Services.AiUsageMeter.BeginTask("AI Kill Tracker (Merger clip)", config.Vendor);
+                currentRef = usage.Id;
                 var result = await Task.Run(() => Services.AiEliminationTrackerService.ScanAsync(
                     ffmpeg, clip.Path, durationSec, config.Vendor, apiKey, model,
-                    status => RuntimeLog.Info("AIElimination", $"Merger clip {clip.Index + 1}: {status}"), ct), ct);
+                    status =>
+                    {
+                        RuntimeLog.Info("AIElimination", $"Merger clip {clipNo}: {status}");
+                        int secs = (int)(DateTime.UtcNow - startedUtc).TotalSeconds;
+                        Status($"AI: looking for your kills… clip {clipNo} of {source.Clips.Count} · {secs} s", status + Environment.NewLine + costNote, false, true);
+                    }, ct, from, to), ct);
                 foreach (var m in result.Markers)
                 {
                     long us = (long)Math.Round(m.TimestampSec * 1_000_000.0);
                     if (us < clip.KeepInUs || us > clip.KeepOutUs) continue;
                     mergedSec.Add(clip.ToMergedMs(us) / 1000.0);
                 }
-                RuntimeLog.Info("AIElimination", $"Merger clip {clip.Index + 1}: {result.Summary} {usage.SummaryWithEstimate()}");
+                if (result.Failed) { failedClips++; lastFailure = result.Summary; lastFailureRef = usage.Id; }
+                if (usage.Tally.Requests > 0) { anyUsage = true; usedUsd += usage.EstimatedUsd; }
+                if (result.AccountProblem)
+                {
+                    RuntimeLog.Info("AIElimination", $"Merger clip {clipNo}: account problem, the other clips are not scanned ({AiMergeStopTag}).");
+                    var partialSnapshot = mergedSec.OrderBy(t => t).ToList();
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (!ct.IsCancellationRequested) editor.SetAiEliminations(partialSnapshot); });
+                    break;
+                }
+                RuntimeLog.Info("AIElimination", $"Merger clip {clipNo}: {result.Summary} {usage.SummaryWithEstimate()}");
                 var snapshot = mergedSec.OrderBy(t => t).ToList();
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (!ct.IsCancellationRequested) editor.SetAiEliminations(snapshot); });
             }
+            string found = mergedSec.Count switch { 0 => "no kills of yours found", 1 => "1 kill found", _ => $"{mergedSec.Count} kills found" };
+            string cost = anyUsage ? $" · {Services.AiCostEstimator.PlainUsd(usedUsd)} (estimate)" : "";
+            if (failedClips > 0)
+                Status($"AI kill scan: {found}; {failedClips} clip(s) failed: {lastFailure} (Reference: {lastFailureRef})", costNote, true, false);
+            else
+                Status($"AI: {found}{cost}", costNote, false, false);
         }
         catch (OperationCanceledException)
         {
-            RuntimeLog.Info("AIElimination", "Merger kill scan stopped (speed editor closed).");
+            RuntimeLog.Info("AIElimination", "Merger kill scan stopped.");
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => editor.SetKillScanStatus("AI kill scan cancelled", null, false, null));
         }
-        catch (Exception ex) when (ex is Services.AiProviderException or System.IO.IOException or InvalidOperationException)
+        catch (Exception ex) when (ex is Services.AiProviderException or System.IO.IOException or InvalidOperationException or ArgumentException)
         {
-            RuntimeLog.Fail("AIElimination", $"Merger kill scan failed (reference {Services.AiUsageMeter.LastTaskId}): {ex.Message}");
+            string reference = currentRef ?? Services.AiUsageMeter.LastTaskId;
+            RuntimeLog.Fail("AIElimination", $"Merger kill scan failed (reference {reference}): {ex.Message}");
+            string reason = ex is Services.AiProviderException pe ? pe.Message : "something unexpected stopped it.";
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => editor.SetKillScanStatus($"AI kill scan failed: {reason} (Reference: {reference})", null, true, null));
         }
     }
 }

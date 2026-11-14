@@ -16,6 +16,8 @@ namespace FreeVideoStudio.App;
 
 public partial class MusicWizardWindow
 {
+    internal const string AutoFitDeadlineTag = "AIMUSICDEADLINE_01";
+
     private CancellationTokenSource? _aiAutoFitCts;
 
     /// <summary>The status line under the toolbar — the AI button's sibling in the same grid (found once, no name lookup).</summary>
@@ -106,13 +108,15 @@ public partial class MusicWizardWindow
 
         string originalContent = button.Content?.ToString() ?? "✨ AI Auto-Fit";
         using var usage = AiUsageMeter.BeginTask("AI Music Auto-Fit", vendor);
-        using var cts = new CancellationTokenSource(AiMusicAutoFitService.OverallDeadline);
+        using var cts = new CancellationTokenSource();
+        using var aiDeadline = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+        aiDeadline.CancelAfter(AiMusicAutoFitService.OverallDeadline);
         _aiAutoFitCts = cts;
         var started = DateTime.UtcNow;
         AiEstimatedUsage? est = null;
         bool suggestionApplied = false;
         string estBanner = string.Empty;
-        string step = $"Preparing scenes for {vendorName} ({model})…";
+        string step = "Getting ready…";
         void Refresh()
         {
             int secs = (int)(DateTime.UtcNow - started).TotalSeconds;
@@ -124,7 +128,8 @@ public partial class MusicWizardWindow
         string ReportUsageNotice()
         {
             if (usage.Tally.TotalTokens <= 0) return string.Empty;
-            string line = usage.SummaryWithEstimate(est);
+            RuntimeLog.Info("MUSIC_WIZARD", "AI Auto-Fit usage: " + usage.SummaryWithEstimate(est));
+            string line = usage.PlainSummary();
             FloatingNotice.Info(this, line);
             return line;
         }
@@ -139,10 +144,10 @@ public partial class MusicWizardWindow
             string ffmpegPath = ResolveFfmpegPath();
             step = "Step 1 of 3 — finding scenes across your finished video timeline…";
             Refresh();
-            var (scenes, outputDurationSec) = await BuildAiMusicScenesAsync(ffmpegPath, cts.Token);
+            var (scenes, outputDurationSec) = await BuildAiMusicScenesAsync(ffmpegPath, aiDeadline.Token);
             est = AiCostEstimator.EstimateMusicAutoFit(vendor, model, Math.Max(1, scenes.Count), Math.Min(AvailableTracks.Count, AiMusicAutoFitService.MaxSongsInPrompt));
-            estBanner = AiCostEstimator.FormatPreRunBanner(est, vendor, model);
-            step = $"Step 1 of 3 — preparing {scenes.Count} scene frames for {vendorName} ({model})…";
+            estBanner = AiCostEstimator.PlainCostShort(est, vendor, model);
+            step = $"Step 1 of 3 — taking {scenes.Count} pictures of your video for {vendorName}…";
             Refresh();
             var recommendation = await Task.Run(() => AiMusicAutoFitService.AutoFitMusicAsync(
                 ffmpegPath,
@@ -157,8 +162,9 @@ public partial class MusicWizardWindow
                     RuntimeLog.Info("MUSIC_WIZARD", "AI Auto-Fit: " + status);
                     Dispatcher.UIThread.Post(() => { step = status; Refresh(); });
                 },
-                cts.Token), cts.Token);
-            cts.Token.ThrowIfCancellationRequested();
+                aiDeadline.Token), aiDeadline.Token);
+            aiDeadline.Token.ThrowIfCancellationRequested();
+            aiDeadline.CancelAfter(Timeout.InfiniteTimeSpan);
 
             if (recommendation == null)
             {
@@ -229,10 +235,10 @@ public partial class MusicWizardWindow
             RuntimeLog.Info("MUSIC_WIZARD", $"AI Auto-Fit picked '{songName}' at {recommendation.InSec:0.0}s.");
             ShowToastSuccess($"✨ AI picked '{songName}'");
         }
-        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        catch (OperationCanceledException) when (cts.IsCancellationRequested || aiDeadline.IsCancellationRequested)
         {
             ReportUsageNotice();
-            bool timedOut = DateTime.UtcNow - started >= AiMusicAutoFitService.OverallDeadline - TimeSpan.FromSeconds(1);
+            bool timedOut = !cts.IsCancellationRequested;
             string text = timedOut
                 ? $"⚠ {vendorName} took longer than {(int)AiMusicAutoFitService.OverallDeadline.TotalSeconds} seconds, so AI Auto-Fit stopped. Nothing was changed — try again in a moment."
                 : "AI Auto-Fit cancelled. Nothing was changed.";
@@ -249,7 +255,7 @@ public partial class MusicWizardWindow
         catch (AiProviderException ex)
         {
             ReportUsageNotice();
-            SetAiAutoFitStatus($"⚠ AI Auto-Fit failed: {ex.Message} (Reference: {AiUsageMeter.LastTaskId})", "AppDangerBrush");
+            SetAiAutoFitStatus($"⚠ AI Auto-Fit failed: {ex.Message} (Reference: {usage.Id})", "AppDangerBrush");
             RuntimeLog.Fail("MUSIC_WIZARD", GeminiClient.Redact($"AI Auto-Fit failed: {ex.Kind} {ex.Message} {ex.Detail}", apiKey));
         }
         catch (Exception ex)

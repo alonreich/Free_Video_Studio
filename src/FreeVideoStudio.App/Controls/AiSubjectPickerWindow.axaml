@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="FreeVideoStudio.App.Controls.AiSubjectPickerWindow"
-        Title="Target Character Selection - AI Smart Tracking"
+        Title="Who Should the Camera Follow?"
         Width="1080" Height="720" MinWidth="900" MinHeight="600"
         Background="{DynamicResource AppSurfaceBrush}"
         WindowStartupLocation="CenterOwner"
@@ -13,12 +13,12 @@
             <Grid RowDefinitions="30, Auto, *, Auto, Auto">
                 <!-- Row 0: Window Title Bar -->
                 <Border Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
-                    <TextBlock Text="🎯 TARGET CHARACTER DISCOVERY — AI SMART TRACKING" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
+                    <TextBlock Text="AI SMART ZOOM — WHO SHOULD THE CAMERA FOLLOW?" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
                 </Border>
 
                 <!-- Row 1: Header Instructions -->
                 <StackPanel Grid.Row="1" Margin="28,16,28,8" Spacing="4">
-                    <TextBlock Text="Select the Character to Track" FontSize="{DynamicResource AppFontSize20}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                    <TextBlock Text="Pick who the camera should follow" FontSize="{DynamicResource AppFontSize20}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
                     <TextBlock Name="PickerIntroText" Text="The AI looked at 3 moments of this segment. Pick who the camera should follow — the box on the frames shows where they are."
                                Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize13}" TextWrapping="Wrap"/>
                     <TextBlock Name="LookaheadNoticeText" IsVisible="False" Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSize13}" TextWrapping="Wrap" FontWeight="SemiBold"/>
@@ -69,7 +69,7 @@
                 <!-- Row 3: Detected Characters List -->
                 <Border Grid.Row="3" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="28,0,28,12" Padding="14">
                     <StackPanel Spacing="8">
-                        <TextBlock Text="DETECTED SUBJECTS (CLICK TO SELECT):" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppTextMutedBrush}" LetterSpacing="1"/>
+                        <TextBlock Text="WHO THE AI FOUND (CLICK ONE):" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppTextMutedBrush}" LetterSpacing="1"/>
                         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                             <StackPanel Name="SubjectsContainer" Orientation="Horizontal" Spacing="12"/>
                         </ScrollViewer>
@@ -79,14 +79,14 @@
                 <!-- Row 4: Action Footer -->
                 <Grid Grid.Row="4" ColumnDefinitions="Auto, Auto, *, Auto" Margin="28,0,28,18">
                     <Button Name="CancelPickerBtn" Grid.Column="0" Classes="Secondary" Content="CANCEL" MinWidth="110" MinHeight="42" Cursor="Hand" IsCancel="True"
-                            ToolTip.Tip="Close without tracking anything."/>
-                    <Button Name="NoneOfTheseBtn" Grid.Column="1" Classes="Secondary" Content="NONE OF THESE — I'LL DRAW A BOX" MinHeight="42" Cursor="Hand" Margin="10,0,0,0"
-                            ToolTip.Tip="Close this list. Draw a zoom box around your target, then press AI SMART ZOOM again."/>
+                            ToolTip.Tip="Closes this list. Nothing changes in your video."/>
+                    <Button Name="NoneOfTheseBtn" Grid.Column="1" Classes="Secondary" Content="NONE OF THESE — I'LL AIM A BOX" MinHeight="42" Cursor="Hand" Margin="10,0,0,0"
+                            ToolTip.Tip="Closes this list and puts a box on the video. Aim it at who to follow, then press FOLLOW THIS BOX."/>
                     <TextBlock Name="SelectionStatusText" Grid.Column="2" Text="Click a card above to select your target."
                                FontSize="{DynamicResource AppFontSize13}" Foreground="{DynamicResource AppTextMutedBrush}"
                                VerticalAlignment="Center" HorizontalAlignment="Center" TextWrapping="Wrap" Margin="10,0"/>
-                    <Button Name="ConfirmPickerBtn" Grid.Column="3" Classes="Success" Content="LOCK &amp; TRACK TARGET" MinWidth="220" MinHeight="42" Cursor="Hand" IsEnabled="False" IsDefault="True"
-                            ToolTip.Tip="Follow the selected target through the whole segment."/>
+                    <Button Name="ConfirmPickerBtn" Grid.Column="3" Classes="Success" Content="FOLLOW THIS ONE" MinWidth="220" MinHeight="42" Cursor="Hand" IsEnabled="False" IsDefault="True"
+                            ToolTip.Tip="The camera follows the one you picked through the whole block. You see a preview before anything is kept."/>
                 </Grid>
             </Grid>
         </Border>
