@@ -67,6 +67,7 @@ public static class AiUsageMeter
     private static decimal _sessionUsd;
     private static bool _sessionUnknownPrice;
     internal static string CurrentTaskId => Current.Value?.Id ?? "connection";
+    internal static string CurrentTaskName => Current.Value?.TaskName ?? "Connection check";
 
     internal static void RequestStarted(AiVendor vendor, string key)
     {
@@ -91,6 +92,18 @@ public static class AiUsageMeter
             return $"This session: {History.Count} AI task{(History.Count == 1 ? "" : "s")} · {Session.TotalTokens:N0} tokens"
                 + (Session.TotalTokens == 0 ? "" : _sessionUnknownPrice ? " · price unavailable for some models" : $" · {AiCostEstimator.FormatApproxUsd(_sessionUsd)} (estimate)")
                 + (_sessionAttempts > Session.Requests ? " · some requests have no usage report" : "");
+    }
+
+    public const string RunLineTag = "AIUSAGE_05";
+
+    public const string OwnReferenceTag = "AIREFOWN_01";
+
+    public static string SessionPlainTotal()
+    {
+        lock (Gate)
+            return Session.TotalTokens == 0 ? "nothing yet"
+                : _sessionUnknownPrice ? "cost not known for some models"
+                : $"{AiCostEstimator.PlainUsd(_sessionUsd)} (estimate)";
     }
 
     public static string SessionDetails()
@@ -124,7 +137,7 @@ public static class AiUsageMeter
     public static Scope BeginTask(string taskName, AiVendor vendor)
     {
         var scope = new Scope(taskName, vendor, null, Current.Value);
-        Volatile.Write(ref _lastTaskId, scope.Id);
+        if (scope.Parent == null) Volatile.Write(ref _lastTaskId, scope.Id);
         Current.Value = scope;
         return scope;
     }
@@ -153,6 +166,7 @@ public static class AiUsageMeter
                     }
                 }
             }
+            lock (Gate)
             for (Scope? s = Current.Value; s != null; s = s.Parent)
             {
                 s.Tally.Add(input, output, thinking);
@@ -160,6 +174,7 @@ public static class AiUsageMeter
                 s.EstimatedUsd += AiCostEstimator.EstimateCostUsd(vendor, model ?? s.LastModel, input, output, thinking);
                 s.UnknownPrice |= !AiCostEstimator.HasReferenceRate(vendor, model);
                 if (limits != null) s.LastLimits = limits;
+                if (ChatGptAuth.IsMarker(apiKey)) s.PlanUsage = true;
                 if (limits != null && s.FirstSeen == null)
                 {
                     s.FirstSeen = limits;
@@ -246,9 +261,11 @@ public static class AiUsageMeter
 
         public string TaskName { get; }
         public string Id { get; } = Guid.NewGuid().ToString("N")[..12];
+        public string ReferenceSuffix => "\n\nReference: " + Id;
         internal string? Account { get; set; }
         internal long Attempts { get; set; }
         internal bool UnknownPrice { get; set; }
+        internal bool PlanUsage { get; set; }
         internal AiRateLimitSnapshot? LastLimits { get; set; }
         private bool _disposed;
         private AiEstimatedUsage? _estimate;
@@ -275,6 +292,20 @@ public static class AiUsageMeter
             string estPrice = UnknownPrice || LastModel == null || !AiCostEstimator.HasReferenceRate(Vendor, LastModel)
                 ? "" : $" ({AiCostEstimator.FormatApproxUsd(_estimate.EstimatedUsd)})";
             return actual + $" · estimated beforehand: ~{_estimate.EstimatedTotalTokens:N0} tokens{estPrice}";
+        }
+
+        public void SetEstimate(AiEstimatedUsage? estimate) => _estimate = estimate ?? _estimate;
+
+        public string PlainSummary()
+        {
+            if (Tally.Requests == 0)
+                return Attempts == 0 ? "No online AI was used." : "The AI company did not report the cost. It may still be charged.";
+            if (PlanUsage) return "Used your ChatGPT plan (no extra charge). Manage it at chatgpt.com/settings/usage.";
+            if (UnknownPrice) return "Online AI was used. The cost is not known for this AI model.";
+            string line = $"This run: {AiCostEstimator.PlainUsd(EstimatedUsd)} (estimate)";
+            if (_estimate != null && LastModel != null && AiCostEstimator.HasReferenceRate(Vendor, LastModel) && _estimate.EstimatedUsd > 0)
+                line += $" · estimated before: {AiCostEstimator.PlainUsd(_estimate.EstimatedUsd)}";
+            return line + $" · this session: {SessionPlainTotal()}.";
         }
 
         /// <summary>The allowance the company reported after this task's FIRST answer, and that answer's tokens.</summary>
@@ -308,11 +339,12 @@ public static class AiUsageMeter
             if (_disposed) return;
             _disposed = true;
             string summary = $"{TaskName}: {SummaryWithEstimate()}";
-            lock (Gate)
-            {
-                while (History.Count >= 40) History.Dequeue();
-                History.Enqueue(summary);
-            }
+            if (Attempts > 0)
+                lock (Gate)
+                {
+                    while (History.Count >= 40) History.Dequeue();
+                    History.Enqueue(summary);
+                }
             CoreLogger.Info("AI-Usage", $"task={Id} {summary}");
             if (ReferenceEquals(Current.Value, this)) Current.Value = Parent;
         }

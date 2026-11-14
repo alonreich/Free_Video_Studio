@@ -96,6 +96,7 @@ Cleanup boundary:     .\src\FreeVideoStudio.Core\Infrastructure\SafeDirectoryCle
                       + tests\FreeVideoStudio.Core.Tests\SafeDirectoryCleanupTests.cs (05 CLEANUPBOUND_01).
 Project persistence:  ProjectSession.cs ordered background save/load queue;
                       tests\FreeVideoStudio.App.Tests\AutosaveBackgroundTests.cs (06 PROJECTIO_01).
+UI/UX audit tests:    tests\FreeVideoStudio.App.Tests\UxAuditTests.cs (04 EXPORTCLOSE_01, CROPSAVEERR_01, SEGROWTHEME_01/SEGROWA11Y_01).
 Legacy identity:      .\src\FreeVideoStudio.Core\Infrastructure\LegacyAppDataNames.txt (migration only)
 Storage migration:    docs/05_SYSTEM_LIFECYCLE_STORAGE.md, SYS-REBRAND
 Residue removal:      docs/05_SYSTEM_LIFECYCLE_STORAGE.md, SYS-REBRAND-SWEEP (REBRAND_02,
@@ -151,12 +152,25 @@ Voiceover gain:       Core/Media/VoiceOverLevel.cs; Controls/VoiceOverGainSlider
 AI features:          Services\Ai*.cs (AiVisionProviders.cs, AiHttpHelper.cs, AiCostEstimator.cs, AiMusicAutoFitService.cs,
                       AiViralPostService.cs, AiEliminationTrackerService.cs, AiUsageMeter.cs, AiJsonSchema.cs, AiFfmpeg.cs,
                       AiAnswerGuard.cs, AiReasoningPolicy.cs, AiRunApproval.cs, AiPreflight.cs, AiResultCache.cs,
-                      AiAnswerDiskStore.cs, AiDiagnostics.cs — audit 2026-11-13, AIAUDIT_04, docs/05 SYS-AISETTINGS §7.7),
+                      AiAnswerDiskStore.cs, AiDiagnostics.cs, AiKeyHealth.cs (AIKEYHEALTH_01), ChatGptAuth.cs + ChatGptPlanTransport.cs (Sign in with ChatGPT, CHATGPTSIGNIN_01) — audit 2026-11-13, AIAUDIT_04, docs/05 SYS-AISETTINGS §7.7;
+                      audit 2026-11-14, AIAUDIT_05, docs/05 SYS-AIAUDIT5, tests AiAudit5Tests.cs),
                       Core\Diagnostics\SecretRedactor.cs, IAiVisionProvider.cs, CommentaryPersonality.cs, SecretProtector.cs (DPAPI, KEYPROTECT_01);
-                      Core\Media\Caption*.cs. Zero local models; vendors Gemini / Claude / OpenAI; default models: AIMODELS_02.
+                      Core\Media\Caption*.cs. Vendors Gemini / Claude / OpenAI; default models: AIMODELS_02.
                       Canonical feature map + tags: docs/05 SYS-AISETTINGS §7 (AIAUDIT_01).
                       Specs: 01 TL-AITRACKING / TL-AIHUD / TL-CAPTIONS, 02 AUD-MUSICWIN, 03 FFM-CAPTIONS,
                       04 UI-AIZOOM / UI-AIHUDWAND / UI-AICOMMENTARY / UI-MUSICWIZARD / UI-MERGER-MULTISELECT, 05 SYS-AISETTINGS.
                       Secret guard: tests\FreeVideoStudio.App.Tests\SecretLeakTests.cs (SECRETSCAN_01) — never commit
                       keys, .pfx, *.key.pem or *.password.txt.
+Local AI (optional):  Core\LocalAi\ (OrtRuntime.cs ONNX Runtime C API, LocalAiPack*.cs pinned pack + check,
+                      Sam2BoxTracker.cs, LocalSubjectTracker.cs, LocalTrackingMath.cs), Core\Media\SceneCutDetector.cs,
+                      RawVideoFrameReader.cs, HudOverlayEventDetector.cs (Kill Tracker on-screen check);
+                      Services\LocalAiPackService.cs, LocalTrackingService.cs; Controls\SettingsWindow.LocalAi.cs,
+                      pack builder developer_tools\local_ai_pack\ (export_sam2_onnx.py,
+                      build_pack.py). Installed pack: %LocalAppData%\FreeVideoStudio\LocalAi\v1.
+                      Specs: 01 TL-LOCALTRACK, 05 SYS-LOCALAI, 09 DIST-LOCALAIPACK.
+AI ease of use:       Controls\AiZoomStartWindow.cs (the one AI Smart Zoom start question), Controls\DialogChrome.cs (title bar for
+                      code-built dialogs). Spec: 04 UI-AIEASE.
+AI setup:             Controls\AiModeWindow.cs ("How should AI work?": PC only / Online only / Both), Services\AiSetup.cs
+                      (AiMode, setup-complete check), Controls\AiSetupWizardWindow (key step, no company pre-picked);
+                      Settings › AI › How AI works — Change…. Spec: 04 UI-AIMODE (AIMODE_01).
 ```

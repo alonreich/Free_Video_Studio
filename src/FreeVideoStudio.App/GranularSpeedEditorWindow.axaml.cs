@@ -208,6 +208,64 @@ public partial class GranularSpeedEditorWindow : Window
         RedrawTimeline();
     }
 
+    private string? _killScanStatus;
+    private string? _killScanDetail;
+    private bool _killScanIsError;
+    private Action? _killScanCancel;
+
+    public void SetKillScanStatus(string? text, string? detail, bool isError, Action? cancel)
+    {
+        _killScanStatus = text;
+        _killScanDetail = detail;
+        _killScanIsError = isError;
+        _killScanCancel = cancel;
+        RedrawTimeline();
+    }
+
+    private void DrawKillScanChip(Avalonia.Controls.Canvas canvas, double width)
+    {
+        if (string.IsNullOrEmpty(_killScanStatus)) return;
+        var danger = Infrastructure.ThemeResources.Brush(this, "AppDangerBrush", Avalonia.Media.Brushes.IndianRed);
+        var panel = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = _killScanStatus,
+            FontSize = Infrastructure.ThemeManager.ScaledFontSize(10),
+            Foreground = _killScanIsError ? danger : Infrastructure.ThemeResources.Brush(this, "AppTextPrimaryBrush", Avalonia.Media.Brushes.White),
+            TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
+            MaxWidth = Math.Max(120, width * 0.5),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        });
+        if (_killScanCancel is { } cancel)
+        {
+            var stop = new TextBlock
+            {
+                Text = "✕ Cancel",
+                FontSize = Infrastructure.ThemeManager.ScaledFontSize(10),
+                FontWeight = Avalonia.Media.FontWeight.Bold,
+                Foreground = danger,
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            };
+            stop.PointerPressed += (_, e) => { e.Handled = true; cancel(); };
+            panel.Children.Add(stop);
+        }
+        var chip = new Avalonia.Controls.Border
+        {
+            Background = Infrastructure.ThemeResources.Brush(this, "AppSurfaceBrush", Avalonia.Media.Brushes.Black),
+            BorderBrush = _killScanIsError ? danger : Infrastructure.ThemeResources.Brush(this, "AppBorderBrush", Avalonia.Media.Brushes.Gray),
+            BorderThickness = new Avalonia.Thickness(1),
+            CornerRadius = new Avalonia.CornerRadius(4),
+            Padding = new Avalonia.Thickness(6, 1),
+            ZIndex = 600,
+            Child = panel,
+        };
+        if (!string.IsNullOrEmpty(_killScanDetail)) ToolTip.SetTip(chip, _killScanDetail);
+        Avalonia.Controls.Canvas.SetRight(chip, 0);
+        Avalonia.Controls.Canvas.SetTop(chip, -22);
+        canvas.Children.Add(chip);
+    }
+
 
     /// <summary>
     /// MARKER_01 — LaneABorder's BorderThickness. The marker overlay spans the whole grid cell
@@ -2086,10 +2144,8 @@ public partial class GranularSpeedEditorWindow : Window
             var seg = _edit.Segments[i];
             bool isSelected = idx == _edit.SelectedSegmentIndex;
 
-            var border = new Border
+            var border = new SegmentRowBorder
             {
-                Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse(isSelected ? "#3d4f63" : "#1e293b")),
-                BorderBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse(isSelected ? "#fde047" : "#334155")),
                 BorderThickness = new Thickness(isSelected ? 2 : 1),
                 CornerRadius = new CornerRadius(4),
                 Margin = new Thickness(0, 1),
@@ -2097,7 +2153,12 @@ public partial class GranularSpeedEditorWindow : Window
                 Focusable = true,
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand)
             };
+            PaintToken(border, Border.BackgroundProperty, isSelected ? "AppZoomCardCheckedBrush" : "AppZoomCardBrush");
+            PaintToken(border, Border.BorderBrushProperty, isSelected ? "AppWarningBrush" : "AppBorderBrush");
             ToolTip.SetTip(border, "Click to select this segment");
+            Avalonia.Automation.AutomationProperties.SetName(border,
+                $"Segment {idx + 1} of {_edit.Segments.Count}, {FormatClock(seg.StartMs)} to {FormatClock(seg.EndMs)}, speed {seg.Speed:0.0}x" +
+                (seg.ZoomW.HasValue ? ", zoomed" : "") + (isSelected ? ", selected" : ""));
 
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
@@ -2106,12 +2167,12 @@ public partial class GranularSpeedEditorWindow : Window
             var info = new TextBlock
             {
                 Text = $"{FormatClock(seg.StartMs)} → {FormatClock(seg.EndMs)}   {seg.Speed:0.0}x{(seg.ZoomW.HasValue ? "  🔍" : "")}",
-                Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#e2e8f0")),
                 FontSize = Infrastructure.ThemeManager.ScaledFontSize(10.5),
                 FontFamily = new Avalonia.Media.FontFamily("Consolas"),
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis
             };
+            PaintToken(info, TextBlock.ForegroundProperty, "AppTextPrimaryBrush");
 
             var delBtn = new Button
             {
@@ -2144,23 +2205,24 @@ public partial class GranularSpeedEditorWindow : Window
             border.PointerEntered += (_, _) =>
             {
                 if (_edit.SelectedSegmentIndex != idx)
-                    border.Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#26364a"));
+                    PaintToken(border, Border.BackgroundProperty, "AppZoomCardHoverBrush");
             };
             border.PointerExited += (_, _) =>
             {
                 if (_edit.SelectedSegmentIndex != idx)
-                    border.Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#1e293b"));
+                    PaintToken(border, Border.BackgroundProperty, "AppZoomCardBrush");
             };
             border.GotFocus += (_, _) =>
             {
                 if (_edit.SelectedSegmentIndex != idx)
-                    border.BorderBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#38bdf8"));
+                    PaintToken(border, Border.BorderBrushProperty, "AppFocusOuterBrush");
             };
             border.LostFocus += (_, _) =>
             {
                 if (_edit.SelectedSegmentIndex != idx)
-                    border.BorderBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#334155"));
+                    PaintToken(border, Border.BorderBrushProperty, "AppBorderBrush");
             };
+            border.Invoked += SelectThisSegment;
             border.PointerPressed += (_, _) => SelectThisSegment();
             border.KeyDown += (_, e) =>
             {
@@ -3071,6 +3133,7 @@ public partial class GranularSpeedEditorWindow : Window
 
             DrawMemeBands(canvas, markerOverlay, w, h, MarkerStickHeight);
             DrawCornerMemeBands(canvas, w, h);
+            DrawKillScanChip(canvas, w);
 
             if (_aiEliminationTimestamps.Count > 0 && dur > 0)
             {
@@ -5718,7 +5781,7 @@ public partial class GranularSpeedEditorWindow : Window
         if (_edit.CurrentMarkedRange() != null) return false;
 
         RuntimeLog.Info("GUIDE", $"{actionName} pressed with no marked range. Showing the MARK START / MARK END walkthrough.");
-        NotifyError("You did not selected an area on time the timeline yet!");
+        NotifyError("Mark a section on the timeline first.");
 
         var delay = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         delay.Tick += (_, _) =>
@@ -6099,4 +6162,29 @@ public partial class GranularSpeedEditorWindow : Window
             };
         }
 }
+
+    private static void PaintToken(Avalonia.StyledElement element, Avalonia.AvaloniaProperty property, string key)
+        => element.Bind(property, element.GetResourceObservable(key));
+
+    internal sealed class SegmentRowBorder : Border
+    {
+        public event Action? Invoked;
+
+        protected override Type StyleKeyOverride => typeof(Border);
+
+        protected override Avalonia.Automation.Peers.AutomationPeer OnCreateAutomationPeer() => new Peer(this);
+
+        private sealed class Peer(SegmentRowBorder owner)
+            : Avalonia.Automation.Peers.ControlAutomationPeer(owner), Avalonia.Automation.Provider.IInvokeProvider
+        {
+            protected override Avalonia.Automation.Peers.AutomationControlType GetAutomationControlTypeCore()
+                => Avalonia.Automation.Peers.AutomationControlType.ListItem;
+
+            protected override bool IsContentElementCore() => true;
+
+            protected override bool IsControlElementCore() => true;
+
+            public void Invoke() => owner.Invoked?.Invoke();
+        }
+    }
 }

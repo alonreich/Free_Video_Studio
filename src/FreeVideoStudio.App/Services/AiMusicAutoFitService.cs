@@ -188,12 +188,12 @@ public static class AiMusicAutoFitService
                 byte[]? data = TryGetCachedFrame(frameKey);
                 if (data != null)
                 {
-                    statusCallback?.Invoke($"Step 1 of 3 — reused cached frame {i + 1} of {scenes.Count} ({scene.SourceSec:0.0}s of {Path.GetFileName(scene.VideoPath)})…");
+                    statusCallback?.Invoke($"Step 1 of 3 — picture {i + 1} of {scenes.Count}…");
                     images.Add(new AiImageInput(data, "image/jpeg", $"Scene at {scene.OutputSec.ToString("F1", CultureInfo.InvariantCulture)}s of {videoDurationSec.ToString("F1", CultureInfo.InvariantCulture)}s"));
                     continue;
                 }
 
-                statusCallback?.Invoke($"Step 1 of 3 — extracting frame {i + 1} of {scenes.Count} ({scene.SourceSec:0.0}s of {Path.GetFileName(scene.VideoPath)})…");
+                statusCallback?.Invoke($"Step 1 of 3 — taking picture {i + 1} of {scenes.Count}…");
                 string tempPath = Path.Combine(Path.GetTempPath(), $"fvs_music_frame_{Guid.NewGuid():N}.jpg");
                 tempFrames.Add(tempPath);
 
@@ -211,7 +211,7 @@ public static class AiMusicAutoFitService
             var listed = availableTracks.Take(MaxSongsInPrompt).ToList();
             string prompt = BuildPrompt(listed, availableTracks.Count, images.Count, videoDurationSec);
 
-            statusCallback?.Invoke($"Step 2 of 3 — {vendorName} ({effectiveModel}) is analyzing {images.Count} scene frames and {listed.Count} song titles…");
+            statusCallback?.Invoke($"Step 2 of 3 — {vendorName} is looking at {images.Count} pictures and {listed.Count} song names…");
             var keyParts = new List<string?> { "music-autofit-v1", vendor.ToString(), effectiveModel, prompt };
             foreach (var img in images) keyParts.Add(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(img.Data)));
             string responseJson = await AiResultCache.RunAsync(AiResultCache.Key(keyParts.ToArray()),
@@ -222,6 +222,7 @@ public static class AiMusicAutoFitService
                     images,
                     video: null,
                     AutoFitJsonSchema,
+                    reasoning: AiReasoningPolicy.For(AiUsage.MusicAutoFit),
                     options: CallOptions,
                     userLog: statusCallback,
                     ct: ct),
@@ -230,7 +231,7 @@ public static class AiMusicAutoFitService
             var parsedChoice = ParseChoice(responseJson, listed);
             if (parsedChoice == null)
             {
-                RuntimeLog.Fail("MUSIC_WIZARD", GeminiClient.Redact(
+                RuntimeLog.Fail("MUSIC_WIZARD", AiDiagnostics.Tag + GeminiClient.Redact(
                     $"{vendorName} ({effectiveModel}) unparseable song selection. Prompt excerpt: {Truncate(prompt, 400)} | Raw response: {Truncate(responseJson, 1200)}",
                     apiKey));
                 throw new AiMusicAutoFitException($"{vendorName} did not name a song from your list, so nothing was changed. Try again.");
@@ -242,11 +243,11 @@ public static class AiMusicAutoFitService
             MusicEnergyAnalysis.Result? energy = TryGetCachedEnergy(energyKey);
             if (energy != null)
             {
-                statusCallback?.Invoke($"Step 3 of 3 — reused cached loudness curve for '{songLabel}'…");
+                statusCallback?.Invoke($"Step 3 of 3 — finding the best part of '{songLabel}'…");
             }
             else
             {
-                statusCallback?.Invoke($"Step 3 of 3 — measuring loudness curve of '{songLabel}'…");
+                statusCallback?.Invoke($"Step 3 of 3 — listening for the best part of '{songLabel}'…");
             }
             double trackDuration = track.DurationSec > 0 ? track.DurationSec : 0;
             double inSec = 0;

@@ -3,7 +3,7 @@
         x:CompileBindings="True"
         x:Class="FreeVideoStudio.App.Controls.AiSetupWizardWindow"
         Title="Connect Your AI"
-        Width="580" MinHeight="620" SizeToContent="Height"
+        Width="580" SizeToContent="Height"
         Background="{DynamicResource AppSurfaceBrush}"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
@@ -21,94 +21,112 @@
                     <StackPanel Margin="24,20" Spacing="16">
                         <StackPanel Spacing="4">
                             <TextBlock Name="WizardHeadline" Text="Connect your AI" FontSize="{DynamicResource AppFontSize18}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                            <TextBlock Name="WizardIntro" Text="AI features (Smart Zoom, Commentary, Magic Wand, Music Auto-Fit, Viral Post, Kill Tracker) use your own AI key. Paste it once here; it is stored encrypted for your Windows account only."
+                            <TextBlock Name="WizardIntro" Text="AI features need a key from an AI company. A key is like a password: it lets this app use that company's AI on your account. You paste it once; it is kept encrypted on this PC."
                                        Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap"/>
                         </StackPanel>
 
-                        <!-- Provider Selection Tabs -->
                         <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10">
                             <StackPanel Spacing="8">
-                                <TextBlock Text="1. Choose your AI provider (you can connect more than one):"
+                                <TextBlock Text="Pick your AI company:"
                                            Foreground="{DynamicResource AppTextPrimaryBrush}" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize12}"/>
                                 <Grid ColumnDefinitions="*, *, *">
-                                    <Button Name="VendorGoogleBtn" Grid.Column="0" Classes="Secondary" Margin="2" HorizontalContentAlignment="Center" HorizontalAlignment="Stretch" Cursor="Hand" Content="Google Gemini ★"/>
-                                    <Button Name="VendorAnthropicBtn" Grid.Column="1" Classes="Secondary" Margin="2" HorizontalContentAlignment="Center" HorizontalAlignment="Stretch" Cursor="Hand" Content="Anthropic Claude"/>
-                                    <Button Name="VendorOpenAiBtn" Grid.Column="2" Classes="Secondary" Margin="2" HorizontalContentAlignment="Center" HorizontalAlignment="Stretch" Cursor="Hand" Content="OpenAI"/>
+                                    <Button Name="VendorGoogleBtn" Grid.Column="0" Classes="Secondary" Margin="2" HorizontalContentAlignment="Center" HorizontalAlignment="Stretch" Cursor="Hand"
+                                            ToolTip.Tip="Google Gemini: watches the video and hears the sound. You can start for free with any Google account."/>
+                                    <Button Name="VendorAnthropicBtn" Grid.Column="1" Classes="Secondary" Margin="2" HorizontalContentAlignment="Center" HorizontalAlignment="Stretch" Cursor="Hand"
+                                            ToolTip.Tip="Anthropic Claude: looks at still pictures of the video (no sound). You pay Anthropic for what you use."/>
+                                    <Button Name="VendorOpenAiBtn" Grid.Column="2" Classes="Secondary" Margin="2" HorizontalContentAlignment="Center" HorizontalAlignment="Stretch" Cursor="Hand"
+                                            ToolTip.Tip="OpenAI: looks at still pictures of the video (no sound). You pay OpenAI for what you use."/>
                                 </Grid>
                                 <TextBlock Name="VendorCapabilityHint"
-                                           Text="★ Recommended — Google Gemini watches video + hears audio and has a free tier. Claude and OpenAI read sampled video stills (no audio)."
+                                           Text="Google Gemini: watches video and hears sound, small free plan. Anthropic Claude and OpenAI: look at still pictures, no sound."
                                            Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
 
-                        <!-- STEP 1: Get Your Key -->
-                        <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
+                        <Border Name="ChatGptSignInBorder" IsVisible="False" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppAccentBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Have ChatGPT Plus or Pro?" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                                <TextBlock Name="ChatGptSignInHint" Text="Use your ChatGPT plan in this app: no key and no extra charge. Your browser opens, you sign in to ChatGPT and say yes."
+                                           Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <Button Name="ChatGptSignInBtn" Classes="Primary" Content="Continue with ChatGPT" Cursor="Hand"
+                                            ToolTip.Tip="Opens ChatGPT in your browser. Sign in and allow Free Video Studio to use your plan."/>
+                                    <Button Name="ChatGptSignOutBtn" Classes="Secondary" Content="Sign out" Cursor="Hand" IsVisible="False"
+                                            ToolTip.Tip="Stops this app from using your ChatGPT plan."/>
+                                </StackPanel>
+                                <TextBlock Text="Or use an OpenAI API key below (paid per use)." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Name="KeyStep1Border" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
                             <StackPanel Spacing="10">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Border Background="{DynamicResource AppAccentBrush}" CornerRadius="12" Width="24" Height="24">
                                         <TextBlock Text="1" Foreground="White" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="12"/>
                                     </Border>
-                                    <TextBlock Name="Step1Title" Text="Step 1: Get your key" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock Name="Step1Title" Text="Get your key" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
-
-                                <TextBlock Name="Step1Lead" Text="Follow these quick steps:" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}"/>
 
                                 <StackPanel Margin="10,0,0,0" Spacing="4">
-                                    <TextBlock Name="Step1Line1" Text="1. Sign in with any Google account." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}"/>
-                                    <TextBlock Name="Step1Line2" Text="2. Click the button to Create API Key." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}"/>
-                                    <TextBlock Name="Step1Line3" Text="3. Select 'Create in new project'." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}"/>
-                                    <TextBlock Name="Step1Line4" Text="4. Click the copy icon next to your generated key." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}"/>
+                                    <TextBlock Name="Step1Line1" Text="" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
+                                    <TextBlock Name="Step1Line2" Text="" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
+                                    <TextBlock Name="Step1Line3" Text="" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
+                                    <TextBlock Name="Step1Line4" Text="" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
                                 </StackPanel>
 
-                                <Button Name="OpenAiStudioBtn" Classes="Primary" Content="Get a Google Gemini key" Cursor="Hand" Margin="0,4,0,0"
-                                        ToolTip.Tip="Opens the company's key page in your default web browser."/>
+                                <Button Name="OpenAiStudioBtn" Classes="Primary" Content="Open the key page" Cursor="Hand" Margin="0,4,0,0"
+                                        ToolTip.Tip="Opens the company's key page in your web browser. Come back here when you have copied the key."/>
                             </StackPanel>
                         </Border>
 
-                        <!-- STEP 2: Paste Key, Choose Model & Verify -->
-                        <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
+                        <Border Name="KeyStep2Border" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
                             <StackPanel Spacing="10">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Border Background="{DynamicResource AppAccentBrush}" CornerRadius="12" Width="24" Height="24">
                                         <TextBlock Text="2" Foreground="White" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="12"/>
                                     </Border>
-                                    <TextBlock Text="Step 2: Paste key, pick model, and verify" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Paste it here" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
 
                                 <Grid ColumnDefinitions="*, Auto, Auto" Margin="0,4,0,0">
-                                    <TextBox Name="ApiKeyInputBox" PasswordChar="•" Watermark="Paste your API key here..."
+                                    <TextBox Name="ApiKeyInputBox" PasswordChar="•" Watermark="Paste your key here (Ctrl+V)…"
                                              AutomationProperties.Name="API Key"
+                                             ToolTip.Tip="Click here and press Ctrl+V. The key is checked as soon as you paste it."
                                              Foreground="{DynamicResource AppTextPrimaryBrush}" Margin="0,0,6,0"/>
                                     <ToggleButton Name="WizardRevealKeyBtn" Grid.Column="1" Classes="Secondary" Content="Show" Cursor="Hand" Margin="0,0,8,0"
-                                                  ToolTip.Tip="Show or hide your pasted API key"/>
-                                    <Button Name="TestAndSaveBtn" Grid.Column="2" Classes="Success" Content="Test &amp; Save" Cursor="Hand"
-                                            ToolTip.Tip="Checks the key with the AI provider, loads available models, then saves encrypted."/>
+                                                  ToolTip.Tip="Shows the key as letters so you can check it."/>
+                                    <Button Name="TestAndSaveBtn" Grid.Column="2" Classes="Success" Content="Connect" Cursor="Hand" MinWidth="90"
+                                            ToolTip.Tip="Checks the key with the AI company and saves it. This window closes by itself when it works."/>
                                 </Grid>
-
-                                <Grid ColumnDefinitions="Auto, *, Auto" Margin="0,2,0,0">
-                                    <TextBlock Grid.Column="0" Text="Model:" VerticalAlignment="Center" Margin="0,0,8,0"
-                                               FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize12}" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                    <ComboBox Name="WizardModelCombo" Grid.Column="1" HorizontalAlignment="Stretch" Margin="0,0,8,0"
-                                              ToolTip.Tip="Model used by default with this provider (you can also customize per feature in Settings › AI)."/>
-                                    <Button Name="WizardRefreshModelsBtn" Grid.Column="2" Classes="Secondary" Content="Refresh Models" Cursor="Hand"
-                                            ToolTip.Tip="Ask this AI provider for the live list of models your key can use."/>
-                                </Grid>
-                                <TextBlock Name="WizardModelHintText"
-                                           Text="Recommended model is pre-selected. You can switch models anytime here or in Settings › AI."
-                                           Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
 
                                 <ProgressBar Name="WizardProgressBar" IsIndeterminate="True" Height="4" IsVisible="False" Margin="0,2,0,0"/>
-                                <TextBlock Name="WizardVerboseStepText" Text="" IsVisible="False"
-                                           Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
-                                <TextBlock Name="VerificationStatusLabel" Text="Paste your key and click Test &amp; Save."
+                                <TextBlock Name="VerificationStatusLabel" Text="Paste your key. It is checked right away."
                                            Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap"/>
+
+                                <Expander Name="WizardAdvancedExpander" Header="Advanced: AI model" HorizontalAlignment="Stretch" IsExpanded="False"
+                                          ToolTip.Tip="Which of that company's AI models to use. The right one is already picked. Most people never open this.">
+                                    <StackPanel Spacing="8" Margin="0,8,0,0">
+                                        <Grid ColumnDefinitions="*, Auto">
+                                            <ComboBox Name="WizardModelCombo" HorizontalAlignment="Stretch" Margin="0,0,8,0"
+                                                      AutomationProperties.Name="AI model"
+                                                      ToolTip.Tip="The AI model used with this company. You can also change it later in Settings › AI."/>
+                                            <Button Name="WizardRefreshModelsBtn" Grid.Column="1" Classes="Secondary" Content="Refresh" Cursor="Hand"
+                                                    ToolTip.Tip="Asks the company which models your key can use."/>
+                                        </Grid>
+                                        <TextBlock Name="WizardModelHintText" Text=""
+                                                   Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
+                                        <TextBlock Name="WizardVerboseStepText" Text="" IsVisible="False"
+                                                   Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Expander>
                             </StackPanel>
                         </Border>
 
-                        <!-- STEP 3: Ready Action -->
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12" Margin="0,10,0,0">
-                            <Button Name="CancelWizardBtn" Classes="Secondary" Content="CANCEL" MinWidth="100" Cursor="Hand" IsCancel="True"/>
-                            <Button Name="StartAiZoomBtn" Classes="Success" Content="CONTINUE" MinWidth="160" Cursor="Hand" IsEnabled="False" IsDefault="True"/>
+                            <Button Name="CancelWizardBtn" Classes="Secondary" Content="CANCEL" MinWidth="100" Cursor="Hand" IsCancel="True"
+                                    ToolTip.Tip="Closes this window. A key that already connected stays saved."/>
+                            <Button Name="StartAiZoomBtn" Classes="Success" Content="DONE" MinWidth="160" Cursor="Hand" IsEnabled="False"
+                                    ToolTip.Tip="Available once a key is connected."/>
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>

@@ -24,9 +24,11 @@ public sealed class DevelopmentEnvironmentTests
             var paths = new ApplicationPaths(root);
             Assert.Equal(Path.Combine(root, "settings.json"), paths.SettingsFile);
             Assert.Equal(Path.Combine(root, "session_state.json"), paths.SessionStateFile);
+            Assert.Equal(Path.Combine(root, "chatgpt_signin.dat"), paths.ChatGptSignInFile);
             Assert.Equal(Path.Combine(root, "logs"), paths.LogsDirectory);
             Assert.Equal(Path.Combine(root, "uistate"), paths.UiStateDirectory);
             Assert.Equal(Path.Combine(root, "recovery_v2.json"), paths.RecoveryStateFile);
+            Assert.Equal(Path.Combine(root, "LocalAi"), paths.LocalAiDirectory);
             Assert.Equal(Path.Combine(temp, "FreeVideoStudio", "voiceovers"), paths.VoiceOverDirectory);
             Assert.Equal(Path.Combine(temp, "FreeVideoStudio", "cache", "lanes"), paths.LaneCacheDirectory);
             Assert.Equal(Path.Combine(temp, "FreeVideoStudio"), DevelopmentEnvironment.HelperTempDirectory);
@@ -52,9 +54,11 @@ public sealed class DevelopmentEnvironmentTests
             Assert.Equal(Path.Combine(DevelopmentEnvironment.SystemTempRoot, "FreeVideoStudio_DEV", "voiceovers"), paths.VoiceOverDirectory);
             Assert.Equal(Path.Combine(DevelopmentEnvironment.TemporaryDataRoot, "session_state.json"), paths.SessionStateFile);
             Assert.Equal(Path.Combine(DevelopmentEnvironment.TemporaryDataRoot, "settings.json"), paths.SettingsFile);
+            Assert.Equal(Path.Combine(DevelopmentEnvironment.TemporaryDataRoot, "chatgpt_signin.dat"), paths.ChatGptSignInFile);
             Assert.Equal(Path.Combine(DevelopmentEnvironment.TemporaryDataRoot, "scratch", "work"), paths.TempDirectory);
             Assert.Equal(Path.Combine(DevelopmentEnvironment.TemporaryDataRoot, "cache", "lanes"), paths.LaneCacheDirectory);
             Assert.Equal(Path.Combine(root, "crops_coordinations.conf"), paths.CropCoordinatesFile);
+            Assert.Equal(Path.Combine(root, "LocalAi"), paths.LocalAiDirectory);
             Assert.StartsWith(root, paths.RecoveryStateFile);
             Assert.Equal(Path.Combine(root + "-other", "voiceovers"), new ApplicationPaths(root + "-other").VoiceOverDirectory);
             Environment.SetEnvironmentVariable(DevelopmentEnvironment.SharedMediaEnvironmentVariable, null);

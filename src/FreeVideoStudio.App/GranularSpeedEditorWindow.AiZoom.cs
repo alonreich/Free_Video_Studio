@@ -27,6 +27,8 @@ public partial class GranularSpeedEditorWindow
     private CancellationTokenSource? _aiTrackingCts;
     private bool _aiTrackingRunning;
     private bool _closeDuringTrackingConfirmed;
+    private string? _lastAiTargetDescription;
+    private bool _aiAwaitingBox;
 
     private bool _isAiPreviewLooping;
     private int _aiPreviewSegmentIndex = -1;
@@ -109,6 +111,15 @@ public partial class GranularSpeedEditorWindow
     {
         var btn = AiSmartZoomBtnCtl;
         if (btn == null) return;
+
+        if (!_zoomModeActive) _aiAwaitingBox = false;
+        if (_aiAwaitingBox)
+        {
+            btn.Content = "▶ FOLLOW THIS BOX";
+            btn.Classes.Remove("Primary");
+            if (!btn.Classes.Contains("Success")) btn.Classes.Add("Success");
+            return;
+        }
 
         bool hasAiZoom = _edit.SelectedSegmentIndex >= 0 &&
                          _edit.SelectedSegmentIndex < _edit.Segments.Count &&
@@ -375,6 +386,18 @@ public partial class GranularSpeedEditorWindow
     /// AIRESMOOTH_01 — "EDIT AI ZOOM › Re-frame": the stored raw waypoints are smoothed again with the
     /// CURRENT camera settings. Instant, offline, and goes through the same preview / ACCEPT path.
     /// </summary>
+    private sealed record LastZoomRun(IReadOnlyList<RawSubjectWaypoint> Raw);
+
+    private static string LastZoomRunKey(AiTrackingRequest r, GeminiModelSession session)
+    {
+        var t = r.Target;
+        string identity = File.Exists(r.VideoPath) ? AiResultCache.FileIdentity(r.VideoPath) : r.VideoPath;
+        string Num(double v) => v.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture);
+        return AiResultCache.Key("zoom-last-run-v1", identity, Num(r.SourceStartSec), Num(r.SourceDurationSec),
+            t.Label, $"{t.Ymin},{t.Xmin},{t.Ymax},{t.Xmax}", t.IsUserBox ? "box" : "found", r.Profile.ToString(),
+            session.Vendor.ToString(), session.Model);
+    }
+
     private async Task ReframeExistingAiZoomAsync(int index, SpeedSegment seg, AiTrajectorySmoother.SmoothedTrajectory existing)
     {
         var settings = SettingsManager.Instance;
@@ -395,23 +418,90 @@ public partial class GranularSpeedEditorWindow
         BeginAiPreview(index, seg, trajectory, existing.SourceW, existing.SourceH, null);
     }
 
+    private void BeginAimBoxForAiZoom(int segIndex, string? reason)
+    {
+        if (segIndex < 0 || segIndex >= _edit.Segments.Count) return;
+        if (_edit.SelectedSegmentIndex != segIndex) SelectSegment(segIndex, jumpPlayhead: false);
+        if (!_zoomModeActive) EnterZoomMode();
+        _aiAwaitingBox = _zoomModeActive;
+        UpdateAiSmartZoomBtnVisualState();
+        string text = (string.IsNullOrEmpty(reason) ? "" : reason + " ") + "Aim the box at who to follow, then press FOLLOW THIS BOX.";
+        SetStatus(text);
+        Notify(text);
+    }
+
+    internal static IReadOnlyList<(double StartMs, double EndMs)> PlanAiZoomSplit(double startMs, double endMs, double maxSec)
+    {
+        var parts = new List<(double, double)>();
+        double length = endMs - startMs;
+        if (length <= 0 || maxSec <= 0) return parts;
+        int count = Math.Max(1, (int)Math.Ceiling(length / (maxSec * 1000.0) - 1e-9));
+        for (int k = 0; k < count; k++)
+        {
+            double a = Math.Round(startMs + length * k / count);
+            double b = k == count - 1 ? endMs : Math.Round(startMs + length * (k + 1) / count);
+            parts.Add((a, b));
+        }
+        return parts;
+    }
+
+    private async Task<bool> OfferSplitForAiZoomAsync(int segIndex, SpeedSegment seg, double durationSec)
+    {
+        var ci = CultureInfo.InvariantCulture;
+        string limit = GeminiTrackingService.MaxTrackSec.ToString("0", ci);
+        if (seg.ZoomW.HasValue || !string.IsNullOrEmpty(seg.AiTrackingTrajectory))
+        {
+            await ErrorReporter.ShowAsync(this, "Block Too Long for AI Smart Zoom",
+                $"AI SMART ZOOM follows a target for up to {limit} seconds per block (this one is {durationSec.ToString("0.0", ci)} s). " +
+                "Remove its zoom first, or split it into shorter blocks, then try again.");
+            return false;
+        }
+
+        var parts = PlanAiZoomSplit(seg.StartMs, seg.EndMs, GeminiTrackingService.MaxTrackSec);
+        if (parts.Count < 2) return true;
+        if (!await ConfirmDialogWindow.AskAsync(this,
+                $"This block is {durationSec.ToString("0.0", ci)} s long. AI SMART ZOOM follows a target for up to {limit} s at a time.\n\n" +
+                $"Split it into {parts.Count} equal blocks? AI SMART ZOOM then continues with the first one. " +
+                "For the others, click the block and press AI SMART ZOOM again. Ctrl+Z puts the block back.",
+                "Block Too Long", "Split it for me", "Cancel"))
+            return false;
+
+        PushUndo("split block for AI smart zoom");
+        _edit.Segments[segIndex] = seg with { StartMs = parts[0].StartMs, EndMs = parts[0].EndMs };
+        for (int k = 1; k < parts.Count; k++)
+            _edit.Segments.Insert(segIndex + k, seg with { StartMs = parts[k].StartMs, EndMs = parts[k].EndMs });
+        _edit.SelectedSegmentIndex = segIndex;
+        RefreshSegmentList();
+        RedrawTimeline();
+        UpdateDeleteButtonVisibility();
+        return true;
+    }
+
     /// <summary>Main handler for AI SMART ZOOM / EDIT AI ZOOM.</summary>
     private async Task OnAiSmartZoomClickedAsync()
     {
         if (_aiTrackingCts != null) return;
         if (_isAiPreviewLooping) EndAiPreviewLoop(accept: false);
 
+        bool followAimedBox = _aiAwaitingBox && _zoomModeActive;
+
+        if (!await AiModeWindow.EnsureSetUpAsync(this)) return;
+        bool pcOnly = AiSetup.Current() == AiMode.LocalOnly;
         var settings = SettingsManager.Instance;
         var u1Config = settings.GetUsageConfig(AiUsage.SubjectDiscovery);
         var u2Config = settings.GetUsageConfig(AiUsage.DenseTracking);
-        if (!await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, u1Config.Vendor, AiUsage.SubjectDiscovery)) return;
-        settings = SettingsManager.Instance;
-        u1Config = settings.GetUsageConfig(AiUsage.SubjectDiscovery);
-        u2Config = settings.GetUsageConfig(AiUsage.DenseTracking);
-        if (u2Config.Vendor != u1Config.Vendor && !await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, u2Config.Vendor, AiUsage.DenseTracking)) return;
-        settings = SettingsManager.Instance;
-        u1Config = settings.GetUsageConfig(AiUsage.SubjectDiscovery);
-        u2Config = settings.GetUsageConfig(AiUsage.DenseTracking);
+        bool localTracking = LocalTrackingService.IsReady;
+        if (!localTracking)
+        {
+            if (!await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, u1Config.Vendor, AiUsage.SubjectDiscovery)) return;
+            settings = SettingsManager.Instance;
+            u1Config = settings.GetUsageConfig(AiUsage.SubjectDiscovery);
+            u2Config = settings.GetUsageConfig(AiUsage.DenseTracking);
+            if (u2Config.Vendor != u1Config.Vendor && !await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, u2Config.Vendor, AiUsage.DenseTracking)) return;
+            settings = SettingsManager.Instance;
+            u1Config = settings.GetUsageConfig(AiUsage.SubjectDiscovery);
+            u2Config = settings.GetUsageConfig(AiUsage.DenseTracking);
+        }
 
         double dur = GetDuration();
         if (dur <= 0)
@@ -429,61 +519,112 @@ public partial class GranularSpeedEditorWindow
         int segIndex = _edit.SelectedSegmentIndex;
         var seg = _edit.Segments[segIndex];
 
-        if (!string.IsNullOrEmpty(seg.AiTrackingTrajectory)
-            && AiTrajectorySmoother.SmoothedTrajectory.FromJson(seg.AiTrackingTrajectory) is { RawWaypoints.Count: > 0, SourceW: > 0, SourceH: > 0 } existing)
-        {
-            var choice = await ConfirmDialogWindow.AskThreeWayAsync(
-                this,
-                "Edit AI Zoom",
-                "Re-frame this AI zoom with your current camera settings (instant, nothing is sent to the AI), " +
-                "or track the target again from scratch?",
-                "Re-frame (no AI)",
-                "Track again");
-            if (choice == ConfirmDialogWindow.ConfirmDialogResult.Yes)
-            {
-                if (_zoomModeActive) ExitZoomMode();
-                await ReframeExistingAiZoomAsync(segIndex, seg, existing);
-                return;
-            }
-            if (choice != ConfirmDialogWindow.ConfirmDialogResult.Alt) return;
-        }
+        AiTrajectorySmoother.SmoothedTrajectory? existing =
+            !string.IsNullOrEmpty(seg.AiTrackingTrajectory)
+            && AiTrajectorySmoother.SmoothedTrajectory.FromJson(seg.AiTrackingTrajectory) is { RawWaypoints.Count: > 0, SourceW: > 0, SourceH: > 0 } stored
+                ? stored
+                : null;
 
-        if (!await EnsureAiZoomConsentAsync()) return;
-
-        if (!TryResolveAiSource(seg, out AiSource source, out string? refusal))
-        {
-            await ErrorReporter.ShowAsync(this, "AI Smart Zoom", refusal ?? "This block cannot be tracked.");
-            return;
-        }
-        if (source.DurationSec > GeminiTrackingService.MaxTrackSec + 0.01)
-        {
-            await ErrorReporter.ShowAsync(this, "Block Too Long for AI Smart Zoom",
-                $"AI SMART ZOOM follows a target for up to {GeminiTrackingService.MaxTrackSec:0} seconds per block " +
-                $"(this one is {source.DurationSec.ToString("0.0", CultureInfo.InvariantCulture)} s). Split it into shorter blocks and track each one.");
-            return;
-        }
+        if (!localTracking && !await EnsureAiZoomConsentAsync()) return;
 
         var (sw, sh) = CoordinateMath.GetResolutionInts(_edit.OriginalResolution);
         if (sw <= 0 || sh <= 0) { sw = 1920; sh = 1080; }
         var userBox = GetUserZoomBox(seg, sw, sh);
-
+        if (followAimedBox && userBox != null) _zoomBoxTouched = true;
         if (_zoomModeActive) ExitZoomMode();
+        followAimedBox = followAimedBox && userBox != null;
+
+        if (!TryResolveAiSource(seg, out AiSource source, out string? refusal))
+        {
+            if (existing != null && await ConfirmDialogWindow.AskAsync(this,
+                    (refusal ?? "This block cannot be tracked again.") + "\n\nRe-aim the AI zoom it already has with your current Zoom strength instead?",
+                    "AI Smart Zoom", "Re-aim the camera", "Cancel"))
+                await ReframeExistingAiZoomAsync(segIndex, seg, existing);
+            else if (existing == null)
+                await ErrorReporter.ShowAsync(this, "AI Smart Zoom", refusal ?? "This block cannot be tracked.");
+            return;
+        }
+        if (source.DurationSec > GeminiTrackingService.MaxTrackSec + 0.01)
+        {
+            if (!await OfferSplitForAiZoomAsync(segIndex, seg, source.DurationSec)) return;
+            seg = _edit.Segments[segIndex];
+            if (!TryResolveAiSource(seg, out source, out refusal))
+            {
+                await ErrorReporter.ShowAsync(this, "AI Smart Zoom", refusal ?? "This block cannot be tracked.");
+                return;
+            }
+        }
+
+        string u1Model = settings.GetEffectiveModel(AiUsage.SubjectDiscovery);
+        string u2Model = settings.GetEffectiveModel(AiUsage.DenseTracking);
+        int zoomParts = GeminiTrackingService.PlanChunks(source.DurationSec).Count;
+        AiEstimatedUsage followEstimate = localTracking
+            ? AiCostEstimator.EstimateSmartZoomDiscoveryOnly(u1Config.Vendor, u1Model, include: false)
+            : AiPreflight.WithCheck(AiCostEstimator.EstimateSmartZoom(u2Config.Vendor, u2Model, source.DurationSec, includeDiscovery: false),
+                u2Config.Vendor, settings.GetApiKey(u2Config.Vendor), u2Model);
+        AiEstimatedUsage findEstimate = localTracking
+            ? AiCostEstimator.EstimateSmartZoomDiscoveryOnly(u1Config.Vendor, u1Model, include: true)
+            : AiPreflight.WithCheck(AiCostEstimator.EstimateSmartZoom(u2Config.Vendor, u2Model, source.DurationSec, includeDiscovery: true),
+                u2Config.Vendor, settings.GetApiKey(u2Config.Vendor), u2Model);
+        static string About(int requests) => $"Takes about {Math.Max(1, (int)Math.Ceiling(requests * 20 / 60.0))} min. ";
+        string trackVendor = AiVisionProviders.DisplayName(u2Config.Vendor);
+        string findVendor = AiVisionProviders.DisplayName(u1Config.Vendor);
+        string followCost = localTracking
+            ? "Runs on this PC. " + AiZoomStartWindow.FreeLine
+            : $"Sends this part of the video (no sound) to {trackVendor}. " + About(zoomParts) + AiCostEstimator.PlainCost(followEstimate, u2Config.Vendor, u2Model);
+        string findCost = localTracking
+            ? $"Sends 3 pictures to {findVendor}; the following itself runs on this PC. " + AiCostEstimator.PlainCost(findEstimate, u1Config.Vendor, u1Model)
+            : $"Sends this part of the video (no sound) to {trackVendor}. " + About(zoomParts + 1) + AiCostEstimator.PlainCost(findEstimate, u2Config.Vendor, u2Model);
 
         bool skipDiscoveryWithUserBox = false;
-        if (userBox != null)
+        bool askedAtStart = false;
+        string? targetDescription = null;
+        if (pcOnly)
         {
-            var boxPick = await ConfirmDialogWindow.AskThreeWayAsync(
-                this,
-                "Track Your Zoom Box Directly?",
-                "You already drew a zoom box on this block.\n\n" +
-                "• Track my box: skips AI target discovery and tracks your box immediately (faster, saves discovery tokens).\n" +
-                "• Find targets with AI: scans 3 frames and lets you choose any detected subject.",
-                "Track my box",
-                "Find targets with AI");
-            if (boxPick == ConfirmDialogWindow.ConfirmDialogResult.Yes)
-                skipDiscoveryWithUserBox = true;
-            else if (boxPick != ConfirmDialogWindow.ConfirmDialogResult.Alt)
+            if (userBox == null)
+            {
+                BeginAimBoxForAiZoom(segIndex, "You chose 'On this PC only', so the AI cannot look for people by itself.");
                 return;
+            }
+            skipDiscoveryWithUserBox = true;
+        }
+        else if (followAimedBox)
+        {
+            skipDiscoveryWithUserBox = true;
+        }
+        else
+        {
+            askedAtStart = true;
+            var start = await AiZoomStartWindow.AskAsync(this, new AiZoomStartOptions(
+                existing != null, userBox != null, localTracking, _lastAiTargetDescription, followCost, findCost));
+            switch (start.Choice)
+            {
+                case AiZoomStartChoice.Reframe when existing != null:
+                    await ReframeExistingAiZoomAsync(segIndex, seg, existing);
+                    return;
+                case AiZoomStartChoice.DrawBox:
+                    BeginAimBoxForAiZoom(segIndex, null);
+                    return;
+                case AiZoomStartChoice.FollowBox when userBox != null:
+                    skipDiscoveryWithUserBox = true;
+                    break;
+                case AiZoomStartChoice.FindForMe:
+                    targetDescription = start.Description;
+                    _lastAiTargetDescription = targetDescription;
+                    break;
+                default:
+                    return;
+            }
+        }
+
+        bool cloudNeeded = !localTracking || !skipDiscoveryWithUserBox;
+        if (localTracking && cloudNeeded)
+        {
+            if (!await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, u1Config.Vendor, AiUsage.SubjectDiscovery)) return;
+            settings = SettingsManager.Instance;
+            u1Config = settings.GetUsageConfig(AiUsage.SubjectDiscovery);
+            u2Config = settings.GetUsageConfig(AiUsage.DenseTracking);
+            if (!await EnsureAiZoomConsentAsync()) return;
         }
 
         AiGameProfile profile = settings.AiTrackingGameProfile;
@@ -494,29 +635,29 @@ public partial class GranularSpeedEditorWindow
         bool portraitMode = _edit.IsMobileFormat;
 
         string u1Key = settings.GetApiKey(u1Config.Vendor);
-        string u1Model = settings.GetEffectiveModel(AiUsage.SubjectDiscovery);
+        u1Model = settings.GetEffectiveModel(AiUsage.SubjectDiscovery);
         string u2Key = settings.GetApiKey(u2Config.Vendor);
-        string u2Model = settings.GetEffectiveModel(AiUsage.DenseTracking);
+        u2Model = settings.GetEffectiveModel(AiUsage.DenseTracking);
 
-        AiEstimatedUsage estimatedUsage = AiCostEstimator.EstimateSmartZoom(
-            u2Config.Vendor,
-            u2Model,
-            source.DurationSec,
-            includeDiscovery: !skipDiscoveryWithUserBox);
+        AiEstimatedUsage estimatedUsage = skipDiscoveryWithUserBox ? followEstimate : findEstimate;
 
-        int zoomParts = GeminiTrackingService.PlanChunks(source.DurationSec).Count;
-        int zoomRequests = zoomParts + (skipDiscoveryWithUserBox ? 0 : 1);
-        string zoomSent = AiVisionProviders.WatchesVideoWithAudio(u2Config.Vendor)
-            ? $"{(skipDiscoveryWithUserBox ? "" : "3 stills of the block, then ")}the block as {zoomParts} silent 640-px clip{(zoomParts == 1 ? "" : "s")} of up to 8 s."
-            : $"{(skipDiscoveryWithUserBox ? "" : "3 stills of the block, then ")}2 stills per second of the block ({zoomParts} request{(zoomParts == 1 ? "" : "s")}).";
-        if (!await AiRunApproval.ConfirmAsync(this, "AI Smart Zoom", zoomSent, zoomRequests,
-                (int)Math.Ceiling(zoomRequests * 20 / 60.0), estimatedUsage, u2Config.Vendor, u2Model))
-            return;
+        if (!localTracking && !askedAtStart)
+        {
+            int zoomRequests = zoomParts + (skipDiscoveryWithUserBox ? 0 : 1);
+            string zoomSent = AiVisionProviders.WatchesVideoWithAudio(u2Config.Vendor)
+                ? $"this part of the video without sound, in {zoomParts} piece{(zoomParts == 1 ? "" : "s")}."
+                : $"2 pictures per second of this part of the video.";
+            if (!await AiRunApproval.ConfirmAsync(this, "AI Smart Zoom", zoomSent, zoomRequests,
+                    (int)Math.Ceiling(zoomRequests * 20 / 60.0), estimatedUsage, u2Config.Vendor, u2Model))
+                return;
+        }
 
         var overlay = AiTrackingProgressOverlayCtl;
         var scope = this.FindNameScope();
         var estText = scope?.Find("AiTrackingEstimateText") as TextBlock;
         var elapsedText = scope?.Find("AiTrackingElapsedText") as TextBlock;
+        var progressBar = scope?.Find("AiTrackingProgressBar") as ProgressBar;
+        if (progressBar != null) { progressBar.IsIndeterminate = true; progressBar.Value = 0; }
         if (AiTrackingConsoleTextCtl != null) AiTrackingConsoleTextCtl.Text = "";
         if (AiTrackingStatusLabelCtl != null)
         {
@@ -524,11 +665,24 @@ public partial class GranularSpeedEditorWindow
                 ? "Step 1 of 4 · Preparing your box…"
                 : "Step 1 of 4 · Taking 3 pictures of the block…";
         }
+        AiVendor bannerVendor = localTracking ? u1Config.Vendor : u2Config.Vendor;
+        string bannerModel = localTracking ? u1Model : u2Model;
+        string preRunBanner = localTracking && skipDiscoveryWithUserBox
+            ? "Nothing is sent to any AI — your box is followed on this computer."
+            : AiCostEstimator.FormatPreRunBanner(estimatedUsage, bannerVendor, bannerModel)
+              + (localTracking ? " (3 stills only; the following itself runs on this computer)" : "");
+        string engineLabel = localTracking
+            ? (skipDiscoveryWithUserBox ? "on this PC" : $"{AiVisionProviders.DisplayName(u1Config.Vendor)} + this PC")
+            : AiVisionProviders.DisplayName(u2Config.Vendor);
         if (estText != null)
-            estText.Text = AiCostEstimator.FormatPreRunBanner(estimatedUsage, u2Config.Vendor, u2Model);
+            estText.Text = localTracking && skipDiscoveryWithUserBox
+                ? "Nothing is sent online. Your box is followed on this PC."
+                : AiCostEstimator.PlainCost(estimatedUsage, bannerVendor, bannerModel);
         var startedAtUtc = DateTime.UtcNow;
+        DateTime? followStartedUtc = null;
+        double followFraction = 0;
         if (elapsedText != null)
-            elapsedText.Text = $"Elapsed: 0:00 · {AiVisionProviders.DisplayName(u2Config.Vendor)} ({u2Model})";
+            elapsedText.Text = $"0:00 · {engineLabel}";
         if (overlay != null) overlay.IsVisible = true;
         if (AiSmartZoomBtnCtl is { } aiBtn) aiBtn.IsEnabled = false;
 
@@ -542,9 +696,19 @@ public partial class GranularSpeedEditorWindow
         {
             if (elapsedText == null) return;
             var el = DateTime.UtcNow - startedAtUtc;
-            elapsedText.Text = $"Elapsed: {(int)el.TotalMinutes}:{el.Seconds:00} · {AiVisionProviders.DisplayName(u2Config.Vendor)} ({u2Model})";
+            elapsedText.Text = $"{(int)el.TotalMinutes}:{el.Seconds:00} · {engineLabel}"
+                + AiTimeLeft(followStartedUtc, followFraction, DateTime.UtcNow);
         };
         elapsedTimer.Start();
+
+        var fractionProgress = new Progress<double>(f =>
+        {
+            followStartedUtc ??= DateTime.UtcNow;
+            followFraction = Math.Clamp(f, 0.0, 1.0);
+            if (progressBar == null) return;
+            progressBar.IsIndeterminate = false;
+            progressBar.Value = followFraction * 100.0;
+        });
 
         var statusProgress = new Progress<string>(status =>
         {
@@ -564,12 +728,13 @@ public partial class GranularSpeedEditorWindow
                 AiTrackingConsoleScrollCtl?.ScrollToEnd();
             });
         };
-        consoleLog(AiCostEstimator.FormatPreRunBanner(estimatedUsage, u2Config.Vendor, u2Model));
+        consoleLog(preRunBanner);
 
         var discoverySession = new GeminiModelSession(u1Key, u1Model, consoleLog, vendor: u1Config.Vendor);
         var trackingSession = new GeminiModelSession(u2Key, u2Model, consoleLog, vendor: u2Config.Vendor);
         AiDiscoveryResult? discovery = null;
         using var usage = AiUsageMeter.BeginTask("AI Smart Zoom", u2Config.Vendor);
+        usage.SetEstimate(estimatedUsage);
         if (AiTrackingPreviewBarCtl is { } usageBar) SetAiUsageLines(usageBar, "AiTracking", null);
         bool reportedUsage = false;
         (string Usage, string Allowance) EmitUsage()
@@ -580,10 +745,13 @@ public partial class GranularSpeedEditorWindow
 
         try
         {
-            if (AiTrackingStatusLabelCtl != null) AiTrackingStatusLabelCtl.Text = "Step 1 of 4 · Checking your AI connection…";
-            await AiPreflight.EnsureAsync(u2Config.Vendor, u2Key, u2Model, token, consoleLog);
-            if (!skipDiscoveryWithUserBox && (u1Config.Vendor != u2Config.Vendor || u1Model != u2Model))
-                await AiPreflight.EnsureAsync(u1Config.Vendor, u1Key, u1Model, token, consoleLog);
+            if (!localTracking)
+            {
+                if (AiTrackingStatusLabelCtl != null) AiTrackingStatusLabelCtl.Text = "Step 1 of 4 · Checking your AI connection…";
+                await AiPreflight.EnsureAsync(u2Config.Vendor, u2Key, u2Model, token, consoleLog);
+                if (!skipDiscoveryWithUserBox && (u1Config.Vendor != u2Config.Vendor || u1Model != u2Model))
+                    await AiPreflight.EnsureAsync(u1Config.Vendor, u1Key, u1Model, token, consoleLog);
+            }
 
             if (IsMergeMode)
             {
@@ -611,7 +779,7 @@ public partial class GranularSpeedEditorWindow
 
             if (skipDiscoveryWithUserBox && userBox != null)
             {
-                consoleLog("Using your drawn zoom box directly (Phase 2 AI discovery skipped).");
+                consoleLog("Following the box you aimed. The AI is not asked who is in the picture.");
                 target = UserBoxTarget(userBox.Value);
             }
             else
@@ -619,7 +787,7 @@ public partial class GranularSpeedEditorWindow
                 if (AiTrackingStatusLabelCtl != null) AiTrackingStatusLabelCtl.Text = "Step 2 of 4 · Finding who is in the block…";
                 discovery = await GeminiTrackingService.DiscoverSubjectsWithLookaheadAsync(
                     source.VideoPath, source.SourceStartSec, source.DurationSec, source.SourceEndLimitSec,
-                    discoverySession, profile, consoleLog, token);
+                    discoverySession, profile, consoleLog, token, targetDescription);
                 if (token.IsCancellationRequested) return;
 
                 if (overlay != null) overlay.IsVisible = false;
@@ -639,21 +807,19 @@ public partial class GranularSpeedEditorWindow
                             break;
                         case AiPickerChoice.DrawOwnBox:
                             if (userBox == null || !await ConfirmDialogWindow.AskAsync(this,
-                                    "Track the area inside the zoom box you already drew on this block?\n\n" +
-                                    "Choose 'Draw a new box' to draw one first, then press AI SMART ZOOM again.",
-                                    "Track Your Own Box", "Track my box", "Draw a new box"))
+                                    "Follow what is inside the zoom box you already drew on this block?",
+                                    "Follow Your Own Box", "Follow my box", "Aim a new box"))
                             {
-                                var (u, _) = EmitUsage();
-                                FloatingNotice.Info(this, u);
-                                Notify("Draw a zoom box around your target, then press AI SMART ZOOM again — it will offer to track your box.");
+                                EmitUsage();
+                                FloatingNotice.Info(this, usage.PlainSummary());
+                                BeginAimBoxForAiZoom(segIndex, null);
                                 return;
                             }
                             target = UserBoxTarget(userBox.Value);
                             break;
                         default:
-                            var (cu, _) = EmitUsage();
-                            FloatingNotice.Info(this, cu);
-                            Notify($"AI Smart Zoom cancelled. {cu}");
+                            EmitUsage();
+                            Notify($"AI Smart Zoom cancelled. {usage.PlainSummary()} (Reference: {usage.Id})");
                             return;
                     }
                 }
@@ -667,25 +833,25 @@ public partial class GranularSpeedEditorWindow
                     if (userBox != null)
                     {
                         bool trackBox = await ConfirmDialogWindow.AskAsync(this,
-                            $"{discoverySession.VendorName} did not find anyone to follow in this block (including a look further ahead).\n\n" + profileNote +
-                            "Track the area inside the zoom box you drew instead?",
-                            "No Targets Found", "Track my box", "Cancel");
+                            $"{discoverySession.VendorName} did not find anyone to follow in this block (it also looked a little further ahead).\n\n" + profileNote +
+                            "Follow what is inside the zoom box you drew instead?",
+                            "No One Found", "Follow my box", "Cancel");
                         if (!trackBox)
                         {
-                            var (u, _) = EmitUsage();
-                            FloatingNotice.Info(this, u);
+                            EmitUsage();
+                            FloatingNotice.Info(this, usage.PlainSummary());
                             return;
                         }
                         target = UserBoxTarget(userBox.Value);
                     }
                     else
                     {
-                        var (u, a) = EmitUsage();
-                        FloatingNotice.Info(this, u);
-                        await ErrorReporter.ShowAsync(this, "No Targets Found",
-                            $"{discoverySession.VendorName} did not find anyone to follow in this block (including a look further ahead).\n\n" + profileNote +
-                            "Pick a block where your target is clearly visible — or draw a zoom box around them and press AI SMART ZOOM again; it will offer to track your box.\n\n" +
-                            $"{u}\n{a}");
+                        EmitUsage();
+                        bool aim = await ConfirmDialogWindow.AskAsync(this,
+                            $"{discoverySession.VendorName} did not find anyone to follow in this block (it also looked a little further ahead).\n\n" + profileNote +
+                            $"Aim a box at who to follow yourself?\n\n{usage.PlainSummary()}",
+                            "No One Found", "Aim a box", "Cancel");
+                        if (aim) BeginAimBoxForAiZoom(segIndex, null);
                         return;
                     }
                 }
@@ -710,8 +876,8 @@ public partial class GranularSpeedEditorWindow
                         "Extend & track", "Track without extending");
                     if (extend == ConfirmDialogWindow.ConfirmDialogResult.Cancelled || extend == ConfirmDialogWindow.ConfirmDialogResult.No)
                     {
-                        var (u, _) = EmitUsage();
-                        FloatingNotice.Info(this, u);
+                        EmitUsage();
+                        FloatingNotice.Info(this, usage.PlainSummary());
                         return;
                     }
                     if (extend == ConfirmDialogWindow.ConfirmDialogResult.Yes)
@@ -728,8 +894,8 @@ public partial class GranularSpeedEditorWindow
                         "Target Appears Later", "Track anyway", "Cancel");
                     if (!anyway)
                     {
-                        var (u, _) = EmitUsage();
-                        FloatingNotice.Info(this, u);
+                        EmitUsage();
+                        FloatingNotice.Info(this, usage.PlainSummary());
                         return;
                     }
                 }
@@ -748,10 +914,33 @@ public partial class GranularSpeedEditorWindow
                 target, target.IsUserBox ? null : referenceFrame, referenceTime,
                 baseScale, minScale, deadbandPercent, avoidHud, portraitMode, zones);
 
-            var trajectory = await Task.Run(
-                () => GeminiTrackingService.TrackSubjectAsync(request, trackingSession, statusProgress, consoleLog, token,
-                    (part, parts, failure) => Dispatcher.UIThread.InvokeAsync(() => AskPartFailureAsync("AI Smart Zoom", part, parts, failure,
-                        "keep the other parts (the camera stays wide for this stretch)"))), token);
+            string lastRunKey = LastZoomRunKey(request, trackingSession);
+            AiTrajectorySmoother.SmoothedTrajectory? trajectory = null;
+            if (!localTracking && AiResultCache.TryGet<LastZoomRun>(lastRunKey, out var lastRun))
+            {
+                var reuse = await ConfirmDialogWindow.AskThreeWayAsync(this, "AI Smart Zoom",
+                    $"You already followed '{target.Label}' in this block a few minutes ago.\n\nUse that result again (free, nothing is sent) or ask the AI again?",
+                    "Use the last result", "Ask the AI again", "Cancel");
+                if (reuse == ConfirmDialogWindow.ConfirmDialogResult.Yes)
+                {
+                    consoleLog("Reused the previous tracking result. No new AI request.");
+                    trajectory = AiTrajectorySmoother.SmoothTrajectory(lastRun.Raw, trackDurationSec, sw, sh,
+                        baseScale, minScale, deadbandPercent, avoidHud, portraitMode, zones);
+                }
+                else if (reuse != ConfirmDialogWindow.ConfirmDialogResult.Alt)
+                {
+                    if (!reportedUsage) EmitUsage();
+                    return;
+                }
+            }
+            trajectory ??= localTracking
+                ? await LocalTrackingService.TrackAsync(request, statusProgress, consoleLog, token, fractionProgress)
+                : await Task.Run(
+                    () => GeminiTrackingService.TrackSubjectAsync(request, trackingSession, statusProgress, consoleLog, token,
+                        (part, parts, failure) => Dispatcher.UIThread.InvokeAsync(() => AskPartFailureAsync("AI Smart Zoom", part, parts, failure,
+                            "keep the other parts (the camera stays wide for this stretch)", usage.Id)), fractionProgress), token);
+            if (!localTracking && trajectory.RawWaypoints is { Count: > 0 } raw)
+                AiResultCache.Put(lastRunKey, new LastZoomRun(raw.ToList()));
 
             if (token.IsCancellationRequested) return;
 
@@ -759,23 +948,21 @@ public partial class GranularSpeedEditorWindow
             {
                 BeginAiPreview(segIndex, seg, trajectory, sw, sh, newEndMs);
                 var (u, a) = EmitUsage();
-                if (AiTrackingPreviewBarCtl is { } bar) SetAiUsageLines(bar, "AiTracking", (u, a));
-                FloatingNotice.Info(this, u);
+                if (AiTrackingPreviewBarCtl is { } bar) SetAiUsageLines(bar, "AiTracking", (usage.PlainSummary(), ""), $"{u}\n{a}");
+                FloatingNotice.Info(this, usage.PlainSummary());
             }
             else
             {
                 var (u, a) = EmitUsage();
-                FloatingNotice.Info(this, u);
-                await ErrorReporter.ShowAsync(this, "AI Tracking Inconclusive",
-                    $"{trackingSession.VendorName} could not follow the selected target through this block.\n\n" +
-                    $"Try a block where the target is clearer, or set the zoom by hand.\n\n{u}\n{a}");
+                await ErrorReporter.ShowAsync(this, "Could Not Follow the Target",
+                    $"{(localTracking ? "This PC" : trackingSession.VendorName)} could not follow the chosen target through this block.\n\n" +
+                    $"Try a block where the target is easier to see, or set the zoom by hand.\n\n{usage.PlainSummary()}", $"{u}\n{a}");
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            var (u, _) = reportedUsage ? ReportAiUsage(usage, null, estimatedUsage) : EmitUsage();
-            FloatingNotice.Info(this, u);
-            Notify($"AI Smart Zoom was cancelled. {u}");
+            if (!reportedUsage) EmitUsage();
+            Notify($"AI Smart Zoom was cancelled. {usage.PlainSummary()} (Reference: {usage.Id})");
         }
         catch (AiProviderException ex)
         {
@@ -783,8 +970,17 @@ public partial class GranularSpeedEditorWindow
             RuntimeLog.Fail("AiTracking", $"{ex.Vendor} {ex.Kind}: {ex.Message} {safeDetail}");
             if (overlay != null) overlay.IsVisible = false;
             var (u, a) = EmitUsage();
-            FloatingNotice.Info(this, u);
-            await ErrorReporter.ShowAsync(this, AiProviderErrorTitle(ex.Vendor, ex.Kind), $"{ex.Message}\n\n{u}\n{a}" + AiUsageMeter.ReferenceSuffix, safeDetail);
+            await ErrorReporter.ShowAsync(this, AiProviderErrorTitle(ex.Vendor, ex.Kind), $"{ex.Message}\n\n{usage.PlainSummary()}" + usage.ReferenceSuffix, $"{safeDetail}\n{u}\n{a}");
+        }
+        catch (FreeVideoStudio.Core.LocalAi.OrtException ex)
+        {
+            RuntimeLog.Fail("AiTracking", "Local tracker: " + ex.Message);
+            if (overlay != null) overlay.IsVisible = false;
+            EmitUsage();
+            await ErrorReporter.ShowAsync(this, "Following on This PC Failed",
+                $"This PC could not follow the target:\n{ex.Message}\n\n" +
+                "Open Settings › AI › PC AI. Reinstall it there if it is offered, or press Remove to follow targets with online AI instead." +
+                $"\n\n{usage.PlainSummary()}", ex.ToString());
         }
         catch (Exception ex)
         {
@@ -792,9 +988,8 @@ public partial class GranularSpeedEditorWindow
             RuntimeLog.Fail("AiTracking", err);
             if (overlay != null) overlay.IsVisible = false;
             var (u, a) = EmitUsage();
-            FloatingNotice.Info(this, u);
             await ErrorReporter.ShowAsync(this, "AI Smart Zoom Error",
-                $"AI Smart Zoom stopped:\n{trackingSession.Redact(discoverySession.Redact(ex.Message))}\n\n{u}\n{a}" + AiUsageMeter.ReferenceSuffix, err);
+                $"AI Smart Zoom stopped:\n{trackingSession.Redact(discoverySession.Redact(ex.Message))}\n\n{usage.PlainSummary()}" + usage.ReferenceSuffix, $"{err}\n{u}\n{a}");
         }
         finally
         {
@@ -806,6 +1001,16 @@ public partial class GranularSpeedEditorWindow
             _aiTrackingCts?.Dispose();
             _aiTrackingCts = null;
         }
+    }
+
+    internal static string AiTimeLeft(DateTime? followStartedUtc, double fraction, DateTime nowUtc)
+    {
+        if (followStartedUtc is not DateTime began || fraction < 0.05 || fraction >= 1.0) return string.Empty;
+        double spent = (nowUtc - began).TotalSeconds;
+        if (spent < 2.0) return string.Empty;
+        int left = (int)Math.Ceiling(spent * (1.0 - fraction) / fraction);
+        if (left <= 0) return string.Empty;
+        return left >= 90 ? $" · about {(int)Math.Round(left / 60.0)} min left" : $" · about {left} s left";
     }
 
     /// <summary>AIUSAGE_01 — logs the task's usage report + cost estimate comparison, writes to console, and returns its two lines.</summary>
@@ -827,12 +1032,21 @@ public partial class GranularSpeedEditorWindow
     /// AIUSAGE_01 — shows (or hides, with null) the two usage lines inside a preview bar. The lines are the bar's
     /// own children, found by walking the bar (no window-wide name lookup, MVVM_01).
     /// </summary>
-    private static void SetAiUsageLines(Border bar, string prefix, (string Usage, string Allowance)? lines)
+    private static void SetAiUsageLines(Border bar, string prefix, (string Usage, string Allowance)? lines, string? details = null)
     {
         foreach (var tb in Avalonia.LogicalTree.LogicalExtensions.GetLogicalDescendants(bar).OfType<TextBlock>())
         {
-            if (tb.Name == prefix + "UsageText") { tb.Text = lines?.Usage ?? ""; tb.IsVisible = lines != null; }
-            else if (tb.Name == prefix + "AllowanceText") { tb.Text = lines?.Allowance ?? ""; tb.IsVisible = lines != null; }
+            if (tb.Name == prefix + "UsageText")
+            {
+                tb.Text = lines?.Usage ?? "";
+                tb.IsVisible = !string.IsNullOrEmpty(lines?.Usage);
+                ToolTip.SetTip(tb, string.IsNullOrWhiteSpace(details) ? null : details);
+            }
+            else if (tb.Name == prefix + "AllowanceText")
+            {
+                tb.Text = lines?.Allowance ?? "";
+                tb.IsVisible = !string.IsNullOrEmpty(lines?.Allowance);
+            }
         }
     }
 
@@ -840,11 +1054,11 @@ public partial class GranularSpeedEditorWindow
     /// AIPARTRETRY_01 — one part of a multi-part AI run failed twice. Retry it, keep the other parts, or stop.
     /// Closing the question is "stop". Shared by AI Smart Zoom and AI Commentary.
     /// </summary>
-    private async Task<AiPartFailureChoice> AskPartFailureAsync(string feature, int part, int parts, AiProviderException failure, string keepText)
+    private async Task<AiPartFailureChoice> AskPartFailureAsync(string feature, int part, int parts, AiProviderException failure, string keepText, string reference)
     {
         var choice = await ConfirmDialogWindow.AskThreeWayAsync(this, $"{feature}: part {part} of {parts} failed",
             $"Part {part} of {parts} could not be analysed twice in a row:\n{failure.Message}\n\n" +
-            $"Retry that part, or {keepText}. The parts that already worked are kept either way unless you stop.\n\nReference: {AiUsageMeter.LastTaskId}",
+            $"Retry that part, or {keepText}. The parts that already worked are kept either way unless you stop.\n\nReference: {reference}",
             "Retry part", "Keep the others", "Stop");
         return choice switch
         {

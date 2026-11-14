@@ -23,11 +23,21 @@ internal static class AiPreflight
         return data.ToArray();
     }
 
+    private static string Identity(AiVendor vendor, string key, string model)
+        => AiResultCache.Key("preflight-image-json-v1", vendor.ToString(), key, AiVisionProviders.EffectiveModel(vendor, model, key));
+
+    internal static bool WillCheck(AiVendor vendor, string key, string model)
+        => !string.IsNullOrWhiteSpace(key) && !AiResultCache.Has<bool>(Identity(vendor, key, model));
+
+    internal static AiEstimatedUsage WithCheck(AiEstimatedUsage estimate, AiVendor vendor, string key, string model)
+        => AiCostEstimator.WithConnectionCheck(estimate, vendor, model, WillCheck(vendor, key, model));
+
     internal static Task<bool> EnsureAsync(AiVendor vendor, string key, string model,
         CancellationToken ct, Action<string>? progress = null, IAiVisionProvider? provider = null)
     {
+        AiKeyHealth.ThrowIfBlocked(vendor, key);
         string effective = AiVisionProviders.EffectiveModel(vendor, model, key);
-        string identity = AiResultCache.Key("preflight-image-json-v1", vendor.ToString(), key, effective);
+        string identity = Identity(vendor, key, model);
         return AiResultCache.RunAsync(identity, async () =>
         {
             progress?.Invoke("Checking your AI connection…");
@@ -42,6 +52,6 @@ internal static class AiPreflight
                 throw new AiProviderException(vendor, AiProviderErrorKind.MalformedResponse,
                     "This model could not read a test picture. Choose another model in Settings › AI.");
             return true;
-        }, success => success, ct, progress);
+        }, success => success, ct, null);
     }
 }

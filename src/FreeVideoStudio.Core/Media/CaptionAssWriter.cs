@@ -40,6 +40,15 @@ public static class CaptionAssWriter
     /// <summary>
     /// Generates full .ass script text from a <see cref="CaptionTrack"/> and an optional <see cref="OutputTimeline"/>.
     /// </summary>
+    public const string CanvasParityTag = "CAPTIONCANVAS_01";
+
+    public static (int Width, int Height) ExportCanvas(bool isMerge, bool portrait, int sourceWidth, int sourceHeight)
+    {
+        if (portrait) return (1080, 1920);
+        if (isMerge || sourceWidth <= 0 || sourceHeight <= 0) return (1920, 1080);
+        return (sourceWidth, sourceHeight);
+    }
+
     public static string GenerateAss(
         CaptionTrack track,
         OutputTimeline? timeline = null,

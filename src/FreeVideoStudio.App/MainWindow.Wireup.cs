@@ -878,6 +878,7 @@ public partial class MainWindow
 
         Infrastructure.MemeDirectory.Changed += PopulateMemeComboBox;
         this.Closed += (_, _) => Infrastructure.MemeDirectory.Changed -= PopulateMemeComboBox;
+        HookAiEliminationSettings();
 
         this.Loaded += async (s, e) => {
             _ = PushAssetsAsync();

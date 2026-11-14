@@ -28,13 +28,10 @@ internal static class AiRunApproval
     /// <summary>The question text (pure, for tests).</summary>
     internal static string Message(string whatIsSent, int requests, int minutes, AiEstimatedUsage estimate, AiVendor vendor, string model)
     {
-        string price = AiCostEstimator.HasReferenceRate(vendor, model)
-            ? $"{AiCostEstimator.FormatApproxUsd(estimate.EstimatedUsd)} (estimate, prices of {AiCostEstimator.PricesAsOf})"
-            : "price unavailable for this model";
-        return $"Sent to {AiVisionProviders.DisplayName(vendor)} ({model}): {whatIsSent}\n\n" +
-               $"• {requests} AI request{(requests == 1 ? "" : "s")}, about {Math.Max(1, minutes)} minute{(minutes <= 1 ? "" : "s")}\n" +
-               $"• About {estimate.EstimatedTotalTokens.ToString("N0", CultureInfo.InvariantCulture)} tokens · {price}\n\n" +
-               "Your AI company bills your own key. Nothing changes in your video until you accept the preview.";
+        return $"Sent to {AiVisionProviders.DisplayName(vendor)}: {whatIsSent}\n\n" +
+               $"• Takes about {Math.Max(1, minutes)} minute{(minutes <= 1 ? "" : "s")}\n" +
+               $"• {AiCostEstimator.PlainCost(estimate, vendor, model)}\n\n" +
+               "Nothing changes in your video until you accept the preview.";
     }
 
     /// <summary>True = go ahead. Never throws; a dialog that cannot be shown is a "no".</summary>

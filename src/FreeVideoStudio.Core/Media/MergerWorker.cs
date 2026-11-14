@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
@@ -795,9 +795,8 @@ public class MergerWorker : IDisposable
 
                 if (CaptionTrack != null && CaptionTrack.Lines is { Count: > 0 })
                 {
-                    int canvasW = OutputRatio == TargetAspectRatio.Portrait9x16 ? 1080 : 1920;
-                    int canvasH = OutputRatio == TargetAspectRatio.Portrait9x16 ? 1920 : 1080;
                     bool isPortrait = OutputRatio == TargetAspectRatio.Portrait9x16;
+                    var (canvasW, canvasH) = CaptionAssWriter.ExportCanvas(true, isPortrait, 0, 0);
 
                     CaptionTrack trackToBurn = MapCaptionTrackForExport(
                         CaptionTrack,

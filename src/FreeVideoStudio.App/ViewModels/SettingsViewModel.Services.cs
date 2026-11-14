@@ -79,6 +79,7 @@ public sealed partial class SettingsViewModel : IDisposable
             _services = services,
             _initialMusicFolder = initialMusic,
             _openMergerOutputDir = source.MergerOutputDirectory ?? "",
+            _onlineAiOff = source.AiMode == AiMode.LocalOnly,
         };
         return vm;
     }
@@ -147,25 +148,23 @@ public sealed partial class SettingsViewModel : IDisposable
             case AiVendor.Anthropic: ClaudeApiKey = ""; break;
             default: OpenAiApiKey = ""; break;
         }
-        _keyStatus[vendor].Show("The key will be deleted when you press SAVE.", StatusTone.Warning);
+        _keyStatus[vendor].Show("Key removed.", StatusTone.Muted);
     }
 
     /// <summary>Checks the pending key of <paramref name="vendor"/> with that company. Never throws.</summary>
-    public async Task TestKeyAsync(AiVendor vendor)
+    public async Task<KeyTestResult?> TestKeyAsync(AiVendor vendor)
     {
         var status = _keyStatus[vendor];
         string key = PendingKey(vendor);
         if (string.IsNullOrWhiteSpace(key))
         {
             status.Show("Paste a key first.", StatusTone.Warning);
-            return;
+            return null;
         }
 
-        string model = GeminiTestModel;
+        string model = TestModelFor(vendor);
         string vendorName = AiVisionProviders.DisplayName(vendor);
-        status.Show(vendor == AiVendor.Google
-            ? $"Step 1/2: Contacting {vendorName} ({model})…"
-            : $"Step 1/1: Contacting {vendorName} and loading models…", StatusTone.Muted);
+        status.Show($"Checking the key with {vendorName}…", StatusTone.Muted);
         status.IsBusy = true;
         try
         {
@@ -190,6 +189,7 @@ public sealed partial class SettingsViewModel : IDisposable
                 if (result.Success && result.Models is { Count: > 0 })
                     AiRoutingChanged?.Invoke();
             }
+            return result;
         }
         finally { status.IsBusy = false; }
     }

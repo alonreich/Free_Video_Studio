@@ -217,8 +217,12 @@ public sealed class AiZoomReviewTests
     [Fact]
     public void TrackingRequest_HasSchemaTemperatureAndFrameRate()
     {
-        byte[] body = GeminiTrackingService.BuildRequest("p", new List<(string, byte[], double?)> { ("video/mp4", new byte[] { 1, 2, 3 }, 2.0) }, GeminiTrackingService.WriteTrackingSchema, "gemini-2.5-flash");
-        byte[] modern = GeminiTrackingService.BuildRequest("p", new List<(string, byte[], double?)> { ("video/mp4", new byte[] { 1, 2, 3 }, 2.0) }, GeminiTrackingService.WriteTrackingSchema);
+        var clip = new AiVideoInput(new byte[] { 1, 2, 3 }, "video/mp4", 2.0, AllowFpsFallback: false);
+        string schema = AiJsonSchema.ToGeminiDialect(GeminiTrackingService.GeminiTrackingSchemaText);
+        byte[] body = GeminiProvider.BuildGeminiRequestBody("p", Array.Empty<AiImageInput>(), clip, schema, null, true,
+            GeminiClient.PrefersDefaultTemperature("gemini-2.5-flash") ? null : 0, "gemini-2.5-flash");
+        byte[] modern = GeminiProvider.BuildGeminiRequestBody("p", Array.Empty<AiImageInput>(), clip, schema, null, true,
+            GeminiClient.PrefersDefaultTemperature(GeminiClient.DefaultModel) ? null : 0, GeminiClient.DefaultModel);
         using (var modernDoc = JsonDocument.Parse(modern))
             Assert.False(modernDoc.RootElement.GetProperty("generationConfig").TryGetProperty("temperature", out _));
         using var doc = JsonDocument.Parse(body);

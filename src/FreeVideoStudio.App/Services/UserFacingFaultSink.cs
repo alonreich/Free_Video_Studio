@@ -217,4 +217,17 @@ public sealed class AvaloniaUserNotifier : IUserNotifier
 
         return await ConfirmDialogWindow.AskAsync(window, message, title, confirmText, cancelText);
     }
+
+    public async Task<ConfirmDialogWindow.SaveChangesChoice> AskSaveChangesAsync(string title, string message)
+    {
+        var window = _windows.ActiveWindow;
+        if (window is null)
+        {
+            bool save = await Dispatcher.UIThread.InvokeAsync(() =>
+                NativeDialog.ShowQuestion(message + Environment.NewLine + Environment.NewLine + "Yes saves your work. No keeps the editor open.", title));
+            return save ? ConfirmDialogWindow.SaveChangesChoice.Save : ConfirmDialogWindow.SaveChangesChoice.BackToEditing;
+        }
+
+        return await ConfirmDialogWindow.AskSaveChangesWithMessageAsync(window, title, message);
+    }
 }

@@ -32,6 +32,8 @@ public interface IUserNotifier
 
     /// <summary>A yes/no question. Returns the user's answer.</summary>
     Task<bool> ConfirmAsync(string title, string message, string confirmText, string cancelText);
+
+    Task<ConfirmDialogWindow.SaveChangesChoice> AskSaveChangesAsync(string title, string message);
 }
 
 /// <summary>

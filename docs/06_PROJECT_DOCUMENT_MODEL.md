@@ -289,6 +289,16 @@ The model and its persistence exist and are unit-tested
   reported as Fatal and never interpreted as permission to lose work. Outstanding project I/O is
   awaited asynchronously before the close decision, leaving the dispatcher responsive.
 
+* **`UNSAVEDPROJ_01` — the unsaved-project question has a safe way out.** `ConfirmDiscardAsync` asks
+  `IUserNotifier.AskSaveChangesAsync` (the same three-way `Save changes` / `Back to editing` /
+  `Discard changes` dialog as CROPUNSAVED_01, `ConfirmDialogWindow.AskSaveChangesWithMessageAsync`).
+  Only an explicit `Discard changes` proceeds without saving; Escape, Enter, the window's X and a
+  dialog that cannot be shown all mean `Back to editing` (returns false, editor stays open and dirty).
+  The old two-way prompt mapped Escape/X to "discard". Without an owner window the fallback is a
+  native Yes/No where No keeps editing. Tests: `AutosaveBackgroundTests.UnsavedClosePrompt_BackToEditingKeepsWork`,
+  `CropWorkflowTests.ProjectUnsavedPromptTooltipsMatchTheirButtons`.
+* **`PROJECTLABEL_01`** — the Save/Open project picker's file type is named "Free Video Studio project".
+
 ---
 
 ## 10. Release Analyser Policy (AOTCLEAN_01, supersedes AOTSAFETY_03)  {#PROJ-AOTPOLICY}

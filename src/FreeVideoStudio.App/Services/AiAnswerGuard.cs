@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Text.Json;
 
 namespace FreeVideoStudio.App.Services;
@@ -86,6 +86,31 @@ internal static class AiAnswerGuard
     /// AIREASONING_02 — true when a 400 answer is about the thinking / reasoning setting, so the request can be
     /// sent once more without it (a model that does not support that setting must not fail the feature).
     /// </summary>
+    internal const string RetryOwnerTag = "AIRETRYONE_01";
+
+    internal const string BillingTag = "AIBILLING_01";
+
+    internal const string TransportRetriedDetail = "answer is not JSON";
+
+    internal static AiProviderException UnreadableTwice(AiVendor vendor, string vendorShort)
+    {
+        string message = $"{vendorShort}'s answer could not be read twice in a row. Please try again.";
+        return vendor == AiVendor.Google
+            ? new GeminiException(GeminiErrorKind.MalformedResponse, message, TransportRetriedDetail)
+            : new AiProviderException(vendor, AiProviderErrorKind.MalformedResponse, message, TransportRetriedDetail);
+    }
+
+    internal static bool IsFeatureRetryable(AiProviderException ex)
+        => ex.Kind == AiProviderErrorKind.MalformedResponse
+           && !string.Equals(ex.Detail, TransportRetriedDetail, StringComparison.Ordinal);
+
+    internal static bool LooksLikeBilling(string? code, string? message)
+    {
+        string text = (code ?? string.Empty) + " " + (message ?? string.Empty);
+        return MentionsAny(text, "credit balance", "insufficient_quota", "billing", "credits are depleted",
+            "prepayment", "payment required", "add credit");
+    }
+
     internal static bool IsReasoningRejection(AiProviderException ex)
         => ex.Kind == AiProviderErrorKind.BadRequest && MentionsAny(ex.Detail + " " + ex.Message,
             "thinking", "reasoning", "budget");

@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
@@ -409,6 +409,13 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         });
 
         ButtonClick("MagicWandButton", async (_, _) => await RunMagicWandAsync());
+        ButtonClick("WandAddAiButton", async (_, _) =>
+        {
+            var vendor = Infrastructure.SettingsManager.Instance.GetUsageConfig(Services.AiUsage.MagicWand).Vendor;
+            if (await Controls.AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, vendor, Services.AiUsage.MagicWand))
+                s_wandCloudDeclinedThisSession = false;
+            UpdateMagicWandAvailabilityUi();
+        });
         ButtonClick("CropToolAiSettingsButton", async (_, _) =>
         {
             if (await Controls.SettingsWindow.ShowSectionAsync(this, ViewModels.SettingsSection.Ai, Services.SettingsWindowServices.CreateDefault()))
@@ -1487,6 +1494,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         SetVisible("VideoPanel", true);
         SetVisible("SnapshotPanel", false);
         SetVisible("MagicWandButton", false);
+        _wandSnapshotShown = false;
+        SetVisible("WandAddAiButton", false);
 
         SetVisible("SnapshotButton", true);
         SetVisible("ZoomStrip", false);
@@ -1503,6 +1512,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         SetVisible("VideoPanel", false);
         SetVisible("SnapshotPanel", true);
         SetVisible("MagicWandButton", true);
+        _wandSnapshotShown = true;
+        UpdateMagicWandAvailabilityUi();
         SetVisible("SnapshotButton", false);
         SetVisible("ZoomStrip", true);
         ApplyWizardChrome(cropping: true);
@@ -3827,16 +3838,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             RuntimeLog.Success("CROP", $"Saved crop coordinates successfully to '{targetProfile}'.");
             return true;
         }
-        catch (InvalidOperationException ex)
-        {
-            RuntimeLog.Fail("CROP", ex);
-            SetStatus("Save refused: " + ex.Message);
-            return false;
-        }
         catch (Exception ex)
         {
             RuntimeLog.Fail("CROP", ex);
-            SetStatus("Save failed. See runtime log.");
+            SetStatusError(DescribeSaveFailure(ex, RuntimeLog.LogPath));
             return false;
         }
         finally
@@ -4437,6 +4442,26 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     }
 
     /// <summary>ISSUE_09 — same, in the "that worked" colour.</summary>
+    internal static string DescribeSaveFailure(Exception ex, string logPath) => ex switch
+    {
+        InvalidOperationException =>
+            "Could not save: this layout is missing something it needs. Your saved layout was not changed and your edits are still open.",
+        FreeVideoStudio.Core.Infrastructure.LockException or TimeoutException =>
+            "Could not save: another window is saving right now. Wait a moment, then press Finish & Save again.",
+        UnauthorizedAccessException or IOException =>
+            "Could not save: the settings folder is locked or read-only. Close other programs using it, then try again. Your edits are still open.",
+        _ => $"Could not save your crop layout. Your edits are still open, so try again. If it keeps failing, the details are in {logPath}"
+    };
+
+    private void SetStatusError(string text)
+    {
+        if (_statusLabel != null)
+        {
+            _statusLabel.Text = text;
+        }
+        Controls.FloatingNotice.Show(this, text, Controls.NoticeKind.Error);
+    }
+
     private void SetStatusSuccess(string text)
     {
         if (_statusLabel != null)

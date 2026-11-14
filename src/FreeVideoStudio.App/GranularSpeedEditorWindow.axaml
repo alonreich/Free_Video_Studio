@@ -115,8 +115,8 @@
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Button Name="AiTrackingDiscardBtn" Classes="Danger" Content="DISCARD" MinWidth="90" MinHeight="36" Cursor="Hand" ToolTip.Tip="Discard this tracking trajectory and revert"/>
-                                    <Button Name="AiTrackingAcceptBtn" Classes="Success" Content="ACCEPT &amp; APPLY" MinWidth="130" MinHeight="36" Cursor="Hand" ToolTip.Tip="Accept and lock this tracking zoom onto the segment"/>
+                                    <Button Name="AiTrackingDiscardBtn" Classes="Danger" Content="DISCARD" MinWidth="90" MinHeight="36" Cursor="Hand" ToolTip.Tip="Throws this AI zoom away. Your block stays as it was."/>
+                                    <Button Name="AiTrackingAcceptBtn" Classes="Success" Content="ACCEPT &amp; APPLY" MinWidth="130" MinHeight="36" Cursor="Hand" ToolTip.Tip="Keeps this AI zoom on the block. Ctrl+Z takes it off again."/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -383,10 +383,10 @@
                                 HorizontalAlignment="Right" VerticalAlignment="Center">
                         <Button Name="AiCommentaryBtn" Classes="Primary" Content="🎙️ AI COMMENTARY" MinWidth="140"
                                 HorizontalContentAlignment="Center"
-                                ToolTip.Tip="Generate AI live commentary captions with synchronized karaoke highlights for this video."/>
+                                ToolTip.Tip="The AI watches this video and writes captions that light up word by word. You see a preview before anything is kept."/>
                         <Button Name="AiSmartZoomBtn" Classes="Primary" Content="AI SMART ZOOM" MinWidth="140"
                                 HorizontalContentAlignment="Center"
-                                ToolTip.Tip="Automatically track and smoothly zoom in on a moving person, subject, or character using AI vision."/>
+                                ToolTip.Tip="The camera zooms in and follows one person or thing through the selected block. You see a preview before anything is kept."/>
                         <Button Name="ZoomSegmentBtn" Classes="ZoomAction" Content="🔍 ZOOM-IN" MinWidth="140"
                                 HorizontalContentAlignment="Center"
                                 ToolTip.Tip="Draw a zoom (punch-in) box. If no speed block is selected, one is created for you at normal speed."/>
@@ -755,19 +755,19 @@
                         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
                             <ProgressBar IsIndeterminate="True" Width="26" Height="26" VerticalAlignment="Center" Foreground="{DynamicResource AppAccentBrush}"/>
                             <StackPanel Spacing="2">
-                                <TextBlock Text="AI TARGET TRACKING &amp; DISCOVERY" FontSize="{DynamicResource AppFontSize18}"
+                                <TextBlock Text="AI SMART ZOOM" FontSize="{DynamicResource AppFontSize18}"
                                            FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                <TextBlock Text="Analyzing multi-angle frames and synthesizing smooth camera motion"
+                                <TextBlock Text="Finding who to follow and working out the camera moves. You can cancel at any time."
                                            FontSize="{DynamicResource AppFontSize12}" Foreground="{DynamicResource AppTextMutedBrush}"/>
                             </StackPanel>
                         </StackPanel>
                         <Button Name="AiTrackingCancelBtn" Grid.Column="2" Classes="Danger" Content="CANCEL" MinWidth="100" MinHeight="36"
-                                HorizontalAlignment="Right" Cursor="Hand" ToolTip.Tip="Cancel the active AI tracking operation"/>
+                                HorizontalAlignment="Right" Cursor="Hand" ToolTip.Tip="Stops AI Smart Zoom. Your block stays as it was."/>
                     </Grid>
 
                     <Grid ColumnDefinitions="*, Auto">
                         <TextBlock Name="AiTrackingEstimateText" Text="" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"/>
-                        <TextBlock Name="AiTrackingElapsedText" Grid.Column="1" Text="Elapsed: 0:00" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center"/>
+                        <TextBlock Name="AiTrackingElapsedText" Grid.Column="1" Text="0:00" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center"/>
                     </Grid>
 
                     <!-- Large Status Banner -->
@@ -778,8 +778,8 @@
                                    FontSize="{DynamicResource AppFontSize14}"/>
                     </Border>
 
-                    <!-- Indeterminate Progress Bar -->
-                    <ProgressBar IsIndeterminate="True" Height="6" CornerRadius="3"
+                    <ProgressBar Name="AiTrackingProgressBar" IsIndeterminate="True" Minimum="0" Maximum="100" Height="6" CornerRadius="3"
+                                 AutomationProperties.Name="AI Smart Zoom progress"
                                  Foreground="{DynamicResource AppAccentBrush}" Background="{DynamicResource AppPanelBrush}"/>
 
                     <!-- AIPROGRESS_02: the technical log is one click away, closed by default -->

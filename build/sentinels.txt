@@ -1431,3 +1431,65 @@ AIMERGEKILLS_01=src/FreeVideoStudio.App/VideoMergerWindow.Effects.cs
 AIPROGRESS_02=src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml
 # RETIRED AIPARITY_02 (src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
 # RETIRED AIELIM_05 (src/FreeVideoStudio.App/Services/AiEliminationTrackerService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+# Local AI pack and on-device Smart Zoom tracking (05 SYS-LOCALAI, 01 TL-LOCALTRACK, 09 DIST-LOCALAIPACK, 04 UI-AIZOOM).
+LOCALAI_01=src/FreeVideoStudio.Core/LocalAi/OrtRuntime.cs
+LOCALAI_01=src/FreeVideoStudio.Core/LocalAi/LocalAiPack.cs
+LOCALAI_01=src/FreeVideoStudio.App/Services/LocalAiPackService.cs
+LOCALAI_01=src/FreeVideoStudio.App/Controls/SettingsWindow.LocalAi.cs
+LOCALAIPACK_01=src/FreeVideoStudio.Core/LocalAi/LocalAiPackManifest.cs
+LOCALAIPACK_01=src/FreeVideoStudio.Core/LocalAi/LocalAiPackFiles.cs
+LOCALTRACK_01=src/FreeVideoStudio.Core/LocalAi/LocalSubjectTracker.cs
+LOCALTRACK_01=src/FreeVideoStudio.Core/LocalAi/Sam2BoxTracker.cs
+LOCALTRACK_01=src/FreeVideoStudio.Core/LocalAi/LocalTrackingMath.cs
+LOCALTRACK_01=src/FreeVideoStudio.App/Services/LocalTrackingService.cs
+SCENECUT_01=src/FreeVideoStudio.Core/Media/SceneCutDetector.cs
+# RETIRED TEXTTARGET_01 (src/FreeVideoStudio.App/Controls/AiTargetDescriptionWindow.cs) — file deleted 2026-11-14: the description box moved into AiZoomStartWindow (AIZOOMSTART_01)
+TEXTTARGET_01=src/FreeVideoStudio.App/Services/AiTrackingPrompts.cs
+LOCALAITEST_01=tests/run-av-tests.ps1
+LOCALAITEST_01=tests/FreeVideoStudio.Core.Tests/LocalAiTests.cs
+LOCALMEMORY_01=src/FreeVideoStudio.Core/LocalAi/LocalTrackingMath.cs
+LOCALMEMORY_01=src/FreeVideoStudio.Core/LocalAi/Sam2BoxTracker.cs
+OWNBODY_01=src/FreeVideoStudio.Core/LocalAi/LocalTrackingMath.cs
+AIMODE_01=src/FreeVideoStudio.App/Services/AiSetup.cs
+AIMODE_01=src/FreeVideoStudio.App/Controls/AiModeWindow.cs
+AIMODE_01=src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs
+AIMODE_01=src/FreeVideoStudio.App/Controls/SettingsWindow.axaml
+# AI ease-of-use review 2026-11-14 (04 UI-AIMODE / UI-AIZOOM / UI-AIAPPROVE, 01 TL-AITRACKING).
+AIMODEHEAL_01=src/FreeVideoStudio.App/Services/AiSetup.cs
+AIZOOMSTART_01=src/FreeVideoStudio.App/Controls/AiZoomStartWindow.cs
+AICAMSMOOTH_01=src/FreeVideoStudio.Core/Media/AiTrajectorySmoother.cs
+# AI audit 5 (2026-11-14): one retry owner, billing errors, real key check, Merger kill scan, caption canvas, estimates, reuse, parallel parts, traceable logs.
+AIRETRYONE_01=src/FreeVideoStudio.App/Services/AiAnswerGuard.cs
+AIBILLING_01=src/FreeVideoStudio.App/Services/AiAnswerGuard.cs
+AIKEYCHECK_01=src/FreeVideoStudio.App/Services/SettingsWindowServices.cs
+WANDSETUP_01=src/FreeVideoStudio.App/CropToolWindow.MagicWand.cs
+AIMERGEKILLS_02=src/FreeVideoStudio.App/Services/AiEliminationTrackerService.cs
+CAPTIONCANVAS_01=src/FreeVideoStudio.Core/Media/CaptionAssWriter.cs
+AIESTIMATE_02=src/FreeVideoStudio.App/Services/AiCostEstimator.cs
+AIREASONING_03=src/FreeVideoStudio.App/Services/AiReasoningPolicy.cs
+AIFRAMESBATCH_01=src/FreeVideoStudio.App/Services/AiFfmpeg.cs
+AIGEMINIONE_01=src/FreeVideoStudio.App/Services/GeminiTrackingService.cs
+AIREUSE_05=src/FreeVideoStudio.App/Services/AiResultCache.cs
+AIPARALLEL_01=src/FreeVideoStudio.App/Services/CommentaryService.cs
+AITRACE_02=src/FreeVideoStudio.App/Services/AiDiagnostics.cs
+AIUSAGE_05=src/FreeVideoStudio.App/Services/AiUsageMeter.cs
+# QA audit fixes 2026-11-14.
+AIELIMERR_01=src/FreeVideoStudio.App/Services/AiEliminationTrackerService.cs
+AIELIMOWNER_01=src/FreeVideoStudio.App/MainWindow.AiElimination.cs
+AIREFOWN_01=src/FreeVideoStudio.App/Services/AiUsageMeter.cs
+AIMUSICDEADLINE_01=src/FreeVideoStudio.App/MusicWizardWindow.AiAutoFit.cs
+AIREWRITEKILLS_01=src/FreeVideoStudio.App/GranularSpeedEditorWindow.CaptionsLane.cs
+MUSICREMOVEUNDO_01=src/FreeVideoStudio.App/MainWindow.Canvas.cs
+AIKEYHEALTH_01=src/FreeVideoStudio.App/Services/AiKeyHealth.cs
+AIGEMINIMODELS_02=src/FreeVideoStudio.App/Services/AiCostEstimator.cs
+AIELIMFAST_01=src/FreeVideoStudio.App/Services/AiEliminationTrackerService.cs
+AIELIMFAST_01=src/FreeVideoStudio.Core/Media/HudOverlayEventDetector.cs
+AIELIMASK_01=src/FreeVideoStudio.App/MainWindow.AiElimination.cs
+AIELIMRESCAN_01=src/FreeVideoStudio.App/Services/AiEliminationTrackerService.cs
+AIMERGESTOP_01=src/FreeVideoStudio.App/VideoMergerWindow.Effects.cs
+AIASKTOGGLE_01=src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs
+AIVIRALPCONLY_01=src/FreeVideoStudio.App/ViewModels/ViralPostViewModel.cs
+AICONNECTCLIP_01=src/FreeVideoStudio.App/Controls/AiSetupWizardWindow.axaml.cs
+CHATGPTSIGNIN_01=src/FreeVideoStudio.App/Services/ChatGptAuth.cs
+CHATGPTSIGNIN_01=src/FreeVideoStudio.App/Controls/AiSetupWizardWindow.axaml.cs
+CHATGPTPLAN_01=src/FreeVideoStudio.App/Services/ChatGptPlanTransport.cs

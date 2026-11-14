@@ -150,6 +150,34 @@ public sealed class CropWorkflowTests : IAsyncLifetime
         owner.Close();
     }
 
+    [AvaloniaFact]
+    public async Task ProjectUnsavedPromptTooltipsMatchTheirButtons()
+    {
+        var owner = new Window();
+        owner.Show();
+        var result = ConfirmDialogWindow.AskSaveChangesWithMessageAsync(owner, "Save your changes?", "Save them before you close?");
+        var dialog = Assert.IsType<ConfirmDialogWindow>(Assert.Single(owner.OwnedWindows));
+        var back = dialog.FindControl<Button>("NoBtn")!;
+        var discard = dialog.FindControl<Button>("AltBtn")!;
+        Assert.Contains("keep editing", (string)ToolTip.GetTip(back)!);
+        Assert.Contains("Throw away", (string)ToolTip.GetTip(discard)!);
+        dialog.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+        Assert.Equal(ConfirmDialogWindow.SaveChangesChoice.BackToEditing, await result.WaitAsync(TimeSpan.FromSeconds(3)));
+        owner.Close();
+    }
+
+    [AvaloniaFact]
+    public void RelabelledButtonsDropTheGenericTooltip()
+    {
+        var dialog = new ConfirmDialogWindow();
+        dialog.SetButtonText("Delete", "Discard changes");
+        Assert.Null(ToolTip.GetTip(dialog.FindControl<Button>("YesBtn")!));
+        Assert.Null(ToolTip.GetTip(dialog.FindControl<Button>("NoBtn")!));
+        var plain = new ConfirmDialogWindow();
+        plain.SetButtonText("Yes", "No");
+        Assert.NotNull(ToolTip.GetTip(plain.FindControl<Button>("NoBtn")!));
+    }
+
     [AvaloniaTheory]
     [InlineData(true)]
     [InlineData(false)]

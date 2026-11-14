@@ -527,7 +527,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
-    public bool HasAnyKey => !string.IsNullOrWhiteSpace(_gemini) || !string.IsNullOrWhiteSpace(_claude) || !string.IsNullOrWhiteSpace(_openAi);
+    public bool HasAnyKey => !string.IsNullOrWhiteSpace(_gemini) || !string.IsNullOrWhiteSpace(_claude) || !string.IsNullOrWhiteSpace(_openAi) || ChatGptAuth.IsSignedIn;
 
     /// <summary>SETKEYONE_01 — the company a pasted key belongs to, from its prefix; null when unknown.</summary>
     public static AiVendor? DetectKeyVendor(string? key)
@@ -552,16 +552,47 @@ public sealed partial class SettingsViewModel : ViewModelBase
         if (DetectKeyVendor(key) is not { } v)
             return "That doesn't look like an AI key. Google keys start with AIza, Anthropic keys with sk-ant-, OpenAI keys with sk-.";
         vendor = v;
+        _beforeAdd = (v, PendingKey(v), DefaultAi.Vendor, DefaultAi.Model);
         SetPendingKey(v, key);
         if (string.IsNullOrWhiteSpace(PendingKey(DefaultAi.Vendor)) && DefaultAi.Vendor != v) SetDefaultAi(v, null);
         return null;
     }
 
+    private (AiVendor Vendor, string Key, AiVendor DefaultVendor, string DefaultModel)? _beforeAdd;
+
+    public void UndoAddKey()
+    {
+        if (_beforeAdd is not { } b) return;
+        _beforeAdd = null;
+        SetPendingKey(b.Vendor, b.Key);
+        if (DefaultAi.Vendor != b.DefaultVendor || DefaultAi.Model != b.DefaultModel) SetDefaultAi(b.DefaultVendor, b.DefaultModel);
+        RaiseAiReady();
+    }
+
+    public string TestModelFor(AiVendor vendor)
+    {
+        var def = _p.AiDefaultUsage;
+        if (def != null && def.Vendor == vendor && !string.IsNullOrWhiteSpace(def.Model)) return def.Model;
+        return vendor == AiVendor.Google ? GeminiTestModel : AiVisionProviders.GetDefaultModel(vendor);
+    }
+
     /// <summary>SETDEPS_01 — a feature is usable only when the company it uses has a key.</summary>
-    public bool KeyReadyFor(AiUsage usage) => !string.IsNullOrWhiteSpace(PendingKey(_p.GetUsageConfig(usage).Vendor));
+    private bool _onlineAiOff;
+    public bool OnlineAiOff
+    {
+        get => _onlineAiOff;
+        set { if (_onlineAiOff == value) return; _onlineAiOff = value; OnPropertyChanged(); RaiseAiReady(); }
+    }
+
+    public bool KeyReadyFor(AiUsage usage)
+    {
+        if (_onlineAiOff) return false;
+        AiVendor v = _p.GetUsageConfig(usage).Vendor;
+        return !string.IsNullOrWhiteSpace(PendingKey(v)) || (v == AiVendor.OpenAI && ChatGptAuth.IsSignedIn);
+    }
     public bool AiViralReady => KeyReadyFor(AiUsage.ViralPost);
     public bool AiKillTrackerReady => KeyReadyFor(AiUsage.EliminationTracker);
-    public bool AiNeedsKey => !KeyReadyFor(AiUsage.ViralPost);
+    public bool AiNeedsKey => !_onlineAiOff && !KeyReadyFor(AiUsage.ViralPost);
 
     public void RaiseAiReady()
     {
@@ -569,7 +600,30 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(n);
     }
 
+    public bool SaveKeysNow() => Services.Store.TryUpdate(s =>
+    {
+        WriteKeys(s);
+        AiVendor stored = s.AiDefaultUsage?.Vendor ?? AiVendor.Google;
+        AiVendor pending = DefaultAi.Vendor;
+        if (stored != pending && !s.HasAiCredential(stored) && s.HasAiCredential(pending))
+            CopyAiRouting(_p, s);
+    });
+
     public bool AiViralPostHelperEnabled { get => _p.AiViralPostHelperEnabled; set { if (_p.AiViralPostHelperEnabled == value) return; _p.AiViralPostHelperEnabled = value; OnPropertyChanged(); } }
+    internal const string AskBeforeRunTag = "AIASKTOGGLE_01";
+
+    public bool AiAskBeforeEveryRun
+    {
+        get => _p.AiAutoApproveUnderUsd <= 0;
+        set
+        {
+            double next = value ? 0 : AiRunApproval.QuietThresholdUsd;
+            if (_p.AiAutoApproveUnderUsd == next) return;
+            _p.AiAutoApproveUnderUsd = next;
+            OnPropertyChanged();
+        }
+    }
+
     public bool AiEliminationTrackerEnabled { get => _p.AiEliminationTrackerEnabled; set { if (_p.AiEliminationTrackerEnabled == value) return; _p.AiEliminationTrackerEnabled = value; OnPropertyChanged(); } }
 
     /// <summary>
@@ -663,26 +717,32 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 };
                 break;
             case SettingsSection.Ai:
-                from.EnsureAiDefault();
-                var def = (from.AiDefaultUsage ?? new AiUsageConfig(AiVendor.Google, GeminiClient.DefaultModel)).Clone();
-                to.AiDefaultUsage = def;
-                to.AiUsageOverrides = Array.Empty<AiUsage>();
-                to.AiUsageSubjectDiscovery = def.Clone();
-                to.AiUsageTracking = def.Clone();
-                to.AiUsageMagicWand = def.Clone();
-                to.AiUsageCommentary = def.Clone();
-                to.AiUsageMusicAutoFit = def.Clone();
-                to.AiUsageViralPost = def.Clone();
-                to.AiUsageEliminationTracker = def.Clone();
-                to.GeminiModelName = def.Vendor == AiVendor.Google && !string.IsNullOrWhiteSpace(def.Model)
-                    ? GeminiClient.ResolveModel(def.Model)
-                    : GeminiClient.ResolveModel(from.GeminiModelName);
+                CopyAiRouting(from, to);
                 to.AiEliminationTrackerEnabled = from.AiEliminationTrackerEnabled;
                 to.AiViralPostHelperEnabled = from.AiViralPostHelperEnabled;
+                to.AiAutoApproveUnderUsd = from.AiAutoApproveUnderUsd;
                 to.AiZoomBaseScale = Math.Clamp(from.AiZoomBaseScale, AiZoomTuning.MinStrength, AiZoomTuning.MaxStrength);
                 to.AiTrackingGameProfile = Enum.IsDefined(from.AiTrackingGameProfile) ? from.AiTrackingGameProfile : AiGameProfiles.Default;
                 break;
         }
+    }
+
+    private static void CopyAiRouting(AppSettings from, AppSettings to)
+    {
+        from.EnsureAiDefault();
+        var def = (from.AiDefaultUsage ?? new AiUsageConfig(AiVendor.Google, GeminiClient.DefaultModel)).Clone();
+        to.AiDefaultUsage = def;
+        to.AiUsageOverrides = Array.Empty<AiUsage>();
+        to.AiUsageSubjectDiscovery = def.Clone();
+        to.AiUsageTracking = def.Clone();
+        to.AiUsageMagicWand = def.Clone();
+        to.AiUsageCommentary = def.Clone();
+        to.AiUsageMusicAutoFit = def.Clone();
+        to.AiUsageViralPost = def.Clone();
+        to.AiUsageEliminationTracker = def.Clone();
+        to.GeminiModelName = def.Vendor == AiVendor.Google && !string.IsNullOrWhiteSpace(def.Model)
+            ? GeminiClient.ResolveModel(def.Model)
+            : GeminiClient.ResolveModel(from.GeminiModelName);
     }
 
     private static readonly SettingsSection[] SavedSections =

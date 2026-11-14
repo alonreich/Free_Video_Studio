@@ -29,7 +29,7 @@ public interface IFilePickerService
 
 /// <param name="Title">Dialog caption.</param>
 /// <param name="SuggestedFileName">Pre-filled name, extension included.</param>
-/// <param name="ExtensionLabel">Human-readable filter name, e.g. "Clip Studio project".</param>
+/// <param name="ExtensionLabel">Human-readable filter name, e.g. "Free Video Studio project".</param>
 /// <param name="Extension">Extension without the dot, e.g. "fvsproj".</param>
 /// <param name="StartDirectoryKey">
 /// The settings key whose remembered folder opens the dialog, and which is rewritten on selection.

@@ -64,6 +64,7 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
     private readonly Func<string?> _apiKeyProvider;
     private readonly Func<string?> _modelProvider;
     private readonly HttpClient _http;
+    private readonly bool _httpInjected;
     private readonly TimeSpan _timeout;
     private readonly IFaultSink _faults;
     private readonly Action<string> _log;
@@ -97,6 +98,7 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
         _apiKeyProvider = apiKeyProvider ?? throw new ArgumentNullException(nameof(apiKeyProvider));
         _modelProvider = modelProvider ?? throw new ArgumentNullException(nameof(modelProvider));
         _faults = faults ?? throw new ArgumentNullException(nameof(faults));
+        _httpInjected = httpClient != null;
         _http = httpClient ?? SharedClient.Value;
         _timeout = timeout is { } t && t > TimeSpan.Zero ? t : DefaultTimeout;
         _log = log ?? (line => CoreLogger.Info(LogArea, line));
@@ -154,7 +156,7 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
         }
 
         IAiVisionProvider provider = _visionProvider
-            ?? (vendor == AiVendor.Google ? new GeminiProvider(new GeminiClient(_http, _log)) : AiVisionProviders.Get(vendor));
+            ?? (vendor == AiVendor.Google ? new GeminiProvider(new GeminiClient(_httpInjected ? _http : null, _log)) : AiVisionProviders.Get(vendor));
         var options = new GeminiCallOptions(_timeout, 0, TimeSpan.Zero);
         try
         {

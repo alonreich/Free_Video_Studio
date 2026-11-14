@@ -22,6 +22,7 @@ public partial class MainWindow
 
     /// <summary>AIELIM_02 — text of the timeline chip, null = hidden.</summary>
     private string? _aiEliminationStatus;
+    private string? _aiEliminationDetail;
     private bool _aiEliminationStatusIsError;
     private bool _isAiEliminationScanning;
 
@@ -43,26 +44,83 @@ public partial class MainWindow
         QueueTimelineRedrawPass(DispatcherPriority.Background);
     }
 
-    private void SetAiEliminationStatus(string? text, bool isError, string videoPath)
+    private void SetAiEliminationStatus(string? text, bool isError, string videoPath, string? detail = null)
     {
         Dispatcher.UIThread.Post(() =>
         {
             if (_loadedVideoPath != videoPath) return;
             _aiEliminationStatus = text;
+            _aiEliminationDetail = detail;
             _aiEliminationStatusIsError = isError;
             QueueTimelineRedrawPass(DispatcherPriority.Background);
         });
     }
 
-    private async Task RunAiEliminationScanAsync(string videoPath)
+    internal const string ScanOwnerTag = "AIELIMOWNER_01";
+
+    private bool IsCurrentAiEliminationScan(CancellationTokenSource cts) => ReferenceEquals(_aiEliminationScanCts, cts);
+
+    private void EndAiEliminationScan(CancellationTokenSource cts)
     {
+        if (IsCurrentAiEliminationScan(cts)) _isAiEliminationScanning = false;
+    }
+
+    internal const string AskBeforeScanTag = "AIELIMASK_01";
+
+    internal const double AutoScanUnderUsd = 0.05;
+
+    private Action? _aiEliminationStartAction;
+
+    internal static bool ScanStartsByItself(bool userAsked, bool saved, AiEstimatedUsage est, AiVendor vendor, string model, double autoApproveUnderUsd)
+    {
+        if (userAsked || saved) return true;
+        if (!AiCostEstimator.HasReferenceRate(vendor, model)) return false;
+        return (double)est.EstimatedUsd < Math.Max(AutoScanUnderUsd, autoApproveUnderUsd);
+    }
+
+    private bool _aiEliminationSettingsHooked;
+    private bool _aiEliminationLastEnabled;
+
+    private void HookAiEliminationSettings()
+    {
+        if (_aiEliminationSettingsHooked) return;
+        _aiEliminationSettingsHooked = true;
+        _aiEliminationLastEnabled = SettingsManager.Instance.AiEliminationTrackerEnabled;
+        Action<AppSettings> onCommit = s => Dispatcher.UIThread.Post(() => OnAiEliminationSettingChanged(s.AiEliminationTrackerEnabled));
+        SettingsManager.Committed += onCommit;
+        Closed += (_, _) => SettingsManager.Committed -= onCommit;
+    }
+
+    private void OnAiEliminationSettingChanged(bool enabled)
+    {
+        if (enabled == _aiEliminationLastEnabled) return;
+        _aiEliminationLastEnabled = enabled;
+        if (string.IsNullOrWhiteSpace(_loadedVideoPath)) return;
+        if (enabled)
+        {
+            RuntimeLog.Info("AIElimination", "Mark my kills was switched on; scanning the open video.");
+            _ = RunAiEliminationScanAsync(_loadedVideoPath);
+            return;
+        }
+        RuntimeLog.Info("AIElimination", "Mark my kills was switched off; the scan stops.");
+        _aiEliminationScanCts?.Cancel();
+        _isAiEliminationScanning = false;
+        _aiEliminationStartAction = null;
+        _aiEliminationStatus = null;
+        _aiEliminationDetail = null;
+        QueueTimelineRedrawPass(DispatcherPriority.Background);
+    }
+
+    private async Task RunAiEliminationScanAsync(string videoPath, bool userAsked = false, bool refresh = false)
+    {
+        _aiEliminationStartAction = null;
+        _aiEliminationScanCts?.Cancel();
+        _aiEliminationScanCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _aiEliminationScanCts = cts;
+        string? reference = null;
         try
         {
-            _aiEliminationScanCts?.Cancel();
-            _aiEliminationScanCts?.Dispose();
-            var cts = new CancellationTokenSource();
-            _aiEliminationScanCts = cts;
-
             var settings = SettingsManager.Instance;
             if (!settings.AiEliminationTrackerEnabled) return;
 
@@ -71,7 +129,9 @@ public partial class MainWindow
             if (string.IsNullOrWhiteSpace(apiKey))
             {
                 RuntimeLog.Info("AIElimination", "AI Elimination Tracker enabled but no API key configured. Skipping scan.");
-                SetAiEliminationStatus("AI kill scan: no AI key (Settings › AI)", true, videoPath);
+                SetAiEliminationStatus(settings.AiMode == AiMode.LocalOnly
+                    ? "AI kill scan needs online AI (Settings › AI › How AI works)"
+                    : "AI kill scan: no AI key (Settings › AI)", true, videoPath);
                 return;
             }
 
@@ -86,20 +146,40 @@ public partial class MainWindow
             }
             string model = settings.GetEffectiveModel(AiUsage.EliminationTracker);
             string vendorName = AiVisionProviders.DisplayName(config.Vendor);
-            var est = AiCostEstimator.EstimateKillTracker(config.Vendor, model, AiEliminationTrackerService.MomentBudget(durationSec));
+            var est = AiPreflight.WithCheck(AiCostEstimator.EstimateKillTracker(config.Vendor, model, AiEliminationTrackerService.MomentBudget(durationSec)),
+                config.Vendor, apiKey, model);
             string currentStep = $"Starting {vendorName} ({model})…";
             var startedUtc = DateTime.UtcNow;
+            string costNote = $"{vendorName} · {AiCostEstimator.PlainCostShort(est, config.Vendor, model)} (estimate)";
+
+            bool saved = !refresh && AiEliminationTrackerService.HasSavedScan(videoPath, durationSec, config.Vendor, model);
+            if (!ScanStartsByItself(userAsked, saved, est, config.Vendor, model, settings.AiAutoApproveUnderUsd))
+            {
+                string price = AiCostEstimator.PlainCostShort(est, config.Vendor, model);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (cts.IsCancellationRequested || _loadedVideoPath != videoPath) return;
+                    _aiEliminationStartAction = () => _ = RunAiEliminationScanAsync(videoPath, userAsked: true);
+                    _aiEliminationStatus = $"AI kill scan: click to start ({price}, estimate)";
+                    _aiEliminationDetail = $"Sends up to {AiEliminationTrackerService.MomentBudget(durationSec) * AiEliminationTrackerService.FrameOffsetsSec.Length} still pictures to {vendorName}.\n{costNote}\nScans under ${AutoScanUnderUsd.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)} start by themselves.";
+                    _aiEliminationStatusIsError = false;
+                    QueueTimelineRedrawPass(DispatcherPriority.Background);
+                });
+                return;
+            }
 
             _isAiEliminationScanning = true;
-            SetAiEliminationStatus($"AI ({vendorName} {model}): scanning… ({AiCostEstimator.FormatPreRunBanner(est, config.Vendor, model)})", false, videoPath);
+            SetAiEliminationStatus("AI: looking for your kills…", false, videoPath, costNote);
             using var elapsedTimer = new System.Threading.Timer(_ =>
             {
                 if (cts.IsCancellationRequested || !_isAiEliminationScanning) return;
                 int secs = (int)(DateTime.UtcNow - startedUtc).TotalSeconds;
-                SetAiEliminationStatus($"AI: {currentStep} ({secs}s)", false, videoPath);
+                SetAiEliminationStatus($"AI: looking for your kills… {secs} s", false, videoPath, $"{currentStep}\n{costNote}");
             }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
 
             using var usage = AiUsageMeter.BeginTask("AI Kill Tracker", config.Vendor);
+            reference = usage.Id;
+            usage.SetEstimate(est);
             var result = await Task.Run(() => AiEliminationTrackerService.ScanAsync(
                 ffmpegPath,
                 videoPath,
@@ -114,14 +194,14 @@ public partial class MainWindow
                     if (!cts.IsCancellationRequested)
                     {
                         int secs = (int)(DateTime.UtcNow - startedUtc).TotalSeconds;
-                        SetAiEliminationStatus(secs >= 1 ? $"AI: {status} ({secs}s)" : "AI: " + status, false, videoPath);
+                        SetAiEliminationStatus(secs >= 1 ? $"AI: looking for your kills… {secs} s" : "AI: looking for your kills…", false, videoPath, $"{status}\n{costNote}");
                     }
                 },
-                cts.Token), cts.Token).ConfigureAwait(false);
+                cts.Token, refresh: refresh), cts.Token).ConfigureAwait(false);
 
-            _isAiEliminationScanning = false;
+            EndAiEliminationScan(cts);
             string usageSummary = usage.Tally.TotalTokens > 0 ? $" · {usage.SummaryWithEstimate(est)}" : "";
-            string usageChipNote = usage.Tally.TotalTokens > 0 ? $" ({usage.Tally.TotalTokens:N0} tokens)" : "";
+            string plainCost = usage.Tally.TotalTokens > 0 ? " " + usage.PlainSummary() : "";
             RuntimeLog.Info("AIElimination", $"Scan finished: {(result.Failed ? "FAILED — " : "")}{result.Summary}{usageSummary} ({result.Markers.Count} marker(s), {result.MomentsChecked} moment(s) checked).");
             Dispatcher.UIThread.Post(() =>
             {
@@ -133,30 +213,37 @@ public partial class MainWindow
                     _aiEliminationTimestamps.Add(m.TimestampSec);
                     _aiEliminationMarkers.Add(m);
                 }
-                _aiEliminationStatus = result.Failed ? "AI kill scan failed: " + result.Summary : "AI: " + result.Summary + usageChipNote;
+                _aiEliminationStatus = result.Failed ? "AI kill scan failed: " + result.Summary : "AI: " + result.Summary;
+                _aiEliminationDetail = usageSummary.Length > 0 ? _aiEliminationStatus + usageSummary : null;
                 _aiEliminationStatusIsError = result.Failed;
                 QueueTimelineRedrawPass(DispatcherPriority.Background);
 
                 _openGranularEditor?.SetAiEliminations(_aiEliminationTimestamps);
                 if (result.Failed)
-                    Controls.FloatingNotice.Error(this, "AI Kill Tracker: " + result.Summary + usageSummary);
+                    Controls.FloatingNotice.Error(this, "AI Kill Tracker: " + result.Summary + plainCost + $" (Reference: {reference})");
                 else if (result.Markers.Count > 0)
-                    Controls.FloatingNotice.Success(this, $"AI Kill Tracker: {result.Summary} Look for the red ✕ above the timeline.{usageSummary}");
+                    Controls.FloatingNotice.Success(this, $"AI Kill Tracker: {result.Summary} Look for the red ✕ above the timeline.{plainCost}");
                 else
-                    Controls.FloatingNotice.Info(this, "AI Kill Tracker: " + result.Summary + usageSummary);
+                    Controls.FloatingNotice.Info(this, "AI Kill Tracker: " + result.Summary + plainCost);
             });
         }
         catch (OperationCanceledException)
         {
-            _isAiEliminationScanning = false;
+            EndAiEliminationScan(cts);
         }
         catch (Exception ex)
         {
-            _isAiEliminationScanning = false;
+            EndAiEliminationScan(cts);
             string reason = ex is AiProviderException pe ? pe.Message : "something unexpected stopped it. Try reopening the video.";
-            string reference = AiUsageMeter.LastTaskId;
+            reference ??= AiUsageMeter.LastTaskId;
             RuntimeLog.Fail("AIElimination", $"Kill scan failed (reference {reference}): {ex.GetType().Name}: {ex.Message}");
             SetAiEliminationStatus($"AI kill scan failed: {reason} (Reference: {reference})", true, videoPath);
+            if (ex is AiProviderException)
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (!cts.IsCancellationRequested && _loadedVideoPath == videoPath)
+                        Controls.FloatingNotice.Error(this, $"AI Kill Tracker: {reason} (Reference: {reference})");
+                });
         }
     }
 
@@ -264,7 +351,26 @@ public partial class MainWindow
                 MaxWidth = Math.Max(140, canvasWidth * 0.5),
                 Child = chipContent,
             };
-            ToolTip.SetTip(chip, _aiEliminationStatus);
+            ToolTip.SetTip(chip, string.IsNullOrWhiteSpace(_aiEliminationDetail) ? _aiEliminationStatus : _aiEliminationDetail);
+            if (!_isAiEliminationScanning && _aiEliminationStartAction is { } start)
+            {
+                chip.Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand);
+                chip.PointerPressed += (_, e) =>
+                {
+                    if (!e.GetCurrentPoint(chip).Properties.IsLeftButtonPressed) return;
+                    e.Handled = true;
+                    _aiEliminationStartAction = null;
+                    start();
+                };
+            }
+            if (!_isAiEliminationScanning && !string.IsNullOrWhiteSpace(_loadedVideoPath)
+                && SettingsManager.Instance.AiEliminationTrackerEnabled)
+            {
+                string path = _loadedVideoPath;
+                var again = new MenuItem { Header = "Scan this video again (sends new AI requests)" };
+                again.Click += (_, _) => _ = RunAiEliminationScanAsync(path, userAsked: true, refresh: true);
+                chip.ContextMenu = new ContextMenu { ItemsSource = new object[] { again } };
+            }
             chip.Measure(Avalonia.Size.Infinity);
             Canvas.SetLeft(chip, Math.Max(0, canvasWidth - chip.DesiredSize.Width - 4));
             Canvas.SetTop(chip, -40);

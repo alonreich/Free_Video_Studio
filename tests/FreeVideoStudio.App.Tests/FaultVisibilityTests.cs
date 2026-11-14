@@ -19,6 +19,7 @@ public sealed class FaultVisibilityTests
         public void Notify(string text, NoticeKind kind = NoticeKind.Info) { }
         public void Alert(string title, string message) { }
         public Task<bool> ConfirmAsync(string title, string message, string confirmText, string cancelText) => Task.FromResult(true);
+        public Task<ConfirmDialogWindow.SaveChangesChoice> AskSaveChangesAsync(string title, string message) => Task.FromResult(ConfirmDialogWindow.SaveChangesChoice.BackToEditing);
     }
 
     [Fact]

@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -55,6 +57,48 @@ public static class AiFfmpeg
             RuntimeLog.Swallowed(ex);
             return false;
         }
+    }
+
+    public const string BatchFramesTag = "AIFRAMESBATCH_01";
+
+    public static async Task<bool[]> ExtractFramesJpegAsync(string ffmpegPath, string videoPath, IReadOnlyList<double> timesSec,
+        IReadOnlyList<string> destinations, CancellationToken ct, int width = 640)
+    {
+        int n = Math.Min(timesSec.Count, destinations.Count);
+        var ok = new bool[n];
+        if (n == 0) return ok;
+        var args = new List<string> { "-y", "-hide_banner", "-loglevel", "error" };
+        for (int i = 0; i < n; i++)
+        {
+            args.Add("-ss"); args.Add(Math.Max(0, timesSec[i]).ToString("0.000", CultureInfo.InvariantCulture));
+            args.Add("-i"); args.Add(videoPath);
+        }
+        for (int i = 0; i < n; i++)
+        {
+            args.Add("-map"); args.Add($"{i}:v:0");
+            args.Add("-frames:v"); args.Add("1");
+            args.Add("-vf"); args.Add($"scale={width}:-2");
+            args.Add("-q:v"); args.Add("3");
+            args.Add(destinations[i]);
+        }
+        try
+        {
+            var (exit, _, _) = await AsyncProcessRunner.RunAsync(Psi(ffmpegPath, args.ToArray()), StillTimeout + TimeSpan.FromSeconds(2 * n), ct).ConfigureAwait(false);
+            for (int i = 0; i < n; i++)
+                ok[i] = File.Exists(destinations[i]) && new FileInfo(destinations[i]).Length > 0;
+            if (exit != 0) RuntimeLog.Info("AIFFMPEG", $"Batch still extraction exited {exit}; {ok.Count(x => x)} of {n} pictures came out.");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Swallowed(ex);
+        }
+        for (int i = 0; i < n; i++)
+            if (!ok[i]) ok[i] = await ExtractFrameJpegAsync(ffmpegPath, videoPath, timesSec[i], destinations[i], ct, width).ConfigureAwait(false);
+        return ok;
     }
 
     /// <summary>Container duration in seconds from FFmpeg's banner, or 0 when it cannot be read.</summary>

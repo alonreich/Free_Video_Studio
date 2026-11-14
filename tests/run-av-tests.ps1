@@ -1,4 +1,4 @@
-<#
+﻿<#
   AVREG_01 / TESTGATE_01 / TESTCLEAN_01 — docs/README.md#GOV-AVGATE.
   full = A/V + Core/App + verifier + Python + harness checks.
   all = full + standalone media exports + native decoder soak.
@@ -15,6 +15,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $gateDir = Get-TestSuiteRoot $root 'Gate'
 $started = Get-Date
 $lease = $null
+$localAiReady = $false
 $oldNative = $env:FVS_TEST_NATIVE_MPV
 $oldManaged = $env:FVS_TEST_OUTPUT_MANAGED
 
@@ -58,7 +59,9 @@ try {
     $filter = if ($Mode -eq 'quick') { 'Tier=Quick' } else { '' }
     $all += Invoke-Suite 'AV' 'tests/FreeVideoStudio.AvRegression.Tests/FreeVideoStudio.AvRegression.Tests.csproj' $filter $required
     if ($Mode -ne 'quick') {
-        $all += Invoke-Suite 'Core' 'tests/FreeVideoStudio.Core.Tests/FreeVideoStudio.Core.Tests.csproj' ''
+        $localAiReady = [bool]$env:FVS_TEST_ORT_DIR -and [bool]$env:FVS_TEST_LOCALAI_DIR
+        $coreFilter = if ($localAiReady) { '' } else { 'Category!=LocalAiRuntime' }
+        $all += Invoke-Suite 'Core' 'tests/FreeVideoStudio.Core.Tests/FreeVideoStudio.Core.Tests.csproj' $coreFilter
         $all += Invoke-Suite 'App' 'tests/FreeVideoStudio.App.Tests/FreeVideoStudio.App.Tests.csproj' ''
         $all += Invoke-Suite 'Verifier' 'tests/FvsVerify.Tests/FvsVerify.Tests.csproj' ''
         $all += Invoke-Check 'Sentinels' 'dotnet' @('run', '--project', 'build/FvsVerify/FvsVerify.csproj', '-c', 'Release', '--no-build')
@@ -81,6 +84,9 @@ try {
     foreach ($group in ($all | Group-Object Suite)) {
         $ok = @($group.Group | Where-Object Outcome -eq 'Passed').Count
         $summary += "  $($group.Name): $ok passed / $($group.Count) results"
+    }
+    if ($Mode -ne 'quick' -and -not $localAiReady) {
+        $summary += "  LOCALAITEST_01: Local AI real-model tests NOT RUN (set FVS_TEST_ORT_DIR and FVS_TEST_LOCALAI_DIR to run them)"
     }
     $lines = @()
     foreach ($failure in $failed) {

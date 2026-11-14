@@ -32,6 +32,7 @@ public sealed class ViralPostViewModel : IDisposable
     private readonly PostGenerator _generate;
     private readonly CtsSlot _run = new();
     private string? _videoPath;
+    private string? _lastReference;
 
     public ViralPostViewModel(ISettingsStore store, PostGenerator? generate = null)
     {
@@ -47,7 +48,9 @@ public sealed class ViralPostViewModel : IDisposable
     public event Action<ViralPostView>? Changed;
 
     /// <summary>Settings › AI › "Write my post".</summary>
-    public bool IsEnabled => _store.Current.AiViralPostHelperEnabled;
+    public bool IsEnabled => _store.Current.AiViralPostHelperEnabled && _store.Current.AiMode != AiMode.LocalOnly;
+
+    internal const string PcOnlyTag = "AIVIRALPCONLY_01";
 
     /// <summary>The company the post is written with (for the "connect your AI" wizard).</summary>
     public AiVendor Vendor => _store.Current.GetUsageConfig(AiUsage.ViralPost).Vendor;
@@ -76,6 +79,7 @@ public sealed class ViralPostViewModel : IDisposable
         if (string.IsNullOrEmpty(videoPath)) return;
 
         Show(Writing());
+        _lastReference = null;
         CancellationToken token = _run.Renew();
         (ViralPostOutcome outcome, string tokenInfo) result;
         try
@@ -93,18 +97,18 @@ public sealed class ViralPostViewModel : IDisposable
             result = (new ViralPostOutcome(ViralPostStatus.Failed, null, "Something went wrong while writing the post. Try again."), "");
         }
         if (token.IsCancellationRequested) return;
-        Show(ToView(result.outcome, result.tokenInfo));
+        Show(ToView(result.outcome, result.tokenInfo, _lastReference));
     }
 
     /// <summary>AIVIRAL_HONEST_01 — the outcome as the card shows it. Pure.</summary>
-    public static ViralPostView ToView(ViralPostOutcome outcome, string tokenInfo = "") => outcome.Status switch
+    public static ViralPostView ToView(ViralPostOutcome outcome, string tokenInfo = "", string? reference = null) => outcome.Status switch
     {
         ViralPostStatus.AiGenerated when outcome.Post != null =>
             new ViralPostView($"AI WRITTEN{tokenInfo}", outcome.Message, true, true, false, false, "↻ NEW VERSION", outcome.Post),
         ViralPostStatus.NoKey =>
             new ViralPostView("NO AI KEY", outcome.Message, false, false, true, false, "↻ NEW VERSION", null),
         _ =>
-            new ViralPostView("AI FAILED", (outcome.Message ?? "The AI could not write the post.") + AiUsageMeter.ReferenceSuffix, false, true, false, false, "↻ RETRY", null),
+            new ViralPostView("AI FAILED", (outcome.Message ?? "The AI could not write the post.") + (reference != null ? "\n\nReference: " + reference : AiUsageMeter.ReferenceSuffix), false, true, false, false, "↻ RETRY", null),
     };
 
     private static ViralPostView Writing(
@@ -132,10 +136,10 @@ public sealed class ViralPostViewModel : IDisposable
         string ffmpegPath = FreeVideoStudio.Core.Infrastructure.BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries");
 
         var est = AiCostEstimator.EstimateViralPost(config.Vendor, model);
-        string estBanner = AiCostEstimator.FormatPreRunBanner(est, config.Vendor, model);
+        string estBanner = AiCostEstimator.PlainCostShort(est, config.Vendor, model) + " (estimate)";
         string currentStep = string.IsNullOrWhiteSpace(apiKey)
             ? "Checking AI key…"
-            : $"Preparing {vendorName} ({model})…";
+            : $"Getting {vendorName} ready…";
         DateTime startedUtc = DateTime.UtcNow;
         bool finished = false;
         object stateLock = new();
@@ -157,6 +161,7 @@ public sealed class ViralPostViewModel : IDisposable
         return await Task.Run(async () =>
         {
             using var usage = AiUsageMeter.BeginTask("Viral Post Helper", config.Vendor);
+            _lastReference = usage.Id;
             using var timer = new System.Threading.Timer(_ => EmitProgress(null), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
             EmitProgress(currentStep);
             try
@@ -171,10 +176,11 @@ public sealed class ViralPostViewModel : IDisposable
                     step => EmitProgress(step),
                     ct).ConfigureAwait(false);
 
-                string tokenInfo = usage.Tally.TotalTokens > 0 ? $" ({usage.Tally.TotalTokens:N0} tokens)" : "";
+                string tokenInfo = "";
                 if (usage.Tally.TotalTokens > 0)
                 {
-                    string summary = usage.SummaryWithEstimate(est);
+                    RuntimeLog.Info("ViralPost", usage.SummaryWithEstimate(est));
+                    string summary = usage.PlainSummary();
                     outcome = outcome.Status == ViralPostStatus.AiGenerated
                         ? outcome with { Message = summary }
                         : outcome with { Message = string.IsNullOrWhiteSpace(outcome.Message) ? summary : $"{outcome.Message} ({summary})" };

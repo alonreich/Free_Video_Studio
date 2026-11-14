@@ -175,6 +175,20 @@ public sealed class AutosaveBackgroundTests : IDisposable
         Assert.False(session.IsDirty);
     }
 
+    [AvaloniaTheory]
+    [InlineData(ConfirmDialogWindow.SaveChangesChoice.BackToEditing, false, true, 0)]
+    [InlineData(ConfirmDialogWindow.SaveChangesChoice.Discard, true, true, 0)]
+    [InlineData(ConfirmDialogWindow.SaveChangesChoice.Save, true, false, 1)]
+    public async Task UnsavedClosePrompt_BackToEditingKeepsWork(ConfirmDialogWindow.SaveChangesChoice answer, bool closes, bool stillDirty, int extraSaves)
+    {
+        var store = new GatedStore();
+        var (session, _) = await DirtySessionWithPathAsync(store, new RecordingFaults(), unsavedAnswer: answer);
+        int before = store.SaveCount;
+        Assert.Equal(closes, await session.ConfirmDiscardAsync("Close"));
+        Assert.Equal(stillDirty, session.IsDirty);
+        Assert.Equal(before + extraSaves, store.SaveCount);
+    }
+
     [AvaloniaFact]
     public async Task Open_LoadRunsOffDispatcher_AndDoesNotOverwriteNewEdits()
     {
@@ -213,7 +227,7 @@ public sealed class AutosaveBackgroundTests : IDisposable
 
     private MainViewModel? _vm;
 
-    private async Task<(ProjectSession, ManualClock)> DirtySessionWithPathAsync(GatedStore store, RecordingFaults faults, bool saveOnConfirm = false)
+    private async Task<(ProjectSession, ManualClock)> DirtySessionWithPathAsync(GatedStore store, RecordingFaults faults, bool saveOnConfirm = false, ConfirmDialogWindow.SaveChangesChoice? unsavedAnswer = null)
     {
         var paths = new ApplicationPaths(_root);
         _vm = new MainViewModel(paths) { LoadedVideoPath = _video };
@@ -223,7 +237,7 @@ public sealed class AutosaveBackgroundTests : IDisposable
         var session = new ProjectSession(
             store,
             new FixedPicker(_project),
-            new SilentNotifier(saveOnConfirm),
+            new SilentNotifier(saveOnConfirm, unsavedAnswer),
             faults,
             clock,
             _vm,
@@ -288,11 +302,17 @@ public sealed class AutosaveBackgroundTests : IDisposable
         public Task<string?> OpenFileAsync(FilePickerRequest request) => Task.FromResult<string?>(path);
     }
 
-    private sealed class SilentNotifier(bool saveOnConfirm = false) : IUserNotifier
+    private sealed class SilentNotifier(bool saveOnConfirm = false, ConfirmDialogWindow.SaveChangesChoice? unsavedAnswer = null) : IUserNotifier
     {
+        public int UnsavedPrompts { get; private set; }
         public void Notify(string text, NoticeKind kind = NoticeKind.Info) { }
         public void Alert(string title, string message) { }
         public Task<bool> ConfirmAsync(string title, string message, string confirmText, string cancelText) => Task.FromResult(saveOnConfirm);
+        public Task<ConfirmDialogWindow.SaveChangesChoice> AskSaveChangesAsync(string title, string message)
+        {
+            UnsavedPrompts++;
+            return Task.FromResult(unsavedAnswer ?? (saveOnConfirm ? ConfirmDialogWindow.SaveChangesChoice.Save : ConfirmDialogWindow.SaveChangesChoice.Discard));
+        }
     }
 
     private sealed class RecordingFaults : IFaultSink

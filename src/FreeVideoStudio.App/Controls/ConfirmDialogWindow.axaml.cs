@@ -14,16 +14,24 @@ public partial class ConfirmDialogWindow : Window
 
     public enum SaveChangesChoice { BackToEditing, Save, Discard }
 
-    public static async System.Threading.Tasks.Task<SaveChangesChoice> AskSaveChangesAsync(
+    public static System.Threading.Tasks.Task<SaveChangesChoice> AskSaveChangesAsync(
         Window owner, string profileName, string destination)
+        => AskSaveChangesWithMessageAsync(owner, "Save your changes?",
+            $"Save your changes to \"{profileName}\" before {destination}?\n\n" +
+            "Discard changes will lose your unsaved edits.");
+
+    public static async System.Threading.Tasks.Task<SaveChangesChoice> AskSaveChangesWithMessageAsync(
+        Window owner, string title, string message)
     {
         try
         {
             var dlg = new ConfirmDialogWindow();
-            dlg.SetTitle("Save your changes?");
-            dlg.SetMessage($"Save your changes to \"{profileName}\" before {destination}?\n\n" +
-                           "Discard changes will lose your unsaved edits.");
+            dlg.SetTitle(title);
+            dlg.SetMessage(message);
             dlg.SetButtonText("Save changes", "Back to editing", "Discard changes");
+            if (dlg.YesBtnCtl is { } yesTip) ToolTip.SetTip(yesTip, "Save your work, then continue.");
+            if (dlg.NoBtnCtl is { } noTip) ToolTip.SetTip(noTip, "Close this question and keep editing. Nothing is lost.");
+            if (dlg.AltBtnCtl is { } altTip) ToolTip.SetTip(altTip, "Throw away the changes you have not saved.");
             dlg.SetButtonClasses("Success", "Secondary", "Danger");
             var save = dlg.FindControl<Button>("YesBtn")!;
             var back = dlg.FindControl<Button>("NoBtn")!;
@@ -226,11 +234,15 @@ public partial class ConfirmDialogWindow : Window
         var altBtn = AltBtnCtl;
         if (yesBtn != null)
         {
+            if (!string.Equals(yesBtn.Content as string, yesText, System.StringComparison.OrdinalIgnoreCase))
+                ToolTip.SetTip(yesBtn, null);
             yesBtn.Content = yesText;
             Avalonia.Automation.AutomationProperties.SetName(yesBtn, yesText);
         }
         if (noBtn != null)
         {
+            if (!string.Equals(noBtn.Content as string, noText, System.StringComparison.OrdinalIgnoreCase))
+                ToolTip.SetTip(noBtn, null);
             noBtn.Content = noText;
             Avalonia.Automation.AutomationProperties.SetName(noBtn, noText);
         }

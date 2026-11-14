@@ -79,7 +79,7 @@ structure without all of these ([`09` DIST-RELEASENOTES](09_DISTRIBUTION_AND_REL
 5. A failing `S03` means the app code a rig mirrors changed: update that rig (named in the message).
 6. Environment: `FVS_AV_AUDIO=null` forces the simulated clock (no sound device); `FVS_AV_SEED=<n>` replays
    S35's random session with the seed printed in its failure; `FVS_TEST_OUTPUT_MANAGED` is set by
-   the runner only (never by hand); `FVS_TEST_FFMPEG=<path>` names FFmpeg for Core media unit tests (else they skip).
+   the runner only (never by hand); `FVS_TEST_FFMPEG=<path>` names FFmpeg for Core media unit tests (else they skip); `FVS_TEST_ORT_DIR` + `FVS_TEST_LOCALAI_DIR` add the Local AI real-model tests, which the gate otherwise leaves out and reports as NOT RUN (LOCALAITEST_01, `05` SYS-LOCALAI).
 
 `tests\run-all-tests.cmd` additionally exercises actual desktop pixels and the real merger window,
 standalone media exports and decoder soak. Its desktop tier requires an interactive, unobscured

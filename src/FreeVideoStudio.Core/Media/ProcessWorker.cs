@@ -1483,8 +1483,7 @@ public class ProcessWorker : IDisposable
                         cuts: exportCuts);
 
                     var (origW, origH) = CoordinateMath.GetResolutionInts(OriginalResolution);
-                    int canvasWidth = IsMobileFormat ? 1080 : origW;
-                    int canvasHeight = IsMobileFormat ? 1920 : origH;
+                    var (canvasWidth, canvasHeight) = CaptionAssWriter.ExportCanvas(false, IsMobileFormat, origW, origH);
 
                     var captionHud = IsMobileFormat
                         ? MobileFilterBuilder.HudCanvasRects(mobileCoords, ShowTeammates, ShowSpectating)

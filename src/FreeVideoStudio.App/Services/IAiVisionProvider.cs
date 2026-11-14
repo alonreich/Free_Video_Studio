@@ -75,7 +75,7 @@ public class AiProviderException : Exception
 public sealed record AiImageInput(byte[] Data, string MimeType = "image/jpeg", string? Label = null, string? Detail = null);
 
 /// <summary>A video input for AI analysis.</summary>
-public sealed record AiVideoInput(byte[] Data, string MimeType = "video/mp4", double Fps = 2.0);
+public sealed record AiVideoInput(byte[] Data, string MimeType = "video/mp4", double Fps = 2.0, string? MediaResolution = null, bool AllowFpsFallback = true);
 
 /// <summary>Unified reasoning level across models that support thinking / reasoning tokens.</summary>
 public enum AiReasoningLevel
