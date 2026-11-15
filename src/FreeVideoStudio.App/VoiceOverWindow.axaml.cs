@@ -520,14 +520,25 @@ public partial class VoiceOverWindow : Window
                 try
                 {
                     string mpvPath = ResolveBinaryPath("mpv.exe", "frontend");
-                    await _videoHost.StartMpvProcessAsync(mpvPath).WaitAsync(TimeSpan.FromSeconds(8));
+                    var proxyRender = RenderRecordingProxyAsync(_previewPrepareCts.Token);
+                    _previewPreparation = proxyRender;
+                    try
+                    {
+                        await _videoHost.StartMpvProcessAsync(mpvPath).WaitAsync(TimeSpan.FromSeconds(8));
+                        if (_videoHost.IpcClient == null) throw new InvalidOperationException("The video player did not start.");
+                    }
+                    catch
+                    {
+                        await AbandonProxyRenderAsync(proxyRender);
+                        throw;
+                    }
 
                     if (_videoHost.IpcClient != null)
                     {
                         _videoHost.IpcClient.SeekCompleted -= OnSeekCompleted;
                         _videoHost.IpcClient.SeekCompleted += OnSeekCompleted;
-                        
-                        _previewPreparation = PrepareRecordingPreviewAsync(_videoHost.IpcClient);
+
+                        _previewPreparation = PrepareRecordingPreviewAsync(_videoHost.IpcClient, proxyRender);
                         await _previewPreparation;
                         if (_isClosing || _isPreviewTeardownPosted) return;
 

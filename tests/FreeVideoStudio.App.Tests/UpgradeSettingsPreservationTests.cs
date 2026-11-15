@@ -19,7 +19,7 @@ public sealed class UpgradeSettingsPreservationTests : IDisposable
     {
         Directory.CreateDirectory(_root);
         string path = Path.Combine(_root, "settings.json"); File.WriteAllText(path, contents);
-        Assert.Throws<IOException>(() => UpgradeCoordinator.ValidateSettingsFile(path));
+        Assert.Throws<FreeVideoStudio.App.Infrastructure.UserFacingIOException>(() => UpgradeCoordinator.ValidateSettingsFile(path));
         Assert.Equal(contents, File.ReadAllText(path));
         Assert.Single(Directory.GetFiles(_root));
     }

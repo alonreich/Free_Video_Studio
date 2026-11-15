@@ -102,7 +102,7 @@ internal static class UpgradeCoordinator
         {
             start.ArgumentList.Add("--wait-pid"); start.ArgumentList.Add(Environment.ProcessId.ToString());
         }
-        using var process = Process.Start(start) ?? throw new IOException("Could not start the update.");
+        using var process = Process.Start(start) ?? throw new FreeVideoStudio.App.Infrastructure.UserFacingIOException("Could not start the update.");
         if (DeploymentFootprint.IsRunningFromInstallPath()) return 0;
         await process.WaitForExitAsync().ConfigureAwait(false);
         try { UpgradeFiles.DeleteTree(stage, Path.GetDirectoryName(stage)!); }
@@ -237,7 +237,7 @@ internal static class UpgradeCoordinator
         try
         {
             if (UpgradeInstallWorker.IsElevated())
-                throw new IOException("Please run the installer normally, without 'Run as administrator'. Windows will ask for permission when needed.");
+                throw new FreeVideoStudio.App.Infrastructure.UserFacingIOException("Please run the installer normally, without 'Run as administrator'. Windows will ask for permission when needed.");
 
             if (!recovery)
             {
@@ -267,7 +267,7 @@ internal static class UpgradeCoordinator
             start.ArgumentList.Add("--allow-downgrade");
             try
             {
-                worker = Process.Start(start) ?? throw new IOException("Windows did not start the installer.");
+                worker = Process.Start(start) ?? throw new FreeVideoStudio.App.Infrastructure.UserFacingIOException("Windows did not start the installer.");
             }
             catch (System.ComponentModel.Win32Exception denied) when (denied.NativeErrorCode == ErrorCancelled)
             {
@@ -336,7 +336,7 @@ internal static class UpgradeCoordinator
             health = await healthAccept.ConfigureAwait(false);
             string pid = await health.ExpectAsync("healthy").ConfigureAwait(false);
             if (pid != app.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) || app.HasExited)
-                throw new IOException("The new app did not confirm its startup.");
+                throw new FreeVideoStudio.App.Infrastructure.UserFacingIOException("The new app did not confirm its startup.");
             await channel.SendAsync("healthy", pid).ConfigureAwait(false);
             await channel.ExpectAsync("committed").ConfigureAwait(false);
             data.Confirm();
@@ -620,11 +620,11 @@ internal static class UpgradeCoordinator
     internal static void ValidateSettingsFile(string path)
     {
         if (!File.Exists(path)) return;
-        JsonObject json = AtomicJsonFile.ReadObject(path) ?? throw new IOException("Saved settings are unreadable. They have been preserved.");
+        JsonObject json = AtomicJsonFile.ReadObject(path) ?? throw new FreeVideoStudio.App.Infrastructure.UserFacingIOException("Saved settings are unreadable. They have been preserved.");
         if (json["SchemaVersion"]?.GetValue<int>() > Infrastructure.SettingsManager.CurrentSchemaVersion)
-            throw new IOException("These settings need a newer app version. They have been preserved.");
+            throw new FreeVideoStudio.App.Infrastructure.UserFacingIOException("These settings need a newer app version. They have been preserved.");
         _ = System.Text.Json.JsonSerializer.Deserialize(File.ReadAllText(path), Infrastructure.SettingsJsonContext.Default.AppSettings)
-            ?? throw new IOException("The saved settings could not be read. They have been preserved.");
+            ?? throw new FreeVideoStudio.App.Infrastructure.UserFacingIOException("The saved settings could not be read. They have been preserved.");
     }
 
     private static void RequireMachineJournal(string directory)

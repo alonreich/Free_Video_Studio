@@ -50,7 +50,7 @@ try
 catch (Exception ex)
 {
     RuntimeLog.Fail("Startup migration", ex.ToString());
-    NativeDialog.ShowError("Startup or update recovery could not finish. Your saved files have been kept.\n\n" + ex.Message,
+    NativeDialog.ShowError("Startup or update recovery could not finish. Your saved files have been kept.\n\n" + FreeVideoStudio.App.Infrastructure.UserFacingError.Describe(ex),
         "Free Video Studio");
     return 1;
 }

@@ -96,7 +96,7 @@ public partial class SettingsWindow
                 _localAiCts?.Dispose();
                 _localAiCts = null;
                 Show();
-                SetStatusText(status, "The download failed: " + ex.Message, StatusTone.Danger);
+                SetStatusText(status, "The download failed. " + FreeVideoStudio.App.Infrastructure.UserFacingError.Describe(ex) + " What was downloaded is kept.", StatusTone.Danger);
             }
         };
         if (cancel != null) cancel.Click += (_, _) => _localAiCts?.Cancel();

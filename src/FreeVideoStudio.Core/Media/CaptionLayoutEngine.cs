@@ -120,22 +120,18 @@ public static class CaptionLayoutEngine
             wrappedLines = WrapCaptionWords(captionLine.Words, font, paint, (float)maxTextWidth);
         }
 
+        int shrinkFloor = Math.Max(MinFontSize, (int)(baseFontSize * ShrinkFloorFraction));
+        while (wrappedLines.Count > MaxLinesOnScreen && fontSize > shrinkFloor && captionLine.Words.Count <= MaxWordsPerLine * MaxLinesOnScreen)
+        {
+            fontSize = Math.Max(shrinkFloor, (int)(fontSize * 0.92));
+            font.Size = fontSize;
+            wrappedLines = WrapCaptionWords(captionLine.Words, font, paint, (float)maxTextWidth);
+        }
+
         if (wrappedLines.Count > MaxLinesOnScreen)
         {
-            var firstLine = wrappedLines[0];
-            var remainderWords = new List<MappedCaptionWord>();
-            for (int i = 1; i < wrappedLines.Count; i++)
-                remainderWords.AddRange(wrappedLines[i].Words);
-
-            string secondLineText = string.Join(" ", remainderWords.Select(w => w.Text));
-            float secondLineWidth = MeasureTextWidth(secondLineText, font, paint);
-            float lineHeight = fontSize * 1.25f;
-
-            wrappedLines = new List<CaptionLayoutLine>
-            {
-                firstLine,
-                new CaptionLayoutLine(0, 0, secondLineWidth, lineHeight, secondLineText, remainderWords)
-            };
+            wrappedLines = FoldIntoTwoRows(captionLine.Words, font, paint, (float)maxTextWidth);
+            fontSize = (int)font.Size;
         }
 
         double totalTextHeight = wrappedLines.Sum(l => l.Height);
@@ -290,6 +286,60 @@ public static class CaptionLayoutEngine
         }
 
         return lines;
+    }
+
+    public const string TwoRowFitTag = "CAPTIONFIT_02";
+    public const int MinFontSize = 8;
+    public const double ShrinkFloorFraction = 0.6;
+
+    private static List<CaptionLayoutLine> FoldIntoTwoRows(
+        IReadOnlyList<MappedCaptionWord> words,
+        SKFont font,
+        SKPaint paint,
+        float maxWidth)
+    {
+        var all = words.ToList();
+        var widths = new float[all.Count];
+        float space = MeasureTextWidth("a a", font, paint) - MeasureTextWidth("aa", font, paint);
+        if (space <= 0) space = font.Size * 0.28f;
+        float total = 0;
+        for (int i = 0; i < all.Count; i++)
+        {
+            widths[i] = MeasureTextWidth(all[i].Text, font, paint);
+            total += widths[i] + (i > 0 ? space : 0);
+        }
+
+        int split = 1;
+        float best = float.MaxValue;
+        float left = 0;
+        for (int k = 1; k < all.Count; k++)
+        {
+            left += widths[k - 1] + (k > 1 ? space : 0);
+            float right = total - left - space;
+            float widest = Math.Max(left, right);
+            if (widest < best) { best = widest; split = k; }
+        }
+
+        var first = all.GetRange(0, split);
+        var second = all.GetRange(split, all.Count - split);
+        string firstText = string.Join(" ", first.Select(w => w.Text));
+        string secondText = string.Join(" ", second.Select(w => w.Text));
+
+        float firstWidth = MeasureTextWidth(firstText, font, paint);
+        float secondWidth = MeasureTextWidth(secondText, font, paint);
+        for (int pass = 0; pass < 4 && Math.Max(firstWidth, secondWidth) > maxWidth && font.Size > 1; pass++)
+        {
+            font.Size = Math.Max(1, (int)Math.Floor(font.Size * maxWidth / Math.Max(firstWidth, secondWidth)));
+            firstWidth = MeasureTextWidth(firstText, font, paint);
+            secondWidth = MeasureTextWidth(secondText, font, paint);
+        }
+
+        float lineHeight = font.Size * 1.25f;
+        return new List<CaptionLayoutLine>
+        {
+            new CaptionLayoutLine(0, 0, firstWidth, lineHeight, firstText, first),
+            new CaptionLayoutLine(0, 0, secondWidth, lineHeight, secondText, second)
+        };
     }
 
     private static float MeasureTextWidth(string text, SKFont font, SKPaint paint)

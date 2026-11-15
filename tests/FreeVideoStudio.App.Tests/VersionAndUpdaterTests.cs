@@ -378,7 +378,7 @@ public sealed class VersionAndUpdaterTests : IDisposable
         Assert.False(File.Exists(target + ".part"));
 
         string wrong = Path.Combine(_tempDir, "download", "wrong.bin");
-        await Assert.ThrowsAsync<IOException>(() => UpdateDownloader.DownloadAsync(http, new Uri(source).AbsoluteUri, source, wrong,
+        await Assert.ThrowsAsync<FreeVideoStudio.App.Infrastructure.UserFacingIOException>(() => UpdateDownloader.DownloadAsync(http, new Uri(source).AbsoluteUri, source, wrong,
             data.Length, new string('0', 64), null, CancellationToken.None));
         Assert.False(File.Exists(wrong));
         Assert.False(File.Exists(wrong + ".part"));

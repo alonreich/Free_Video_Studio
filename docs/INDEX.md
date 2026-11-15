@@ -218,6 +218,8 @@ Voiceover timing additions (all listed specs govern these files):
   LocalAiAppTests.cs                         04 UI-AIZOOM | 01 TL-LOCALTRACK
   AiEliminationTrackerTests.cs               01 TL-AITRACKING | 05 SYS-AISETTINGS
   MainWindow.AiElimination.cs                01 TL-AITRACKING | 05 SYS-AISETTINGS
+  MainWindow.QuickStart.cs                   04 UI-SAFEGUARDS (DROPCLICK_01) | 04 UI-AIEASE (KILLQUICK_01, AIHINT_01)
+  AiOnboardingTests.cs                       04 UI-SAFEGUARDS | 04 UI-AIEASE
   FinishedDialogWindow.AiViral.cs            04 UI-MERGER-MULTISELECT | 05 SYS-AISETTINGS
   AiJsonSchema.cs                            05 SYS-AISETTINGS (AISCHEMA_01)
   AiJsonSchemaTests.cs                       05 SYS-AISETTINGS (AISCHEMA_01)
@@ -226,6 +228,7 @@ Voiceover timing additions (all listed specs govern these files):
   AiUsageMeter.cs                            05 SYS-AISETTINGS §7.5 (AIUSAGE_01)
   AiUsageMeterTests.cs                       05 SYS-AISETTINGS §7.5 (AIUSAGE_01)
   CaptionAuditFixTests.cs                    01 TL-CAPTIONS | 03 FFM-CAPTIONS (AIAUDIT_01)
+  QaAuditRegressionTests.cs                  01 TL-CAPTIONS | 03 FFM-CAPTIONS | 06 (recent projects) | 03 RESCUE_02 (CAPTIONEMPH_02, CAPTIONFIT_02, PROJ_09B)
 ⚠ MusicWizardResult.Plan.cs                  02 AUD-PREVIEWSYNC | 03 (mini-map only)
 ⚠ MusicWizardViewModel.cs                    04 UI-MUSICWIZARD | 02 AUD-MUSICWIN
 ⚠ VideoMergerWindow.MusicButton.cs           02 AUD-DIALOGS | 04 UI-MUSICWIZARD
@@ -348,6 +351,8 @@ Voiceover timing additions (all listed specs govern these files):
   IFilePickerService.cs                      08
 ⚠ StorageProviderFilePicker.cs               05 08
   UserFacingFaultSink.cs                     08
+  UserFacingError.cs                         04 UI-SAFEGUARDS (ERRPLAIN_01, ERRPLAIN_02)
+  UiAuditFixTests.cs                         04 (THEMETOKENS_01, THEMEPRECEDENCE_01, FONTTOKENS_01, CAPTIONEDIT_01, CAPTIONEDIT_02, ERRPLAIN_01, ERRPLAIN_02); 02 (VOFAST_01, VOCLOSE_01, VOCLOSE_02)
   ArchitectureRuleTests.cs                   08
 ⚠ CodeSigning.cs                             05 08
   SettingsManager.cs                         05 (SETTX_01/SETTX_02: all settings mutation via one Update transaction)

@@ -183,6 +183,9 @@ fixed by muting it again — the rule is fix, or annotate one statement with a r
   explain. A project on an unplugged external drive is not a project the user deleted, and quietly
   removing the row is how a user concludes the app lost their montage. `Prune` runs only when the
   user asks.
+* **One unreadable entry is skipped, not fatal (PROJ_09B).** An entry whose `path` is not text is left
+  out and a non-text `title` falls back to the file name; the entries after it are still read. The read
+  used to stop at the first such entry, and the next `Touch` wrote the shortened list back.
 * **A damaged recent list is cosmetic.** It must never stop the app starting, and never surface as an
   error to dismiss on every launch.
 

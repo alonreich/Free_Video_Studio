@@ -13,7 +13,8 @@ public static class AsyncProcessRunner
     public static async Task<(int ExitCode, string StandardOutput, string StandardError)> RunAsync(
         ProcessStartInfo psi, 
         TimeSpan? timeout = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<string>? standardOutputLine = null)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         if (timeout.HasValue)
@@ -30,7 +31,9 @@ public static class AsyncProcessRunner
 
         try { ChildProcessTracker.AddProcess(process); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
 
-        Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+        Task<string> outputTask = standardOutputLine == null
+            ? process.StandardOutput.ReadToEndAsync()
+            : ReadLinesAsync(process.StandardOutput, standardOutputLine);
         Task<string> stderrTask = process.StandardError.ReadToEndAsync();
 
         try
@@ -51,6 +54,18 @@ public static class AsyncProcessRunner
         string stderr = await stderrTask.ConfigureAwait(false);
 
         return (process.ExitCode, output, stderr);
+    }
+
+    private static async Task<string> ReadLinesAsync(StreamReader reader, Action<string> onLine)
+    {
+        var all = new System.Text.StringBuilder();
+        while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
+        {
+            all.AppendLine(line);
+            try { onLine(line); }
+            catch (Exception ex) { CoreLogger.Swallowed(ex); }
+        }
+        return all.ToString();
     }
 
     private static string BuildLogTag(ProcessStartInfo psi) =>

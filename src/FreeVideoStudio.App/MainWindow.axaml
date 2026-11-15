@@ -130,13 +130,22 @@
                     <!-- IDEA_01: single consolidated hero empty-state (BlankStateOverlay merged in).
                          IDEA_04: Opacity transition lets the card fade while the drag-over dropzone speaks.
                          IDEA_05: supported-formats hint. IDEA_07: unified "UPLOAD VIDEO" verb. -->
-                    <Border Name="UploadOverlay" Background="{DynamicResource AppPanelBrush}" Opacity="0.95" CornerRadius="6" Grid.RowSpan="2">
+                    <!-- DROPCLICK_01: the hand cursor belongs only to the drop card, which opens the file picker on click.
+                         KILLQUICK_01: the small AI Kill Tracker switch sits in the top-left corner and leaves with this card. -->
+                    <Border Name="UploadOverlay" Background="{DynamicResource AppPanelBrush}" Opacity="0.95" CornerRadius="6" Grid.RowSpan="2" Cursor="Arrow">
                         <Border.Transitions>
                             <Transitions>
                                 <DoubleTransition Property="Opacity" Duration="0:0:0.15"/>
                             </Transitions>
                         </Border.Transitions>
-                        <Grid Margin="30" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Grid>
+                        <Button Name="KillTrackerQuickToggle" Classes="Primary" Click="OnKillTrackerQuickToggleClick" Loaded="OnKillTrackerQuickToggleLoaded" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                Margin="14" Padding="10,5" FontSize="{DynamicResource AppFontSize11}" Cursor="Hand" ZIndex="2"
+                                Content="🎯 AI Kill Tracker: OFF"
+                                AutomationProperties.Name="AI Kill Tracker"
+                                ToolTip.Tip="Puts a red ✕ above the timeline at each of your kills. Click to switch it on or off. Same switch as Settings › AI › Mark my kills."/>
+                        <Grid Name="UploadDropCard" PointerPressed="OnUploadDropCardPressed" Margin="30" HorizontalAlignment="Center" VerticalAlignment="Center" Background="Transparent" Cursor="Hand"
+                              ToolTip.Tip="Click to pick a video, or drop one here.">
                             <Rectangle Stroke="{DynamicResource AppBorderBrush}" StrokeThickness="2" StrokeDashArray="6,4" RadiusX="8" RadiusY="8" Fill="{DynamicResource AppSurfaceBrush}" Opacity="0.8" IsHitTestVisible="False" />
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14" Margin="60,36">
                                 <Border Classes="DropIconPulse" MinWidth="88" MinHeight="88" CornerRadius="44"
@@ -145,7 +154,7 @@
                                         HorizontalAlignment="Center" IsHitTestVisible="False">
                                     <TextBlock Text="⬇" FontSize="{DynamicResource AppFontSize36}" Foreground="{DynamicResource AppAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
-                                <TextBlock Text="Drag &amp; drop your gameplay video here" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize18}" FontWeight="SemiBold" HorizontalAlignment="Center" IsHitTestVisible="False" />
+                                <TextBlock Text="Drag &amp; Drop Videos Here:" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize18}" FontWeight="SemiBold" HorizontalAlignment="Center" IsHitTestVisible="False" />
                                 <TextBlock Text="or" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" HorizontalAlignment="Center" IsHitTestVisible="False" />
                                 <Button Name="CenterUploadButton" Classes="Primary" Content="UPLOAD VIDEO" HorizontalAlignment="Center" ToolTip.Tip="Click here to browse your computer and upload a video file to start editing." Padding="20,10" />
                                 <TextBlock Text="MP4 · MKV · AVI · MOV" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" HorizontalAlignment="Center" IsHitTestVisible="False" />
@@ -167,7 +176,13 @@
                                         <TextBlock Text="Portrait" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextMutedBrush}" HorizontalAlignment="Center"/>
                                     </StackPanel>
                                 </StackPanel>
+                                <Button Name="AiSetupHintButton" Classes="Secondary" Click="OnAiSetupHintClick" Loaded="OnAiSetupHintLoaded" HorizontalAlignment="Center" Margin="0,6,0,0"
+                                        Padding="12,5" FontSize="{DynamicResource AppFontSize11}" Cursor="Hand" IsVisible="False"
+                                        Content="✨ AI can zoom, write captions, pick music and mark kills. Set up AI (1 minute)"
+                                        AutomationProperties.Name="Set up AI"
+                                        ToolTip.Tip="Opens a short walk-through: choose how AI works, pick an AI company, get a key from its page and paste it."/>
                             </StackPanel>
+                        </Grid>
                         </Grid>
                     </Border>
 

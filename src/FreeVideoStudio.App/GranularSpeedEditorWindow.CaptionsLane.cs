@@ -252,10 +252,7 @@ public partial class GranularSpeedEditorWindow
         double newSrcMs = XToSrcMs(newX1, w);
         double deltaSec = ((_edit.TrimStartMs + newSrcMs) / 1000.0) - _captionDragOriginalStartSec;
 
-        double minStart = _edit.TrimStartMs / 1000.0;
-        double maxEnd = (_edit.TrimEndMs > _edit.TrimStartMs)
-            ? _edit.TrimEndMs / 1000.0
-            : (minStart + GetDuration());
+        var (minStart, maxEnd) = CaptionTimeBounds();
 
         switch (_captionDragTarget)
         {
@@ -375,13 +372,23 @@ public partial class GranularSpeedEditorWindow
         Notify($"Caption line #{lineId} deleted. Ctrl+Z to undo.");
     }
 
+    private (double MinSec, double MaxSec) CaptionTimeBounds()
+    {
+        double minStart = _edit.TrimStartMs / 1000.0;
+        double maxEnd = (_edit.TrimEndMs > _edit.TrimStartMs)
+            ? _edit.TrimEndMs / 1000.0
+            : (minStart + GetDuration());
+        return (minStart, maxEnd);
+    }
+
     private async Task ShowEditCaptionDialogAsync(int lineId)
     {
         if (_edit.CaptionTrack?.Lines == null) return;
         var line = _edit.CaptionTrack.Lines.FirstOrDefault(l => l.Id == lineId);
         if (line == null) return;
 
-        var dialog = new EditCaptionDialogWindow(line);
+        var (minSec, maxSec) = CaptionTimeBounds();
+        var dialog = new EditCaptionDialogWindow(line, minSec, maxSec > minSec ? maxSec : null);
         await dialog.ShowDialog(this);
 
         if (dialog.Result == null) return;
@@ -447,6 +454,7 @@ public partial class GranularSpeedEditorWindow
     }
 
     internal const string RewriteKillTimesTag = "AIREWRITEKILLS_01";
+    internal const string RewriteSetupTag = "AIREWRITESETUP_01";
 
     internal static double[]? ShiftKillTimes(IReadOnlyList<double> killTimes, double shiftSec)
         => killTimes.Count > 0 ? killTimes.Select(t => t + shiftSec).ToArray() : null;
@@ -465,9 +473,12 @@ public partial class GranularSpeedEditorWindow
         string apiKey = settings.GetApiKey(config.Vendor);
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            await ErrorReporter.ShowAsync(this, "API Key Missing",
-                $"Please configure an API key for {AiVisionProviders.DisplayName(config.Vendor)} in Settings › AI.");
-            return;
+            RuntimeLog.Info("AiCommentary", $"{RewriteSetupTag}: no usable AI for the rewrite; opening the setup.");
+            if (!await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, config.Vendor, AiUsage.Commentary)) return;
+            settings = SettingsManager.Instance;
+            config = settings.GetUsageConfig(AiUsage.Commentary);
+            apiKey = settings.GetApiKey(config.Vendor);
+            if (string.IsNullOrWhiteSpace(apiKey)) return;
         }
 
         double duration = Math.Max(0.5, endSec - startSec);
@@ -579,7 +590,7 @@ public partial class GranularSpeedEditorWindow
         catch (Exception ex)
         {
             RuntimeLog.Fail("AiCommentary", $"Regeneration failed: {ex.Message}");
-            await ErrorReporter.ShowAsync(this, "Regeneration Failed", $"{ex.Message}\n\n{usage.SummaryWithEstimate(est)}");
+            await ErrorReporter.ShowAsync(this, "Regeneration Failed", $"The caption line could not be rewritten. {FreeVideoStudio.App.Infrastructure.UserFacingError.Describe(ex)}\n\n{usage.SummaryWithEstimate(est)}", ex.ToString());
         }
         finally
         {

@@ -788,7 +788,7 @@
                             BorderThickness="1" CornerRadius="6" Padding="12" Height="170">
                         <ScrollViewer Name="AiTrackingConsoleScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <TextBlock Name="AiTrackingConsoleText" Foreground="{DynamicResource AppTextMutedBrush}"
-                                       FontFamily="Consolas, monospace" FontSize="11" TextWrapping="Wrap"/>
+                                       FontFamily="Consolas, monospace" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
                         </ScrollViewer>
                     </Border>
                     </Expander>
@@ -841,7 +841,7 @@
                             BorderThickness="1" CornerRadius="6" Padding="12" Height="170">
                         <ScrollViewer Name="AiCommentaryConsoleScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <TextBlock Name="AiCommentaryConsoleText" Foreground="{DynamicResource AppTextMutedBrush}"
-                                       FontFamily="Consolas, monospace" FontSize="11" TextWrapping="Wrap"/>
+                                       FontFamily="Consolas, monospace" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
                         </ScrollViewer>
                     </Border>
                     </Expander>

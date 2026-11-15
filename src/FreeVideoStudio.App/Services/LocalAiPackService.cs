@@ -43,7 +43,7 @@ internal static class LocalAiPackService
             return LocalAiPack.Check(LocalAiPack.InstallFolder(ApplicationPaths.CreateDefault()), Array.Empty<LocalAiPackFile>());
 
         if (s_runtime != null)
-            throw new IOException("The Local AI pack is in use. Restart Free Video Studio, then install it again.");
+            throw new FreeVideoStudio.App.Infrastructure.UserFacingIOException("The Local AI pack is in use. Restart Free Video Studio, then install it again.");
         string folder = LocalAiPack.InstallFolder(ApplicationPaths.CreateDefault());
         string staging = folder + ".download";
         Directory.CreateDirectory(staging);
@@ -63,7 +63,7 @@ internal static class LocalAiPackService
 
         var check = LocalAiPack.Check(staging, files);
         if (!check.IsReady)
-            throw new IOException("The downloaded Local AI files did not pass their check. Nothing was installed.");
+            throw new FreeVideoStudio.App.Infrastructure.UserFacingIOException("The downloaded Local AI files did not pass their check. Nothing was installed.");
 
         await ModelGate.WaitAsync(ct).ConfigureAwait(false);
         try

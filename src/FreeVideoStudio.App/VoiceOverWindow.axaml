@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
         xmlns:local="clr-namespace:FreeVideoStudio.App"
         xmlns:controls="clr-namespace:FreeVideoStudio.App.Controls"
@@ -49,7 +49,7 @@
                                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
                                             <ProgressBar IsIndeterminate="True" MinWidth="220" MinHeight="6" Foreground="{DynamicResource AppAccentBrush}" Background="{DynamicResource AppPanelBrush}"/>
                                             <TextBlock Name="PreviewPreparingTitle" Text="Preparing Recording Preview..." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize16}" FontWeight="Bold" HorizontalAlignment="Center"/>
-                                            <TextBlock Name="PreviewPreparingSubtitle" Text="Compiling edit timing, cuts, and speeds. Please wait a moment..." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" HorizontalAlignment="Center"/>
+                                            <TextBlock Name="PreviewPreparingSubtitle" Text="Applying your speeds, cuts and freezes…" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" HorizontalAlignment="Center"/>
                                         </StackPanel>
                                     </Border>
 
