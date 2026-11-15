@@ -75,7 +75,7 @@ public sealed class AiModeTests
         Assert.Contains("On this PC only", Texts(radios[0]));
         Assert.Contains("100% free.", Texts(radios[0]));
         Assert.Contains("Online only", Texts(radios[1]));
-        Assert.Contains("Costs per use", Texts(radios[1]));
+        Assert.Contains("Free with Google's free plan", Texts(radios[1]));
         Assert.StartsWith("Recommended: Both", Texts(radios[2]));
         Assert.Contains("Cheap:", Texts(radios[2]));
         Assert.True(radios[1].IsEnabled);

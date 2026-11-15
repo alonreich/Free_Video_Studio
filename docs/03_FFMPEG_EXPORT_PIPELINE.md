@@ -388,6 +388,8 @@ With **no video loaded at all**, the size readout shows an em dash, never a zero
   the length is clamped to 80. A bad setting can never fail an export or leave its folder.
 * **Rescued renders keep fixed prefixes** (`FreeVideoStudio-RECOVERED-`, `Merged-Videos-RECOVERED-`,
   RESCUE_01) so the user and the crash digest can always tell which tool produced them.
+  A rescue whose move fails removes its own zero-byte name reservation (RESCUE_02), so a
+  `…-RECOVERED-…mp4` in the temp root always holds a real render.
 
 ---
 

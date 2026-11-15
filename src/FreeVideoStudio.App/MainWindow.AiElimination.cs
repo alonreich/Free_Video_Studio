@@ -78,6 +78,19 @@ public partial class MainWindow
         return (double)est.EstimatedUsd < Math.Max(AutoScanUnderUsd, autoApproveUnderUsd);
     }
 
+    internal const string ChipSetupTag = "AIELIMSETUP_01";
+
+    private async Task SetUpAiThenScanAsync(string videoPath, AiVendor vendor)
+    {
+        RuntimeLog.Info("AIElimination", $"{ChipSetupTag}: chip clicked without an AI; opening the setup.");
+        if (await Controls.AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, vendor, AiUsage.EliminationTracker))
+        {
+            if (_loadedVideoPath == videoPath) _ = RunAiEliminationScanAsync(videoPath, userAsked: true);
+            return;
+        }
+        if (_loadedVideoPath == videoPath) _ = RunAiEliminationScanAsync(videoPath);
+    }
+
     private bool _aiEliminationSettingsHooked;
     private bool _aiEliminationLastEnabled;
 
@@ -129,9 +142,18 @@ public partial class MainWindow
             if (string.IsNullOrWhiteSpace(apiKey))
             {
                 RuntimeLog.Info("AIElimination", "AI Elimination Tracker enabled but no API key configured. Skipping scan.");
-                SetAiEliminationStatus(settings.AiMode == AiMode.LocalOnly
-                    ? "AI kill scan needs online AI (Settings › AI › How AI works)"
-                    : "AI kill scan: no AI key (Settings › AI)", true, videoPath);
+                var setupVendor = config.Vendor;
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (_loadedVideoPath != videoPath) return;
+                    _aiEliminationStartAction = () => _ = SetUpAiThenScanAsync(videoPath, setupVendor);
+                    _aiEliminationStatus = settings.AiMode == AiMode.LocalOnly
+                        ? "AI kill scan needs online AI: click to change how AI works"
+                        : "AI kill scan: click to connect an AI";
+                    _aiEliminationDetail = "Opens the short setup: pick an AI company, get a key from its page, paste it. Then the scan starts.";
+                    _aiEliminationStatusIsError = true;
+                    QueueTimelineRedrawPass(DispatcherPriority.Background);
+                });
                 return;
             }
 

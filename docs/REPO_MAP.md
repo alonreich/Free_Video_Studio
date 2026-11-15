@@ -97,6 +97,8 @@ Cleanup boundary:     .\src\FreeVideoStudio.Core\Infrastructure\SafeDirectoryCle
 Project persistence:  ProjectSession.cs ordered background save/load queue;
                       tests\FreeVideoStudio.App.Tests\AutosaveBackgroundTests.cs (06 PROJECTIO_01).
 UI/UX audit tests:    tests\FreeVideoStudio.App.Tests\UxAuditTests.cs (04 EXPORTCLOSE_01, CROPSAVEERR_01, SEGROWTHEME_01/SEGROWA11Y_01).
+                      tests\FreeVideoStudio.App.Tests\UiAuditFixTests.cs (04 THEMETOKENS_01, FONTTOKENS_01, CAPTIONEDIT_01, ERRPLAIN_01; 02 VOFAST_01).
+                      Plain-English errors: src\FreeVideoStudio.App\Infrastructure\UserFacingError.cs (04 UI-SAFEGUARDS).
 Legacy identity:      .\src\FreeVideoStudio.Core\Infrastructure\LegacyAppDataNames.txt (migration only)
 Storage migration:    docs/05_SYSTEM_LIFECYCLE_STORAGE.md, SYS-REBRAND
 Residue removal:      docs/05_SYSTEM_LIFECYCLE_STORAGE.md, SYS-REBRAND-SWEEP (REBRAND_02,
@@ -143,6 +145,7 @@ Meme picker:          .\src\FreeVideoStudio.App\Controls\MemePickerWindow.axaml(
 Meme audit (2026-10-17, MEMEAUDIT_01): Core\Media\MemeTransitions.cs (full-screen cut/fade/zoom, corner fade/slide),
                       GranularSpeedEditorWindow.Memes.cs / .MemeBands.cs (editor memes, corner drag, list, keys),
                       MainWindow.Memes.cs (main-screen meme as a placement, markers, music question);
+                      MainWindow.QuickStart.cs (start screen: drop-card click, AI Kill Tracker switch, AI setup tip; docs/04 UI-AIEASE);
                       tests: Core MemeAuditTests.cs, App MemeAuditAppTests.cs. Specs: docs/01 TL-MEME, docs/03 FFM-MEMECONCAT /
                       FFM-MEMECORNER / FFM-MEMEPREVIEW, docs/04 UI-MEMESELECT, docs/06 PROJ-SCHEMA (schema 7).
 Freeze sound:         Core/Media/FreezeSoundEffect.cs (slow-motion boom + music dip, FREEZESFX_01, docs/02 AUD-FREEZESFX);

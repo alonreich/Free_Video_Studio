@@ -239,6 +239,8 @@ installer, upgrade path, signing story.
   is not compressed again); assets no longer listed are removed.
 * **D1 — dev.** `dev_build.cmd` produces local installer/update assets. Ordinary `dev.cmd` never consumes them or installs anything (05 SYS-DEVBUILD, DEVISOLATION_01). It uses Release managed code and the same `Staging.StageDependencies` function through `FvsBuild --dev-runtime`, keeping native binaries and starter media aligned with production (DEVPARITY_01). NativeAOT and installation still require their own validation.
 
+* **UPDATESTATUS_01 — never announce a download that did not start.** `StartBackgroundUpdate` returns whether a background download started (false in dev or for a release tag that is not a safe folder name). A manual check says "downloading in the background" only on true; otherwise it records and shows that the update can't be downloaded automatically.
+
 ## 3b. After Every Public Release  {#DIST-NEWRELEASE}
 
 * **NEWRELEASE_01.** After a SUCCESSFUL publish only (not `--dev`, not `--no-publish`, not exit 2),

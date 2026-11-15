@@ -281,7 +281,7 @@ internal static partial class UpdateService
             }
 
             RecordResult($"Version {remote} is available (you have {local}). Downloading it in the background…");
-            StartBackgroundUpdate(owner, release);
+            _ = StartBackgroundUpdate(owner, release);
         }
         catch (Exception ex)
         {
@@ -365,13 +365,10 @@ internal static partial class UpdateService
             {
                 RecordResult(problem);
                 statusCallback?.Invoke(problem);
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    string message = problem.Contains("limit reached", StringComparison.OrdinalIgnoreCase)
-                        ? problem
-                        : problem + "\r\nPlease check your network connection and try again.";
-                    NativeDialog.ShowError(message, "Update Check Failed");
-                });
+                string message = problem.Contains("limit reached", StringComparison.OrdinalIgnoreCase)
+                    ? problem
+                    : problem + " Please check your network connection and try again.";
+                await ErrorReporter.ShowAsync(owner, "Update Check Failed", message);
                 return;
             }
 
@@ -390,18 +387,21 @@ internal static partial class UpdateService
 
             RecordResult($"Version {release.Tag} is available (you have {currentVer}). Downloading it in the background…");
             if (string.Equals(GetSkippedVersion(), release.Tag, StringComparison.OrdinalIgnoreCase)) ClearSkippedVersion();
+            if (!StartBackgroundUpdate(owner, release))
+            {
+                statusCallback?.Invoke(CannotDownloadMessage);
+                await ErrorReporter.ShowAsync(owner, "Update Can't Download", $"Version {release.Tag} is available. {CannotDownloadMessage}");
+                return;
+            }
             statusCallback?.Invoke($"Version {release.Tag} found — downloading in the background. Watch the corner of the main window.");
-            StartBackgroundUpdate(owner, release);
         }
         catch (Exception ex)
         {
             RuntimeLog.Fail("UPDATE", $"Manual update check failed: {ex.Message}");
-            RecordResult("The update check failed: " + ex.Message);
-            statusCallback?.Invoke($"Check failed: {ex.Message}");
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                NativeDialog.ShowError($"Update check failed: {ex.Message}", "Update Check Failed");
-            });
+            string friendly = FreeVideoStudio.App.Infrastructure.UserFacingError.Describe(ex);
+            RecordResult("The update check failed. " + friendly);
+            statusCallback?.Invoke("Check failed. " + friendly);
+            await ErrorReporter.ShowAsync(owner, "Update Check Failed", "The update check failed. " + friendly, ex.ToString());
         }
         finally
         {

@@ -44,10 +44,10 @@ public partial class VoiceOverWindow
         _memes.Select(m => m with { AtSourceSecRelative = _playbackPlan.OutputAt(_trimStartSec + m.AtSourceSecRelative) }).ToArray();
 
     /// <summary>VOCLOCK_01 — no readiness until the exact timed picture is loaded AND speed is verified.</summary>
-    private async Task PrepareRecordingPreviewAsync(MpvIpcClient ipc)
+    private async Task<VoiceOverPlaybackPlan> RenderRecordingProxyAsync(CancellationToken token)
     {
-        var token = _previewPrepareCts.Token;
         UpdateApplyState("Preparing preview with your speeds, cuts and freezes…");
+        var startedAt = System.Diagnostics.Stopwatch.StartNew();
         string ffmpeg = ResolveBinaryPath("ffmpeg.exe", "backend");
         string ffprobe = ResolveBinaryPath("ffprobe.exe", "backend");
         double duration = await new MediaProber(ffprobe, _videoPath).GetDurationAsync().WaitAsync(token);
@@ -61,12 +61,53 @@ public partial class VoiceOverWindow
         _previewProxyPath = System.IO.Path.Combine(_paths.TempDirectory, "voice-preview-" + id + ".mkv");
         _previewProxyGraph = System.IO.Path.Combine(_paths.TempDirectory, "voice-preview-" + id + ".txt");
         RuntimeLog.Info("VoiceOver", $"Preparing preview: trim={_trimStartSec:0.###}s..{effectiveEndSec:0.###}s, duration={duration:0.###}s, proxy={_previewProxyPath}");
+        var progress = new Progress<double>(ShowPreviewPreparationProgress);
         await Services.VoiceOverPreviewRenderer.RenderAsync(ffmpeg, ffprobe, _videoPath,
-            _previewProxyPath, _previewProxyGraph, plan, token);
+            _previewProxyPath, _previewProxyGraph, plan, token, progress);
+        RuntimeLog.Info("VoiceOver", $"Preview proxy rendered in {startedAt.ElapsedMilliseconds} ms.");
+        return plan;
+    }
+
+    private (Avalonia.Controls.ProgressBar? Bar, Avalonia.Controls.TextBlock? Subtitle) PreviewPreparingParts()
+    {
+        if (_previewPreparingOverlay?.Child is not Avalonia.Controls.StackPanel panel) return (null, null);
+        return (panel.Children.OfType<Avalonia.Controls.ProgressBar>().FirstOrDefault(),
+            panel.Children.OfType<Avalonia.Controls.TextBlock>().LastOrDefault());
+    }
+
+    private void ShowPreviewPreparationProgress(double fraction)
+    {
+        if (_isClosing) return;
+        var (bar, subtitle) = PreviewPreparingParts();
+        double clamped = Math.Clamp(fraction, 0, 1);
+        if (bar != null)
+        {
+            bar.IsIndeterminate = false;
+            bar.Minimum = 0;
+            bar.Maximum = 100;
+            bar.Value = Math.Max(bar.Value, clamped * 100);
+        }
+        if (subtitle != null)
+            subtitle.Text = $"Applying your speeds, cuts and freezes… {(int)Math.Floor(clamped * 100)}%";
+    }
+
+    private async Task AbandonProxyRenderAsync(Task<VoiceOverPlaybackPlan> proxyRender)
+    {
+        _previewPrepareCts.Cancel();
+        try { await proxyRender; }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+    }
+
+    private async Task PrepareRecordingPreviewAsync(MpvIpcClient ipc, Task<VoiceOverPlaybackPlan> proxyRender)
+    {
+        var token = _previewPrepareCts.Token;
+        var plan = await proxyRender;
         token.ThrowIfCancellationRequested();
         if (_isClosing || _isPreviewTeardownPosted) return;
+        if (PreviewPreparingParts().Subtitle is { } loading) loading.Text = "Loading the preview…";
         _playbackPlan = plan;
-        await ipc.LoadFileAsync(_previewProxyPath, 0);
+        await ipc.LoadFileAsync(_previewProxyPath ?? throw new InvalidOperationException("The recording preview file is missing."), 0);
         await ipc.SetPropertyAsync("pause", "yes");
         await ipc.SetPropertyAsync("speed", "1");
         using var ready = CancellationTokenSource.CreateLinkedTokenSource(token);

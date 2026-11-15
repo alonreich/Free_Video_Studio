@@ -262,7 +262,7 @@ public partial class MusicWizardWindow
         {
             ReportUsageNotice();
             RuntimeLog.Fail("MUSIC_WIZARD", GeminiClient.Redact($"AI Auto-Fit failed: {ex.Message}", apiKey));
-            SetAiAutoFitStatus($"⚠ AI Auto-Fit failed: {ex.Message}", "AppDangerBrush");
+            SetAiAutoFitStatus($"⚠ AI Auto-Fit failed. {FreeVideoStudio.App.Infrastructure.UserFacingError.Describe(ex)} Nothing was changed.", "AppDangerBrush");
         }
         finally
         {

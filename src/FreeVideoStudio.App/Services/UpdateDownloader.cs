@@ -63,7 +63,7 @@ internal static class UpdateDownloader
         if (expectedSha256 is not null && !HashMatches(part, expectedSha256))
         {
             TryDelete(part);
-            throw new IOException("A downloaded file did not match its published fingerprint and was deleted. Nothing was installed.");
+            throw new FreeVideoStudio.App.Infrastructure.UserFacingIOException("A downloaded file did not match its published fingerprint and was deleted. Nothing was installed.");
         }
         File.Move(part, target, overwrite: true);
     }
@@ -95,7 +95,7 @@ internal static class UpdateDownloader
             {
                 response.Dispose();
                 TryDelete(part);
-                throw new IOException("The partial download did not match the server's file; starting it again.");
+                throw new FreeVideoStudio.App.Infrastructure.UserFacingIOException("The partial download did not match the server's file; starting it again.");
             }
             response.EnsureSuccessStatusCode();
             if (have > 0 && response.StatusCode != HttpStatusCode.PartialContent)
@@ -124,7 +124,7 @@ internal static class UpdateDownloader
                 }
                 catch (OperationCanceledException) when (!cancel.IsCancellationRequested)
                 {
-                    throw new IOException("No data arrived for 45 seconds.");
+                    throw new FreeVideoStudio.App.Infrastructure.UserFacingIOException("No data arrived for 45 seconds.");
                 }
                 if (read <= 0) break;
                 await output.WriteAsync(buffer.AsMemory(0, read), cancel).ConfigureAwait(false);
@@ -139,7 +139,7 @@ internal static class UpdateDownloader
             await output.FlushAsync(cancel).ConfigureAwait(false);
             progress?.Invoke(new DownloadProgress(done, total, meter.BytesPerSecond));
             if (expectedLength > 0 && done != expectedLength)
-                throw new IOException($"The download ended early ({done} of {expectedLength} bytes).");
+                throw new FreeVideoStudio.App.Infrastructure.UserFacingIOException($"The download ended early ({done} of {expectedLength} bytes).");
         }
         finally
         {

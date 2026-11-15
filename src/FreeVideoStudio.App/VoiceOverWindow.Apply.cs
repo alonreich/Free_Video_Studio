@@ -62,6 +62,7 @@ public partial class VoiceOverWindow
             return;
         }
         _isApplying = true;
+        _closeRequestedDuringApply = false;
         _lastApplyErrorMessage = null;
         UpdateTransportState();
         UpdateApplyState();
@@ -300,6 +301,11 @@ public partial class VoiceOverWindow
                 _isApplying = false;
                 UpdateTransportState();
                 UpdateApplyState();
+                if (_closeRequestedDuringApply && !_isClosing)
+                {
+                    _closeRequestedDuringApply = false;
+                    Controls.FloatingNotice.Warn(this, StayedOpenAfterApplyMessage);
+                }
             }
         }
     }
@@ -838,6 +844,12 @@ public partial class VoiceOverWindow
         UpdateApplyState();
     }
 
+    internal const string StayedOpenAfterApplyTag = "VOCLOSE_02";
+    internal const string StayedOpenAfterApplyMessage =
+        "The voice-over was not added, so the studio stayed open. Read the message under Apply, then apply again or close.";
+    private bool _closeRequestedDuringApply;
+    internal bool CloseRequestedDuringApplyForTesting => _closeRequestedDuringApply;
+
     private async void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         ClearLiveZoomCrop();
@@ -863,6 +875,8 @@ public partial class VoiceOverWindow
         if (_isApplying)
         {
             e.Cancel = true;
+            _closeRequestedDuringApply = true;
+            Controls.FloatingNotice.Show(this, "Still adding your voice-over to the video. The studio closes by itself when it is done.");
             return;
         }
 

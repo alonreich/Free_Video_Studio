@@ -55,6 +55,21 @@ internal static class RescuedOutputPath
     /// </summary>
     private const int MaxIndex = 10000;
 
+    internal const string EmptyReservationTag = "RESCUE_02";
+
+    private static void RemoveEmptyReservation(string candidate)
+    {
+        try
+        {
+            var info = new FileInfo(candidate);
+            if (info.Exists && info.Length == 0) info.Delete();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            CoreLogger.Swallowed(ex);
+        }
+    }
+
     /// <summary>
     /// Moves <paramref name="sourcePath"/> into <paramref name="tempDirectory"/> under a reserved
     /// name and returns that name, or null when there was nothing to rescue or the rescue failed.
@@ -104,7 +119,15 @@ internal static class RescuedOutputPath
                     continue;
                 }
 
-                File.Move(sourcePath, candidate, overwrite: true);
+                try
+                {
+                    File.Move(sourcePath, candidate, overwrite: true);
+                }
+                catch
+                {
+                    RemoveEmptyReservation(candidate);
+                    throw;
+                }
                 return candidate;
             }
 

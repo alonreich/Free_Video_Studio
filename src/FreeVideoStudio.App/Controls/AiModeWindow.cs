@@ -49,7 +49,7 @@ public sealed class AiModeWindow : Window
         _local = Option("On this PC only", "Nothing leaves your PC.",
             "100% free. Works: Smart Zoom on a box you draw, Magic Wand. Everything else needs online AI." + download, pcNote, _pcAvailable);
         _online = Option("Online only", "Your video goes to the AI company you pick (Google, Anthropic or OpenAI).",
-            "Costs per use on your AI account.", string.Empty, true);
+            "Free with Google's free plan or your ChatGPT Plus/Pro plan. Other keys cost a few cents per use.", string.Empty, true);
         _both = Option("Recommended: Both", "Online AI says who to follow; your PC does the heavy work.",
             "Cheap: online AI sees only a few pictures." + download, pcNote, _pcAvailable);
 
@@ -84,7 +84,7 @@ public sealed class AiModeWindow : Window
         {
             Text = "How should AI work?",
             FontWeight = FontWeight.Bold,
-            FontSize = 18,
+            [!TextBlock.FontSizeProperty] = new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("AppFontSize18"),
             Foreground = ThemeResources.Brush(this, "AppTextPrimaryBrush", Brushes.White),
         };
         var hint = new TextBlock
@@ -128,7 +128,7 @@ public sealed class AiModeWindow : Window
         body.Children.Add(new TextBlock
         {
             Text = small,
-            FontSize = 11,
+            [!TextBlock.FontSizeProperty] = new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("AppFontSize11"),
             TextWrapping = TextWrapping.Wrap,
             Foreground = ThemeResources.Brush(this, "AppTextSecondaryBrush", Brushes.Gray),
         });
@@ -137,7 +137,7 @@ public sealed class AiModeWindow : Window
             body.Children.Add(new TextBlock
             {
                 Text = note,
-                FontSize = 11,
+                [!TextBlock.FontSizeProperty] = new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("AppFontSize11"),
                 Foreground = ThemeResources.Brush(this, "AppWarningBrush", Brushes.Orange),
             });
         }
@@ -236,7 +236,7 @@ public sealed class AiModeWindow : Window
         catch (Exception ex) when (ex is System.IO.IOException or System.Net.Http.HttpRequestException or UnauthorizedAccessException)
         {
             RuntimeLog.Fail("AiMode", "PC AI download failed: " + ex.Message);
-            Say("The download failed (" + ex.Message + "). Nothing was saved. Check your internet and press Next to try again.", "AppDangerBrush");
+            Say("The download failed. " + UserFacingError.Describe(ex) + " Nothing was saved; press Next to try again.", "AppDangerBrush");
             return false;
         }
         finally

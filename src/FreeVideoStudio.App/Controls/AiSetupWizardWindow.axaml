@@ -62,7 +62,7 @@
                             <StackPanel Spacing="10">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Border Background="{DynamicResource AppAccentBrush}" CornerRadius="12" Width="24" Height="24">
-                                        <TextBlock Text="1" Foreground="White" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="12"/>
+                                        <TextBlock Text="1" Foreground="{DynamicResource AppSurfaceBrush}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="{DynamicResource AppFontSize12}"/>
                                     </Border>
                                     <TextBlock Name="Step1Title" Text="Get your key" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
@@ -83,7 +83,7 @@
                             <StackPanel Spacing="10">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Border Background="{DynamicResource AppAccentBrush}" CornerRadius="12" Width="24" Height="24">
-                                        <TextBlock Text="2" Foreground="White" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="12"/>
+                                        <TextBlock Text="2" Foreground="{DynamicResource AppSurfaceBrush}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="{DynamicResource AppFontSize12}"/>
                                     </Border>
                                     <TextBlock Text="Paste it here" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>

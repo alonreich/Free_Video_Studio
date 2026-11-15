@@ -51,6 +51,14 @@ public sealed class RecentProjects
         _storePath = storePath ?? throw new ArgumentNullException(nameof(storePath));
     }
 
+    public const string TolerantReadTag = "PROJ_09B";
+
+    private static string SafeTitle(string path)
+    {
+        try { return Path.GetFileNameWithoutExtension(path); }
+        catch (ArgumentException ex) { CoreLogger.Swallowed(ex); return path; }
+    }
+
     public IReadOnlyList<RecentProject> Read()
     {
         List<RecentProject> result = new();
@@ -62,10 +70,12 @@ public sealed class RecentProjects
             foreach (JsonNode? node in array)
             {
                 if (node is not JsonObject o) continue;
-                string? path = o["path"]?.GetValue<string>();
+                if (o["path"] is not JsonValue pathValue || !pathValue.TryGetValue(out string? path)) continue;
                 if (string.IsNullOrWhiteSpace(path)) continue;
 
-                string title = o["title"]?.GetValue<string>() ?? Path.GetFileNameWithoutExtension(path);
+                string title = o["title"] is JsonValue titleValue && titleValue.TryGetValue(out string? storedTitle) && storedTitle != null
+                    ? storedTitle
+                    : SafeTitle(path);
                 long opened = o["opened_utc_seconds"] is JsonValue v && v.TryGetValue(out long l) ? l : 0;
 
                 bool exists;

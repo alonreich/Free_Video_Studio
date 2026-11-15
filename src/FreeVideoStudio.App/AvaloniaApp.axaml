@@ -8,15 +8,10 @@
         <!-- Title Bar Tokens moved to ThemeDictionaries to fix Issue 02 -->
 
         <!-- Semantic / brand / state tokens (theme-agnostic) -->
-        <SolidColorBrush x:Key="AppAccentBrush" Color="#60a5fa" />
-        <SolidColorBrush x:Key="AppInfoBrush" Color="#38bdf8" />
-        <SolidColorBrush x:Key="AppSuccessBrush" Color="#3f9c6b" />
         <SolidColorBrush x:Key="AppDangerBrush" Color="#a83232" />
         <!-- ISSUE_02: Granular timeline "slower-than-normal" segment swatch. Kept distinct from
              AppDangerBrush (#dc2626) because it must equal the block colour drawn in code
              (GetSegmentOverlayColor RGB 239,68,68) so the legend chip matches the timeline. -->
-        <SolidColorBrush x:Key="AppSpeedSlowBrush" Color="#ef4444" />
-        <SolidColorBrush x:Key="AppWarningBrush" Color="#facc15" />
         <!-- MERGERPLAYHEAD_01: the Video Merger's playhead line (top of the time scale down through the waveform). -->
         <SolidColorBrush x:Key="AppPlayheadBrush" Color="#ef4444" />
 
@@ -203,8 +198,6 @@
         <SolidColorBrush x:Key="AppTikTokHoverBrush" Color="#2A2A2A" />
 
         <!-- Color struct resources for GradientStop.Color bindings -->
-        <Color x:Key="AppFocusOuterColor">#7dd3fc</Color>
-        <Color x:Key="AppInfoColor">#38bdf8</Color>
         <Color x:Key="AppSliderGlowEdgeColor">#0ea5e9</Color>
 
         <!-- ISSUE_04: Centralized button gradient + border tokens (theme-agnostic saturated
@@ -215,26 +208,6 @@
         <!-- BTNHUE_01: the blue action button is now the requested #084C69 (deep teal-blue) at the
              0.18 stop. The rim and base are tints of that ONE colour, so changing #084C69 alone
              re-tunes the whole button; do not reintroduce an unrelated blue at either end. -->
-        <LinearGradientBrush x:Key="AppPrimaryButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#2ea4d2"/>
-            <GradientStop Offset="0.18" Color="#0c6b91"/>
-            <GradientStop Offset="1.0" Color="#084257"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppPrimaryButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#42b8e2"/>
-            <GradientStop Offset="0.18" Color="#0f7ea9"/>
-            <GradientStop Offset="1.0" Color="#0a536d"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppSuccessButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#5fae83"/>
-            <GradientStop Offset="0.18" Color="#2f7149"/>
-            <GradientStop Offset="1.0" Color="#17351f"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppSuccessButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#6fbc92"/>
-            <GradientStop Offset="0.18" Color="#3d8b5f"/>
-            <GradientStop Offset="1.0" Color="#1d4128"/>
-        </LinearGradientBrush>
         <!-- BTNDEPTH_01 — SECONDARY AND ZOOM WERE THE ONLY FLAT BUTTONS IN THE APP.
              Primary, Success, Danger and VoiceOver all had a 3-stop ramp (bright top rim, the
              label's own stop at 0.18, deep base) plus a deep border, which is what makes them read
@@ -244,55 +217,14 @@
              way to tell an enabled Secondary from a disabled one at a glance.
              These ramps are a slate version of the same recipe, so Secondary now sits in the same
              visual family without competing with Primary for attention. -->
-        <SolidColorBrush x:Key="AppSecondaryDeepBorderBrush" Color="#2d2649" />
         <!-- BTNHUE_01: the secondary button leaves the slate/grey family entirely for the
              requested #483D65 (muted violet). Slate still read as "disabled" no matter how much
              depth it was given, because grey IS the disabled language everywhere else in the app.
              A different HUE is what makes an enabled secondary unmistakable. -->
-        <LinearGradientBrush x:Key="AppSecondaryButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#8b7cb4"/>
-            <GradientStop Offset="0.18" Color="#61548a"/>
-            <GradientStop Offset="1.0" Color="#3b3159"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppSecondaryButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#9c8dc6"/>
-            <GradientStop Offset="0.18" Color="#71619d"/>
-            <GradientStop Offset="1.0" Color="#463a67"/>
-        </LinearGradientBrush>
 
         <!-- BTNDEPTH_01 — the zoom ramp keeps IDEA_6's rule (everything zoom wears AppZoomColor)
              while gaining the same depth as every other action button. -->
-        <LinearGradientBrush x:Key="AppZoomButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#5b86e8"/>
-            <GradientStop Offset="0.18" Color="#2251c1"/>
-            <GradientStop Offset="1.0" Color="#15306b"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppZoomButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#7ba0f0"/>
-            <GradientStop Offset="0.18" Color="#2f63d8"/>
-            <GradientStop Offset="1.0" Color="#1c3f85"/>
-        </LinearGradientBrush>
 
-        <LinearGradientBrush x:Key="AppDangerButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#c47070"/>
-            <GradientStop Offset="0.18" Color="#a83232"/>
-            <GradientStop Offset="1.0" Color="#521818"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppDangerButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#d08585"/>
-            <GradientStop Offset="0.18" Color="#b83b3b"/>
-            <GradientStop Offset="1.0" Color="#66201f"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppVoiceOverButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#38bdf8"/>
-            <GradientStop Offset="0.18" Color="#0a7288"/>
-            <GradientStop Offset="1.0" Color="#155e75"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppVoiceOverButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#67e8f9"/>
-            <GradientStop Offset="0.18" Color="#06b6d4"/>
-            <GradientStop Offset="1.0" Color="#0e7490"/>
-        </LinearGradientBrush>
 
         <!-- ══════════════════════════════════════════════════════════════════════════════════
              MERGERRETURN_01 — THE HELP HUE.
@@ -308,23 +240,8 @@
              and the two never appear on the same screen.
              Used by: VideoMergerWindow MergerHelpButton. Any other screen's walkthrough button
              should move onto it too. ══════════════════════════════════════════════════════════ -->
-        <SolidColorBrush x:Key="AppHelpBorderBrush" Color="#075985" />
-        <LinearGradientBrush x:Key="AppHelpButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#7dd3fc"/>
-            <GradientStop Offset="0.18" Color="#0284c7"/>
-            <GradientStop Offset="1.0" Color="#0c4a6e"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppHelpButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#bae6fd"/>
-            <GradientStop Offset="0.18" Color="#0ea5e9"/>
-            <GradientStop Offset="1.0" Color="#075985"/>
-        </LinearGradientBrush>
 
         <!-- ISSUE_04: hover/pressed overlay + CloseBtn state tokens (previously raw hex inline) -->
-        <SolidColorBrush x:Key="AppHoverOverlayBrush" Color="#22ffffff" />
-        <SolidColorBrush x:Key="AppCloseBtnHoverBackgroundBrush" Color="#227DD3FC" />
-        <SolidColorBrush x:Key="AppCloseBtnHoverForegroundBrush" Color="#bae6fd" />
-        <SolidColorBrush x:Key="AppCloseBtnPressedBackgroundBrush" Color="#447DD3FC" />
 
         <!-- ISSUE_13: PhoneFrameMockup device-chrome colours. Deliberately theme-agnostic (a
              phone bezel / status bar is black-and-white in BOTH ThemeVariants, exactly like the
@@ -338,17 +255,10 @@
         <SolidColorBrush x:Key="AppPhoneChromeMutedBrush" Color="#99FFFFFF" />
         <SolidColorBrush x:Key="AppPhoneChromeDimBrush" Color="#66FFFFFF" />
 
-        <Color x:Key="AppAccentColor">#60a5fa</Color>
         <!-- TONE_01: AppSuccessColor is muted from #22c55e; AppDangerColor is NEW. Code that
              needs a Color rather than a Brush (alpha-ramped overlays) now has a token for BOTH
              sides. Its absence was the direct cause of the hardcoded reds in the audit. -->
-        <Color x:Key="AppSuccessColor">#3f9c6b</Color>
-        <Color x:Key="AppDangerColor">#a83232</Color>
         <!-- Interactive state overlay brushes (alpha-variant tokens) -->
-        <SolidColorBrush x:Key="AppAccentAlpha10Brush" Color="{DynamicResource AppAccentColor}" Opacity="0.10" />
-        <SolidColorBrush x:Key="AppAccentAlpha15Brush" Color="{DynamicResource AppAccentColor}" Opacity="0.15" />
-        <SolidColorBrush x:Key="AppAccentAlpha20Brush" Color="{DynamicResource AppAccentColor}" Opacity="0.20" />
-        <SolidColorBrush x:Key="AppSuccessAlpha10Brush" Color="{DynamicResource AppSuccessColor}" Opacity="0.10" />
         <SolidColorBrush x:Key="AppListBoxSelectedBrush" Color="{DynamicResource AppAccentColor}" Opacity="0.17" />
         <SolidColorBrush x:Key="AppListBoxSelectedHoverBrush" Color="{DynamicResource AppAccentColor}" Opacity="0.25" />
 
@@ -366,6 +276,105 @@
         <SolidColorBrush x:Key="AppDimmerHeavyBrush" Color="#C8000000" />
         <SolidColorBrush x:Key="AppDimmerSoftBrush" Color="#A0000000" />
         <BoxShadows x:Key="AppDropzonePulseShadow">0 0 50 10 #6000BFFF</BoxShadows>
+
+        <!-- THEMEPRECEDENCE_01: dark-tuned defaults of tokens that the Light dictionary overrides. They live in a
+             merged dictionary because Avalonia checks a dictionary's own keys BEFORE its ThemeDictionaries, so a
+             root definition would hide the Light override (docs/04 UI-THEME). Dark and theme-less lookups fall
+             through to these. -->
+        <ResourceDictionary.MergedDictionaries>
+            <ResourceDictionary>
+                <SolidColorBrush x:Key="AppAccentBrush" Color="#60a5fa" />
+                <SolidColorBrush x:Key="AppInfoBrush" Color="#38bdf8" />
+                <SolidColorBrush x:Key="AppSuccessBrush" Color="#3f9c6b" />
+                <SolidColorBrush x:Key="AppSpeedSlowBrush" Color="#ef4444" />
+                <SolidColorBrush x:Key="AppWarningBrush" Color="#facc15" />
+                <Color x:Key="AppFocusOuterColor">#7dd3fc</Color>
+                <Color x:Key="AppInfoColor">#38bdf8</Color>
+                <LinearGradientBrush x:Key="AppPrimaryButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#2ea4d2"/>
+                    <GradientStop Offset="0.18" Color="#0c6b91"/>
+                    <GradientStop Offset="1.0" Color="#084257"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppPrimaryButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#42b8e2"/>
+                    <GradientStop Offset="0.18" Color="#0f7ea9"/>
+                    <GradientStop Offset="1.0" Color="#0a536d"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppSuccessButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#5fae83"/>
+                    <GradientStop Offset="0.18" Color="#2f7149"/>
+                    <GradientStop Offset="1.0" Color="#17351f"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppSuccessButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#6fbc92"/>
+                    <GradientStop Offset="0.18" Color="#3d8b5f"/>
+                    <GradientStop Offset="1.0" Color="#1d4128"/>
+                </LinearGradientBrush>
+                <SolidColorBrush x:Key="AppSecondaryDeepBorderBrush" Color="#2d2649" />
+                <LinearGradientBrush x:Key="AppSecondaryButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#8b7cb4"/>
+                    <GradientStop Offset="0.18" Color="#61548a"/>
+                    <GradientStop Offset="1.0" Color="#3b3159"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppSecondaryButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#9c8dc6"/>
+                    <GradientStop Offset="0.18" Color="#71619d"/>
+                    <GradientStop Offset="1.0" Color="#463a67"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppZoomButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#5b86e8"/>
+                    <GradientStop Offset="0.18" Color="#2251c1"/>
+                    <GradientStop Offset="1.0" Color="#15306b"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppZoomButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#7ba0f0"/>
+                    <GradientStop Offset="0.18" Color="#2f63d8"/>
+                    <GradientStop Offset="1.0" Color="#1c3f85"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppDangerButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#c47070"/>
+                    <GradientStop Offset="0.18" Color="#a83232"/>
+                    <GradientStop Offset="1.0" Color="#521818"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppDangerButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#d08585"/>
+                    <GradientStop Offset="0.18" Color="#b83b3b"/>
+                    <GradientStop Offset="1.0" Color="#66201f"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppVoiceOverButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#38bdf8"/>
+                    <GradientStop Offset="0.18" Color="#0a7288"/>
+                    <GradientStop Offset="1.0" Color="#155e75"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppVoiceOverButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#67e8f9"/>
+                    <GradientStop Offset="0.18" Color="#06b6d4"/>
+                    <GradientStop Offset="1.0" Color="#0e7490"/>
+                </LinearGradientBrush>
+                <SolidColorBrush x:Key="AppHelpBorderBrush" Color="#075985" />
+                <LinearGradientBrush x:Key="AppHelpButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#7dd3fc"/>
+                    <GradientStop Offset="0.18" Color="#0284c7"/>
+                    <GradientStop Offset="1.0" Color="#0c4a6e"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppHelpButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#bae6fd"/>
+                    <GradientStop Offset="0.18" Color="#0ea5e9"/>
+                    <GradientStop Offset="1.0" Color="#075985"/>
+                </LinearGradientBrush>
+                <SolidColorBrush x:Key="AppHoverOverlayBrush" Color="#22ffffff" />
+                <SolidColorBrush x:Key="AppCloseBtnHoverBackgroundBrush" Color="#227DD3FC" />
+                <SolidColorBrush x:Key="AppCloseBtnHoverForegroundBrush" Color="#bae6fd" />
+                <SolidColorBrush x:Key="AppCloseBtnPressedBackgroundBrush" Color="#447DD3FC" />
+                <Color x:Key="AppAccentColor">#60a5fa</Color>
+                <Color x:Key="AppSuccessColor">#3f9c6b</Color>
+                <Color x:Key="AppDangerColor">#a83232</Color>
+                <SolidColorBrush x:Key="AppAccentAlpha10Brush" Color="{DynamicResource AppAccentColor}" Opacity="0.10" />
+                <SolidColorBrush x:Key="AppAccentAlpha15Brush" Color="{DynamicResource AppAccentColor}" Opacity="0.15" />
+                <SolidColorBrush x:Key="AppAccentAlpha20Brush" Color="{DynamicResource AppAccentColor}" Opacity="0.20" />
+                <SolidColorBrush x:Key="AppSuccessAlpha10Brush" Color="{DynamicResource AppSuccessColor}" Opacity="0.10" />
+            </ResourceDictionary>
+        </ResourceDictionary.MergedDictionaries>
 
         <!-- Theme-dependent surface, text, focus & disabled tokens.
              These now switch with the selected ThemeVariant (Settings > Appearance > Theme). -->
@@ -393,6 +402,11 @@
                 <SolidColorBrush x:Key="AppTableHairlineBrush" Color="#FFFFFF" Opacity="0.10" />
                 <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#ffffff" />
                 <SolidColorBrush x:Key="AppTextMutedBrush" Color="#b6c2d0" />
+                <!-- THEMETOKENS_01: referenced by the AI dialogs, caption editor and Finished dialog but
+                     never defined, so their cards rendered transparent and their helper text fell back to
+                     #808080 (about 3.5:1). Subtle surface sits between AppSurfaceBrush and AppPanelBrush. -->
+                <SolidColorBrush x:Key="AppSurfaceSubtleBrush" Color="#273548" />
+                <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="#b6c2d0" />
                 <SolidColorBrush x:Key="AppControlTrackBrush" Color="#222222" />
                 <!-- SPECTRUM_03 — Voice Over microphone spectrum meter (Dark). The face stays DARK in
                      both themes (unlit space is "blank/dark", like a hardware meter); zone colours are
@@ -518,6 +532,9 @@
                 <SolidColorBrush x:Key="AppTableHairlineBrush" Color="#0f172a" Opacity="0.12" />
                 <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#0f172a" />
                 <SolidColorBrush x:Key="AppTextMutedBrush" Color="#475569" />
+                <!-- THEMETOKENS_01 — Light counterparts (see the dark-theme note). -->
+                <SolidColorBrush x:Key="AppSurfaceSubtleBrush" Color="#eef2f7" />
+                <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="#475569" />
                 <SolidColorBrush x:Key="AppControlTrackBrush" Color="#e2e8f0" />
                 <!-- SPECTRUM_03 — Voice Over microphone spectrum meter (Light). The face stays DARK in
                      both themes (unlit space is "blank/dark", like a hardware meter); zone colours are

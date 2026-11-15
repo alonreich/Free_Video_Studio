@@ -41,13 +41,18 @@ internal static partial class UpdateService
     }
 
     /// <summary>Starts (or shows) the background update for <paramref name="release"/>.</summary>
-    private static void StartBackgroundUpdate(Window owner, UpdateRelease release)
+    internal const string DownloadStatusTag = "UPDATESTATUS_01";
+    internal const string CannotDownloadMessage =
+        "This update can't be downloaded automatically. Download it from the app's website instead.";
+
+    private static bool StartBackgroundUpdate(Window owner, UpdateRelease release)
     {
-        if (DevelopmentEnvironment.IsActive) return;
+        if (DevelopmentEnvironment.IsActive) return false;
         if (!TrySanitizeTagForPath(release.Tag, out string tagFolder))
         {
-            RecordResult($"The latest release has an unusable version name ('{release.Tag}').");
-            return;
+            RuntimeLog.Fail("UPDATE", $"The latest release has an unusable version name ('{release.Tag}').");
+            RecordResult(CannotDownloadMessage);
+            return false;
         }
 
         CancellationTokenSource cancel;
@@ -58,7 +63,7 @@ internal static partial class UpdateService
                 (_backgroundCancel is { IsCancellationRequested: false } || _waitingInstaller is { HasExited: false }))
             {
                 Dispatcher.UIThread.Post(() => ShowToast(owner));
-                return;
+                return true;
             }
             _backgroundCancel?.Cancel();
             _backgroundCancel = cancel = new CancellationTokenSource();
@@ -121,6 +126,7 @@ internal static partial class UpdateService
                 });
             }
         });
+        return true;
     }
 
     /// <summary>
@@ -254,7 +260,7 @@ internal static partial class UpdateService
         {
             UpdateRelease? release;
             lock (BackgroundGate) release = _backgroundRelease;
-            if (release != null && MainWindowOrNull() is { } main) StartBackgroundUpdate(main, release);
+            if (release != null && MainWindowOrNull() is { } main) _ = StartBackgroundUpdate(main, release);
         };
         vm.CloseRequested += () =>
         {

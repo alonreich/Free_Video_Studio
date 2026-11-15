@@ -60,7 +60,7 @@ public sealed class AiZoomStartWindow : Window
         {
             Text = "What should the camera do?",
             FontWeight = FontWeight.Bold,
-            FontSize = 18,
+            [!TextBlock.FontSizeProperty] = new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("AppFontSize18"),
             Foreground = ThemeResources.Brush(this, "AppTextPrimaryBrush", Brushes.White),
         });
         root.Children.Add(new TextBlock
@@ -96,7 +96,7 @@ public sealed class AiZoomStartWindow : Window
         _descriptionPanel.Children.Add(new TextBlock
         {
             Text = "Who should it follow? (optional)",
-            FontSize = 11,
+            [!TextBlock.FontSizeProperty] = new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("AppFontSize11"),
             Foreground = ThemeResources.Brush(this, "AppTextSecondaryBrush", Brushes.Gray),
         });
         _descriptionPanel.Children.Add(_description);
@@ -153,7 +153,7 @@ public sealed class AiZoomStartWindow : Window
         body.Children.Add(new TextBlock
         {
             Text = line,
-            FontSize = 11,
+            [!TextBlock.FontSizeProperty] = new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("AppFontSize11"),
             TextWrapping = TextWrapping.Wrap,
             Foreground = ThemeResources.Brush(this, "AppTextSecondaryBrush", Brushes.Gray),
         });
