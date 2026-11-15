@@ -145,6 +145,23 @@ public sealed class LocalAiTests
         Assert.Equal(0, LocalTrackingMath.Iou(last, new PixelBox(0, 0, 10, 10)));
     }
 
+    [Fact]
+    public void Choose_WhileTheMotionIsUnknownTakesTheMaskOfTheSameSizeNotTheOneStretchedOverTheOldPlace()
+    {
+        var last = new PixelBox(625, 267, 700, 408);
+        var stretched = new MaskCandidate(new PixelBox(635, 262, 725, 402), 0.98);
+        var moved = new MaskCandidate(new PixelBox(650, 262, 725, 402), 0.98);
+        var candidates = new[] { stretched, new MaskCandidate(new PixelBox(635, 262, 685, 402), 0.74), moved };
+
+        Assert.Equal(stretched.Box, LocalTrackingMath.Choose(candidates, last, last, last.Area)!.Value.Box);
+        Assert.Equal(moved.Box, LocalTrackingMath.Choose(candidates, last, last, last.Area, motionUnknown: true)!.Value.Box);
+        Assert.Null(LocalTrackingMath.Choose(new[] { new MaskCandidate(new PixelBox(1000, 600, 1075, 741), 0.99) }, last, last, last.Area, motionUnknown: true));
+
+        Assert.Equal(1.0, LocalTrackingMath.SameSize(last, new PixelBox(0, 0, 75, 141)), 6);
+        Assert.Equal(0.5, LocalTrackingMath.SameSize(new PixelBox(0, 0, 10, 10), new PixelBox(50, 50, 70, 60)), 6);
+        Assert.Equal(0, LocalTrackingMath.SameSize(last, default));
+    }
+
     private static byte[] Solid(int w, int h, byte r, byte g, byte b)
     {
         var f = new byte[w * h * 3];

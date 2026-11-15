@@ -1695,6 +1695,7 @@ LOCALAI_01                                   05 §7.8 SYS-LOCALAI | 04 UI-AIZOOM
 LOCALAIPACK_01                               09 DIST-LOCALAIPACK | 05 SYS-LOCALAI
 LOCALTRACK_01                                01 §11b TL-LOCALTRACK
 LOCALMEMORY_01                               01 §11b TL-LOCALTRACK
+LOCALTRACK_02                                01 §11b TL-LOCALTRACK
 AIMODE_01                                    04 UI-AIMODE ("How should AI work?")
 AIMODEHEAL_01                                04 UI-AIEASE
 AIZOOMSTART_01                               04 UI-AIEASE

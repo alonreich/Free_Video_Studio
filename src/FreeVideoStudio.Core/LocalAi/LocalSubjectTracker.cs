@@ -77,7 +77,7 @@ public static class LocalSubjectTracker
             }, cancellationToken).ConfigureAwait(false);
 
         var backward = new List<TrackedFrame>();
-        var bState = new DirectionState(req.InitialBox, exclude);
+        var bState = new DirectionState(req.InitialBox, exclude, fState.Start);
         double chunkEnd = start;
         while (chunkEnd > 1e-6 && !bState.Stopped)
         {
@@ -113,6 +113,11 @@ public static class LocalSubjectTracker
             fState.OwnBodyRefused + bState.OwnBodyRefused, ownBodyRule);
     }
 
+    public const string MotionOnsetTag = "LOCALTRACK_02";
+
+    /// <summary>LOCALTRACK_02 — what the forward pass learned on the picked frame: the target's exact box, its look and its first motion per frame.</summary>
+    private sealed record DirectionStart(PixelBox Box, float[] Look, double Vx, double Vy, bool HasVelocity);
+
     /// <summary>
     /// One direction's memory: the last good box, its motion per frame, how long it has been lost, the target's usual
     /// size (reference area: the first accepted box, then 90 % old + 10 % new) and the cut. While lost the motion is
@@ -133,11 +138,31 @@ public static class LocalSubjectTracker
         public const int LookAfterFrames = 3;
         public const int ForgetMaskAfterLost = 3;
 
+        private DirectionStart? _start;
+        private bool _newDirection;
+
         public DirectionState(PixelBox initial, AiGameProfile? exclude)
         {
             _last = initial;
             _exclude = exclude;
         }
+
+        public DirectionState(PixelBox initial, AiGameProfile? exclude, DirectionStart? reference) : this(initial, exclude)
+        {
+            if (reference is not DirectionStart r) return;
+            _last = r.Box;
+            _first = false;
+            _newDirection = true;
+            _referenceArea = r.Box.Area;
+            _look = (float[])r.Look.Clone();
+            _accepted = 1;
+            if (!r.HasVelocity) return;
+            _vx = -r.Vx;
+            _vy = -r.Vy;
+            _hasVelocity = true;
+        }
+
+        public DirectionStart? Start => _start;
 
         public int OwnBodyRefused { get; private set; }
 
@@ -153,9 +178,11 @@ public static class LocalSubjectTracker
             }
             if (Stopped) return new TrackedFrame(t, _last, false, 0);
 
+            bool unknownMotion = !_first && !_hasVelocity;
             PixelBox predicted = _first ? _last.Clamp(w, h) : Shifted(_last, _vx * (_lost + 1), _vy * (_lost + 1), w, h);
             PixelBox prompt = _first ? predicted : LocalTrackingMath.NextPrompt(_last, _vx, _vy, w, h, _lost + 1);
-            if (_first || _lost >= ForgetMaskAfterLost) model.Forget();
+            if (_first || _newDirection || unknownMotion || _lost >= ForgetMaskAfterLost) model.Forget();
+            _newDirection = false;
             var (candidates, objectLogit) = model.Step(rgb, prompt, predicted.Cx, predicted.Cy, w, h,
                 predicted.Cx - _last.Cx, predicted.Cy - _last.Cy);
             Trace?.Invoke($"t={t:0.0} obj={objectLogit:0.0} pred={Fmt(predicted)} last={Fmt(_last)} ref={_referenceArea:0} cands=" + string.Join(" ", candidates.Select(k => Fmt(k.Box) + "@" + k.Score.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture))));
@@ -174,7 +201,7 @@ public static class LocalSubjectTracker
                 };
             }
             MaskCandidate? pick = objectLogit > 0
-                ? LocalTrackingMath.Choose(candidates, predicted, _first ? default : _last, _referenceArea, look, excluded)
+                ? LocalTrackingMath.Choose(candidates, predicted, _first ? default : _last, _referenceArea, look, excluded, unknownMotion)
                 : null;
             if (refused) OwnBodyRefused++;
             if (pick is MaskCandidate c)
@@ -186,10 +213,12 @@ public static class LocalSubjectTracker
                     double dx = (nb.Cx - _last.Cx) / frames, dy = (nb.Cy - _last.Cy) / frames;
                     _vx = _hasVelocity ? 0.5 * _vx + 0.5 * dx : dx;
                     _vy = _hasVelocity ? 0.5 * _vy + 0.5 * dy : dy;
+                    if (!_hasVelocity && _start != null) _start = _start with { Vx = dx, Vy = dy, HasVelocity = true };
                     _hasVelocity = true;
                 }
                 _referenceArea = _referenceArea <= 0 ? nb.Area : 0.9 * _referenceArea + 0.1 * nb.Area;
                 var sample = LocalTrackingMath.Appearance(rgb, size, nb, w, h);
+                if (_first) _start = new DirectionStart(nb, (float[])sample.Clone(), 0, 0, false);
                 if (_look == null) _look = sample;
                 else LocalTrackingMath.Blend(_look, sample, LocalTrackingMath.AppearanceRate);
                 _accepted++;
