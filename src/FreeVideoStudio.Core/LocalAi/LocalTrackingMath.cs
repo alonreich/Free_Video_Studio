@@ -79,6 +79,13 @@ public static class LocalTrackingMath
 
     public const double MinPredictedIou = 0.1;
 
+    /// <summary>LOCALTRACK_02 — how alike two boxes are in SIZE only (1 = same width and height), wherever they sit.</summary>
+    public static double SameSize(PixelBox a, PixelBox b)
+    {
+        if (a.IsEmpty || b.IsEmpty) return 0;
+        return Math.Min(a.Width, b.Width) / Math.Max(a.Width, b.Width) * (Math.Min(a.Height, b.Height) / Math.Max(a.Height, b.Height));
+    }
+
     /// <summary>
     /// Motion-aware choice among the decoder's masks (the SAMURAI idea): a candidate must pass <see cref="IsConsistent"/>
     /// against the last good box and overlap the PREDICTED box (IoU at least <see cref="MinPredictedIou"/>); of those the
@@ -96,7 +103,7 @@ public static class LocalTrackingMath
     /// the player's own avatar or hands.
     /// </summary>
     public static MaskCandidate? Choose(IReadOnlyList<MaskCandidate> candidates, PixelBox predicted, PixelBox last, double referenceArea,
-        Func<PixelBox, double>? appearance = null, Func<PixelBox, bool>? excluded = null)
+        Func<PixelBox, double>? appearance = null, Func<PixelBox, bool>? excluded = null, bool motionUnknown = false)
     {
         MaskCandidate? best = null;
         double bestValue = double.MinValue;
@@ -106,6 +113,7 @@ public static class LocalTrackingMath
             if (excluded != null && excluded(c.Box)) continue;
             double iou = Iou(c.Box, predicted);
             if (iou < MinPredictedIou) continue;
+            if (motionUnknown && !last.IsEmpty) iou = SameSize(c.Box, last);
             double value;
             if (appearance == null)
             {

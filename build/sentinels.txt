@@ -1449,6 +1449,7 @@ LOCALAITEST_01=tests/run-av-tests.ps1
 LOCALAITEST_01=tests/FreeVideoStudio.Core.Tests/LocalAiTests.cs
 LOCALMEMORY_01=src/FreeVideoStudio.Core/LocalAi/LocalTrackingMath.cs
 LOCALMEMORY_01=src/FreeVideoStudio.Core/LocalAi/Sam2BoxTracker.cs
+LOCALTRACK_02=src/FreeVideoStudio.Core/LocalAi/LocalSubjectTracker.cs
 OWNBODY_01=src/FreeVideoStudio.Core/LocalAi/LocalTrackingMath.cs
 AIMODE_01=src/FreeVideoStudio.App/Services/AiSetup.cs
 AIMODE_01=src/FreeVideoStudio.App/Controls/AiModeWindow.cs
