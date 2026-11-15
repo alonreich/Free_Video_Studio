@@ -172,10 +172,8 @@ public partial class MainWindow : Window
     private bool _draggingMusicStart = false;
     private bool _draggingMusicEnd = false;
     private bool _draggingMusicBlock = false;
-    private double _playingMusicTimelineStartSeconds = -1;
     private FreeVideoStudio.Core.Media.MpvIpcClient? _musicPreviewIpcClient;
     private bool _isMusicPreviewPlaying = false;
-    private double _lastMusicPreviewSyncTime = -1;
     private DispatcherTimer? _playbackTimer;
     private bool _isTimerUpdatingSlider = false;
     private readonly ApplicationPaths _paths = ApplicationPaths.CreateDefault();

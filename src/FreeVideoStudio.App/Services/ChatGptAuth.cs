@@ -116,11 +116,6 @@ internal static class ChatGptAuth
         }
     }
 
-    internal static void ResetCacheForTests()
-    {
-        lock (Gate) { _session = null; _loaded = false; }
-    }
-
     private static Session? LoadLocked()
     {
         if (_loaded) return _session;

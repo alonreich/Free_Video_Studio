@@ -318,26 +318,6 @@ public static class GeminiTrackingService
         w.WriteEndArray();
     }
 
-    internal static void WriteDiscoverySchema(Utf8JsonWriter w)
-    {
-        w.WriteStartObject();
-        w.WriteString("type", "ARRAY");
-        w.WriteStartObject("items");
-        w.WriteString("type", "OBJECT");
-        w.WriteStartObject("properties");
-        Typed(w, "id", "INTEGER");
-        Typed(w, "label", "STRING");
-        Typed(w, "frame_index", "INTEGER");
-        Typed(w, "ymin", "INTEGER");
-        Typed(w, "xmin", "INTEGER");
-        Typed(w, "ymax", "INTEGER");
-        Typed(w, "xmax", "INTEGER");
-        w.WriteEndObject();
-        Required(w, "id", "label", "frame_index", "ymin", "xmin", "ymax", "xmax");
-        w.WriteEndObject();
-        w.WriteEndObject();
-    }
-
     internal static void WriteTrackingSchema(Utf8JsonWriter w)
     {
         w.WriteStartObject();

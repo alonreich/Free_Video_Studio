@@ -712,24 +712,6 @@ public partial class VoiceOverWindow
         return false;
     }
 
-    internal async Task DiscardPendingTake(FreeVideoStudio.App.Services.PendingFailedTake take)
-    {
-        if (!CanStartRecoveryOperation() || _capture.HasUnreleasedDevice) return;
-        var pending = _recovery.DiscardPendingTakeAsync(_capture, take);
-        BeginRecoveryOperationUi();
-        (bool success, string? error) = (false, null);
-        try { (success, error) = await pending; }
-        finally { EndRecoveryOperationUi(); }
-        if (!success && error != null)
-        {
-            Controls.FloatingNotice.Error(this, error);
-            UpdateApplyState(error);
-            return;
-        }
-        if (!_recovery.HasUnresolvedFailedTakes) _lastApplyErrorMessage = null;
-        UpdateApplyState();
-    }
-
     internal Task<bool> DiscardAllPendingTakes() => DiscardFailedTakesAction();
 
     /// <summary>VORECOVERY_01 — an index write that fails is surfaced with the audio still on disk.</summary>
@@ -848,7 +830,6 @@ public partial class VoiceOverWindow
     internal const string StayedOpenAfterApplyMessage =
         "The voice-over was not added, so the studio stayed open. Read the message under Apply, then apply again or close.";
     private bool _closeRequestedDuringApply;
-    internal bool CloseRequestedDuringApplyForTesting => _closeRequestedDuringApply;
 
     private async void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {

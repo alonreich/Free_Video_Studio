@@ -39,7 +39,6 @@ internal sealed class PendingFailedTake
     public string FailureReason { get; set; }
     public RecoveryErrorKind ErrorKind { get; set; } = RecoveryErrorKind.Capture;
     public TakeRecoveryState State { get; set; } = TakeRecoveryState.Pending;
-    public DateTime TimestampUtc { get; } = DateTime.UtcNow;
     public string? SourceManifestPath { get; set; }
 
     /// <summary>Predicate 1 — blocks Apply.</summary>
@@ -898,12 +897,6 @@ internal sealed class VoiceOverRecoveryManager
         if (!stored.Success) { error = stored.Error; return false; }
         error = null;
         return true;
-    }
-
-    public void DiscardPendingTake(IVoiceCaptureSession capture, PendingFailedTake take)
-    {
-        if (capture.HasUnreleasedDevice || IsOperationInFlight) return;
-        FinishDiscard(new List<PendingFailedTake> { take }, new List<string?> { DeleteOne(_store, take.Session.WavPath) }, SaveManifest, out _);
     }
 
     public Task<(bool Success, string? Error)> DiscardPendingTakeAsync(IVoiceCaptureSession capture, PendingFailedTake take)

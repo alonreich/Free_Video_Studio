@@ -420,17 +420,6 @@ public static class CoordinateMath
     }
 
 
-    public static (Frac x, Frac y, Frac w, Frac h) ScaleRect(
-        (double x, double y, double w, double h) rect, double scaleFactor)
-    {
-        var fx = Frac.FromDouble(rect.x);
-        var fy = Frac.FromDouble(rect.y);
-        var fw = Frac.FromDouble(rect.w);
-        var fh = Frac.FromDouble(rect.h);
-        var factor = Frac.FromDouble(scaleFactor);
-        return (fx, fy, fw * factor, fh * factor);
-    }
-
     /// <summary>
     /// RATIOLOCK_01 — the smallest step a HUD layer's backend size may move in.
     ///

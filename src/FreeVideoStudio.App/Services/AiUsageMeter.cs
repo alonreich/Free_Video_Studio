@@ -59,7 +59,6 @@ public static class AiUsageMeter
 {
     private static readonly AsyncLocal<Scope?> Current = new();
     private static readonly object Gate = new();
-    private static readonly Dictionary<AiVendor, AiRateLimitSnapshot> LastKnown = new();
     private static readonly Dictionary<string, AiRateLimitSnapshot> AccountLimits = new();
     private static readonly Queue<string> History = new();
     private static readonly AiUsageTally Session = new();
@@ -112,12 +111,6 @@ public static class AiUsageMeter
             + "\n\nTokens are provider-reported. Costs are estimates, not bills. Cancelled or disconnected requests may still be charged. Connection checks are included. Quota is a recent rate-limit snapshot, not an account balance.";
     }
 
-    /// <summary>The company's last reported allowance this session, or null.</summary>
-    public static AiRateLimitSnapshot? LastKnownFor(AiVendor vendor)
-    {
-        lock (Gate) return LastKnown.TryGetValue(vendor, out var s) ? s : null;
-    }
-
     /// <summary>Starts counting one task. Dispose (or let it go) when the task is over.</summary>
     /// <summary>AITRACE_01 — the id of the most recently started AI task (shown as "Reference" in error messages;
     /// every log line of that task carries <c>task=&lt;id&gt;</c>).</summary>
@@ -156,14 +149,10 @@ public static class AiUsageMeter
                 Session.Add(input, output, thinking);
                 _sessionUsd += AiCostEstimator.EstimateCostUsd(vendor, model, input, output, thinking);
                 _sessionUnknownPrice |= !AiCostEstimator.HasReferenceRate(vendor, model);
-                if (limits != null)
+                if (limits != null && apiKey != null)
                 {
-                    LastKnown[vendor] = limits;
-                    if (apiKey != null)
-                    {
-                        if (AccountLimits.Count >= 32) AccountLimits.Clear();
-                        AccountLimits[AiResultCache.Key(vendor.ToString(), apiKey)] = limits;
-                    }
+                    if (AccountLimits.Count >= 32) AccountLimits.Clear();
+                    AccountLimits[AiResultCache.Key(vendor.ToString(), apiKey)] = limits;
                 }
             }
             lock (Gate)

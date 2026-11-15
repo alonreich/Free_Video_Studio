@@ -243,25 +243,4 @@ public static class AiCostEstimator
         return $"Est. before run: ~{n} tokens" + (HasReferenceRate(vendor, model) ? $" ({FormatApproxUsd(est.EstimatedUsd)})" : " (price unavailable)")
             + $" · {AiVisionProviders.DisplayName(vendor)} ({resolved})";
     }
-
-    public static string FormatConsumedVsEstimated(
-        AiVendor vendor,
-        string? model,
-        AiUsageTally tally,
-        AiEstimatedUsage? estimated = null)
-    {
-        string N(long v) => v.ToString("N0", CultureInfo.InvariantCulture);
-        decimal actualUsd = EstimateCostUsd(vendor, model, tally.InputTokens, tally.OutputTokens, tally.ThinkingTokens);
-        string actualPart = tally.Requests == 0
-            ? "No usage report received; charges may be unknown"
-            : $"{N(tally.TotalTokens)} tokens used ({N(tally.InputTokens)} in / {N(tally.OutputTokens)} out"
-              + (tally.ThinkingTokens > 0 ? $" / {N(tally.ThinkingTokens)} think" : "")
-              + (HasReferenceRate(vendor, model) ? $", {FormatApproxUsd(actualUsd)} estimated)" : ", price unavailable)");
-
-        if (estimated == null)
-            return actualPart;
-
-        return $"{actualPart} · Pre-run estimate was ~{N(estimated.EstimatedTotalTokens)}"
-            + (HasReferenceRate(vendor, model) ? $" ({FormatApproxUsd(estimated.EstimatedUsd)} estimated)" : "");
-    }
 }

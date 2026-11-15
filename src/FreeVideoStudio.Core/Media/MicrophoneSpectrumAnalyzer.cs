@@ -222,9 +222,6 @@ public sealed class MicrophoneSpectrumAnalyzer
     /// <summary>Frequency resolution: one FFT bin, SampleRate / FftSize.</summary>
     public double BinWidthHz => (double)Format.SampleRate / _fftSize;
 
-    /// <summary>Latency of one complete analysis window in seconds.</summary>
-    public double WindowSeconds => (double)_fftSize / Format.SampleRate;
-
     /// <summary>Most recent result, or null before the first complete window since the last reset.</summary>
     public MicrophoneSpectrumSnapshot? Latest => _latest;
 

@@ -45,9 +45,6 @@ public sealed class MixProtectionViewModel : ViewModelBase
         set { if (SetProperty(ref _carvingStrength, Clamp(value))) OnPropertyChanged(nameof(CarvingLabel)); }
     }
 
-    public int DuckingStrengthValue => _duckingStrength;
-    public int CarvingStrengthValue => _carvingStrength;
-
     public string DuckingLabel => Label(_duckingStrength);
     public string CarvingLabel => Label(_carvingStrength);
 

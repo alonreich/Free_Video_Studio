@@ -109,7 +109,6 @@ internal sealed class PcmScratch : IPcmSampleSink, IDisposable
     private FileStream? _spill;
 
     public long SampleCount { get; private set; }
-    public bool Spilled => _spill != null;
 
     public void Accept(ReadOnlySpan<short> samples)
     {

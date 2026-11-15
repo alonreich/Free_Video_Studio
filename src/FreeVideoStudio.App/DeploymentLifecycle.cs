@@ -143,19 +143,6 @@ internal static class DeploymentLifecycle
         }
     }
 
-    /// <summary>ISSUE_02 — classifies installer version vs installed version.</summary>
-    private static string DescribeVersionTransition(string? existingVersion)
-    {
-        if (!TryParseVersion(existingVersion, out Version installed) ||
-            !TryParseVersion(GetCurrentVersion(), out Version current))
-        {
-            return "comparison unavailable";
-        }
-
-        int cmp = current.CompareTo(installed);
-        return cmp > 0 ? "UPGRADE" : cmp < 0 ? "DOWNGRADE" : "REINSTALL (same version)";
-    }
-
     /// <summary>
     /// ISSUE_02 — a DOWNGRADE is a deliberate choice, so confirm it. An upgrade and a same-version
     /// reinstall both proceed without an extra prompt. Returns true to continue.
@@ -597,35 +584,6 @@ internal static class DeploymentLifecycle
         }
 
         return clean;
-    }
-
-    private static string? GetInstalledVersion()
-    {
-        foreach ((RegistryHive hive, RegistryView view, string path) in DeploymentFootprint.GetUninstallRegistryPurgeTargets())
-        {
-            try
-            {
-                using RegistryKey baseKey = RegistryKey.OpenBaseKey(hive, view);
-                using RegistryKey? key = baseKey.OpenSubKey(path);
-                string? version = key?.GetValue("DisplayVersion")?.ToString();
-                if (!string.IsNullOrWhiteSpace(version))
-                {
-                    return version;
-                }
-            }
-            catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
-        }
-
-        if (File.Exists(DeploymentFootprint.InstallPath))
-        {
-            try
-            {
-                return FileVersionInfo.GetVersionInfo(DeploymentFootprint.InstallPath).ProductVersion;
-            }
-            catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
-        }
-
-        return null;
     }
 
     internal static string GetCurrentVersion()
