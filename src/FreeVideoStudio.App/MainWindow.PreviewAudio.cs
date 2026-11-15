@@ -169,8 +169,6 @@ public partial class MainWindow
         _musicDriftStrikes = 0;
         _musicSyncHoldUntilTicks = Environment.TickCount64 + MusicSyncSettleMs;
         _isMusicPreviewPlaying = true;
-        _lastMusicPreviewSyncTime = positionSec;
-        _playingMusicTimelineStartSeconds = _musicWizardResult.TimelineStartSeconds;
     }
 
     private async void StopMusicPreview()

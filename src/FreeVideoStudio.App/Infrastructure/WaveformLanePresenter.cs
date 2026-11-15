@@ -63,7 +63,6 @@ internal sealed class WaveformLanePresenter
     private bool _denseScheduled;
     private int _epoch;
     private double _scaling = 1;
-    private double _laneWidth;
     private IBrush? _brush;
 
     public WaveformLanePresenter(Canvas lane) => _lane = lane;
@@ -106,7 +105,6 @@ internal sealed class WaveformLanePresenter
     public List<LaneTile> Sync(IReadOnlyList<LaneTile> plan, Func<string, float[]?> cachedPeaks, double laneWidth, double renderScaling)
     {
         _scaling = renderScaling > 0 ? renderScaling : 1;
-        _laneWidth = laneWidth;
         _brush ??= ThemeResources.Brush(_lane, "AppInfoBrush", Brushes.DeepSkyBlue);
         PrunePending();
 

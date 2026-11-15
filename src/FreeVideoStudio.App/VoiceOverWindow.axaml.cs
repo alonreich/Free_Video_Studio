@@ -299,7 +299,6 @@ public partial class VoiceOverWindow : Window
     private Button? _muteTakeButton;
 
     private Canvas? _timelineRulerCanvas;
-    private Canvas? _waveformCanvas;
     private Canvas? _takeOverlayCanvas;
     private Ellipse? _readyLamp;
     private TextBlock? _voTimeElapsed;
@@ -827,7 +826,6 @@ public partial class VoiceOverWindow : Window
         CacheRecordingStateControls();
         _spectrumMeter = this.FindControl<MicrophoneSpectrumControl>("SpectrumMeter");
         _timelineRulerCanvas = this.FindControl<Canvas>("TimelineRulerCanvas");
-        _waveformCanvas = this.FindControl<Canvas>("WaveformCanvas");
         _takeOverlayCanvas = this.FindControl<Canvas>("TakeOverlayCanvas");
         _readyLamp = this.FindControl<Ellipse>("ReadyLamp");
         _voTimeElapsed = this.FindControl<TextBlock>("VoTimeElapsed");

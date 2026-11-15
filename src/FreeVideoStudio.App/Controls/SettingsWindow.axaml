@@ -80,9 +80,6 @@
             <Setter Property="CornerRadius" Value="6"/>
             <Setter Property="Padding" Value="14"/>
         </Style>
-        <Style Selector="Border.SearchHit">
-            <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}"/>
-        </Style>
     </Window.Styles>
     <Grid>
         <Border Name="MainBorder" Background="{DynamicResource AppSurfaceBrush}" CornerRadius="0" Padding="0" BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="5">

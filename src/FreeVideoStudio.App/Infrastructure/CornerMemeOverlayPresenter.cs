@@ -320,7 +320,7 @@ public sealed class CornerMemeOverlayPresenter : IDisposable
 /// <summary>
 /// MEMEMODE_01 / CACHEBOUND_05 — corner-preview frames, decoded in bounded time/frame windows off the UI thread:
 /// <list type="bullet">
-/// <item>Windows are <see cref="WindowDurationSeconds"/> seconds (at most <see cref="MaxFramesPerWindow"/> frames at <see cref="Fps"/> fps).</item>
+/// <item>Windows are <see cref="WindowDurationSeconds"/> seconds at <see cref="Fps"/> fps.</item>
 /// <item>Max dimensions are <see cref="Width"/> x <see cref="MaxHeight"/> with aspect ratio preserved, eliminating unbounded pixel growth.</item>
 /// <item>Offscreen window bytes are budgeted in <see cref="Store"/> (<see cref="DefaultMemoryBudgetBytes"/>), evicting LRU unleased windows.</item>
 /// <item>Concurrent decodes are throttled by a semaphore to at most <see cref="MaxConcurrentDecoders"/>.</item>
@@ -335,7 +335,6 @@ public static class CornerMemeFrames
     public const int MaxHeight = 640;
     public const double MaxSeconds = 30.0;
     public const double WindowDurationSeconds = 2.5;
-    public const int MaxFramesPerWindow = 30;
 
     public const long MaxActiveWindowBytes = 32L * 1024 * 1024;
     public const long DefaultMemoryBudgetBytes = 64L * 1024 * 1024;

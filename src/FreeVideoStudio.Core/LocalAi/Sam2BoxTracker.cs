@@ -49,8 +49,6 @@ public sealed class Sam2BoxTracker : IDisposable
         _memory = new float[_maskInput.Length];
     }
 
-    public bool HasMemory => _hasMemory;
-
     /// <summary>LOCALMEMORY_01 — keeps mask <paramref name="index"/> of the last <see cref="Step"/> as the next frame's mask prompt.</summary>
     public void Remember(int index)
     {

@@ -34,10 +34,6 @@ public partial class PhaseOverlayControl : UserControl
     private Stopwatch _processStopwatch = new();
     private bool _easterEggActive = false;
     private int _lastPercent = -1;
-    private string _currentSequence = "";
-    private Rect _anchorProgressBar;
-    private Rect _anchorLogBox;
-    private Rect _anchorTelemetryBox;
     private bool? _originalCanResize;
 
     /// <summary>
@@ -475,14 +471,6 @@ public partial class PhaseOverlayControl : UserControl
             window.PropertyChanged -= OnWindowPropertyChanged;
             window.PropertyChanged += OnWindowPropertyChanged;
         }
-
-        var pbar = PhaseProgressBarCtl?.Parent as Control;
-        var log = LiveLogTextBoxCtl;
-        var graph = this.FindControl<HardwareGraphControl>("GraphCanvas")?.Parent as Control;
-
-        if (pbar != null) _anchorProgressBar = pbar.Bounds;
-        if (log != null) _anchorLogBox = log.Bounds;
-        if (graph != null) _anchorTelemetryBox = graph.Bounds;
     }
 
     /// <summary>
@@ -555,7 +543,7 @@ public partial class PhaseOverlayControl : UserControl
     private string _defReaction = "hit";
     private int _comboLeft;
     private bool _projActive, _projDouble;
-    private double _projT, _projDur = 0.32, _projArc = 26;
+    private double _projArc = 26;
     private Point _projStart, _projEnd;
 
     private double _nextTauntTime;
@@ -635,7 +623,6 @@ public partial class PhaseOverlayControl : UserControl
 
     private void PlaySequence(string sequenceName)
     {
-        _currentSequence = sequenceName;
         RuntimeLog.Info("EasterEgg", $"Fight sequence: {sequenceName}");
 
         Dispatcher.UIThread.Post(() =>
@@ -1063,11 +1050,11 @@ public partial class PhaseOverlayControl : UserControl
         {
             case "throw":
                 _moveDur = 0.30 + _rand.NextDouble() * 0.22;
-                _projDur = _moveDur; _projArc = 10 + _rand.NextDouble() * 40;
+                _projArc = 10 + _rand.NextDouble() * 40;
                 _projDouble = _rand.NextDouble() < 0.3;
                 _projStart = new Point(atkX + 15 + dir * 18, fightY + 40);
                 _projEnd = new Point(defX + 15, fightY + 10 + _rand.NextDouble() * 20);
-                _projT = 0; _projActive = true;
+                _projActive = true;
                 RandomizeProjectile();
                 break;
             case "dash":
@@ -1144,7 +1131,6 @@ public partial class PhaseOverlayControl : UserControl
 
         if (_projActive)
         {
-            _projT = t;
             MoveProjectile("Projectile", _projStart, _projEnd, t, _projArc, 0);
             if (_projDouble) MoveProjectile("Projectile2", _projStart, _projEnd, Math.Max(0, t - 0.18), _projArc + 12, 10);
         }

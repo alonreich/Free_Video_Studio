@@ -52,15 +52,6 @@ public static class AiViralPostService
     private static readonly Dictionary<string, CachedFrameSet> s_frameCache = new(StringComparer.Ordinal);
     private static readonly Queue<string> s_frameCacheOrder = new();
 
-    internal static void ClearFrameCacheForTests()
-    {
-        lock (s_frameCacheLock)
-        {
-            s_frameCache.Clear();
-            s_frameCacheOrder.Clear();
-        }
-    }
-
     internal static int CachedFrameSetCount
     {
         get { lock (s_frameCacheLock) return s_frameCache.Count; }

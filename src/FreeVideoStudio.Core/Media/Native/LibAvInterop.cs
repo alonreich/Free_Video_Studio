@@ -12,7 +12,6 @@ internal static class LibAvConstants
     public const long AV_NOPTS_VALUE = long.MinValue;
     public const int AV_TIME_BASE = 1_000_000;
     public const int AVMEDIA_TYPE_VIDEO = 0;
-    public const int AVMEDIA_TYPE_AUDIO = 1;
     public const int AVCOL_RANGE_UNSPECIFIED = 0;
     public const int AVCOL_PRI_UNSPECIFIED = 2;
     public const int AVCOL_TRC_UNSPECIFIED = 2;
@@ -20,7 +19,6 @@ internal static class LibAvConstants
     public const int AV_DICT_DONT_OVERWRITE = 16;
     public const int AV_LOG_QUIET = -8;
     public const int AVERROR_EXIT = -1414092869;
-    public const int AVERROR_ENOMEM = -12;
 
     /// <summary>AV_VERSION_INT(major, minor, 0) — the version guard ignores micro.</summary>
     public static uint MajorMinor(uint version) => version & 0xFFFF_FF00u;
@@ -34,7 +32,6 @@ internal static class LibAvConstants
     public const int AVERROR_EOF = -541478725;
     public const int AVERROR_EAGAIN = -11;
     public const int AV_PIX_FMT_NONE = -1;
-    public const int AV_PIX_FMT_BGRA = 28;
     public const int AV_PIX_FMT_RGB24 = 2;
     public const int AV_FRAME_DATA_DISPLAYMATRIX = 6;
     public const int AV_PKT_DATA_FRAME_CROPPING = 36;
@@ -46,7 +43,6 @@ internal static class LibAvConstants
     public const int AV_DISPOSITION_ATTACHED_PIC = 1024;
     public const int AVSTREAM_EVENT_FLAG_NEW_PACKETS = 2;
     public const int AVFMT_SEEK_TO_PTS = 0x4000000;
-    public const int AV_CODEC_ID_NONE = 0;
 }
 
 /// <summary>struct AVRational (libavutil/rational.h). Sequential, 8 bytes.</summary>

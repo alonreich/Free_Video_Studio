@@ -144,20 +144,6 @@ public static partial class MpvWrapper
     }
 
 
-    /// <summary>Sets the 'volume' property (integer 0–100+).</summary>
-    public static void SetVolume(nint handle, int volume)
-    {
-        if (handle != nint.Zero)
-            mpv_set_property_string(handle, "volume", volume.ToString(CultureInfo.InvariantCulture));
-    }
-
-    /// <summary>Sets the 'volume' property (double, InvariantCulture).</summary>
-    public static void SetVolume(nint handle, double volume)
-    {
-        if (handle != nint.Zero)
-            mpv_set_property_string(handle, "volume", volume.ToString(CultureInfo.InvariantCulture));
-    }
-
 
     /// <summary>Stops playback and clears the playlist.</summary>
     public static void Stop(nint handle)
@@ -166,30 +152,6 @@ public static partial class MpvWrapper
             mpv_command_string(handle, "stop");
     }
 
-
-    /// <summary>
-    /// Loads a file into mpv. The path is automatically escaped for the mpv
-    /// command-string parser (backslashes doubled, entire path quoted).
-    /// </summary>
-    /// <summary>
-    /// ISSUE_15 — loads a file into the player.
-    ///
-    /// WHAT WAS WRONG: the path was interpolated between hand-written quotes after doubling only
-    /// its backslashes. A double quote inside the filename therefore closed the string early and
-    /// handed mpv a malformed command, which it rejects without producing any diagnosable error —
-    /// the video simply never appeared. This is the code path EVERY video load goes through
-    /// (upload, drag &amp; drop, Explorer "Open with", crash recovery), so a single awkward
-    /// filename made the app look broken with nothing in the log to explain it.
-    ///
-    /// Both special characters inside an mpv double-quoted string are now escaped, backslashes
-    /// first so the escapes introduced for the quotes are not themselves doubled.
-    /// </summary>
-    public static void LoadFile(nint handle, string path)
-    {
-        if (handle == nint.Zero) return;
-        string safePath = path.Replace("\\", "\\\\").Replace("\"", "\\\"");
-        mpv_command_string(handle, $"loadfile \"{safePath}\"");
-    }
 
 
     /// <summary>
