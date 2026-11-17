@@ -37,7 +37,6 @@ public sealed class ReleasePublicationTests : IDisposable
         string[] assets = GitHubReleasePublisher.ReleaseAssets(@"compiled\FreeVideoStudio.exe");
         Assert.Contains(@"compiled\FreeVideoStudio.exe", assets);
 
-
         Assert.DoesNotContain(assets, a => a.EndsWith("FreeVideoStudio.App.update.zip", StringComparison.OrdinalIgnoreCase));
         Assert.Equal("FreeVideoStudio.exe", GitHubReleasePublisher.PreSetupDownloadName);
         Assert.Equal("FreeVideoStudio.exe", InnoInstaller.SetupFileName);

@@ -5,10 +5,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// CAPTIONPLACE_01, CAPTIONLOOK_01, CAPTIONSIZE_01, CAPTIONRTL_01 — placement, look, size and Hebrew captions
-/// (01 TL-CAPTIONS).
-/// </summary>
 public sealed class CaptionLookTests
 {
     private static MappedCaptionLine Line(string text)

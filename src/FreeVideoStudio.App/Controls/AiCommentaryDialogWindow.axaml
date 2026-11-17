@@ -1,7 +1,3 @@
-<!-- AICOMMENTARY_UI_01 / COMMENTARYUI_02 — AI Live Commentary options. BASIC: style, placement, language, range.
-     ADVANCED (an expander, always closed when the window opens): tone sliders, text look and size, how often it
-     talks, swearing, caption animation, game type, extra notes. All state is bound to
-     AiCommentaryOptionsViewModel (MVVM_01); colours come only from theme tokens. -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:FreeVideoStudio.App.ViewModels"
@@ -18,12 +14,10 @@
     <Grid>
         <Border Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="3">
             <Grid RowDefinitions="30, Auto, *, Auto">
-                <!-- Title Bar -->
                 <Border Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
                     <TextBlock Text="🎙️ LIVE COMMENTARY CAPTIONS — AI GENERATION" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
                 </Border>
 
-                <!-- Header Instruction -->
                 <StackPanel Grid.Row="1" Margin="24,14,24,10" Spacing="4">
                     <TextBlock Text="Generate AI Live Commentary" FontSize="{DynamicResource AppFontSize18}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
                     <TextBlock Text="Pick a style and where the captions go. Everything else is under Advanced."
@@ -33,7 +27,6 @@
                 <ScrollViewer Grid.Row="2" Margin="24,0,24,10" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Spacing="14">
 
-                        <!-- BASIC 1 — one-click style (COMMENTARYMIX_01) -->
                         <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
                             <StackPanel Spacing="10">
                                 <TextBlock Text="STYLE" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
@@ -70,7 +63,6 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- BASIC 2 — placement (CAPTIONPLACE_01) + language -->
                         <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
                             <Grid ColumnDefinitions="*, 16, *">
                                 <StackPanel Grid.Column="0" Spacing="8">
@@ -92,7 +84,6 @@
                             </Grid>
                         </Border>
 
-                        <!-- BASIC 3 — range -->
                         <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
                             <StackPanel Spacing="8">
                                 <TextBlock Text="WHAT TO CAPTION" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
@@ -104,14 +95,12 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- ADVANCED — always closed when the window opens (COMMENTARYUI_02) -->
                         <Expander IsExpanded="{Binding IsAdvancedOpen}" HorizontalAlignment="Stretch">
                             <Expander.Header>
                                 <TextBlock Text="ADVANCED" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
                             </Expander.Header>
                             <StackPanel Spacing="14" Margin="0,8,0,0">
 
-                                <!-- Tone sliders (COMMENTARYMIX_01) -->
                                 <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
                                     <StackPanel Spacing="6">
                                         <TextBlock Text="TONE MIX" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
@@ -141,7 +130,6 @@
                                     </StackPanel>
                                 </Border>
 
-                                <!-- Text look + size (CAPTIONLOOK_01 / CAPTIONSIZE_01) -->
                                 <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
                                     <Grid ColumnDefinitions="*, 16, *">
                                         <StackPanel Grid.Column="0" Spacing="8">
@@ -162,7 +150,6 @@
                                     </Grid>
                                 </Border>
 
-                                <!-- How often + swearing + animation -->
                                 <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
                                     <Grid ColumnDefinitions="*, 16, *" RowDefinitions="Auto, 12, Auto">
                                         <StackPanel Grid.Row="0" Grid.Column="0" Spacing="8">
@@ -184,7 +171,6 @@
                                     </Grid>
                                 </Border>
 
-                                <!-- Game type + notes -->
                                 <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
                                     <StackPanel Spacing="8">
                                         <TextBlock Text="GAME TYPE" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
@@ -199,7 +185,6 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <!-- Action Footer -->
                 <Grid Grid.Row="3" ColumnDefinitions="Auto, *, Auto" Margin="24,10,24,18">
                     <Button Grid.Column="0" Classes="Secondary" Content="CANCEL" MinWidth="110" MinHeight="42" Cursor="Hand" IsCancel="True"
                             Command="{Binding CancelCommand}" ToolTip.Tip="Close without generating commentary"/>

@@ -10,13 +10,6 @@ using FreeVideoStudio.App.ViewModels;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// AIPROVIDER_UI_01 (docs/04 UI-AIZOOM, docs/05 SYS-AISETTINGS) — the AI tab's company/model row,
-/// the one key box with its saved-key list (SETKEYONE_01) and the About tab. SETTINGSDI_01: this file is PRESENTATION ONLY. Testing keys, listing
-/// models, changing which company a feature uses and the permission bookkeeping live in
-/// <see cref="SettingsViewModel"/> (through the injected services); here the results are drawn.
-/// SETNOCONSENTUI_01: there are no permission boxes any more — saving a key is the permission.
-/// </summary>
 public partial class SettingsWindow : Window
 {
     private static readonly (AiVendor Vendor, string Label)[] VendorItems =
@@ -72,6 +65,7 @@ public partial class SettingsWindow : Window
         BuildLocalAiUi(scope);
         WireDefaultAiRow(scope);
         BuildSavedKeyRows(scope);
+        WireAiStatusLine(scope);
         Vm.Reloaded += () => { ShowDefaultAiRow(scope); BuildSavedKeyRows(scope); };
         Vm.AiRoutingChanged += () => { ShowDefaultAiRow(scope); BuildSavedKeyRows(scope); };
         Vm.PropertyChanged += (_, e) =>
@@ -81,16 +75,15 @@ public partial class SettingsWindow : Window
         };
     }
 
-    /// <summary>
-    /// SETKEYONE_01 — ONE box for any AI key: the company is recognised from the key, the key is kept as
-    /// pending (saved by SAVE) and checked with that company straight away.
-    /// </summary>
     private void WireAddKey(INameScope scope)
     {
         var box = scope.Find("AiNewKeyTextBox") as TextBox;
         var add = scope.Find("AiAddKeyBtn") as Button;
         var status = scope.Find("AiAddKeyStatusText") as TextBlock;
         if (box == null || add == null) return;
+
+        if (scope.Find("AiNewKeyRevealBtn") is Avalonia.Controls.Primitives.ToggleButton reveal)
+            reveal.IsCheckedChanged += (_, _) => reveal.Content = reveal.IsChecked == true ? "Hide" : "Show";
 
         async System.Threading.Tasks.Task AddAsync()
         {
@@ -160,7 +153,6 @@ public partial class SettingsWindow : Window
         if (scope.Find("AiGetOpenAiKeyBtn") is Button o) o.Click += (_, _) => AiVisionProviders.OpenOpenAiPlatform();
     }
 
-    /// <summary>AIMODE_01 — "How AI works: …" and Change…; keys the walk-through saved are copied into this window so SAVE keeps them.</summary>
     private void WireAiModeRow(INameScope scope)
     {
         void ShowMode()
@@ -192,7 +184,6 @@ public partial class SettingsWindow : Window
 
     private readonly List<(KeyTestStatus Model, System.ComponentModel.PropertyChangedEventHandler Handler)> _keyRowHandlers = new();
 
-    /// <summary>SETKEYONE_01 — one row per key the window holds: the company, the last 4 characters, Test and Remove.</summary>
     private void BuildSavedKeyRows(INameScope scope)
     {
         if (scope.Find("AiSavedKeysPanel") is not StackPanel panel) return;
@@ -312,7 +303,6 @@ public partial class SettingsWindow : Window
         return card;
     }
 
-
     private bool _showingRow;
 
     private void FillVendorModel(ComboBox vendorCombo, ComboBox modelCombo, AiUsageConfig cfg)
@@ -392,8 +382,6 @@ public partial class SettingsWindow : Window
         }
     }
 
-
-    /// <summary>About tab: identity, system readouts and the manual update controls (SETTINGSDI_01: through IUpdateChecker).</summary>
     private void BuildAboutUi()
     {
         var scope = this.FindNameScope();

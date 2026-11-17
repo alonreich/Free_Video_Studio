@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 
 namespace FreeVideoStudio.Core.Media;
@@ -13,21 +12,6 @@ public static class LibMpvInterop
     public const int MPV_RENDER_PARAM_OPENGL_FBO = 3;
     public const int MPV_RENDER_PARAM_FLIP_Y = 4;
 
-    /// <summary>
-    /// ISSUE_05 — <c>int*</c> flag. When set to 1, mpv performs the whole frame-advance
-    /// bookkeeping but skips the actual draw, and — critically — does NOT touch the graphics
-    /// API, so this is safe to call with no GL context current.
-    ///
-    /// WHY THIS EXISTS HERE: with <c>vo=libmpv</c> mpv only produces the NEXT video frame once
-    /// the client has consumed the current one by calling <c>mpv_render_context_render</c>.
-    /// Any path that receives a frame-ready callback and then declines to render (surface not
-    /// ready, control not laid out yet, keyed-mutex acquire timed out) permanently stalls the
-    /// pipeline: no render -&gt; no new frame -&gt; no new callback. Pumping a skipped render keeps
-    /// the clock moving so the preview recovers on the next frame instead of freezing forever.
-    ///
-    /// ⚠️ EXACT mpv render.h enum value — sits between BLOCK_FOR_TARGET_TIME(12) and
-    /// DRM_DISPLAY(14), matching the SW_* offsets documented below. DO NOT change.
-    /// </summary>
     public const int MPV_RENDER_PARAM_SKIP_RENDERING = 13;
 
     public const int MPV_RENDER_PARAM_SW_SIZE = 17;
@@ -35,11 +19,6 @@ public static class LibMpvInterop
     public const int MPV_RENDER_PARAM_SW_STRIDE = 19;
     public const int MPV_RENDER_PARAM_SW_POINTER = 20;
 
-    /// <summary>
-    /// Bitmask flag returned by <see cref="mpv_render_context_update"/>.
-    /// When set, a new video frame is available and <see cref="mpv_render_context_render"/>
-    /// should be called to draw it to the FBO.
-    /// </summary>
     public const ulong MPV_RENDER_UPDATE_FRAME = 1;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -65,7 +44,6 @@ public static class LibMpvInterop
         public int internal_format;
     }
 
-
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern int mpv_render_context_create(out nint res, nint mpv, [In] mpv_render_param[] param);
 
@@ -84,13 +62,6 @@ public static class LibMpvInterop
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public unsafe static extern void mpv_render_context_set_update_callback(nint ctx, delegate* unmanaged[Cdecl]<nint, void> callback, nint cb_ctx);
 
-    /// <summary>
-    /// Signals a "wakeup" to the render context. This must be called from the
-    /// update callback (or after receiving it) to acknowledge that the host
-    /// is ready to consume the next frame. Returns a bitmask of flags; if
-    /// <see cref="MPV_RENDER_UPDATE_FRAME"/> is set, call
-    /// <see cref="mpv_render_context_render"/> to draw the frame.
-    /// </summary>
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern ulong mpv_render_context_update(nint ctx);
 

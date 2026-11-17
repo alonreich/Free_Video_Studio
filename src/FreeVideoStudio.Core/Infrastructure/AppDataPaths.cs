@@ -1,6 +1,5 @@
 ﻿namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>REBRAND_01 — copy legacy user data before any new state root is created.</summary>
 public static class AppDataPaths
 {
     internal static readonly string[] LegacyDirectoryNames = ReadLegacyNames();

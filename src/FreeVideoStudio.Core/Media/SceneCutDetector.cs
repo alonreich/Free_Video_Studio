@@ -3,15 +3,6 @@ using System.Collections.Generic;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// SCENECUT_01 (docs/01 TL-LOCALTRACK) — finds hard cuts between consecutive frames so a tracker STOPS at a cut instead
-/// of latching onto whatever sits where its target was. Each frame becomes a 64-bin luma histogram (every 4th pixel);
-/// the distance between two frames is half the L1 difference of their normalised histograms (0 = same picture,
-/// 1 = nothing in common). A cut is a distance of at least <see cref="CutThreshold"/> that is also
-/// <see cref="SpikeFactor"/>× the median of the recent distances, so fast but continuous camera motion is not a cut,
-/// AND whose brightness distribution moved by at least <see cref="MinShift"/> (mean CDF difference), so a fade or a
-/// flash that only slides the histogram a few levels is not a cut either.
-/// </summary>
 public sealed class SceneCutDetector
 {
     public const int Bins = 64;
@@ -23,7 +14,6 @@ public sealed class SceneCutDetector
     private double[]? _previous;
     private readonly Queue<double> _recent = new();
 
-    /// <summary>Feeds one RGB24 frame; returns true when it starts a new shot.</summary>
     public bool Push(ReadOnlySpan<byte> rgb, int width, int height)
     {
         double[] hist = Histogram(rgb, width, height);
@@ -71,7 +61,6 @@ public sealed class SceneCutDetector
         return sum / 2.0;
     }
 
-    /// <summary>Mean absolute difference of the two cumulative histograms (0 = same brightness spread, 1 = black vs white).</summary>
     public static double Shift(double[] a, double[] b)
     {
         double ca = 0, cb = 0, sum = 0;

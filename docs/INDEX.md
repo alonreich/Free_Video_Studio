@@ -1,4 +1,4 @@
-﻿# SYMBOL & FILE INDEX (routing lookup)
+# SYMBOL & FILE INDEX (routing lookup)
 
 > 🛑 AGENT RULES — they apply even when you came here directly: never run `.\Build.cmd` (it publishes to GitHub) —
 > use `.\dev_build.cmd` / `dotnet build` / `dotnet test`; open every edit with the Proof-of-Read header
@@ -11,7 +11,7 @@ Flat lookup. Grep for a filename, symbol, constant or engineering tag; read ONLY
 Notation: `03 §9 FFM-BINPATH` = `03_FFMPEG_EXPORT_PIPELINE.md`, section 9, stable anchor `FFM-BINPATH`.
 Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote anchors in Proof-of-Read headers, never bare numbers.
 `mini-map only` = the symbol is bound to the spec but not discussed in its prose body; read that spec's Code Mini-Map row.
-`[code-only: File]` = the tag/symbol is named in that source file but in NO spec's text; the route given is the closest spec section, or just the spec governing that file. Treat the missing prose as a documentation gap, not as permission.
+`[code-only: File]` = the tag/symbol is named in NO spec's text; since NOCOMMENTS_02 a tag's original wording is under that file in `docs/CODE_NOTES_*.md` and its sentinel (if any) is `TAG=path#Symbol` in `build/sentinels.txt`; the route given is the closest spec section, or just the spec governing that file. Treat the missing prose as a documentation gap, not as permission.
 `Mechanical Sentinels vs Spec Anchors`: Engineering tags in `build/sentinels.txt` are compile/verify gates enforced by `build/FvsVerify`. Tags listed below without a `build/sentinels.txt` line serve as specification section anchors and architectural invariant markers.
 
 ---
@@ -21,7 +21,8 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
 | File / tag | Spec |
 | :--- | :--- |
 | `AVREG_01` · `tests/run-av-tests.cmd` · `tests/FreeVideoStudio.AvRegression.Tests/` (`PlayerRig`, `PlaybackProbe`, `ExportRig`, `Verify`, `MergerRig`, `MainEdit`, `TestMedia`, `Budget`) | `README.md` GOV-AVGATE (§0.3a) |
-| `developer_tools/Pull_Code_files.py`, `tests/DeveloperTools.Tests/test_pull_code_files.py`, `CODEEXPORT_01` | 05 SYS-CODEEXPORT; offline ten-attachment AI export, coverage, secrets, encoding, snapshot/index and preservation |
+| `developer_tools/Find_and_Remove_Comments.cmd`, `developer_tools/CommentRemover/` (`CommentRemover.csproj`, `Runner`, `TextRewriter`, `Languages`, `CommentScanner`, `YamlLanguage`, `ExternalTokenizers`), `docs/CODE_NOTES_*.md`, `NOCOMMENTS_01`, `NOCOMMENTS_02`, `NOCOMMENTS_03`, `NoCSharpFileContainsAComment`, `tests/FreeVideoStudio.App.Tests/FvsCommentsToolTests.cs` | `README.md` GOV-START; 05 SYS-VERIFYTOOL (`TAG=path#Symbol`) |
+| `developer_tools/Pull_Code_files.py`, `tests/DeveloperTools.Tests/test_pull_code_files.py`, `CODEEXPORT_01`, `CODEEXPORT_02` | 05 SYS-CODEEXPORT; offline ten-attachment AI export, coverage, secrets, encoding, snapshot/index and preservation |
 
 Voiceover timing additions (all listed specs govern these files):
 
@@ -84,6 +85,12 @@ Voiceover timing additions (all listed specs govern these files):
   AiDiagnostics.cs                           05 SYS-AISETTINGS (AIDIAGNOSTICS_03)
   AiAudit3Tests.cs                           05 SYS-AISETTINGS §7.7 (AIAUDIT_04)
   AiAudit5Tests.cs                           05 SYS-AIAUDIT5 (AIAUDIT_05)
+  AiAudit6Tests.cs                           05 SYS-AIAUDIT6 (AIAUDIT_06)
+  AiQaAudit7Tests.cs                         05 SYS-AIQA7 (AIQA_07)
+  AiQaAudit8Tests.cs                         05 SYS-AIQA8 (AIQA_08)
+  AiFrameCrop.cs                             05 SYS-AIAUDIT6 (AIKILLCROP_01) | 01 TL-AITRACKING
+  AiUsageReport.cs                           05 SYS-AIAUDIT6 (AIUSAGEREPORT_01)
+  PopupRegionTests.cs                        01 TL-AITRACKING (AIKILLCROP_01) | 05 SYS-AIAUDIT6
   UxAuditTests.cs                            04 §4 UI-SAFEGUARDS | 04 §1 UI-THEME (EXPORTCLOSE_01, CROPSAVEERR_01, SEGROWTHEME_01)
   AiFrameSequenceExtractor.cs                05 SYS-AISETTINGS
   CommentaryService.cs                       05 SYS-AISETTINGS
@@ -118,6 +125,7 @@ Voiceover timing additions (all listed specs govern these files):
 ⚠ ExportCoordinator.cs                       03 08
   ExportTimingTag.cs                         03
   FfmpegDiagnosticCollector.cs               03
+  ConfirmFlyoutGate.cs                       04 UI-SAFEGUARDS (CONFIRMFLYOUT_01)
   FloatingNotice.cs                          04
 ⚠ FluidVolumeSlider.cs                       02 04
   FramePtsProbe.cs                           03
@@ -152,8 +160,15 @@ Voiceover timing additions (all listed specs govern these files):
   WindowsAudioSessionSync.cs                 02
 ⚠ MainWindow.PreviewMix.cs                   01 02
   RenderedMixGate.cs                         02
-⚠ FreezeSoundEffect.cs                       02 03
+⚠ FreezeSoundEffect.cs                       02 AUD-FREEZESFX (FREEZESFX_05) | 03
   FreezeSoundPreview.cs                      02
+  UiStallWatchdog.cs                         05 (UIWATCHDOG_01)
+  BlockingCallTracker.cs                     05 (UIWATCHDOG_01) | 02 AUD-IPCSTATE
+  UiThreadBlockingTests.cs                   02 AUD-IPCSTATE (UIBLOCK_01) | 05
+  FreezeSoundParityTests.cs                  02 AUD-FREEZESFX (FREEZEPARITY_01)
+  MainWindow.FreezeSound.cs                  02 AUD-FREEZESFX (FREEZEPARITY_01)
+  MusicWizardWindow.FreezeSound.cs           02 AUD-FREEZESFX (FREEZEPARITY_02)
+  FreezeSoundPreviewSliceTests.cs            02 AUD-FREEZESFX (FREEZEPARITY_02)
 ⚠ VoiceOverWindow.PreviewProtection.cs       01 02
 ⚠ PreviewFidelity.cs                         03 04
   PreviewFidelityBadge.cs                    04
@@ -195,6 +210,10 @@ Voiceover timing additions (all listed specs govern these files):
   AiViralPostTests.cs                        04 UI-MERGER-MULTISELECT | 05 SYS-AISETTINGS
   AiEliminationTrackerService.cs             01 TL-AITRACKING (KILLGATE_01) | 05 SYS-AISETTINGS
   AiKeyHealth.cs                             05 §7.7 SYS-AIAUDIT4 (AIKEYHEALTH_01)
+  AiAccountFix.cs                            05 §7.7 SYS-AISETTINGS, 04 UI-AIEASE (AIFIXFLOW_01)
+  AiStatusLine.cs                            05 §7.7 SYS-AISETTINGS, 04 UI-AIEASE (AISTATUSLINE_01)
+  AiKeyStartupCheck.cs                       05 §7.7 SYS-AISETTINGS (AIKEYSTARTUP_01)
+  AiThinkingCalibration.cs                   05 §7.7 SYS-AISETTINGS (AITHINKCAL_01)
   ChatGptAuth.cs                             05 §7.7 SYS-AIAUDIT4 (CHATGPTSIGNIN_01) | 05 SYS-STORAGE-TABLE
   ChatGptPlanTransport.cs                    05 §7.7 SYS-AIAUDIT4 (CHATGPTPLAN_01)
   ChatGptSignInTests.cs                      05 §7.7 SYS-AIAUDIT4
@@ -266,6 +285,10 @@ Voiceover timing additions (all listed specs govern these files):
   SettingsWindow.Behavior.cs                 04 UI-SETTINGS-ABOUT (SETCHIPS_01, SETREVEAL_01, FILEBACKUP_01)
   SettingsWindow.Save.cs                     04 UI-SETTINGS-ABOUT; 05 SETTX_01
   FreezeSoundEffectTests.cs                  02 AUD-FREEZESFX
+  Church_Bell.wav, Cinematic_Dramatic_Slow-Down.wav      02 AUD-FREEZESFX (FREEZESFX_05)
+  VideoLoudnessCache.cs                      02 AUD-FREEZESFX (FREEZELEVEL_01)
+  S44_S45_FreezeSoundAndMusicDipTests.cs     README GOV-AVGATE | 02 AUD-FREEZESFX
+  SpeedEditorSmokeApp.cs                     README GOV-AVGATE | 02 AUD-PREVIEWSYNC (PREVIEWSPEED_02)
   SettingsWindow.Help.cs                     04 UI-SETTINGS-ABOUT (SETHELP_01)
   SettingsMusicFolderTests.cs                04 UI-SETTINGS-ABOUT | 05 SYS-IPCLIFETIME
   SettingsWindow.Output.cs                   04 UI-SETTINGS-ABOUT | 03 FFM-OUTNAME
@@ -298,6 +321,14 @@ Voiceover timing additions (all listed specs govern these files):
   VoiceOverLevelTests.cs                     02 AUD-VOICEOVER
   VoiceOverGainUiTests.cs                    02 AUD-VOICEOVER; 04 UI-PROMPTS
   VoiceOverPreviewPlayer.cs                  02
+  MusicBedPreviewPlayer.cs                   02 AUD-PREVIEWSYNC (PREVIEWLAYERS_01)
+  EditorPreviewLayers.cs                     02 AUD-PREVIEWSYNC (PREVIEWLAYERS_01)
+  BedPreviewFollower.cs                      02 AUD-PREVIEWSYNC (MUSICSYNC_03)
+  AudioPlayerClock.cs                        02 AUD-PREVIEWSYNC (MUSICSYNC_03)
+⚠ PreviewSpeedGovernor.cs                    02 AUD-PREVIEWSYNC (PREVIEWSPEED_01) | 01
+⚠ PreviewTimeMap.cs                          02 AUD-PREVIEWSYNC (PREVIEWLAYERS_01) | 01
+  S39_S43_EveryScreenPreviewsEveryLayerTests.cs  README GOV-AVGATE | 02 AUD-PREVIEWSYNC
+  Screens.cs (AvRegression Infrastructure)   README GOV-AVGATE | 02 AUD-PREVIEWSYNC
 ⚠ VoiceOverWindow.axaml.cs                   01 02
 ⚠ VoiceOverWindow.RecordingState.cs          01 02 04 (VOREC_01..03)
   LiveTakeMeter.cs                           02 (VOLIVE_01)
@@ -509,6 +540,13 @@ Voiceover timing additions (all listed specs govern these files):
   FfmpegErrorClassifier.cs                   03 | 08 COMP-FAULTS (Classify / ClassifyException -> ExportFailure)
   FilterGraphBuilder.cs                      03 FFM-ZOOMGRAPH (CasFilterNode, invariant 4) | 02 AUD-MASTERING (SidechainCompressNode.Duck)
   GracefulProcessTerminator.cs               05 SYS-IPCLIFETIME | 08 COMP-CI (shutdown ladder; tests need real Windows processes)
+  App/Infrastructure/BinaryPathProbe.cs      03 FFM-BINPATH; BINPATH_01 (Crop Tool / Voice Over search orders, unresolved divergence)
+  FvsBuild/Cli.cs                            09 DIST-RELEASEGATE
+  Core/Media/RescuedOutputPath.cs            03 FFM-OUTNAME (RESCUE_01)
+  App/Services/EditorRecoveryWriter.cs       05 SYS-RECOVERY; GRANULARPERF_01
+  App/OpenWithLaunch.cs                      08 COMP-ROOT | 05 SYS-AVCLEAN (Open With launch argument; registration is OPENWITHHOME_01)
+  App/Infrastructure/OutputFolderResolver.cs 04 UI-SETTINGS-ABOUT (SETFOLDERONE_01 save folder; ISSUE_04 order: saved folder -> real Downloads -> ask once)
+  App/MusicWizardWindow.Merger.cs            02 AUD-MUSICWIN
 ```
 
 Full paths: see each spec's Code Mini-Map.
@@ -894,7 +932,7 @@ RewindFromTimelineEnd                        01 §8 TL-ENDSTOP
 RotateBackupsUnlocked                        05 §4 SYS-RECOVERY
 RuntimeLog                                   05 (mini-map only)
 SampleRate                                   04 (mini-map only)  [= 4000, WaveformPeaks]
-SaveBoundsSync                               04 (mini-map only) | 05 (mini-map only)
+SaveBoundsSync                               05 §3 SYS-WINSTATE (removed by UIIPC_01; replaced by SaveBoundsOnClose)
 SaveRecoveryState                            02 (mini-map only) | 05 SYS-EDITHOT | 07 §6 UNDO-EQUALITY
 SaveState                                    05 (mini-map only)
 CurrentSchemaVersion                         05 (mini-map only)  [= 14, SettingsManager]
@@ -1282,6 +1320,34 @@ MERGERMUSIC_01                               02 §6 AUD-DIALOGS | 04 §17 UI-MUS
 MERGERMUSIC_02                               04 §17 UI-MUSICWIZARD
 MusicWizardViewModel                         04 §17 UI-MUSICWIZARD
 PreviewAudioSync                             02 §8 AUD-PREVIEWSYNC
+PREVIEWLAYERS_01                             02 §8 AUD-PREVIEWSYNC
+FREEZESFX_05                                 02 §10 AUD-FREEZESFX
+FREEZESFX_04                                 02 §10 AUD-FREEZESFX (retired: synthesised sound)
+FREEZESFX_03                                 02 §10 AUD-FREEZESFX (retired: SoundExpr deleted)
+FreezeSound                                  02 §10 AUD-FREEZESFX
+FREEZELEVEL_01                               02 §10 AUD-FREEZESFX
+UIBLOCK_01                                   02 §2a AUD-IPCSTATE
+UIBLOCK_02                                   05 (UI stall watchdog)
+FREEZEPARITY_01                              02 §10 AUD-FREEZESFX
+FREEZEPARITY_02                              02 §10 AUD-FREEZESFX
+PreviewSlice                                 02 §10 AUD-FREEZESFX
+ClipBodyOutputEndSec                         02 §10 AUD-FREEZESFX
+UIWATCHDOG_01                                05 (UI stall watchdog)
+ReadPropertyAsync                            02 §2a AUD-IPCSTATE
+AIHINT_02                                    04 (start-screen AI entry points)
+VideoLoudnessCache                           02 §10 AUD-FREEZESFX
+GainDbFor                                    02 §10 AUD-FREEZESFX
+FreezeSoundCacheDirectory                    02 §10 AUD-FREEZESFX | 05 SYS-STORAGE-TABLE
+FREEZEMUSIC_01                               02 §10 AUD-FREEZESFX
+MusicDipChains                               02 §10 AUD-FREEZESFX
+PREVIEWSPEED_01                              02 §8 AUD-PREVIEWSYNC
+PREVIEWSPEED_02                              02 §8 AUD-PREVIEWSYNC
+MUSICSYNC_03                                 02 §8 AUD-PREVIEWSYNC
+EditorPreviewLayers                          02 §8 AUD-PREVIEWSYNC
+MusicBedPreviewPlayer                        02 §8 AUD-PREVIEWSYNC
+BedPreviewFollower                           02 §8 AUD-PREVIEWSYNC
+PreviewSpeedGovernor                         02 §8 AUD-PREVIEWSYNC
+AudioPlayerClock                             02 §8 AUD-PREVIEWSYNC
 PreviewSourceToOutputSeconds                 02 §8 AUD-PREVIEWSYNC
 COLOR_01                                     03 §11 FFM-COLOR
 ExportColorPolicy                            03 §11 FFM-COLOR
@@ -1466,6 +1532,15 @@ SETLASTTAB_02                                04 §11 UI-SETTINGS-ABOUT
 SETAIROWS_01                                 04 §11 UI-SETTINGS-ABOUT  [retired → SETAIONE_01]
 SETGAME_02                                   04 §11 UI-SETTINGS-ABOUT
 SETREVEAL_01                                 04 §11 UI-SETTINGS-ABOUT
+KEYLABEL_01                                  04 §11 UI-SETTINGS-ABOUT | 04 UI-AIEASE
+NEWVIDEOGUARD_01                             06 PROJ | 04 UI-SAFEGUARDS
+DONECLEAN_01                                 05 SYS-RECOVERY | 06 PROJ | 04 UI-SAFEGUARDS
+RECOVERYFULL_01                              05 SYS-RECOVERY
+NOTICEREAD_01                                04 UI-COACH
+OVERLAYTEXT_01                               04 UI-THEME
+CONFIRMFLYOUT_01                             04 UI-SAFEGUARDS
+MICPLAIN_01                                  04 UI-SAFEGUARDS
+HANDOFFFAIL_01                               04 UI-SAFEGUARDS
 SETHELP_01                                   04 §11 UI-SETTINGS-ABOUT
 SETCHIPS_01                                  04 §11 UI-SETTINGS-ABOUT
 SETSAFETY_01                                 04 §11 UI-SETTINGS-ABOUT  [retired → SETSAFEONE_01]
@@ -1489,7 +1564,7 @@ SettingsViewModel                            04 §11 UI-SETTINGS-ABOUT
 CopySection                                  04 §11 UI-SETTINGS-ABOUT
 SETDEFAULTS_01                               04 §11 UI-SETTINGS-ABOUT | 03 FFM-QUALITY
 SETCONFIRM_01                                04 §4 UI-SAFEGUARDS
-FILEDELETE_01                                04 §4 UI-SAFEGUARDS
+FILEDELETE_01                                04 §4 UI-SAFEGUARDS  [retired]
 SETMERGERDIR_01                              04 §11 UI-SETTINGS-ABOUT
 DuckingStrength                              02 §3 AUD-SIDECHAIN
 CarvingStrength                              02 §3 AUD-SIDECHAIN
@@ -1680,6 +1755,15 @@ AIMUSICDEADLINE_01                           04 UI-MUSICWIZARD
 AIREWRITEKILLS_01                            04 UI-MERGER-KILLS
 MUSICREMOVEUNDO_01                           07 UNDO-RULES (UNDO_20)
 AIKEYHEALTH_01                               05 §7.7 SYS-AIAUDIT4 (rejected keys blocked)
+AIFIXFLOW_01                                 05 §7.7 SYS-AISETTINGS / 04 UI-AIEASE (broken key = no key; account errors open the fix)
+AINOCHARGE_01                                05 §7.7 SYS-AISETTINGS (refused request: nothing was charged)
+AISTATUSLINE_01                              04 UI-AIEASE (Settings AI status line + Test)
+AIKEYSTARTUP_01                              05 §7.7 SYS-AISETTINGS (startup key check)
+AIFIXREASON_01                               05 §7.7 SYS-AISETTINGS (country / model / daily limit get their own fix)
+AIDAILYLIMIT_01                              05 §7.7 SYS-AISETTINGS (Google free daily limit: wait until reset)
+AIPRICEAGE_01                                05 §7.7 SYS-AISETTINGS (old price table flagged)
+AITHINKCAL_01                                05 §7.7 SYS-AISETTINGS (thinking allowance measured from real requests)
+LOCALAIPACK_02                               09 DIST-LOCALAIPACK (one-command pack build + verified publish)
 AIGEMINIMODELS_02                            05 §7.7 SYS-AIAUDIT4 (Google model list and prices)
 AIELIMFAST_01                                05 §7.7 SYS-AIAUDIT4 (faster Kill Tracker)
 AIELIMASK_01                                 05 §7.7 SYS-AIAUDIT4 (ask before a dear scan)
@@ -1713,6 +1797,214 @@ AIMERGEKILLS_01                              04 §13c UI-MERGER-KILLS
 AIPROGRESS_02                                05 §7.7 SYS-AIAUDIT4 | 04 UI-AIZOOM
 AIPARITY_02                                  03 FFM-ZOOMGRAPH | 01 TL-AITRACKING
 AICOMMENTARY_REMEMBER_01                     04 UI-AICOMMENTARY
+VOAPPLY_02                                   05 SYS-WINSTATE (MPVSHUTDOWN_01 phases B1/B2) | 02 AUD-VOICEOVER
+AISPEEDMAP_01                                01 TL-OUTPUTTIMELINE (DescribeSourceRange / PlaybackSpan)
+BINPATH_01                                   03 FFM-BINPATH (unresolved search-order divergence)
+
+Code-only tags (were in src/ or build/ comments, in no spec text; since NOCOMMENTS_02 their text is in docs/CODE_NOTES_*.md; route = spec(s) whose text names the file; 'unrouted' = no spec names it):
+AIUSAGE_03                                   [code-only: App/Services/AiCostEstimator.cs] 04 05
+AIZOOMUX_01                                  [code-only: App/Controls/ConfirmDialogWindow.axaml.cs] 04
+ALWAYSLIVE_01                                [code-only: App/CropToolWindow.axaml] 04 08
+ANCHOR_01                                    [code-only: App/Controls/FloatingNotice.cs +1] 04
+ATOMICSTATE_01                               [code-only: App/Infrastructure/GranularEditorVisuals.cs +3] unrouted
+AUDIOCHK_01                                  [code-only: Core/Media/AudioFilterChain.cs] 02
+AUDIO_01                                     [code-only: App/UiSoundEffect.cs +2] 02
+AUDIO_02                                     [code-only: App/UiSoundEffect.cs] 02
+AUDIO_03                                     [code-only: App/UiSoundEffect.cs] 02
+AUDIO_04                                     [code-only: App/UiSoundRouter.cs] unrouted
+AUDIO_05                                     [code-only: App/UiSoundEffect.cs] 02
+AUDIO_06                                     [code-only: App/Controls/SettingsWindow.axaml +2] 04 05
+AUDIO_07                                     [code-only: App/UiSoundRouter.cs] unrouted
+AUDIO_08                                     [code-only: App/FreeVideoStudio.App.csproj +1] 05 06 09
+AUDIO_09                                     [code-only: App/Infrastructure/SettingsManager.cs +3] 05
+AUDIO_10                                     [code-only: App/UiSoundRouter.cs] unrouted
+AUDIO_11                                     [code-only: App/UiSoundRouter.cs] unrouted
+AUDIO_12                                     [code-only: App/UiSoundEffect.cs] 02
+AUDIO_13                                     [code-only: App/UiSoundEffect.cs] 02
+AUDIO_14                                     [code-only: App/UiSoundEffect.cs] 02
+AUTOPREVIEW_01                               [code-only: App/VideoMergerWindow.MusicPreview.cs +2] 01 02 03 04 05 06 08
+BANDCONTRAST_01                              [code-only: App/CropToolWindow.axaml.cs +1] 08
+BEDSEG_01                                    [code-only: Core/Media/AudioLoudnessProbe.cs] 02
+BOUNDS_01                                    [code-only: App/WindowBoundsHelper.cs] 04 05
+BTNDEPTH_01                                  [code-only: App/AvaloniaApp.axaml +1] 02 04 05 08
+BTNHUE_01                                    [code-only: App/AvaloniaApp.axaml] 02 04 05 08
+CANCEL_01                                    [code-only: App/Infrastructure/VoiceOverAudioTools.cs] unrouted
+CAPTIONWIPE_01                               [code-only: App/Controls/SettingsWindow.axaml +2] 04 05
+COLORMATH_01                                 [code-only: App/Infrastructure/ColorMath.cs] unrouted
+CONFIGVAL_01                                 [code-only: Core/Media/HudConfig.cs] 01
+CROPCHK_01                                   [code-only: Core/Media/HudConfig.cs] 01
+CROPGEOM_01                                  [code-only: App/Infrastructure/CropGeometry.cs] unrouted
+CUTS_03                                      [code-only: App/MusicWizardWindow.axaml.cs] 01 02
+DEDUPE_02                                    [code-only: Core/Media/EncoderManager.cs] 03
+DETACH_01                                    [code-only: App/GranularSpeedEditorWindow.axaml +7] 01 04 05 07 08
+DIALOG_02                                    [code-only: App/Controls/ConfirmDialogWindow.axaml.cs +1] 04
+DOWNLOAD_01                                  [code-only: App/MemeCatalog.cs +1] 03
+DRAGFREE_01                                  [code-only: App/CropToolWindow.axaml.cs] 08
+DRIFT_01                                     [code-only: Core/Media/CoordinateMath.cs] 01
+DUCKNAME_01                                  [code-only: App/MusicWizardWindow.axaml] 01 02 04
+EDIT3_01                                     [code-only: App/Controls/ConfirmDialogWindow.axaml.cs +3] 04
+EDIT3_02                                     [code-only: App/MainWindow.axaml.cs] 01 02 04 08
+EMPTYSAVE_01                                 [code-only: App/CropToolWindow.axaml.cs +1] 08
+FFMPEGSTOP_01                                [code-only: Core/Infrastructure/CooperativeShutdownGate.cs +3] 05
+FOCUS_01                                     [code-only: App/GranularSpeedEditorWindow.axaml.cs +1] 01 04 05 07 08
+FREEZEDIAG_02                                [code-only: App/GranularSpeedEditorWindow.axaml.cs] 01 04 05 07 08
+FREEZEDIAG_03                                [code-only: App/MpvVideoView.cs] 04 05
+FREEZEDIAG_04                                [code-only: App/MpvVideoView.cs] 04 05
+FREEZEDIAG_05                                [code-only: App/GranularSpeedEditorWindow.axaml.cs] 01 04 05 07 08
+FREEZE_CLEAR_01                              [code-only: App/GranularSpeedEditorWindow.axaml.cs +1] 01 04 05 07 08
+GRAB_01                                      [code-only: App/GranularSpeedEditorWindow.axaml.cs] 01 04 05 07 08
+GRANVIS_01                                   [code-only: App/Infrastructure/GranularEditorVisuals.cs] unrouted
+GUIDE_01                                     [code-only: App/Controls/CoachOverlay.cs +2] 04
+HITBOX_01                                    [code-only: App/GranularSpeedEditorWindow.axaml.cs] 01 04 05 07 08
+HITBOX_02                                    [code-only: App/GranularSpeedEditorWindow.axaml.cs +1] 01 04 05 07 08
+IDEA_01                                      [code-only: App/MainWindow.axaml] 01 02 04 08
+IDEA_02                                      [code-only: App/MainWindow.axaml] 01 02 04 08
+IDEA_03                                      [code-only: App/MainWindow.axaml] 01 02 04 08
+IDEA_04                                      [code-only: App/MainWindow.axaml] 01 02 04 08
+IDEA_05                                      [code-only: App/MainWindow.axaml] 01 02 04 08
+IDEA_07                                      [code-only: App/MainWindow.axaml] 01 02 04 08
+IDEA_10                                      [code-only: App/MainWindow.axaml] 01 02 04 08
+INSTALL_02                                   [code-only: App/DeploymentLifecycle.cs] 05
+ISSUE_06                                     [code-only: App/AvaloniaApp.axaml +10] 02 04 05 08
+ISSUE_07                                     [code-only: App/CropToolWindow.axaml +5] 04 08
+ISSUE_08                                     [code-only: App/AvaloniaApp.axaml +8] 02 04 05 08
+ISSUE_09                                     [code-only: App/AvaloniaApp.axaml +14] 02 04 05 08
+ISSUE_10                                     [code-only: App/AvaloniaApp.axaml +10] 02 04 05 08
+ISSUE_12                                     [code-only: App/Controls/PhaseOverlayControl.axaml +4] unrouted
+ISSUE_13                                     [code-only: App/AvaloniaApp.axaml +7] 02 04 05 08
+ISSUE_14                                     [code-only: App/AvaloniaApp.axaml +4] 02 04 05 08
+ISSUE_15                                     [code-only: App/AvaloniaApp.axaml +1] 02 04 05 08
+ISSUE_16                                     [code-only: App/AvaloniaApp.axaml] 02 04 05 08
+ISSUE_21                                     [code-only: App/AvaloniaApp.axaml] 02 04 05 08
+ISSUE_23                                     [code-only: App/AvaloniaApp.axaml] 02 04 05 08
+ISSUE_27                                     [code-only: App/AvaloniaApp.axaml] 02 04 05 08
+ISSUE_30                                     [code-only: App/AvaloniaApp.axaml] 02 04 05 08
+ISSUE_34                                     [code-only: App/Controls/TimelineLanesControl.axaml] 01
+ISSUE_35                                     [code-only: App/MainWindow.axaml] 01 02 04 08
+KEYCASE_01                                   [code-only: Core/Editing/CropConfigJson.cs +3] 05
+LANES_02                                     [code-only: App/GranularSpeedEditorWindow.axaml.cs +1] 01 04 05 07 08
+LANES_03                                     [code-only: App/Controls/TimelineLanesControl.axaml +3] 01
+LANES_04                                     [code-only: App/MusicWizardWindow.axaml] 01 02 04
+LAYOUT_02                                    [code-only: App/GranularSpeedEditorWindow.axaml +1] 01 04 05 07 08
+LEAK_01                                      [code-only: App/ThumbnailStripGenerator.cs] 03 04
+LEAK_02                                      [code-only: App/Infrastructure/VoiceOverAudioTools.cs] unrouted
+LEVEL_01                                     [code-only: App/GranularSpeedEditorWindow.axaml.cs] 01 04 05 07 08
+LOOP_01                                      [code-only: App/MainWindow.PreviewAudio.cs +1] 01 02 03 04 05 06 07 08
+MARKER_01                                    [code-only: App/Controls/TimelineLanesControl.axaml +2] 01
+MEMECOMBO_01                                 [code-only: App/MainWindow.axaml.cs] 01 02 04 08
+MEMESCAN_01                                  [code-only: App/Infrastructure/MemeDimensionCache.cs +1] unrouted
+MEMESWAP_01                                  [code-only: App/GranularSpeedEditorWindow.MemeBands.cs +3] 04
+MEME_02                                      [code-only: App/Infrastructure/MemeAssets.cs +4] 03
+MEME_03                                      [code-only: App/Models/ExportPayload.cs +2] 03 05
+MEME_04                                      [code-only: Core/Media/OutputTimeline.cs] 01 06
+MEME_05                                      [code-only: Core/Media/OutputTimeline.cs +1] 01 06
+MEME_08                                      [code-only: App/GranularSpeedEditorWindow.MemeBands.cs +1] 04
+MEME_09                                      [code-only: App/GranularSpeedEditorWindow.axaml.cs +1] 01 04 05 07 08
+MERGERBOTTOM_01                              [code-only: App/AvaloniaApp.axaml +2] 02 04 05 08
+MERGERESTIMATE_01                            [code-only: App/VideoMergerWindow.axaml.cs] 04
+MERGERESTIMATE_02                            [code-only: App/VideoMergerWindow.axaml] 04
+MERGERMAIN_01                                [code-only: App/VideoMergerWindow.axaml] 04
+MERGERQUEUE_01                               [code-only: App/VideoMergerWindow.axaml] 04
+MERGERQUEUE_02                               [code-only: App/VideoMergerWindow.axaml] 04
+MERGERRETURN_01                              [code-only: App/AvaloniaApp.axaml +1] 02 04 05 08
+MERGERROWS_01                                [code-only: App/VideoMergerWindow.axaml] 04
+MINLEN_01                                    [code-only: Core/Editing/GranularEditSession.Segments.cs +1] 01
+MPVQUEUE_01                                  [code-only: Core/Media/MpvCommandQueue.cs +1] unrouted
+MPVSAFETY_01                                 [code-only: Core/Media/MPVSafetyManager.cs] unrouted
+MWDRAW_01                                    [code-only: App/Infrastructure/MusicWizardDraw.cs] unrouted
+NODUPES_02                                   [code-only: App/CropToolWindow.axaml.cs +2] 08
+NOMASK_01                                    [code-only: App/CropToolWindow.axaml.cs +7] 08
+NOMASK_02                                    [code-only: App/CropToolWindow.axaml.cs] 08
+OVERLAYHOST_01                               [code-only: App/Controls/CoachOverlay.cs +2] 04
+PEAKMATH_01                                  [code-only: App/Infrastructure/AudioPeakMath.cs] unrouted
+POPSICLE_01                                  [code-only: App/GranularSpeedEditorWindow.axaml.cs +1] 01 04 05 07 08
+PREVIEW1_02                                  [code-only: App/MusicWizardWindow.axaml.cs] 01 02
+PREVIEWFAULT_01                              [code-only: App/VideoMergerWindow.Preview.cs +1] 01 02 03 04 05 06 08
+PREWARM_01                                   [code-only: App/MainWindow.axaml.cs +1] 01 02 04 08
+PROBE_01                                     [code-only: Core/Media/ProcessWorker.cs] 03
+QUEUEFRAME_01                                [code-only: App/VideoMergerWindow.axaml] 04
+QUEUEID_01                                   [code-only: App/VideoMergerWindow.ClipActions.cs] 04
+QUEUEMENU_01                                 [code-only: App/VideoMergerWindow.axaml +1] 04
+QUEUEOCCURRENCE_01                           [code-only: App/VideoMergerWindow.ClipActions.cs +1] 04
+RECOVERYDOC_02                               [code-only: Core/Project/RecoveryEnvelope.cs] 05 06
+RECOVERYDOC_03                               [code-only: Core/Project/RecoveryEnvelope.cs] 05 06
+RECOVERYDOC_04                               [code-only: App/Services/ProjectRecoveryService.cs] 05
+RECOVERYDOC_06                               [code-only: App/Services/ProjectRecoveryService.cs] 05
+RECOVERYDOC_07                               [code-only: App/Services/ProjectRecoveryService.cs] 05
+RECOVERYDOC_08                               [code-only: App/Services/LegacyRecoveryMigrator.cs] 05 06
+RECOVERYDOC_09                               [code-only: App/Services/ProjectSession.cs] 06 07 08
+RECOVERYDOC_10                               [code-only: App/MainWindow.Restore.cs] 05 06
+RECOVERY_02                                  [code-only: Core/Infrastructure/ApplicationPaths.cs +1] 05
+RECOVERY_04                                  [code-only: App/MainWindow.axaml.cs] 01 02 04 08
+RECOVERY_05                                  [code-only: Core/Infrastructure/RecoveryManager.cs] 02 05
+RESIZEFEEL_01                                [code-only: App/CropToolWindow.axaml.cs +2] 08
+RETURN_01                                    [code-only: App/MainWindow.axaml.cs] 01 02 04 08
+SCHEMALEGACY_01                              [code-only: App/Infrastructure/SettingsManager.cs] 05
+SCISSORS_01                                  [code-only: App/AvaloniaApp.axaml +1] 02 04 05 08
+SILENTRESET_01                               [code-only: Core/Ipc/CropConfigStore.cs] 05
+SLIDER_01                                    [code-only: App/AvaloniaApp.axaml +1] 02 04 05 08
+SLIDER_03                                    [code-only: App/MusicWizardWindow.axaml] 01 02 04
+SLIDER_04                                    [code-only: App/AvaloniaApp.axaml] 02 04 05 08
+SLIDER_05                                    [code-only: App/MusicWizardWindow.axaml] 01 02 04
+SPACING_01                                   [code-only: App/MainWindow.axaml] 01 02 04 08
+SPEEDLABEL_01                                [code-only: App/Infrastructure/SpeedLabel.cs +2] unrouted
+STRIP_03                                     [code-only: App/Services/FilmstripPrewarm.cs +1] 03
+TELEMETRY_01                                 [code-only: App/Controls/HardwareTelemetrySampler.cs +1] 06
+TEXTCLIP_01                                  [code-only: App/AvaloniaApp.axaml +1] 02 04 05 08
+TEXTGEN_01                                   [code-only: Core/Media/TextOverlayGenerator.cs] 03
+THEME_01                                     [code-only: App/Infrastructure/ThemeResources.cs] 04
+THROTTLE_01                                  [code-only: App/Services/FilmstripPrewarm.cs +2] 03
+TIMELINEDRAW_01                              [code-only: App/MainWindow.Canvas.cs +1] 01
+TIME_01                                      [code-only: App/MusicWizardWindow.axaml.cs +2] 01 02
+TIME_02                                      [code-only: App/GranularSpeedEditorWindow.axaml.cs] 01 04 05 07 08
+TONE_01                                      [code-only: App/AvaloniaApp.axaml +1] 02 04 05 08
+TOOLNAV_05                                   [code-only: App/CropToolWindow.Navigation.cs +4] 01 02 04 05 07 08
+TRACKSEARCH_01                               [code-only: App/Infrastructure/TrackSearch.cs] unrouted
+UISTATE_01                                   [code-only: App/Services/InProcessSessionState.cs] 05
+UNDOHINT_01                                  [code-only: App/GranularSpeedEditorWindow.History.cs +1] 04 07
+UNDO_02                                      [code-only: App/GranularSpeedEditorWindow.History.cs +3] 04 07
+UNITS_01                                     [code-only: App/GranularSpeedEditorWindow.axaml.cs] 01 04 05 07 08
+UPGRADE_01                                   [code-only: Core/Infrastructure/LegacyProductIdentity.cs] 09
+UPGRADE_03                                   [code-only: Core/Infrastructure/DirectoryUpgrade.cs] 05
+UPGRADE_06                                   [code-only: Core/Infrastructure/InstallPayload.cs +1] 05 09
+UPGRADE_08                                   [code-only: App/Services/UpgradeRegistration.cs] 05
+UPGRADE_09                                   [code-only: App/Services/UpgradeInstallWorker.cs] 03 05
+UXQA_01                                      [code-only: App/MainWindow.axaml.cs +2] 01 02 04 08
+UXQA_02                                      [code-only: App/GranularSpeedEditorWindow.axaml +1] 01 04 05 07 08
+UXQA_04                                      [code-only: App/VideoMergerWindow.axaml] 04
+VOAPPLY_04                                   [code-only: build/sentinels.txt] 05 06 08
+VOASYNC_01                                   [code-only: App/Services/VoiceCaptureSession.cs +1] 02
+VODIAG_01                                    [code-only: App/Services/VoiceCaptureSession.cs] 02
+VOICE_02                                     [code-only: App/AvaloniaApp.axaml +1] 02 04 05 08
+VOLEVEL_BIND_01                              [code-only: App/ViewModels/VoiceOverGainViewModel.cs] 02 04 08
+VOMON_01                                     [code-only: App/Services/VoiceCaptureSession.cs +2] 02
+VOPROT_02                                    [code-only: App/Infrastructure/SettingsManager.cs +1] 05
+VOROW_01                                     [code-only: App/VoiceOverWindow.axaml +1] 01 02
+VOTAKE_01                                    [code-only: App/Infrastructure/VoiceOverAudioTools.cs +2] unrouted
+VOTL_01                                      [code-only: App/Infrastructure/VoiceOverAudioTools.cs +2] unrouted
+VOTOOLS_01                                   [code-only: App/Infrastructure/VoiceOverAudioTools.cs] unrouted
+WHEELDRAG_01                                 [code-only: App/CropToolWindow.axaml.cs] 08
+WHEEL_01                                     [code-only: App/Controls/SpinningWheelSlider.cs] 04
+ZCOLLIDE_01                                  [code-only: App/CropToolWindow.axaml.cs +1] 08
+ZEROSCALE_01                                 [code-only: Core/Media/HudConfig.cs] 01
+ZOOMKEEP_01                                  [code-only: App/CropToolWindow.axaml.cs] 08
+ZOOMLABEL_01                                 [code-only: App/CropToolWindow.axaml] 04 08
+ZOOMLIVE_01                                  [code-only: App/AvaloniaApp.axaml +1] 02 04 05 08
+ZOOMLIVE_02                                  [code-only: App/GranularSpeedEditorWindow.axaml.cs] 01 04 05 07 08
+ZOOMLIVE_03                                  [code-only: App/GranularSpeedEditorWindow.axaml.cs] 01 04 05 07 08
+ZOOMLIVE_04                                  [code-only: App/GranularSpeedEditorWindow.axaml.cs] 01 04 05 07 08
+ZOOMLIVE_05                                  [code-only: App/GranularSpeedEditorWindow.axaml.cs +1] 01 04 05 07 08
+ZOOMLIVE_06                                  [code-only: App/VoiceOverWindow.axaml.cs] 01 02
+ZOOMMAP_01                                   [code-only: App/GranularSpeedEditorWindow.axaml.cs] 01 04 05 07 08
+ZOOMPOP_01                                   [code-only: App/GranularSpeedEditorWindow.axaml.cs] 01 04 05 07 08
+ZOOM_02                                      [code-only: App/GranularSpeedEditorWindow.axaml.cs] 01 04 05 07 08
+ZOOM_03                                      [code-only: App/GranularSpeedEditorWindow.axaml.cs] 01 04 05 07 08
+ZOOM_04                                      [code-only: App/GranularSpeedEditorWindow.axaml +2] 01 04 05 07 08
+ZOOM_05                                      [code-only: App/GranularSpeedEditorWindow.axaml.cs +1] 01 04 05 07 08
+ZOOM_06                                      [code-only: App/GranularSpeedEditorWindow.axaml.cs] 01 04 05 07 08
+ZOOM_07                                      [code-only: App/GranularSpeedEditorWindow.axaml.cs] 01 04 05 07 08
+ZOOM_09                                      [code-only: App/GranularSpeedEditorWindow.axaml.cs +1] 01 04 05 07 08
+ZTIEBREAK_01                                 [code-only: Core/Editing/CropEditSession.cs] 07
 ```
 
 

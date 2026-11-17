@@ -1,5 +1,4 @@
-﻿
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
@@ -16,71 +15,17 @@ using ShapePath = Avalonia.Controls.Shapes.Path;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>The gesture the ghost cursor performs over a step's target control.</summary>
 public enum CoachGesture
 {
-    /// <summary>Cursor hovers and gently bobs. For "this is where X lives".</summary>
     Point,
-    /// <summary>Cursor sits still while a ring pulses out of it. For "press this".</summary>
     Click,
-    /// <summary>Cursor sweeps left to right across the target. For sliders, timelines, scrubbers.</summary>
     DragHorizontal,
-    /// <summary>Cursor drags diagonally while a dashed rectangle grows behind it. For the zoom box.</summary>
     DrawBox,
-    /// <summary>Cursor drops in from above onto the target. For drag-and-drop targets.</summary>
     DropIn
 }
 
-/// <summary>One step of a screen's walkthrough.</summary>
-/// <param name="Title">Short headline, six words or fewer.</param>
-/// <param name="Body">Plain English. Assume the reader has never edited video before.</param>
-/// <param name="TargetName">
-/// x:Name of the control to spotlight, or null for a full-screen step. A name that does not resolve
-/// is handled gracefully at run time rather than throwing — a walkthrough must never be able to take
-/// the application down.
-/// </param>
-/// <param name="Gesture">Which animation the ghost cursor performs.</param>
 public sealed record CoachStep(string Title, string Body, string? TargetName = null, CoachGesture Gesture = CoachGesture.Point);
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// ISSUE_04 — THE SUITE'S ONE ONBOARDING WALKTHROUGH.
-///
-/// WHY THIS EXISTS. Before it, the entire three-app suite had exactly ONE help surface: a static
-/// card in the Granular Speed Editor behind a small "?" button. Every other screen — the Main App,
-/// the Video Merger, the Crop Tools, the Music Wizard, the Voice Over recorder — handed a brand new
-/// user a dense wall of buttons and nothing but hover tooltips. The repository contains zero
-/// animated assets, and mandate #2 forbids shipping loose files beside the .exe anyway, so a folder
-/// of tutorial GIFs was never an option. This DRAWS the walkthrough instead: vector shapes, one
-/// DispatcherTimer, and the host window's own live controls as the stage. Nothing extra to ship,
-/// nothing to re-record when a button moves, and it follows the real layout at any font scale,
-/// theme or window size.
-///
-/// HOW IT BEHAVES.
-///   * Auto-shows the first `maxAutoShows` times a screen is opened (default 3), counted per screen
-///     in UiStateStore so all three processes agree.
-///   * The counter is spent only when a step is ACTUALLY PAINTED — see _shownAtLeastOneStep. The old
-///     zoom banner incremented its counter before it laid itself out, so a user could burn all three
-///     showings without ever seeing anything. Do not move that increment earlier.
-///   * Replayable forever from each screen's "?" button. It is never a one-time thing.
-///   * SKIP / Escape means "stop interrupting me" and burns the remaining automatic showings.
-///
-/// HARD RULES.
-///   (C1) NEVER let this throw into a caller. Every public entry point and the timer tick are
-///        wrapped. A walkthrough that crashes the editor is far worse than no walkthrough.
-///   (C2) The overlay is fully hit-testable on purpose. It is a guided tour, not a tooltip: a stray
-///        click must not reach the live controls underneath and change the user's project.
-///   (C3) The spotlight is FOUR dim rectangles around the target, not one geometry with a hole cut
-///        in it. Four rectangles cannot produce a degenerate geometry when a target is clipped,
-///        off-screen or zero-sized — which is exactly what happens mid-resize.
-///   (C4) Target rectangles are recomputed on EVERY tick. These windows are resizable, the Settings
-///        font scale changes control sizes, and the detachable preview reflows the layout
-///        underneath. A rect captured once drifts off its control within seconds.
-///   (C5) The host panel is resolved through ResolveHostPanel, NOT `window.Content as Panel`.
-///        CropToolWindow's root Content is a Border, so the naive cast silently disabled the whole
-///        walkthrough on that app.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public static class CoachOverlay
 {
     private const int DefaultMaxAutoShows = 3;
@@ -133,11 +78,6 @@ public static class CoachOverlay
 
     private static string CounterFile(string screenKey) => $"coach_{screenKey}.txt";
 
-
-    /// <summary>
-    /// Registers a screen's walkthrough and runs it if the user has not yet used up their automatic
-    /// showings. Safe to call from a window's Loaded handler on every open.
-    /// </summary>
     public static void Register(Window window, string screenKey, IReadOnlyList<CoachStep> steps, int maxAutoShows = DefaultMaxAutoShows)
     {
         try
@@ -158,7 +98,6 @@ public static class CoachOverlay
         }
     }
 
-    /// <summary>Replays the walkthrough registered for this window, ignoring the auto-show counter.</summary>
     public static void Replay(Window window)
     {
         try
@@ -174,18 +113,6 @@ public static class CoachOverlay
         }
     }
 
-    /// <summary>
-    /// GUIDE_01 — plays an AD-HOC walkthrough once, right now, ignoring the auto-show counter and
-    /// without registering anything.
-    ///
-    /// This is the "you have not selected anything yet" teacher. <see cref="Replay"/> can only
-    /// replay the tour a screen registered at startup; this plays a sequence assembled on the spot
-    /// for the mistake the user just made, then leaves no trace. The counter is deliberately NOT
-    /// touched — a user who keeps pressing a button with nothing selected keeps getting shown how,
-    /// every single time, which is the entire point.
-    ///
-    /// Obeys rule (C1) like every other entry point: it can never throw into its caller.
-    /// </summary>
     public static void PlayOnce(Window window, IReadOnlyList<CoachStep> steps)
     {
         try
@@ -200,7 +127,6 @@ public static class CoachOverlay
         }
     }
 
-    /// <summary>Closes the walkthrough if one is running on this window. Call from OnClosing.</summary>
     public static void Cancel(Window window)
     {
         try { Finish(window, markSeen: false); }
@@ -211,9 +137,6 @@ public static class CoachOverlay
         }
     }
 
-    /// OVERLAYHOST_01 — was a private copy, byte-identical to the one in the sibling overlay
-    /// helper. One implementation now; the private names are kept so no call site changes.
-    /// See <see cref="OverlayHostLayout"/> for why `window.Content as Panel` is not sufficient.
     private static Panel? ResolveHostPanel(Window window) => OverlayHostLayout.ResolveHostPanel(window);
 
     private static void CoverWholeHost(Panel host, Control child) => OverlayHostLayout.CoverWholeHost(host, child);
@@ -608,11 +531,6 @@ public static class CoachOverlay
         s.Card.Margin = new Thickness(Math.Max(10, (ow - cw) / 2), Math.Max(10, (oh - ch) / 2), 0, 0);
     }
 
-    /// <summary>
-    /// Prefers the card's real laid-out bounds and only forces a Measure on the very first frames,
-    /// before layout has run. Calling Measure on every tick with a constraint the layout system did
-    /// not choose invites layout thrash on a 30Hz timer.
-    /// </summary>
     private static (double Width, double Height) CardSize(Session s, double ow, double oh)
     {
         double cw = s.Card.Bounds.Width;

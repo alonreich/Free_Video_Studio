@@ -8,15 +8,8 @@ using FreeVideoStudio.Core.LocalAi;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>Install progress for the Settings card: which file, overall bytes.</summary>
 internal readonly record struct LocalAiInstallProgress(string FileName, int FileIndex, int FileCount, long Done, long Total, string? Problem);
 
-/// <summary>
-/// LOCALAI_01 / LOCALAIPACK_01 (docs/05 SYS-LOCALAI, docs/09 DIST-LOCALAIPACK) — the optional Local AI pack:
-/// status, user-started install (each pinned file downloaded with <see cref="UpdateDownloader"/>: resumable, and
-/// hashed against its pinned SHA-256 before it is kept), removal, and the ONE loaded runtime + tracking model of the
-/// session. The pack is only ever loaded by full path from its own folder; nothing in it is ever started as a process.
-/// </summary>
 internal static class LocalAiPackService
 {
     private static readonly HttpClient Http = CreateHttp();
@@ -36,7 +29,6 @@ internal static class LocalAiPackService
 
     public static bool IsReady => Status().IsReady;
 
-    /// <summary>Downloads every pinned file into a side folder, then swaps it in. A failure leaves the old pack as it was.</summary>
     public static async Task<LocalAiPackStatus> InstallAsync(Action<LocalAiInstallProgress>? progress, CancellationToken ct)
     {
         if (!LocalAiPackManifest.IsPublished)
@@ -70,8 +62,17 @@ internal static class LocalAiPackService
         {
             UnloadModelLocked();
             string old = folder + ".old-" + DateTime.UtcNow.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            if (Directory.Exists(folder)) Directory.Move(folder, old);
-            Directory.Move(staging, folder);
+            bool hadOld = Directory.Exists(folder);
+            if (hadOld) Directory.Move(folder, old);
+            try
+            {
+                Directory.Move(staging, folder);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                RestorePreviousPack(folder, old, hadOld, ex);
+                throw new FreeVideoStudio.App.Infrastructure.UserFacingIOException("The new Local AI files could not be put in place (another program may be using them). Your previous Local AI pack was kept. Try Install again in a minute.", ex);
+            }
             TryDeleteFolder(old);
         }
         finally
@@ -82,7 +83,6 @@ internal static class LocalAiPackService
         return Status();
     }
 
-    /// <summary>Removes the installed pack (and any half-finished download). False when files in use stay until a restart.</summary>
     public static async Task<bool> RemoveAsync()
     {
         await ModelGate.WaitAsync().ConfigureAwait(false);
@@ -102,7 +102,6 @@ internal static class LocalAiPackService
         }
     }
 
-    /// <summary>Runs <paramref name="work"/> with the session's tracking model, loading it on first use (GPU when possible).</summary>
     public static async Task<T> WithTrackerAsync<T>(Func<Sam2BoxTracker, Task<T>> work, Action<string>? log, CancellationToken ct)
     {
         var status = Status();
@@ -119,11 +118,50 @@ internal static class LocalAiPackService
                 s_loadedFolder = status.Folder;
                 log?.Invoke(s_tracker.OnGpu ? "Local tracking model ready on your graphics card." : "Local tracking model ready on the processor (no DirectX 12 graphics card found) — this is slower.");
             }
-            return await work(s_tracker).ConfigureAwait(false);
+            try
+            {
+                return await work(s_tracker).ConfigureAwait(false);
+            }
+            catch (OrtException ex) when (!ct.IsCancellationRequested)
+            {
+                bool wasOnGpu = s_tracker?.OnGpu == true;
+                UnloadModelLocked();
+                if (!wasOnGpu || s_runtime == null) throw;
+                RuntimeLog.Info("LocalAi", $"{OrtRuntime.CpuFallbackTag}: the graphics card failed while tracking ({ex.Message}); trying again on the processor.");
+                log?.Invoke("The graphics card stopped while following the target — trying again on the processor (slower)…");
+                s_tracker = new Sam2BoxTracker(s_runtime, status.Folder, preferGpu: false);
+                s_loadedFolder = status.Folder;
+                try
+                {
+                    return await work(s_tracker).ConfigureAwait(false);
+                }
+                catch (OrtException) when (!ct.IsCancellationRequested)
+                {
+                    UnloadModelLocked();
+                    throw;
+                }
+            }
         }
         finally
         {
             ModelGate.Release();
+        }
+    }
+
+    internal const string SwapTag = "LOCALAISWAP_01";
+
+    internal static void RestorePreviousPack(string folder, string old, bool hadOld, Exception cause)
+    {
+        RuntimeLog.Warn("LocalAi", $"{SwapTag}: the new pack could not be moved in ({cause.GetType().Name}: {cause.Message}); putting the previous pack back.");
+        if (!hadOld || !Directory.Exists(old)) return;
+        try
+        {
+            if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+            Directory.Move(old, folder);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            RuntimeLog.Fail("LocalAi", $"{SwapTag}: the previous pack could not be put back ({ex.GetType().Name}: {ex.Message}); it stays at {old}.");
         }
     }
 

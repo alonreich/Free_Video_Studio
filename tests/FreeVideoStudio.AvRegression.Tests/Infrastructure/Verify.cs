@@ -2,17 +2,10 @@
 
 namespace FreeVideoStudio.AvRegression.Tests;
 
-/// <summary>
-/// The preview-vs-export contract for a Main-screen edit. Each check compares what the export
-/// CONTAINS (decoded markers) with what the preview SHOWS (the app's own timeline model):
-/// gameplay picture, gameplay sound, music (pulses and the continuous bed), full-screen memes,
-/// corner memes, voice-over. The first difference throws one plain sentence with the drift in ms.
-/// </summary>
 internal static class Verify
 {
     private const double Ambiguity = 0.20;
 
-    /// <summary>Picture and gameplay sound: every surviving marker where the preview shows it. Returns the body offset.</summary>
     public static double Gameplay(MainEdit edit, ExportScan scan)
     {
         var expected = edit.ExpectedGameplay();
@@ -25,23 +18,34 @@ internal static class Verify
                                                   && !edit.Cuts.Any(cut => e * 1000 > cut.StartMs + 120 && e * 1000 < cut.EndMs - 120))
                                       .Select(e => c + edit.ExportOut(e)).ToList();
         double bodyStart = c + edit.ExportOut(edit.TrimStartMs / 1000) + 0.05, bodyEnd = c + edit.ExportOut(edit.EndMs / 1000) - 0.05;
+        var freezes = FreezeWindows(edit, c);
         bool Keep(double t) => t >= bodyStart && t <= bodyEnd && !fuzzy.Any(f => Math.Abs(f - t) < Ambiguity) && !InMeme(scan, t);
+        double freezeTail = FreezeSoundEffect.TailSec(FreezeSoundEffect.Selected);
+        bool KeepSound(double t) => Keep(t) && !freezes.Any(w => t > w.Start - 0.03 && t < w.End + freezeTail + 0.03);
 
         var want = expected.Select(e => e.ExportBody).ToList();
         Dump(scan, "gameplay.txt", $"offset {c:0.000}", want.Select(w => w + c), scan.Flashes, scan.GameplayPulses);
         if (!edit.Portrait) Picture(edit, scan, c, bodyStart, bodyEnd);
         Av.Markers("GAMEPLAY PICTURE vs preview", want, scan.Flashes.Where(Keep).ToList(), Budget.ExportSyncSec + Budget.FrameSec, c);
         var flashTimes = want.Select(w => scan.Flashes.OrderBy(f => Math.Abs(f - w - c)).First()).ToList();
-        Av.Markers("GAMEPLAY SOUND vs picture (A/V sync)", flashTimes, scan.GameplayPulses.Where(Keep).ToList(), Budget.ExportSyncSec);
+        Av.Markers("GAMEPLAY SOUND vs picture (A/V sync)", flashTimes.Where(KeepSound).ToList(), scan.GameplayPulses.Where(KeepSound).ToList(), Budget.ExportSyncSec);
         Av.True("export is not shorter than the edit", scan.DurationSec >= bodyEnd - 0.05, $"file {scan.DurationSec:0.000}s, edit needs {bodyEnd:0.000}s");
         return c;
     }
 
-    /// <summary>
-    /// Frame by frame: the source frame each exported frame shows (its barcode) is the one the
-    /// preview shows at that moment. Catches skipped frames (a jump), repeated/stuck frames (a hold
-    /// where the preview moves) and slow picture drift, everywhere — not only at the flashes.
-    /// </summary>
+    public static List<(double Start, double End)> FreezeWindows(MainEdit edit, double c)
+    {
+        var list = new List<(double, double)>();
+        if (edit.FreezeTimeMs < 0 || edit.FreezeDurationS <= 0) return list;
+        var ranges = PreviewTimeMap.Create(edit.TrimStartMs, edit.EndMs, edit.Timeline().BuildExportSpeedSegments(), edit.BaseSpeed, edit.Cuts).FreezeOutputRanges();
+        foreach (var (start, end) in ranges)
+        {
+            double memes = edit.MemesBefore(start, inclusive: true);
+            list.Add((c + start + memes, c + end + memes));
+        }
+        return list;
+    }
+
     private static void Picture(MainEdit edit, ExportScan scan, double c, double bodyStart, double bodyEnd)
     {
         var t = edit.Timeline();
@@ -78,14 +82,11 @@ internal static class Verify
         Av.True("export frames carry readable frame numbers", checkedFrames > 30, $"only {checkedFrames} frames could be checked");
     }
 
-    /// <summary>
-    /// Where the bed's fade-out crosses HALF its steady level (measured in [steadyFrom, steadyTo]):
-    /// the first point after the steady stretch where a 20 ms average stays below half for 50 ms.
-    /// </summary>
-    private static double HalfLevelEnd(double[] env, double steadyFrom, double steadyTo)
+    private static double HalfLevelEnd(double[] env, double steadyFrom, double steadyTo, List<(double Start, double End)>? dips = null)
     {
         int a = Math.Clamp((int)(steadyFrom * 1000), 0, env.Length - 1), b = Math.Clamp((int)(steadyTo * 1000), a + 1, env.Length);
-        var steady = env[a..b].OrderBy(v => v).ToArray();
+        var picked = Enumerable.Range(a, b - a).Where(i => dips == null || !dips.Any(d => i / 1000.0 > d.Start && i / 1000.0 < d.End)).Select(i => env[i]).ToArray();
+        var steady = (picked.Length >= 100 ? picked : env[a..b]).OrderBy(v => v).ToArray();
         double level = steady[steady.Length / 2] * 0.5;
         var smooth = new double[env.Length];
         double acc = 0;
@@ -101,7 +102,6 @@ internal static class Verify
         return seg?.Speed ?? edit.BaseSpeed;
     }
 
-    /// <summary>Side-by-side expected/found lists next to the export, for the human who opens the work folder.</summary>
     private static void Dump(ExportScan scan, string name, string head, IEnumerable<double> expected, IEnumerable<double> found, IEnumerable<double> also)
     {
         static string L(IEnumerable<double> v) => string.Join(" ", v.Select(x => x.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)));
@@ -110,11 +110,6 @@ internal static class Verify
 
     private static bool InMeme(ExportScan scan, double t) => scan.MemePicture.Any(m => t > m.Start - 0.05 && t < m.End + 0.05);
 
-    /// <summary>
-    /// Music: it starts on the START note, stops on the END note, keeps the song in step with the
-    /// gameplay the preview pairs it with, pauses under full-screen memes (unless "keep music during
-    /// memes" is on, then it runs on unbroken), and never plays past its END note.
-    /// </summary>
     public static void Music(MainEdit edit, ExportScan scan, double c)
     {
         var music = edit.Music ?? throw new InvalidOperationException("no music in this edit");
@@ -144,7 +139,9 @@ internal static class Verify
         bool tailThroughPad = edit.Fades && payload.MusicTailFadeOut && endSrc >= edit.EndMs / 1000 - 0.05;
         double wantEnd = tailThroughPad ? scan.DurationSec : expectedSpans[^1].End;
         double fade = payload.MusicTailFadeOut ? Math.Min(1.5, (expectedSpans[^1].End - expectedSpans[^1].Start) / 2) : 0;
-        double halfAt = HalfLevelEnd(scan.BedEnvelope, wantEnd - fade - 1.2, wantEnd - fade - 0.1);
+        double dipAfter = Math.Max(FreezeSoundEffect.DipOutSec, FreezeSoundEffect.TailSec(FreezeSoundEffect.Selected));
+        var freezeDips = FreezeWindows(edit, c).Select(w => (w.Start - FreezeSoundEffect.DipLeadSec, w.End + dipAfter)).ToList();
+        double halfAt = HalfLevelEnd(scan.BedEnvelope, wantEnd - fade - 1.2, wantEnd - fade - 0.1, freezeDips);
         double endErr = halfAt - (wantEnd - fade / 2), endBudget = tailThroughPad ? 0.25 : Budget.MusicEndSec;
         if (Math.Abs(startErr) > 0.08 || double.IsNaN(endErr) || Math.Abs(endErr) > endBudget)
             throw new AvDefect($"MUSIC DRIFT vs the music notes: starts {startErr * 1000:+0;-0}ms (budget ±80ms), ends {endErr * 1000:+0;-0}ms (budget ±{endBudget * 1000:0}ms) — music.txt in {ExportRig.Rel(scan.Work)}");
@@ -170,12 +167,14 @@ internal static class Verify
                 double t = Placed(u);
                 if (t < checkFrom || t > checkTo || overlaps.Any(o => u > o.From && u < o.To)) continue;
                 if (!keep && memesInside.Any(x => Math.Abs(t - x.Start) < 0.1)) continue;
+                if (freezeDips.Any(f => t > f.Item1 && t < f.Item2)) continue;
                 want.Add(t);
             }
         }
         bool Skip(double t) => t < checkFrom || t > checkTo
                                || overlaps.Any(o => t > Placed(o.From) && t < Placed(o.To))
-                               || (!keep && memesInside.Any(x => Math.Abs(t - x.Start) < 0.1));
+                               || (!keep && memesInside.Any(x => Math.Abs(t - x.Start) < 0.1))
+                               || freezeDips.Any(f => t > f.Item1 && t < f.Item2);
         var got = scan.MusicPulses.Where(t => !Skip(t)).ToList();
         Dump(scan, "music.txt", $"offset {c:0.000} start {startOut:0.000} end {endOut:0.000} bed " + string.Join(" ", scan.MusicBed.Select(b => $"{b.Start:0.000}-{b.End:0.000}")), want, scan.MusicPulses, Array.Empty<double>());
         Av.Markers("MUSIC BEATS vs the gameplay the preview pairs them with", want, got, Budget.ExportSyncSec);
@@ -183,7 +182,6 @@ internal static class Verify
         if (late.Count > 0) throw new AvDefect($"MUSIC PLAYS PAST ITS END NOTE: {late.Count} beat(s) after it, the last {late[^1] - endOut:0.000}s late");
     }
 
-    /// <summary>Full-screen memes: shown and heard as one block, exactly where the preview cuts away.</summary>
     public static void InlineMemes(MainEdit edit, ExportScan scan, double c)
     {
         MemeSound(edit, scan, c);
@@ -204,7 +202,6 @@ internal static class Verify
             $"{MemePlacement.InlineOnly(edit.Memes).Count} placed, {scan.MemePicture.Count} found: " + string.Join(", ", scan.MemePicture.Select(s => $"{s.Start:0.00}-{s.End:0.00}")));
     }
 
-    /// <summary>Corner memes: over the gameplay from their moment for their length, adding no time.</summary>
     public static void CornerMemes(MainEdit edit, ExportScan scan, double c)
     {
         MemeSound(edit, scan, c);
@@ -273,7 +270,6 @@ internal static class Verify
         }
     }
 
-    /// <summary>Voice-over pulses (recorded against the preview's output clock) land on the picture they were spoken over.</summary>
     public static void Voice(MainEdit edit, ExportScan scan, double c, IReadOnlyList<double> spokenAtPreviewOut)
     {
         var want = spokenAtPreviewOut.Select(u => c + u + edit.MemesBefore(u)).ToList();

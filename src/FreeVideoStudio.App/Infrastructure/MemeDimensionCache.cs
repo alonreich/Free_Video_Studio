@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json.Nodes;
@@ -7,60 +6,11 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// MEMESCAN_01 — remembers the probed pixel dimensions of every meme file so the scan does not
-/// launch an ffprobe process for a file it has already measured.
-///
-/// <para>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// WHY THIS EXISTS. <c>MemeCatalog.ScanAsync</c> spawned ONE ffprobe child process per video meme,
-/// strictly serially, with a 15-second timeout each, and it kept nothing. <c>MediaProber</c> does
-/// memoise — but the scan allocated a fresh <c>MediaProber</c> inside the loop body and dropped it
-/// on the next iteration, so that memoisation was dead code on this path. Every repopulate paid the
-/// full cost again from zero.
-///
-/// The scan is re-entered on window <c>Loaded</c> (the cold-start critical path), on every
-/// <c>MemeDirectory.Changed</c>, and immediately after a cloud sync — i.e. at the exact moment the
-/// library has just grown to its largest. At roughly 100 ms per CreateProcess+probe on Windows, a
-/// few hundred memes is a multi-second stall on app start, every start, forever.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </para>
-///
-/// <para>
-/// <b>Invalidation is by (length, last-write-time), never by path alone.</b> A file that was
-/// replaced in place — which is exactly what the cloud delta-sync does when it repairs a truncated
-/// download — must be re-probed or the export would be handed stale geometry.
-/// </para>
-///
-/// <para>
-/// <b>⚠️ A cached non-positive dimension is treated as a MISS, never as a hit.</b>
-/// <c>MemeCatalog</c> excludes any video whose probe returned <c>Width &lt;= 0</c> with the log line
-/// "would crash export". If this cache could satisfy that guard from a stored zero, a file that
-/// failed to probe once would be permanently, silently excluded — or worse, admitted with zero
-/// geometry. Nothing useful is ever cached for a failed probe.
-/// </para>
-///
-/// <para>
-/// Written through <see cref="AtomicJsonFile.WriteObject"/> into the consolidated ProgramData root
-/// (<c>uistate\</c>), per <c>docs/05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-ATOMICWRITE</c> — never
-/// <c>File.WriteAllText</c>, which is what leaves a correctly named but zero-filled file after a
-/// power cut. It is inside the same root the installer's "preserve my settings" switch and the
-/// uninstaller's zero-footprint sweep already know about, so neither needs a new special case.
-/// </para>
-///
-/// <para>Every method is total: a corrupt, locked or missing cache degrades to "no hits" and the
-/// scan simply probes. This is a performance cache and it may never fail an operation.</para>
-/// </summary>
 internal sealed class MemeDimensionCache
 {
     private const int SchemaVersion = 1;
     private const string FileName = "meme_dimensions.json";
 
-    /// <summary>
-    /// MEMESCAN_01 — hard ceiling on retained entries, so an unbounded meme library cannot grow an
-    /// unbounded cache file. Eviction is deterministic: prune entries whose file is gone, then keep
-    /// the most recently used. A cache miss only ever costs one probe.
-    /// </summary>
     private const int MaxEntries = 4000;
 
     private readonly object _sync = new();
@@ -125,10 +75,6 @@ internal sealed class MemeDimensionCache
         return cache;
     }
 
-    /// <summary>
-    /// True only when this exact file — same path, same length, same last-write-time — was measured
-    /// before AND the stored measurement is usable (both dimensions positive).
-    /// </summary>
     public bool TryGet(string fullPath, long length, long mTimeTicks, out int width, out int height)
     {
         width = 0;
@@ -147,7 +93,6 @@ internal sealed class MemeDimensionCache
         }
     }
 
-    /// <summary>Stores a SUCCESSFUL measurement. A non-positive dimension is silently ignored.</summary>
     public void Put(string fullPath, long length, long mTimeTicks, int width, int height)
     {
         if (width <= 0 || height <= 0) return;
@@ -166,10 +111,6 @@ internal sealed class MemeDimensionCache
         }
     }
 
-    /// <summary>
-    /// Prunes entries whose file no longer exists, applies the <see cref="MaxEntries"/> ceiling by
-    /// least-recently-used, and writes atomically. A no-op when nothing changed.
-    /// </summary>
     public void Save()
     {
         try

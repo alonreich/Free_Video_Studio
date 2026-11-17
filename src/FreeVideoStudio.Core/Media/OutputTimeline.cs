@@ -1,71 +1,11 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// TIME_01 — THE SINGLE SOURCE OF TRUTH FOR "HOW LONG IS THE FINISHED VIDEO, AND WHICH SOURCE
-/// FRAME IS PLAYING AT A GIVEN MOMENT OF IT".
-///
-/// <para>
-/// Before this type existed the same mathematics was written by hand in THREE places:
-/// <list type="bullet">
-///   <item><description><c>GranularSpeedBuilder.CreateTimeMapper</c> — source to output.</description></item>
-///   <item><description><c>GranularSpeedBuilder.Build</c>'s local <c>TimeMapper</c> — source to output, again.</description></item>
-///   <item><description><c>MusicWizardWindow.MapPhase3OutputToSourceRelativeSeconds</c> — output to source.</description></item>
-/// </list>
-/// They drifted, exactly as duplicated maths always does. The Music Wizard's copy treated a freeze
-/// as REPLACING the footage underneath it (<c>cursor = Math.Max(cursor, segEnd)</c>), while the
-/// export treats a freeze as an INSERTION that holds a frame and then carries on playing from the
-/// same spot (<c>sourceCursor = fStart</c>). Measured consequence, with the export as ground truth:
-/// </para>
-/// <code>
-/// scenario                    EXPORT truth   Wizard said       ERROR
-/// no segments                     60.000s      60.000s     +0.000s
-/// slow-mo 10-20s @0.5x            70.000s      70.000s     +0.000s
-/// FREEZE 5-8s (3s)                63.000s      60.000s     -3.000s
-/// FREEZE 1.5s @20s                61.500s      60.000s     -1.500s
-/// two freezes                     63.000s      60.000s     -3.000s
-/// freeze + slow-mo                73.000s      70.000s     -3.000s
-/// base 2x + freeze                33.000s      31.500s     -1.500s
-/// </code>
-/// <para>
-/// The export behaviour is the correct one and is what this type implements: a 1.5 second freeze
-/// makes the finished video 1.5 seconds longer, and nothing is skipped.
-/// </para>
-///
-/// <para>
-/// TIME UNITS AND FRAMES OF REFERENCE — read before touching anything here:
-/// <list type="bullet">
-///   <item><description><b>Absolute source seconds</b> — a position in the ORIGINAL file, including
-///   any trim offset. <see cref="SourceToOutput"/> takes these.</description></item>
-///   <item><description><b>Clip-relative source seconds</b> — measured from the trim-in point, so
-///   the clip always starts at 0. <see cref="OutputToSourceRelative"/> returns these.</description></item>
-///   <item><description><b>Output seconds</b> — a position in the FINISHED video, after speed
-///   changes and freezes have stretched it.</description></item>
-/// </list>
-/// This asymmetry is not a design choice, it is the contract the six existing callers already rely
-/// on, preserved deliberately so this refactor changes no behaviour outside the Music Wizard.
-/// </para>
-///
-/// <para>
-/// Phase 3 of MEME_TIMELINE_PLAN.txt will add meme insertions to this same chunk list. That is the
-/// entire reason the model is shaped around a chunk list rather than a closed-form formula.
-/// </para>
-/// </summary>
 public sealed class OutputTimeline
 {
-    /// <summary>
-    /// One continuous stretch of the finished video.
-    /// <para>
-    /// A normal chunk plays source footage from <see cref="SourceStartSec"/> to
-    /// <see cref="SourceEndSec"/> at <see cref="Speed"/>. A freeze chunk holds the single frame at
-    /// <see cref="SourceStartSec"/> for <see cref="FreezeHoldSec"/> and consumes NO source time —
-    /// which is why its <see cref="SourceEndSec"/> is only a hair past its start.
-    /// </para>
-    /// </summary>
     public readonly record struct Chunk(
         double SourceStartSec,
         double SourceEndSec,
@@ -75,48 +15,25 @@ public sealed class OutputTimeline
         bool FromSegment = false,
         bool IsCut = false)
     {
-        /// <summary>A held frame from the source. Occupies output time, consumes no source time.</summary>
         public bool IsFreeze => Math.Abs(Speed) < 0.001 && InsertionId == null && !IsCut;
 
-        /// <summary>
-        /// MEME_04 — FOREIGN content spliced in (a meme). Like a freeze it occupies output time and
-        /// consumes no source time, but unlike a freeze the picture is NOT from the source file, so
-        /// the preview cannot show it by seeking mpv.
-        /// </summary>
         public bool IsInsertion => InsertionId != null;
 
-        /// <summary>Either kind of block that adds output time without advancing the source.</summary>
         public bool HoldsSource => Math.Abs(Speed) < 0.001 && !IsCut;
 
-        /// <summary>How many seconds of FINISHED video this chunk occupies.</summary>
         public double OutputLengthSec =>
             IsCut ? 0.0 : (HoldsSource ? FreezeHoldSec : (SourceEndSec - SourceStartSec) / Speed);
     }
 
-    /// <summary>
-    /// CUT_01 — a stretch of footage the user deleted from the middle of the clip.
-    /// CLIP-RELATIVE seconds, like <see cref="Insertion.AtSourceSec"/>.
-    /// </summary>
     public readonly record struct Cut(double StartSec, double EndSec)
     {
         public double LengthSec => Math.Max(0, EndSec - StartSec);
     }
 
-    /// <summary>
-    /// CUT_01 — two cuts closer than this are merged into one. Below roughly a third of a second
-    /// the gap between them is not a piece of video anyone meant to keep, and each surviving
-    /// sliver would cost a whole parallel branch in the export graph
-    /// (see GranularSpeedBuilder.HighChunkCountWarnThreshold).
-    /// </summary>
     public const double CutMergeGapSec = 0.30;
 
-    /// <summary>CUT_01 — a cut shorter than this is discarded as a mis-click / sub-frame drag.</summary>
     public const double MinCutLengthSec = 0.04;
 
-    /// <summary>
-    /// MEME_04 — a meme spliced into the middle of the video. <paramref name="AtSourceSec"/> is
-    /// CLIP-RELATIVE and must already be snapped (see <see cref="SnapInsertionPoint"/>).
-    /// </summary>
     public readonly record struct Insertion(double AtSourceSec, double DurationSec, string Id);
 
     private readonly List<Chunk> _chunks;
@@ -124,17 +41,10 @@ public sealed class OutputTimeline
     private readonly double _originSec;
     private readonly List<Cut> _cuts;
 
-    /// <summary>Length of the trimmed source clip, in seconds. Speed and freezes do not affect it.</summary>
     public double TotalSourceSeconds => _totalSourceSec;
 
-    /// <summary>ABSOLUTE source second that clip-relative 0 corresponds to (the trim start).</summary>
     public double OriginSec => _originSec;
 
-    /// <summary>
-    /// AISPEEDMAP_01 — how the ABSOLUTE source range [<paramref name="absStartSec"/>, <paramref name="absEndSec"/>]
-    /// plays in the finished video: every overlapping normal chunk (with its speed), freeze and cut, in
-    /// ABSOLUTE source seconds. AI features read this so their timing is judged as the viewer sees it.
-    /// </summary>
     public IReadOnlyList<PlaybackSpan> DescribeSourceRange(double absStartSec, double absEndSec)
     {
         var spans = new List<PlaybackSpan>();
@@ -156,14 +66,8 @@ public sealed class OutputTimeline
         return spans;
     }
 
-    /// <summary>AISPEEDMAP_01 — one stretch of source and how it plays. <see cref="Speed"/> 0 with
-    /// <see cref="FreezeHoldSec"/> &gt; 0 is a held frame; <see cref="IsCut"/> means it is not in the video.</summary>
     public readonly record struct PlaybackSpan(double AbsStartSec, double AbsEndSec, double Speed, double FreezeHoldSec, bool IsCut);
 
-    /// <summary>
-    /// Length of the FINISHED video in seconds, with every speed change and freeze applied.
-    /// This is the number every ruler in the application should be drawn against.
-    /// </summary>
     public double TotalOutputSeconds { get; }
 
     public IReadOnlyList<Chunk> Chunks => _chunks;
@@ -180,11 +84,6 @@ public sealed class OutputTimeline
         TotalOutputSeconds = Math.Max(0, total);
     }
 
-    /// <summary>
-    /// Builds the timeline. The chunk construction below is a faithful move of the logic that was
-    /// in <c>GranularSpeedBuilder.CreateTimeMapper</c>; it is deliberately NOT "tidied up", because
-    /// its exact ordering and its 0.001 epsilons are what make it agree with the exported graph.
-    /// </summary>
     public static OutputTimeline Create(
         double totalDurationMs,
         IReadOnlyList<SpeedSegment>? segments,
@@ -341,18 +240,6 @@ public sealed class OutputTimeline
         return new OutputTimeline(chunks, totalDurationSec, timelineOriginSec, normalizedCuts);
     }
 
-    /// <summary>
-    /// CUT_01 — clamp, order, merge and de-sliver a raw cut list.
-    ///
-    /// Merging is not cosmetic. Two cuts separated by a 0.1s sliver would leave that sliver as its
-    /// own chunk, which costs a whole parallel branch in the export graph and shows up as a
-    /// one-frame flash nobody wanted. Overlapping cuts must merge for a harder reason: the chunk
-    /// walk inside <see cref="Create"/> assumes holes never overlap, and two overlapping
-    /// holes would emit chunks out of source order and corrupt every mapping built on them.
-    ///
-    /// Public and static so the UI can run the SAME normalisation while the user is still dragging,
-    /// and show them exactly the cuts the export will make.
-    /// </summary>
     public static List<Cut> NormalizeCuts(IReadOnlyList<Cut>? cuts, double totalDurationSec)
     {
         var result = new List<Cut>();
@@ -390,17 +277,12 @@ public sealed class OutputTimeline
         return result;
     }
 
-    /// <summary>Clamps an ABSOLUTE source position into clip-relative seconds.</summary>
     public double ToClipRelative(double absSourceSec)
     {
         double rel = absSourceSec - _originSec;
         return Math.Max(0, Math.Min(rel, _totalSourceSec));
     }
 
-    /// <summary>
-    /// ABSOLUTE source seconds -> FINISHED-VIDEO seconds.
-    /// Byte-for-byte the behaviour of the old <c>CreateTimeMapper</c> lambda.
-    /// </summary>
     public double SourceToOutput(double absSourceSec)
     {
         double target = ToClipRelative(absSourceSec);
@@ -432,28 +314,6 @@ public sealed class OutputTimeline
         return Math.Max(0, mapped);
     }
 
-    /// <summary>
-    /// FINISHED-VIDEO seconds -> CLIP-RELATIVE source seconds. The exact inverse of
-    /// <see cref="SourceToOutput"/> outside freezes.
-    ///
-    /// <para>
-    /// DELIBERATELY LOSSY INSIDE A FREEZE, AND THAT IS CORRECT. While a frame is held, every moment
-    /// of finished video maps to the SAME source instant, so this returns that instant. Callers that
-    /// need to know whether the playhead is sitting inside a held frame must ask
-    /// <see cref="IsHoldingFrameAt"/> rather than trying to detect it from the returned value.
-    /// </para>
-    ///
-    /// <para>
-    /// CUT_01 — AMBIGUOUS AT A JOIN, BY THE SAME LOGIC. One instant of finished video sits at both
-    /// the last frame before a cut and the first frame after it; two source positions map to it and
-    /// the inverse has to pick one. It picks the EARLIER side, matching the freeze convention above.
-    /// That is wrong for a player, which wants to seek and keep rolling forward, so the preview must
-    /// compose the two calls:
-    /// <code>NextSurvivingSource(OutputToSourceRelative(t))</code>
-    /// which resolves a join to the resuming side and can never return deleted footage. Do not
-    /// "fix" the boundary here instead — the freeze and normal-chunk cases share this loop.
-    /// </para>
-    /// </summary>
     public double OutputToSourceRelative(double outputSec)
     {
         double target = Math.Max(0, outputSec);
@@ -475,11 +335,6 @@ public sealed class OutputTimeline
         return _totalSourceSec;
     }
 
-    /// <summary>
-    /// True when the finished video is holding a still frame at this moment. The preview uses this
-    /// to keep its own clock running while mpv sits on one frame, instead of assuming playback
-    /// stalled.
-    /// </summary>
     public bool IsHoldingFrameAt(double outputSec)
     {
         double target = Math.Max(0, outputSec);
@@ -497,11 +352,6 @@ public sealed class OutputTimeline
         return false;
     }
 
-    /// <summary>
-    /// MEME_04 — the Id of the meme playing at this moment of the finished video, or null if the
-    /// gameplay itself is on screen. The preview needs this because a meme is NOT in the source
-    /// file: seeking mpv cannot show it, so the UI must draw a marker instead.
-    /// </summary>
     public string? InsertionAt(double outputSec)
     {
         double target = Math.Max(0, outputSec);
@@ -519,11 +369,6 @@ public sealed class OutputTimeline
         return null;
     }
 
-    /// <summary>
-    /// MEME_04 / D8 — moves a requested insertion point FORWARD to the end of any freeze or speed
-    /// segment it lands inside, so a meme never interrupts one. The UI must draw its marker at the
-    /// returned value, not at the raw click, or the meme lands somewhere the user never saw.
-    /// </summary>
     public double SnapInsertionPoint(double sourceRelSec)
     {
         double at = Math.Clamp(sourceRelSec, 0, _totalSourceSec);
@@ -540,10 +385,6 @@ public sealed class OutputTimeline
         return at;
     }
 
-    /// <summary>
-    /// MEME_04 / D7 — true when a meme already occupies this snapped point. Two memes may not share
-    /// one insertion point; the caller blocks the placement and tells the user.
-    /// </summary>
     public bool HasInsertionAtSource(double snappedSourceRelSec)
     {
         foreach (var ch in _chunks)
@@ -551,19 +392,10 @@ public sealed class OutputTimeline
         return false;
     }
 
-
-    /// <summary>The normalised cuts this timeline was built with, clip-relative and non-overlapping.</summary>
     public IReadOnlyList<Cut> Cuts => _cuts;
 
-    /// <summary>True when this clip has any deleted footage at all. The cheap early-out.</summary>
     public bool HasCuts => _cuts.Count > 0;
 
-    /// <summary>
-    /// CUT_01 — seconds of source footage that actually survive to the finished video.
-    /// <see cref="TotalSourceSeconds"/> deliberately still reports the FULL trimmed clip, because
-    /// every existing caller uses it as the domain of source time; this is the separate question
-    /// "how much of it is left", which is what a duration readout wants.
-    /// </summary>
     public double SurvivingSourceSeconds
     {
         get
@@ -574,14 +406,8 @@ public sealed class OutputTimeline
         }
     }
 
-    /// <summary>Total seconds removed by cuts.</summary>
     public double RemovedSourceSeconds => Math.Max(0, _totalSourceSec - SurvivingSourceSeconds);
 
-    /// <summary>
-    /// True when this CLIP-RELATIVE source moment was deleted. The boundaries are deliberately
-    /// asymmetric — the start belongs to the cut, the end belongs to the surviving footage — so
-    /// that <see cref="NextSurvivingSource"/> is idempotent and cannot loop.
-    /// </summary>
     public bool IsCutAtSource(double sourceRelSec)
     {
         foreach (var c in _cuts)
@@ -589,14 +415,6 @@ public sealed class OutputTimeline
         return false;
     }
 
-    /// <summary>
-    /// CUT_01 — the first surviving source moment at or after <paramref name="sourceRelSec"/>.
-    ///
-    /// This is what the preview seeks to when playback reaches deleted footage: the player never
-    /// decodes a removed frame, it jumps the hole in one seek. Cuts are non-overlapping and ordered
-    /// after normalisation, so one forward pass is enough and the result can never fall inside
-    /// another cut.
-    /// </summary>
     public double NextSurvivingSource(double sourceRelSec)
     {
         double at = Math.Clamp(sourceRelSec, 0, _totalSourceSec);
@@ -609,11 +427,6 @@ public sealed class OutputTimeline
         return at;
     }
 
-    /// <summary>
-    /// CUT_01 — where each cut sits in FINISHED-VIDEO seconds, for drawing the scissors markers.
-    /// Every cut collapses to a single instant on the output ruler, which is precisely why a cut
-    /// must be drawn as a fixed-width marker and can never be a drag-resizable block.
-    /// </summary>
     public List<double> CutMarkerOutputPositions()
     {
         var marks = new List<double>();
@@ -621,28 +434,8 @@ public sealed class OutputTimeline
         return marks;
     }
 
-    /// <summary>
-    /// MEME_05 — where each meme sits on the FINISHED-VIDEO ruler: its id, and the output second it
-    /// starts and ends on.
-    ///
-    /// THE EXACT MIRROR OF <see cref="CutMarkerOutputPositions"/>, and worth stating why. A cut is
-    /// zero output seconds wide, so it can only ever be a fixed-width glyph. An insertion is the
-    /// opposite: it occupies zero SOURCE seconds but real OUTPUT seconds, so on this ruler — and
-    /// only on this ruler — it is a genuine block with a left edge, a right edge and a middle you
-    /// can grab. That asymmetry is the whole reason memes are placed in the Speed Editor (output
-    /// time) while cuts are marked on the Main App (source time): each feature is drawn where it
-    /// actually has a shape.
-    ///
-    /// ⚠️ Do NOT compute these edges as "anchor, anchor + DurationSec" in output time by hand.
-    /// The accumulation below walks every preceding chunk at its own speed, which is the only
-    /// thing that stays correct when a 2x segment sits between the clip start and the meme.
-    /// </summary>
     public List<(string Id, double StartOutputSec, double EndOutputSec)> InsertionOutputRanges() => Ranges(ch => ch.IsInsertion && ch.InsertionId != null, ch => ch.InsertionId!);
 
-    /// <summary>
-    /// FREEZESFX_01 — where each freeze (held frame) plays in the finished body, in output seconds.
-    /// The export dips the music across these windows under the freeze's slow-motion sound.
-    /// </summary>
     public List<(double StartOutputSec, double EndOutputSec)> FreezeOutputRanges() =>
         Ranges(ch => ch.IsFreeze, _ => "").Select(r => (r.StartOutputSec, r.EndOutputSec)).ToList();
 
@@ -666,12 +459,6 @@ public sealed class OutputTimeline
         return ranges;
     }
 
-    /// <summary>
-    /// CUT_01 — how many extra export chunks these cuts cost, for the pre-export RAM warning.
-    /// A cut lands inside a stretch of footage and splits it in two, so it adds ONE branch — half
-    /// what a speed segment costs (which adds itself plus the gap after it). A cut touching the
-    /// very start or end of the clip splits nothing and is free.
-    /// </summary>
     public int ExtraChunkCost()
     {
         int cost = 0;

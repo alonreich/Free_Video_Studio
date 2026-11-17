@@ -1,5 +1,4 @@
-﻿
-using NAudio.Wave;
+﻿using NAudio.Wave;
 using NAudio.Dsp;
 using System;
 using System.IO;
@@ -20,7 +19,6 @@ public class VoiceRecorder : IDisposable
     private int _stopRequested;
     private int _faultPublished;
     public VoiceCaptureBudget? Budget { get; set; }
-    /// <summary>Nonblocking request; the session queues StopRecording on its serialized worker.</summary>
     public event EventHandler? StopRequested;
     private string _outputPath;
     private readonly int _deviceNumber;
@@ -32,48 +30,33 @@ public class VoiceRecorder : IDisposable
     private volatile bool _stopping;
     private ManualResetEventSlim? _recordingStopped;
 
-    /// <summary>How long StopRecording waits for NAudio to hand over its final buffers.</summary>
     private const int StopDrainTimeoutMs = 2000;
 
     private long _bytesCaptured;
     private float _peakSeen;
     private int _buffersSeen;
 
-    /// <summary>PCM bytes successfully written within this take's sample budget.</summary>
     public long BytesCaptured => System.Threading.Interlocked.Read(ref _bytesCaptured);
 
-    /// <summary>Loudest absolute sample seen (0..1). Exactly 0 over a long take means silence.</summary>
     public float PeakSeen => _peakSeen;
 
-    /// <summary>Number of callbacks with successfully accepted PCM. Zero means no audio was saved.</summary>
     public int BuffersSeen => _buffersSeen;
 
-    /// <summary>True while capture is actively running.</summary>
     public bool IsRecording => _isRecording;
 
-    /// <summary>Last fault seen on this recorder instance, if any.</summary>
     public Exception? LastError => _lastError;
 
-    /// <summary>Runtime capture fault (unexpected driver stop or WAV-write failure).</summary>
     public Exception? CaptureError { get; private set; }
     public bool WriteFailed { get; private set; }
 
-    /// <summary>Endpoint stop or disposal failure when closing waveIn.</summary>
     public Exception? ReleaseError { get; private set; }
 
-    /// <summary>File stream flush or close failure in the WAV writer.</summary>
     public Exception? FileFinalizationError { get; private set; }
 
     public event EventHandler<float>? VolumeChanged;
 
-    /// <summary>
-    /// SPECTRUM_01 — the raw PCM of every recorded buffer, in the format the device was opened
-    /// with, for the frequency-spectrum meter. Raised on NAudio's capture thread after the bytes
-    /// were written to the take. ⚠️ Only valid during the event; consume synchronously.
-    /// </summary>
     public event EventHandler<PcmBuffer>? PcmAvailable;
 
-    /// <summary>MICHEALTH_01 / VOWRITE_01 — one terminal hardware, driver or storage fault.</summary>
     public event EventHandler<Exception?>? Stopped;
 
     public VoiceRecorder(string outputPath, int deviceNumber = 0)

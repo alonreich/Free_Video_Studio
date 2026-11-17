@@ -16,33 +16,8 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AIHUD_01 — Google Gemini as an OPTIONAL Magic Wand assistant.
-///
-/// <para><b>What it sends.</b> ONE still: the frozen frame, as a JPEG, plus a text prompt. Never
-/// the video, never a clip, never a path. The prompt asks only for persistent gameplay HUD and
-/// explicitly excludes people, enemies, world objects, held weapons and scenery.</para>
-///
-/// <para><b>What it returns.</b> An <see cref="AiHudDetectionResult"/> whose candidates have passed
-/// <see cref="AiHudResponseParser"/> — normalized 0..1 source-frame boxes. It does not convert to
-/// pixels (that happens exactly once, in <see cref="HudDetectionCoordinator"/>), it does not fuse,
-/// and it holds no UI types.</para>
-///
-/// <para><b>Credentials.</b> The key travels ONLY in the <c>x-goog-api-key</c> request header —
-/// never in the URL, so no URL this class builds, logs or reports is secret-bearing. Every string
-/// that leaves this class (log line, fault detail, result detail) is passed through
-/// <see cref="Redact"/> first. The key is read from the provider at call time and never stored,
-/// cached or serialized.</para>
-///
-/// <para><b>Failure.</b> Never throws for provider trouble — see <see cref="IAiHudDetectionService"/>.
-/// No retry: a Magic Wand user is waiting, and the local answer is already on its way, so a 429 or
-/// a timeout falls straight back rather than holding the button.</para>
-///
-/// <para>AIPROVIDER_ROUTING_01 — routes requests through selected IAiVisionProvider.</para>
-/// </summary>
 public sealed class GeminiHudDetectionService : IAiHudDetectionService
 {
-    /// <summary>D3 — one default model for the whole app: <see cref="GeminiClient.DefaultModel"/>.</summary>
     public const string DefaultModel = GeminiClient.DefaultModel;
     public const string Endpoint = GeminiClient.ModelsEndpoint;
     public const string ApiKeyHeader = GeminiClient.ApiKeyHeader;
@@ -51,15 +26,12 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
     private const string LogArea = "AI-HUD";
     private const string FaultArea = "CROP";
 
-    /// <summary>One process-wide client for production (socket reuse). Per-request timeouts are
-    /// enforced with a linked token, so the client's own timeout is infinite.</summary>
     private static readonly Lazy<HttpClient> SharedClient = new(() =>
     {
         var client = new HttpClient { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("FreeVideoStudio-AiHud/1.0");
         return client;
     });
-
 
     private readonly Func<string?> _apiKeyProvider;
     private readonly Func<string?> _modelProvider;
@@ -75,15 +47,6 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
 
     public const string HudJsonSchema = "{\"type\":\"OBJECT\",\"properties\":{\"candidates\":{\"type\":\"ARRAY\",\"items\":{\"type\":\"OBJECT\",\"properties\":{\"label\":{\"type\":\"STRING\"},\"normalizedX\":{\"type\":\"NUMBER\"},\"normalizedY\":{\"type\":\"NUMBER\"},\"normalizedWidth\":{\"type\":\"NUMBER\"},\"normalizedHeight\":{\"type\":\"NUMBER\"},\"confidence\":{\"type\":\"NUMBER\"}},\"required\":[\"label\",\"normalizedX\",\"normalizedY\",\"normalizedWidth\",\"normalizedHeight\",\"confidence\"]}}},\"required\":[\"candidates\"]}";
 
-    /// <param name="apiKeyProvider">Read at call time; the key is never retained.</param>
-    /// <param name="modelProvider">Read at call time; an unsafe or empty name falls back to <see cref="DefaultModel"/>.</param>
-    /// <param name="faults">Where caught failures go (Recoverable — the coordinator owns the user-facing tier).</param>
-    /// <param name="httpClient">Test seam. Null uses the shared production client.</param>
-    /// <param name="timeout">Per-request ceiling. Null uses <see cref="DefaultTimeout"/>.</param>
-    /// <param name="log">Test seam for log capture. Null writes to <see cref="CoreLogger"/>.</param>
-    /// <param name="cache">Null creates a private bounded cache.</param>
-    /// <param name="vendorProvider">Optional delegate returning the active AiVendor for U3 HUD detection.</param>
-    /// <param name="visionProvider">Optional vision provider override for tests or custom dispatch.</param>
     public GeminiHudDetectionService(
         Func<string?> apiKeyProvider,
         Func<string?> modelProvider,
@@ -116,9 +79,6 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_apiKeyProvider());
 
-    /// <summary>The model name that will actually be used: the configured one if it is a plain
-    /// identifier, otherwise <see cref="DefaultModel"/>. Never lets text into the URL path that
-    /// could change its meaning.</summary>
     public string ResolveModel()
     {
         AiVendor vendor = _vendorProvider?.Invoke() ?? AiVendor.Google;
@@ -211,12 +171,6 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
         }
     }
 
-    /// <summary>
-    /// Logs (redacted) and returns a non-success result. Caught exceptions are reported at the
-    /// catch site as Recoverable — WITHOUT the raw exception object, whose message and stack are
-    /// not ours to vouch for — and the coordinator raises the one user-facing Degraded notice with
-    /// the local results already in hand.
-    /// </summary>
     private AiHudDetectionResult Fail(AiHudOutcome outcome, string? detail, string apiKey)
     {
         string safe = Redact(detail, apiKey);
@@ -224,12 +178,7 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
         return AiHudDetectionResult.Failed(outcome, safe);
     }
 
-    /// <summary>
-    /// Removes the key (and anything shaped like a <c>key=</c> query value) from text bound for a
-    /// log, a fault or a result. Belt and braces: the key is never put in a URL by this class.
-    /// </summary>
     public static string Redact(string? text, string? apiKey) => GeminiClient.Redact(text, apiKey);
-
 
     public const string Prompt =
         "You are looking at ONE still frame from a video game recording. Find the PERSISTENT gameplay "
@@ -248,7 +197,6 @@ public sealed class GeminiHudDetectionService : IAiHudDetectionService
       + "\"minimap\", \"health bar\", \"ammo\", \"weapon slots\", \"team status\". confidence is 0..1. "
       + "Return at most 10 candidates. If there is no HUD, return {\"candidates\":[]}.";
 
-    /// <summary>Concatenates the text parts of the first candidate of a generateContent response.</summary>
     internal static bool TryExtractModelText(string? responseJson, out string text, out string? error)
         => GeminiClient.TryExtractModelText(responseJson, out text, out error);
 

@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,10 +11,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// MPVSHUTDOWN_01 / VOAPPLY_02 / VOAPPLY_04 / VOAPPLY_05 — preview teardown and shutdown coordinator tests.
-/// Verifies idempotency, quiescence, gate handling, off-dispatcher execution, and handle abandonment protection.
-/// </summary>
 public sealed class PreviewShutdownTests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);

@@ -6,13 +6,6 @@ using FreeVideoStudio.Core.Ipc;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// IPCOWNER_01 — entry point of this test assembly, used ONLY to run genuinely separate client
-/// processes for <see cref="IpcTests"/>: <c>dotnet FreeVideoStudio.Core.Tests.dll --ipc-child update
-/// &lt;root&gt; &lt;key&gt; &lt;count&gt; &lt;budgetMs&gt;</c>. The test runner never calls Main, so tests are unaffected
-/// (GenerateProgramFile=false replaces the Test SDK's empty generated Main).
-/// Exit codes: 0 every commit returned true, 2 a commit returned false, 64 bad arguments.
-/// </summary>
 public static class IpcChildProcess
 {
     public static async Task<int> Main(string[] args)

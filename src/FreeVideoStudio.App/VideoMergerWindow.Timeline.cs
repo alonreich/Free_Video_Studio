@@ -6,24 +6,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// SCRAPER_02 — ONE LONG TIMELINE ACROSS EVERY CLIP.
-///
-/// Once the queue is analysed, the merger's timeline IS the merged video: the slider, the clock,
-/// the ±10 s buttons, the arrow keys and the scrub surface all speak merged seconds. The timeline
-/// zooms out as clips are added, because it always spans the whole merge. Each clip boundary gets a
-/// divider and a clip number. A clip whose thumbnail intro is cut is marked with ✂.
-///
-/// Playback crosses clips by itself: MERGEPREVIEW_EDL_01 (Video-Merger-Migration.md P4.2) loads the
-/// whole merge into mpv as ONE inline EDL of every clip's KEPT window (VideoMergerWindow.EdlPreview.cs),
-/// so mpv's time-pos IS the merged clock and a removed intro is never shown, exactly as the export
-/// never contains it. (Before P4.2 the preview switched files at clip ends.)
-///
-/// Until the analysis lands (normally well under a second after a clip is added), the preview
-/// keeps its previous per-clip behaviour, so the window is never blocked waiting for ffprobe.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class VideoMergerWindow
 {
     private int _playClip = -1;
@@ -41,13 +23,10 @@ public partial class VideoMergerWindow
 
     private void InvalidateMergedTimelineDrawing() => _mergedDrawKey = null;
 
-    /// <summary>Timeline length in the preview's clock: merged seconds, or the loaded file's length before analysis.</summary>
     private double PreviewDurationSec() => MergedMode ? _timeline.TotalSec : _videoHost?.IpcClient?.Duration ?? 0.0;
 
-    /// <summary>Playhead in the preview's clock.</summary>
     private double PreviewPositionSec() => MergedMode && _edlUrl != null ? _lastMergedPos : _videoHost?.IpcClient?.CurrentTime ?? 0.0;
 
-    /// <summary>Seek in the preview's clock.</summary>
     private Task SeekPreview(double t)
     {
         if (!MergedMode) return SeekInternal(t);
@@ -55,7 +34,6 @@ public partial class VideoMergerWindow
         return Task.CompletedTask;
     }
 
-    /// <summary>MERGEPREVIEW_EDL_01 — one EDL, one clock: a seek anywhere in the merge is one mpv seek.</summary>
     private void SeekMerged(double mergedSec, bool? play = null)
     {
         var ipc = _videoHost?.IpcClient;
@@ -75,7 +53,6 @@ public partial class VideoMergerWindow
         FollowPlayhead(t);
     }
 
-    /// <summary>AUTOPREVIEW_01 in merged mode: highlighting a clip plays it from its middle.</summary>
     private bool StartMergedPreview(string path)
     {
         if (_syncingSelection) return true;
@@ -92,7 +69,6 @@ public partial class VideoMergerWindow
         return true;
     }
 
-    /// <summary>Plays clip <paramref name="idx"/> from source second <paramref name="src"/> (a seek in the one EDL).</summary>
     private void LoadMergedClip(int idx, double src, bool play)
     {
         var ipc = _videoHost?.IpcClient;
@@ -103,11 +79,6 @@ public partial class VideoMergerWindow
         SeekMerged(_timeline.ToMerged(idx, src), play);
     }
 
-    /// <summary>
-    /// MERGERUX_01 — when the playhead CROSSES into another clip, that clip becomes the highlighted row. P10 (R-b):
-    /// only on a crossing (never every tick — that fought every click, press and drag in the list)
-    /// and never while a press or drag on the list or a block is in progress.
-    /// </summary>
     private void FollowPlayhead(double mergedSec)
     {
         var (idx, _) = _timeline.Locate(mergedSec);
@@ -126,7 +97,6 @@ public partial class VideoMergerWindow
         finally { _syncingSelection = false; }
     }
 
-    /// <summary>Merged-mode half of the 100 ms playback tick. False = not in merged mode, run the legacy tick.</summary>
     private bool TickMergedPlayback()
     {
         if (!MergedMode)
@@ -197,7 +167,6 @@ public partial class VideoMergerWindow
         UpdateMergerMusicPreview(PreviewOutputSec(merged), playing);
         return true;
     }
-
 
     private void DrawMergedTimeline(Canvas markers, Canvas? scale)
     {
@@ -282,8 +251,6 @@ public partial class VideoMergerWindow
         }
     }
 
-    /// <summary>Time ticks over the whole merged length (was per clip). Moved here from the code-behind.</summary>
-    /// <summary>The Main App's tick spacing (MainWindow.Canvas.cs): 5 s, 10 s past 1 min, 30 s past 5 min, 60 s past 30 min, 5 min past 1 h.</summary>
     private static double TimelineTickInterval(double duration)
     {
         if (duration > 3600) return 300;
@@ -293,10 +260,6 @@ public partial class VideoMergerWindow
         return 5;
     }
 
-    /// <summary>
-    /// MERGERUX_01 — P10 (item 6, D25) — the x-axis the Main App and the Add Music timeline have: a faint vertical grid
-    /// line at every tick across the scrub row (drawn first, under everything else on it).
-    /// </summary>
     private static void DrawTimelineGrid(Canvas markers, double w, double h, double duration)
     {
         if (duration <= 0 || w <= 0) return;
@@ -335,7 +298,6 @@ public partial class VideoMergerWindow
         }
         Add(Label(duration), canvasWidth - 36);
     }
-
 
     private void AttachMergerThumbnailMarker(Control marker, Canvas canvas)
     {
@@ -390,7 +352,6 @@ public partial class VideoMergerWindow
         RuntimeLog.Info("MERGER", $"Custom thumbnail moved to {_thumbSourceSec:F3}s of {System.IO.Path.GetFileName(_thumbPath ?? "")}.");
     }
 
-    /// <summary>THUMB_01 — the button always says what pressing it does right now.</summary>
     private void UpdateMergerThumbnailButton()
     {
         var btn = this.FindControl<Button>("SetMergerThumbnailButton");

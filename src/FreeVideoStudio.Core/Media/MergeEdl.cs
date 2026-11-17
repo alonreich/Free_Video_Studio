@@ -7,42 +7,21 @@ using System.Text.Json.Serialization;
 
 namespace FreeVideoStudio.Core.Media;
 
-
-/// <summary>Where a meme sits inside its clip (user decision D4).</summary>
 public enum EdlMemePlacement
 {
-    /// <summary>Inserted at <see cref="EdlMeme.AtUs"/> inside the clip.</summary>
     Mid = 0,
-    /// <summary>Plays before the clip; the clip (and its fade-in) starts right after the meme.</summary>
     AtStart = 1,
-    /// <summary>Inserted where the clip's fade-out begins (or at the clip's end when there is no fade info).</summary>
     AtEnd = 2,
 }
 
-/// <summary>A point inside one clip: (clip identity, microseconds in that clip's source file).</summary>
 public readonly record struct EdlAnchor(Guid ClipId, long SourceUs);
 
-/// <summary>
-/// Zoom/pan rectangle in the SOURCE pixels of its clip, recorded with that clip's frame size
-/// (<paramref name="SourceW"/> x <paramref name="SourceH"/>) — exactly what the granular editor draws on.
-/// D10 (zoom applies to what the viewer sees) is honoured at export: P7.1 maps the rectangle through
-/// the clip's fit onto the output canvas. Storing source px (not canvas px) keeps the zoom correct if
-/// the user later switches the output canvas between portrait and landscape (P6.3 decision).
-/// </summary>
 public sealed record EdlZoom(int X, int Y, int W, int H, bool Slow, long? StartUs = null, long? EndUs = null, int SourceW = 0, int SourceH = 0, string? AiTrackingTrajectory = null);
 
-/// <summary>A speed segment inside one clip (mirrors the Main App's <see cref="SpeedSegment"/>, in source µs).</summary>
 public sealed record EdlSpeedSegment(long StartUs, long EndUs, double Speed, EdlZoom? Zoom = null);
 
-/// <summary>A freeze frame inside one clip: hold the frame at <see cref="AtUs"/> for <see cref="DurationSec"/> output seconds.</summary>
 public sealed record EdlFreeze(long AtUs, double DurationSec);
 
-/// <summary>
-/// A meme inside one clip. MEMEMODE_01: <paramref name="Mode"/> decides whether it interrupts the clip
-/// (full screen, the clip grows by its length) or plays in a corner over it (zero added length).
-/// Files written before MEMEMODE_01 have none of the four trailing keys and read back as a
-/// full-screen cutaway with sound (<see cref="MergeEdl.FromJson"/> fills them, EDLNULL_01).
-/// </summary>
 public sealed record EdlMeme(string Id, string FilePath, EdlMemePlacement Placement, long AtUs, double DurationSec,
     MemePresentationMode Mode = MemePresentationMode.InlineFullScreen,
     MemeOverlayCorner Corner = MemeOverlayCorner.BottomRight,
@@ -54,22 +33,12 @@ public sealed record EdlMeme(string Id, string FilePath, EdlMemePlacement Placem
     MemeOverlayAnimation Animation = MemeOverlayAnimation.None,
     MemeTransition Transition = MemeTransition.Cut)
 {
-    /// <summary>MEMEMODE_01 — a corner overlay occupies zero output seconds.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public bool IsCornerOverlay => Mode == MemePresentationMode.CornerOverlay;
 }
 
-/// <summary>A removed part of one clip (D18, DELETE PARTS), in that clip's source µs.</summary>
 public readonly record struct EdlCut(long StartUs, long EndUs);
 
-/// <summary>
-/// All effects of one clip. Every effect stays inside its clip (user decision D4).
-/// EDLNULL_01 — list/object properties are NULL-PROOF (an init that receives null keeps the empty default,
-/// so the backing fields that record equality compares are never null): the source-generated JSON reader
-/// assigns default(T) to every init property a file does not mention, so a file written before a field existed (e.g. `Cuts`,
-/// added in P6.2) came back with null lists. Every Equals on that edit list then threw, the Merger's
-/// autosave stopped updating (the queue on disk froze), and a later IsEmpty crashed the app.
-/// </summary>
 public sealed record EdlEffects
 {
     private readonly IReadOnlyList<EdlSpeedSegment> _speed = Array.Empty<EdlSpeedSegment>();
@@ -96,45 +65,30 @@ public sealed record EdlEffects
     public override int GetHashCode() => HashCode.Combine(EdlHash.Of(Speed, Freezes, Memes), EdlHash.Of(Cuts, Array.Empty<int>(), Array.Empty<int>()));
 }
 
-/// <summary>
-/// One queued clip. <see cref="InUs"/>/<see cref="OutUs"/> are the USER's window in source µs
-/// (OutUs 0 = end of file). Intro removal is NOT baked in here: it is derived from
-/// <see cref="Timing"/> + the scraper/thumbnail rules when the timeline is built, so toggling the
-/// scraper never rewrites clips.
-/// </summary>
 public sealed record EdlClip
 {
     public Guid ClipId { get; init; } = Guid.NewGuid();
     private readonly string _path = string.Empty;
     public string Path { get => _path; init => _path = value ?? string.Empty; }
 
-    /// <summary>File identity at the time it was queued (detects a changed/replaced file on restore).</summary>
     public long SizeBytes { get; init; }
     public long LastWriteUtcTicks { get; init; }
 
-    /// <summary>Probed length of the file in µs (0 = not analysed yet).</summary>
     public long DurationUs { get; init; }
 
     public long InUs { get; init; }
     public long OutUs { get; init; }
 
-    /// <summary>TIMINGTAG_02 timing read from the file (intro + fades), null when untagged.</summary>
     public ExportTiming? Timing { get; init; }
 
-    /// <summary>
-    /// FRAMESNAP_01 — real pts (µs) of the first frame after the tagged intro, probed in the
-    /// background. 0 = not probed; <see cref="CompositeTimeline"/> then falls back to <see cref="Timing"/>.
-    /// </summary>
     public long IntroCutUs { get; init; }
 
     private readonly EdlEffects _effects = EdlEffects.None;
     public EdlEffects Effects { get => _effects; init => _effects = value ?? EdlEffects.None; }
 }
 
-/// <summary>The custom thumbnail: the frame at this anchor becomes the merged video's cover still.</summary>
 public sealed record EdlThumbnail(EdlAnchor At);
 
-/// <summary>The music bed, anchored to video moments so speed edits never move it off them (D8).</summary>
 public sealed record EdlMusic
 {
     private readonly IReadOnlyList<string> _filePaths = Array.Empty<string>();
@@ -150,15 +104,9 @@ public sealed record EdlMusic
     public bool Ducking { get; init; } = true;
     public bool Carving { get; init; } = true;
 
-    /// <summary>
-    /// MUSICWIN_01 — where each song's chosen part starts inside its own file (index-aligned with
-    /// <see cref="FilePaths"/>). Empty in files written before songs could be trimmed: the first
-    /// song then starts at <see cref="OffsetSec"/> and every other song at 0, exactly as before.
-    /// </summary>
     private readonly IReadOnlyList<double> _startsSec = Array.Empty<double>();
     public IReadOnlyList<double> StartsSec { get => _startsSec; init => _startsSec = value ?? Array.Empty<double>(); }
 
-    /// <summary>MUSICWIN_01 — where each song's chosen part ends inside its file; 0 (or missing) = to the end.</summary>
     private readonly IReadOnlyList<double> _endsSec = Array.Empty<double>();
     public IReadOnlyList<double> EndsSec { get => _endsSec; init => _endsSec = value ?? Array.Empty<double>(); }
 
@@ -177,10 +125,8 @@ public sealed record EdlMusic
         => HashCode.Combine(EdlHash.Of(FilePaths, DurationsSec, StartsSec), EdlHash.Of(EndsSec, Array.Empty<int>(), Array.Empty<int>()), OffsetSec, Start, End, MusicVolume, VideoVolume, HashCode.Combine(Loop, Ducking, Carving));
 }
 
-/// <summary>The whole merge.</summary>
 public sealed record MergeEdl
 {
-    /// <summary>Schema version of this record. Bump with a migration in P3.1 when the shape changes.</summary>
     public int Version { get; init; } = 1;
 
     private readonly IReadOnlyList<EdlClip> _clips = Array.Empty<EdlClip>();
@@ -206,7 +152,6 @@ public sealed record MergeEdl
     public override int GetHashCode()
         => HashCode.Combine(Version, EdlHash.Of(Clips, Array.Empty<int>(), Array.Empty<int>()), ScraperEnabled, BaseSpeed, Thumbnail, Music, Captions);
 
-    /// <summary>Index of the clip with <paramref name="clipId"/>, or -1.</summary>
     public int IndexOf(Guid clipId)
     {
         for (int i = 0; i < Clips.Count; i++) if (Clips[i].ClipId == clipId) return i;
@@ -215,7 +160,6 @@ public sealed record MergeEdl
 
     public string ToJson() => JsonSerializer.Serialize(this, MergeEdlJsonContext.Default.MergeEdl);
 
-    /// <summary>Parses JSON; null when the text is not a valid EDL (never throws).</summary>
     public static MergeEdl? FromJson(string? json)
     {
         if (string.IsNullOrWhiteSpace(json)) return null;
@@ -256,7 +200,6 @@ public sealed record MergeEdl
         }
     }
 
-    /// <summary>Default objects, serialized once, used to complete older files (EDLNULL_01).</summary>
     private static class Template
     {
         public static readonly JsonObject Edl = Of(JsonSerializer.SerializeToNode(new MergeEdl(), MergeEdlJsonContext.Default.MergeEdl));
@@ -286,7 +229,6 @@ internal static class EdlHash
     }
 }
 
-/// <summary>AOT-safe (source-generated) JSON for <see cref="MergeEdl"/>. Enums as strings for readable autosave files.</summary>
 [JsonSourceGenerationOptions(WriteIndented = false, UseStringEnumConverter = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(MergeEdl))]
 [JsonSerializable(typeof(EdlClip))]

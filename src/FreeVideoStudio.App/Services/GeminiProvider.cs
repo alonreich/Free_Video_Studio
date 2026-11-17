@@ -9,11 +9,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AIPROVIDER_01 (docs/05 SYS-AISETTINGS) — Google Gemini implementation of <see cref="IAiVisionProvider"/>.
-/// Wraps <see cref="GeminiClient"/> preserving all GEMINICLIENT_01 security and reliability invariants:
-/// key strictly in headers, classified errors, per-attempt timeout ≠ cancel, retry hints, and key redaction.
-/// </summary>
 public sealed class GeminiProvider : IAiVisionProvider
 {
     private readonly GeminiClient _client;
@@ -43,6 +38,7 @@ public sealed class GeminiProvider : IAiVisionProvider
         CancellationToken ct = default)
     {
         options ??= GeminiCallOptions.Tracking;
+        using var calibration = AiThinkingCalibration.Use(reasoning, ReferenceEquals(_client, GeminiClient.Shared));
         string configured = GeminiClient.ResolveModel(model);
         string geminiSchema = AiJsonSchema.ToGeminiDialect(jsonSchema);
 

@@ -1,23 +1,11 @@
-﻿
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// EDITHOT_02 — the main window's edit hook (undo push + crash-recovery write-behind). It was moved
-/// out of MainWindow.axaml.cs under MVVM_02 ("new behaviour goes in a new file"). The call sites
-/// and the UNDO_20 / RECOVERY_03-04 contracts documented on HasUnsavedWork are unchanged.
-/// </summary>
 public partial class MainWindow
 {
-    /// <param name="label">UNDOEQ_02: the action, as the undo menu will name it ("change speed").</param>
-    /// <param name="gestureKey">
-    /// UNDOEQ_02: pass the SAME key on every tick of one continuous control (a dial sweep, a key
-    /// repeat) so U1 collapses the whole gesture into ONE undo step. End it explicitly with
-    /// EndProjectGesture() on release. Null for discrete actions (clicks, toggles, releases).
-    /// </param>
     private void SaveRecoveryState(bool sync = false, bool isUserEdit = true, string label = "edit", string? gestureKey = null)
     {
         if (_isRestoring) return;
@@ -63,11 +51,6 @@ public partial class MainWindow
     private const int RecoveryWriteBehindMs = 750;
     private Avalonia.Threading.DispatcherTimer? _recoveryWriteBehindTimer;
 
-    /// <summary>
-    /// EDITHOT_02 — the disk half of <see cref="SaveRecoveryState"/>: decide between clear and
-    /// save, then hand the snapshot to the recovery writer. Snapshot building reads the view-models,
-    /// so it runs on the UI thread, but only once per settled edit, never per tick.
-    /// </summary>
     private void PersistRecoveryStateNow(bool sync)
     {
         try
@@ -103,14 +86,6 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>
-    /// RECOVERYDOC_01 - the crash-only metadata that travels BESIDE the document: the preview
-    /// volume, thumbnail frame, freeze preview, HUD tool selections, legacy voice-over metadata and
-    /// the music wizard's working state. NONE of this belongs in a saved project (it describes
-    /// this session, not the work - see RecoveryEnvelope.Write and docs/06 PROJ_06). Voice-over
-    /// metadata is also in the canonical document; its transient copy supports older recovery readers. This is
-    /// exactly why it goes into the envelope's transient object and nowhere else.
-    /// </summary>
     private System.Text.Json.Nodes.JsonObject? BuildRecoveryTransientMetadata()
     {
         try
@@ -134,6 +109,19 @@ public partial class MainWindow
                 ["freezeTimeMs"] = timelineVm.FreezeTimeMs,
                 ["freezeDurationS"] = timelineVm.FreezeDurationS,
             };
+
+            double playheadSec = ActiveVideoHost?.IpcClient?.CurrentTime ?? 0;
+            if (playheadSec > 0 && !double.IsNaN(playheadSec)) transient["playheadSec"] = playheadSec;
+
+            if (_aiEliminationTimestamps.Count > 0)
+            {
+                var kills = new System.Text.Json.Nodes.JsonArray();
+                foreach (double t in _aiEliminationTimestamps) kills.AddNode(System.Text.Json.Nodes.JsonValue.Create(t));
+                transient["aiEliminations"] = kills;
+            }
+
+            if (_applyPeakFlattening.HasValue) transient["applyPeakFlattening"] = _applyPeakFlattening.Value;
+            if (_gameplayLoudnessLufs.HasValue) transient["gameplayLoudnessLufs"] = _gameplayLoudnessLufs.Value;
 
             if (mainVm.VoiceOverResult != null)
             {

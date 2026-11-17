@@ -1,5 +1,4 @@
-﻿
-using System.IO;
+﻿using System.IO;
 using CornerMemeFrames = FreeVideoStudio.App.Infrastructure.CornerMemeFrames;
 using FreeVideoStudio.App.ViewModels;
 using FreeVideoStudio.Core.Media;
@@ -7,7 +6,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>MEMEMODE_01 — the meme popup's choice half (UI-MEMESELECT).</summary>
 public sealed class MemeChoiceTests
 {
     [Fact]

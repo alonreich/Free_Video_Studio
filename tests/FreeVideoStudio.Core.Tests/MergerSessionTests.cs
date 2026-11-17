@@ -9,7 +9,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>MERGESESSION_01 — Video-Merger-Migration.md P3.2 (T3.2a–c).</summary>
 public class MergerSessionTests
 {
     private static readonly Dictionary<string, (long, long)> Files = new(StringComparer.OrdinalIgnoreCase)
@@ -188,8 +187,8 @@ public class MergerSessionTests
         (long, long)? Changed(string p) => p switch
         {
             @"C:\c\a.mp4" => (1000, 11),
-            @"C:\c\b.mp4" => null,          // gone
-            @"C:\c\c.mp4" => (3001, 34),    // re-encoded
+            @"C:\c\b.mp4" => null,
+            @"C:\c\c.mp4" => (3001, 34),
             _ => null,
         };
         var plan = MergerSession.Plan(edl, Changed);
@@ -348,4 +347,3 @@ public class MergerSessionTests
         Assert.Null(cleared.Captions);
     }
 }
-

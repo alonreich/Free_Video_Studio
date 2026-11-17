@@ -13,31 +13,13 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.ViewModels;
 
-/// <summary>The groups the Settings window shows, one per tab (SETTINGSIA_01).</summary>
 public enum SettingsSection { General, Editing, Files, Sound, Shortcuts, Ai, About }
 
-/// <summary>
-/// SETTINGSVM_01 (docs/04 UI-SETTINGS-ABOUT) — every pending value of the Settings window, bound
-/// (MVVM_01), never looked up. The pending state is a private CLONE of <see cref="AppSettings"/>
-/// (<see cref="P"/>) plus the three API keys in clear text and the music folder (which lives in the
-/// IPC state store, not in settings.json).
-///
-/// <para>ONE field list per tab (<see cref="CopySection"/>) serves Save (<see cref="WriteTo"/>),
-/// "Restore this tab", "Reset all settings", Import and the unsaved-changes check, so the five can
-/// never disagree about which settings a tab owns.</para>
-///
-/// <para>SETDECLUTTER_01 (settings round 4): one control per idea. Several stored settings are now
-/// driven by ONE choice each — updates (3-way), the click-sound volume (0 = off), how a new video
-/// starts, the safety questions, the save folder, "keep game sounds clear" and the AI company. The
-/// stored fields are unchanged (other windows read them); <see cref="CopySection"/> NORMALISES them
-/// to what the one control means, so what Settings shows is exactly what is saved.</para>
-/// </summary>
 public sealed partial class SettingsViewModel : ViewModelBase
 {
     public static readonly string[] ThemeChoices = { "Match Windows", "Dark", "Light" };
     public static readonly string[] FontScaleNames = { "Smallest", "Smaller", "Small", "Normal", "Large", "Largest" };
 
-    /// <summary>G03 / SETTINGSTYPES_01 — friendly labels onto the typed encoder choice (its name is the strategy string EncoderManager understands).</summary>
     public static readonly (string Label, EncoderPreference Value)[] EncoderChoices =
     {
         ("Automatic (recommended)", EncoderPreference.Auto),
@@ -47,7 +29,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         ("Processor only (slowest)", EncoderPreference.CPU),
     };
 
-    /// <summary>SETSOUNDONE_01 — the "Keep game sounds clear" strengths: Gentle, Normal, Strong.</summary>
     public static readonly int[] ClearSoundStrengths = { 25, SidechainCompressNode.DefaultStrength, 75 };
 
     private AppSettings _p;
@@ -75,16 +56,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
         _openFingerprint = Fingerprint();
     }
 
-    /// <summary>
-    /// The pending settings, for READING (the window's live preview, tests). SETTINGSFREEZE_01 /
-    /// SETTINGSDI_01: every change goes through this view-model's members, which raise the change
-    /// notifications the bindings and the unsaved-changes check depend on.
-    /// </summary>
     internal AppSettings P => _p;
 
-    /// <summary>Raised after a whole-tab change (restore, reset, import) so imperative rows can rebuild.</summary>
     public event Action? Reloaded;
-
 
     public int ThemeIndex
     {
@@ -112,10 +86,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public ICommand IncreaseFontCommand { get; }
     public ICommand DecreaseFontCommand { get; }
 
-    /// <summary>
-    /// SETUPDATEONE_01 — ONE choice: 0 = check and download by itself, 1 = check and just tell me,
-    /// 2 = never check. Stored as the two switches every update path already reads.
-    /// </summary>
     public int UpdateMode
     {
         get => !_p.AutoUpdateChecks ? 2 : _p.AutoDownloadUpdates ? 0 : 1;
@@ -132,10 +102,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public bool UpdateNotify { get => UpdateMode == 1; set { if (value) UpdateMode = 1; } }
     public bool UpdateNever { get => UpdateMode == 2; set { if (value) UpdateMode = 2; } }
 
-    /// <summary>Read by SAVE (the first-run update question counts as answered when this changes).</summary>
     public bool AutoUpdateChecks => _p.AutoUpdateChecks;
 
-    /// <summary>SETCLICKONE_01 — one slider: 0 = click sounds off, 1–100 = on at that volume.</summary>
     public double UiSoundVolume
     {
         get => _p.UiSoundsEnabled ? _p.UiSoundVolume : 0;
@@ -156,16 +124,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
         set { if (value < 0 || value >= EncoderChoices.Length || value == EncoderIndex) return; _p.VideoEncoderOverride = EncoderChoices[value].Value; OnPropertyChanged(); OnPropertyChanged(nameof(EncoderSummary)); }
     }
 
-    /// <summary>SETCHIPS_01 — one row per chip choice; rows for chips this PC does not have are greyed out.</summary>
     public List<EncoderChoiceItem> EncoderItems { get; }
 
     private IReadOnlyCollection<string>? _detectedChips;
 
-    /// <summary>
-    /// SETCHIPS_01 — the FFmpeg encoder names found on this PC (EncoderManager.AvailableEncoders).
-    /// Automatic and Processor are always usable; a chip that was not found is greyed out, except the
-    /// one that is saved now, which stays pickable (marked "not found") so the window never hides it.
-    /// </summary>
     public void SetDetectedEncoders(IEnumerable<string> ffmpegEncoders)
     {
         var found = ffmpegEncoders.Select(e => e.ToLowerInvariant()).ToList();
@@ -190,7 +152,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     private bool _chipCheckFailed;
 
-    /// <summary>SETCHIPS_01 — the chip check could not run: every choice stays pickable, and the line says so.</summary>
     public void MarkEncoderDetectionFailed()
     {
         _chipCheckFailed = true;
@@ -203,21 +164,12 @@ public sealed partial class SettingsViewModel : ViewModelBase
         : _detectedChips.Count == 0 ? "no graphics-card encoder available"
         : "available: " + string.Join(", ", _detectedChips.Select(c => c == "INTEL" ? "Intel" : c));
 
-    /// <summary>SETABOUT_01 / SETCHIPS_01 — "NVIDIA graphics card · available: NVIDIA, Intel" for the About tab.</summary>
     public string EncoderSummary => EncoderChoices[EncoderIndex].Label + " · " + FoundChipsText;
 
-    /// <summary>SETCHIPS_01 — the hint under "Speed up exports with".</summary>
     public string DetectedChipsLine => _detectedChips is { Count: 0 } && !_chipCheckFailed
         ? "On this computer: no graphics-card encoder is available, so videos are made by the processor."
         : "On this computer: " + FoundChipsText + ".";
 
-
-    /// <summary>
-    /// SETSAFEONE_01 — the actions that still ask "Are you sure?" while the one safety switch is on:
-    /// the ones Ctrl+Z cannot take back (closing the app with work in it, leaving the editor for another
-    /// tool, emptying the merger's list, resetting a whole crop layout, deleting a voice recording).
-    /// Everything undoable never asks.
-    /// </summary>
     public static bool AsksWhenOn(string confirmSetting) => confirmSetting is
         nameof(AppSettings.ConfirmMainAppCancel) or nameof(AppSettings.ConfirmMainAppSwitchTool)
         or nameof(AppSettings.ConfirmVideoMergerClearAll) or nameof(AppSettings.ConfirmCropToolReset)
@@ -242,7 +194,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         to.ConfirmFinishedDialogExit = false;
     }
 
-    /// <summary>SETSAFEONE_01 — "Ask 'Are you sure?' before things you can't undo".</summary>
     public bool AskBeforeRiskyActions
     {
         get => AnyRiskyAsk(_p);
@@ -262,7 +213,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
-    /// <summary>SETGAME_01 — shipped crop profiles onto the AI camera view. Unknown (custom) games keep the AI choice.</summary>
     public static AiGameProfile? CameraViewForGame(string? game)
     {
         string g = (game ?? "").Trim().ToLowerInvariant();
@@ -276,11 +226,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public List<string> QualityNames { get; }
 
-    /// <summary>
-    /// SETSTARTONE_01 — ONE choice for how every new video starts: like the last exported video (all five
-    /// start values follow it) or with my defaults (the values below). Stored as the five per-value
-    /// behaviours the main window already resolves (DefaultValues.Start*).
-    /// </summary>
     public bool StartLikeLast
     {
         get => IsAllRememberLast(_p.Defaults);
@@ -307,7 +252,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         && d.PortraitBehavior == CheckboxDefaultBehavior.RememberLast && d.ShowTeammatesBehavior == CheckboxDefaultBehavior.RememberLast
         && d.EnableFadeBehavior == CheckboxDefaultBehavior.RememberLast;
 
-    /// <summary>Turns every start value into a fixed default equal to what it would start with now.</summary>
     private static void FixStartDefaults(DefaultValues from, DefaultValues to)
     {
         double speed = from.StartSpeed;
@@ -348,8 +292,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public bool KeepOverlayTextBetweenVideos { get => _p.KeepOverlayTextBetweenVideos; set { if (_p.KeepOverlayTextBetweenVideos == value) return; _p.KeepOverlayTextBetweenVideos = value; OnPropertyChanged(); } }
 
-
-    /// <summary>SETFOLDERONE_01 — ONE save folder for the Main App and the Video Merger ("" = Downloads).</summary>
     public string SaveFolder
     {
         get => _p.MainOutputDirectory ?? "";
@@ -363,18 +305,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
-    /// <summary>The merger's save folder (always the same as <see cref="SaveFolder"/>), read by SAVE for the state-store copy.</summary>
     public string MergerOutputDirectory => _p.MergerOutputDirectory ?? "";
 
     public string MainOutputBaseName { get => _p.MainOutputBaseName ?? ""; set { if (_p.MainOutputBaseName == value) return; _p.MainOutputBaseName = value ?? ""; OnPropertyChanged(); OnPropertyChanged(nameof(MainOutputNamePreview)); OnPropertyChanged(nameof(MergerOutputNamePreview)); OnPropertyChanged(nameof(MainOutputNameWarning)); } }
 
-    /// <summary>Pending music folder ("" = the Windows Music folder). Lives in the IPC state store.</summary>
     public string MusicFolder { get => _musicFolder; set { if (_musicFolder == (value ?? "")) return; _musicFolder = value ?? ""; OnPropertyChanged(); OnPropertyChanged(nameof(MusicFolderDisplay)); } }
 
-    /// <summary>MEMEPENDING_01 — pending meme folder ("" = the default). Committed by SAVE like everything else.</summary>
     public string MemeDirectoryPath { get => _p.MemeDirectoryPath ?? ""; set { if (_p.MemeDirectoryPath == (value ?? "")) return; _p.MemeDirectoryPath = value ?? ""; OnPropertyChanged(); OnPropertyChanged(nameof(MemeFolderDisplay)); } }
 
-    /// <summary>Resolvers for the "default" folders, swappable in tests.</summary>
     public Func<string> MusicRootProvider { get; set; } = () => MemeDirectory.GetMusicRoot();
     public Func<string> MemeDefaultProvider { get; set; } = () => MemeDirectory.GetDefault();
     public Func<string?> DownloadsProvider { get; set; } = () => FreeVideoStudio.Core.Infrastructure.KnownFolders.GetDownloads();
@@ -385,15 +323,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
         ? "Downloads (" + (DownloadsProvider() ?? "not available on this PC") + ")"
         : _p.MainOutputDirectory!;
     public string MainOutputNamePreview => NamePreview(_p.MainOutputBaseName, OutputFileNaming.MainDefaultBaseName);
-    /// <summary>SETNAMEONE_01 — the Video Merger's names follow the one name, plus "-merged".</summary>
     public string MergerOutputNamePreview => "Video Merger: " + OutputFileNaming.NumberedFileName(OutputFileNaming.MergerBaseFor(_p.MainOutputBaseName), 1) + ", "
         + OutputFileNaming.NumberedFileName(OutputFileNaming.MergerBaseFor(_p.MainOutputBaseName), 2) + " …";
     public string MainOutputNameWarning => NameWarning(_p.MainOutputBaseName, OutputFileNaming.MainDefaultBaseName);
 
-    /// <summary>
-    /// SETNAMEWARN_01 — says, inline, what SAVE will do to a typed file name (OutputFileNaming.Sanitize),
-    /// instead of fixing it silently. "" when the name is used exactly as typed.
-    /// </summary>
     internal static string NameWarning(string? typed, string fallback)
     {
         string raw = (typed ?? "").Trim();
@@ -416,13 +349,27 @@ public sealed partial class SettingsViewModel : ViewModelBase
                OutputFileNaming.NumberedFileName(safe, 3) + " …";
     }
 
+    public IReadOnlyList<string> FreezeSoundLabels { get; } = FreezeSoundEffect.Choices.Select(c => c.Label).ToList();
 
-    /// <summary>
-    /// SETSOUNDONE_01 — "Keep game sounds clear": 0 = Off, 1 = Gentle, 2 = Normal, 3 = Strong. One choice
-    /// drives both helpers (music dips when the game gets loud, music makes room for game sounds) at
-    /// the same strength; stored as the two switches + two strengths the export and the Add Music
-    /// wizard already read.
-    /// </summary>
+    public FreezeSound SelectedFreezeSound => FreezeSoundEffect.Parse(_p.FreezeSound);
+
+    public int FreezeSoundIndex
+    {
+        get
+        {
+            var sound = SelectedFreezeSound;
+            for (int i = 0; i < FreezeSoundEffect.Choices.Count; i++)
+                if (FreezeSoundEffect.Choices[i].Sound == sound) return i;
+            return 0;
+        }
+        set
+        {
+            if (value < 0 || value >= FreezeSoundEffect.Choices.Count || value == FreezeSoundIndex) return;
+            _p.FreezeSound = FreezeSoundEffect.Choices[value].Name;
+            OnPropertyChanged();
+        }
+    }
+
     public int ClearSoundLevel
     {
         get => LevelOf(_p.Defaults);
@@ -457,12 +404,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         if (on) d.DuckingStrength = d.CarvingStrength = ClearSoundStrengths[level - 1];
     }
 
-    /// <summary>
-    /// SETLOUD_01 — ONE three-way choice replaces the "Sudden loud moments" list + "Master switch"
-    /// pair, which could contradict each other (Always soften + master off = never).
-    /// Ask / Always keep the master switch on; Never turns it off so the Video Merger (which has no
-    /// prompt) agrees with the Main App.
-    /// </summary>
     public bool LoudAsk { get => LoudMode == 0; set { if (value) LoudMode = 0; } }
     public bool LoudAlways { get => LoudMode == 1; set { if (value) LoudMode = 1; } }
     public bool LoudNever { get => LoudMode == 2; set { if (value) LoudMode = 2; } }
@@ -479,18 +420,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
-
     public ObservableCollection<KeyBindRowViewModel> KeyBindRows { get; }
 
     private string _keyBindStatus = "";
     public string KeyBindStatus { get => _keyBindStatus; set => SetProperty(ref _keyBindStatus, value ?? ""); }
 
-    /// <summary>
-    /// SETKEYS_01 — tries to give <paramref name="row"/> the key <paramref name="key"/>. Plain keys
-    /// only clash with plain keys and Ctrl keys only with Ctrl keys (the Ctrl rows are pressed
-    /// together with Ctrl, so Seek Forward = D and Fine Seek Forward = Ctrl+D is legal). Keys the app
-    /// already uses for something else are refused. Returns null on success, else a plain reason.
-    /// </summary>
     public string? TryAssignKey(KeyBindRowViewModel row, Key key)
     {
         if (KeyBindRowViewModel.IsModifierOnly(key)) return "Press a normal key (letters, numbers, arrows…), not Ctrl, Shift or Alt on its own.";
@@ -503,7 +437,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         _p.KeyBinds = KeyBindRowViewModel.ToKeyBinds(KeyBindRows);
         return null;
     }
-
 
     public string GeminiApiKey { get => _gemini; set { if (_gemini == (value ?? "")) return; _gemini = value ?? ""; OnPropertyChanged(); RaiseAiReady(); } }
     public string ClaudeApiKey { get => _claude; set { if (_claude == (value ?? "")) return; _claude = value ?? ""; OnPropertyChanged(); RaiseAiReady(); } }
@@ -529,7 +462,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public bool HasAnyKey => !string.IsNullOrWhiteSpace(_gemini) || !string.IsNullOrWhiteSpace(_claude) || !string.IsNullOrWhiteSpace(_openAi) || ChatGptAuth.IsSignedIn;
 
-    /// <summary>SETKEYONE_01 — the company a pasted key belongs to, from its prefix; null when unknown.</summary>
     public static AiVendor? DetectKeyVendor(string? key)
     {
         string k = (key ?? "").Trim();
@@ -539,11 +471,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         return null;
     }
 
-    /// <summary>
-    /// SETKEYONE_01 — "Paste any AI key": recognises the company, stores the key as pending (saved by
-    /// SAVE) and, when the company in use has no key yet, switches every AI feature to the new one.
-    /// Returns null on success (the caller then tests the key), else a plain reason.
-    /// </summary>
     public string? AddKey(string? raw, out AiVendor vendor)
     {
         vendor = AiVendor.Google;
@@ -576,7 +503,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         return vendor == AiVendor.Google ? GeminiTestModel : AiVisionProviders.GetDefaultModel(vendor);
     }
 
-    /// <summary>SETDEPS_01 — a feature is usable only when the company it uses has a key.</summary>
     private bool _onlineAiOff;
     public bool OnlineAiOff
     {
@@ -626,10 +552,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public bool AiEliminationTrackerEnabled { get => _p.AiEliminationTrackerEnabled; set { if (_p.AiEliminationTrackerEnabled == value) return; _p.AiEliminationTrackerEnabled = value; OnPropertyChanged(); } }
 
-    /// <summary>
-    /// SETZOOMONE_01 — "Zoom strength": how close AI SMART ZOOM gets. The zoom it backs off to on fast
-    /// moves follows from it (<see cref="AiZoomTuning.MinScaleFor"/>).
-    /// </summary>
     public double AiZoomBaseScale
     {
         get => _p.AiZoomBaseScale;
@@ -643,7 +565,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
     }
     public string AiZoomBaseLabel => $"{_p.AiZoomBaseScale:0.0}x";
 
-    /// <summary>The model Google's "Test Connection" must check: the one shown for Google right now (SETAITEST_01).</summary>
     public string GeminiTestModel
     {
         get
@@ -654,12 +575,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
-    /// <summary>
-    /// SETTINGSVM_01 — THE list of what each tab owns. Used to save, restore a tab, reset all and import.
-    /// Never copies: API keys (handled separately), remembered "last" choices, window state, consent
-    /// answers (AI permissions are given by saving a key, SETNOCONSENTUI_01), or anything another window
-    /// owns. SETDECLUTTER_01: values driven by one control are NORMALISED here to what that control means.
-    /// </summary>
     public static void CopySection(AppSettings from, AppSettings to, SettingsSection section)
     {
         switch (section)
@@ -696,6 +611,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 to.MemeDirectoryPath = from.MemeDirectoryPath ?? "";
                 break;
             case SettingsSection.Sound:
+                to.FreezeSound = FreezeSoundEffect.NameOf(FreezeSoundEffect.Parse(from.FreezeSound));
                 to.PeakFlatteningPrompt = from.PeakFlatteningPrompt;
                 to.Defaults.AutoSpikeFlattening = from.Defaults.AutoSpikeFlattening;
                 WriteLevel(to.Defaults, LevelOf(from.Defaults));
@@ -748,12 +664,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private static readonly SettingsSection[] SavedSections =
         { SettingsSection.General, SettingsSection.Editing, SettingsSection.Files, SettingsSection.Sound, SettingsSection.Shortcuts, SettingsSection.Ai };
 
-    /// <summary>
-    /// SETTX_01 — writes every pending value into <paramref name="s"/> inside the ONE settings
-    /// transaction. <see cref="AppSettings.ActiveMaskOverlay"/> is excluded: MaskOverlayManager.ApplyProfile
-    /// writes it after the commit together with the crop layout it names. KEYPROTECT_01: a key is only
-    /// re-sealed when it changed.
-    /// </summary>
     public void WriteTo(AppSettings s)
     {
         string mask = s.ActiveMaskOverlay;
@@ -781,7 +691,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
-    /// <summary>"Restore this tab": the tab's values go back to the out-of-the-box defaults (pending until SAVE).</summary>
     public void RestoreSection(SettingsSection section)
     {
         var d = new AppSettings();
@@ -794,25 +703,16 @@ public sealed partial class SettingsViewModel : ViewModelBase
         SyncFromPending();
     }
 
-    /// <summary>
-    /// SETGAME_02 / SETCAMONE_01 — the AI camera view always follows "Your game" (the separate override
-    /// was removed). Custom games keep the current camera view.
-    /// </summary>
     private void SyncCameraViewToGame()
     {
         if (CameraViewForGame(_p.ActiveMaskOverlay) is { } view) _p.AiTrackingGameProfile = view;
     }
 
-    /// <summary>Danger Zone › "Reset all settings": every tab back to defaults. API keys stay (pending until SAVE).</summary>
     public void RestoreAll()
     {
         foreach (var sec in SavedSections) RestoreSection(sec);
     }
 
-    /// <summary>
-    /// SETBACKUP_01 — the backup document: every setting this window owns, NEVER the API keys,
-    /// plus the music folder. Plain JSON so it can be read and edited by hand.
-    /// </summary>
     public string ExportBackupJson()
     {
         var t = new AppSettings();
@@ -824,7 +724,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         return node.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
     }
 
-    /// <summary>SETBACKUP_01 — loads a backup as PENDING values (nothing is saved until SAVE). Returns null on success, else a plain reason.</summary>
     public string? ImportBackupJson(string json, Func<string, bool>? folderExists = null)
     {
         JsonObject? node;
@@ -851,7 +750,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         return null;
     }
 
-    /// <summary>SETUNSAVED_01 — true when SAVE would change anything.</summary>
     public bool HasUnsavedChanges => !string.Equals(Fingerprint(), _openFingerprint, StringComparison.Ordinal);
 
     private string Fingerprint()
@@ -865,7 +763,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         return node.ToJsonString();
     }
 
-    /// <summary>After a whole-tab change: every bound control re-reads (raise ALL) and the key rows follow.</summary>
     private void SyncFromPending()
     {
         KeyBindRowViewModel.Load(KeyBindRows, _p.KeyBinds ?? new KeyBinds());
@@ -879,27 +776,16 @@ public sealed partial class SettingsViewModel : ViewModelBase
            ?? new AppSettings();
 }
 
-/// <summary>
-/// SETZOOMONE_01 — AI SMART ZOOM's tuned camera values. "Zoom strength" (AppSettings.AiZoomBaseScale)
-/// is the only one the user sets; the zoom it backs off to on fast moves follows from it, and the
-/// steadiness and corner-display avoidance use the values the camera was tuned with.
-/// </summary>
 public static class AiZoomTuning
 {
     public const double MinStrength = 1.5;
     public const double MaxStrength = 4.0;
     public const double DefaultStrength = 2.2;
 
-    /// <summary>Tiny movements smaller than this share of the frame are ignored (no camera twitch).</summary>
     public const double DeadbandPercent = 2.0;
 
-    /// <summary>The camera keeps off the game's corner displays when it can.</summary>
     public const bool AvoidHud = true;
 
-    /// <summary>
-    /// The zoom used on fast moves for a given strength: a quarter of the way from 1x to it, at least
-    /// 1.1x and at most 2.0x (never closer than the strength). 2.2x → 1.3x, the tuned pair.
-    /// </summary>
     public static double MinScaleFor(double strength)
     {
         double s = strength > 0 ? strength : DefaultStrength;
@@ -908,7 +794,6 @@ public static class AiZoomTuning
     }
 }
 
-/// <summary>SETCHIPS_01 — one row of "Speed up exports with": greyed out when this PC lacks the chip.</summary>
 public sealed class EncoderChoiceItem : ViewModelBase
 {
     private bool _isAvailable = true;
@@ -924,7 +809,6 @@ public sealed class EncoderChoiceItem : ViewModelBase
     public override string ToString() => Display;
 }
 
-/// <summary>SETKEYS_01 — one row of Settings › Shortcuts.</summary>
 public sealed class KeyBindRowViewModel : ViewModelBase
 {
     private Key _key;
@@ -969,14 +853,8 @@ public sealed class KeyBindRowViewModel : ViewModelBase
     public static bool IsModifierOnly(Key k) => k is Key.LeftCtrl or Key.RightCtrl or Key.LeftShift or Key.RightShift
         or Key.LeftAlt or Key.RightAlt or Key.LWin or Key.RWin or Key.None;
 
-    /// <summary>
-    /// Keys the app already uses without Ctrl (and keys the Settings window itself needs).
-    /// SETKEYS_03: "/ ?" opens the shortcut sheet before the main window reads its shortcuts
-    /// (MainWindow.Shortcuts.cs), so a shortcut on it could never fire.
-    /// </summary>
     public static readonly HashSet<Key> ReservedPlain = new() { Key.Escape, Key.Enter, Key.Tab, Key.Delete, Key.Back, Key.OemQuestion };
 
-    /// <summary>Ctrl+Z / Ctrl+Y / Ctrl+S / Ctrl+O / Ctrl+N are the editor's undo, redo, save, open and new.</summary>
     public static readonly HashSet<Key> ReservedWithCtrl = new() { Key.Z, Key.Y, Key.S, Key.O, Key.N, Key.Escape, Key.Enter, Key.Tab };
 
     public static IEnumerable<KeyBindRowViewModel> CreateAll() => new[]

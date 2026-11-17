@@ -1,20 +1,9 @@
-﻿
-using System;
+﻿using System;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.Core.Project;
 
-/// <summary>
-/// MEMEMODE_01 — the ONE JSON mapping of a meme's presentation (mode, corner, size, sound), used by
-/// the project file, the crash-recovery document (both through <see cref="ProjectSerializer"/>) and
-/// the editors' own session JSON. Hand-written, no reflection (PROJ_02).
-///
-/// <para><b>Backward compatibility.</b> Every key is optional. A meme written before MEMEMODE_01 has
-/// none of them and reads back as a full-screen cutaway with sound — exactly what it always was. An
-/// unknown or malformed value falls back to the same defaults rather than failing the load
-/// (06 PROJ-SCHEMA: the reader is forgiving).</para>
-/// </summary>
 public static class MemePresentationJson
 {
     public const string KeyMode = "mode";
@@ -27,7 +16,6 @@ public static class MemePresentationJson
     public const string KeyAnimation = "animation";
     public const string KeyTransition = "transition";
 
-    /// <summary>Writes the four keys onto a meme object.</summary>
     public static void Write(JsonObject o, MemePlacement m)
     {
         o[KeyMode] = ModeText(m.Mode);
@@ -41,7 +29,6 @@ public static class MemePresentationJson
         o[KeyTransition] = TransitionText(m.Transition);
     }
 
-    /// <summary>Applies the four keys (when present) to a placement read without them.</summary>
     public static MemePlacement Apply(JsonObject? o, MemePlacement m)
     {
         if (o == null) return m;

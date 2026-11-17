@@ -5,7 +5,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>ANTS_01 — Video-Merger-Migration.md P5.3 (T5.3b at Core level).</summary>
 public class TimelineReorderTests
 {
     private static readonly (double, double)[] Blocks = { (0, 100), (100, 150), (150, 300), (300, 400) };

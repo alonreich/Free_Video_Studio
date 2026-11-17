@@ -1,5 +1,4 @@
-﻿
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
@@ -7,20 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>
-/// DIST-SMART — the SIGNED list of every file in a release, so an update downloads only what changed.
-///
-/// <para>Published as <see cref="FileName"/> beside a detached signature <see cref="SignatureFileName"/>.
-/// It carries the release's own install manifest (path, length, SHA-256 of every installed file),
-/// the compressed, content-addressed asset that holds each file, and binary patches for the main
-/// program from recent versions (BINDELTA_01).</para>
-///
-/// <para>⚠️ FILES ARE MATCHED BY CONTENT, NEVER BY NAME. A file is reused only when an installed file
-/// has the same SHA-256; the same name with different bytes is downloaded. Everything downloaded is
-/// re-hashed against this manifest, and the manifest itself is only believed when its signature
-/// chains to the pinned publisher root (<see cref="PublisherRoot"/>). The elevated installer verifies
-/// the signature again itself before it copies a single byte.</para>
-/// </summary>
 public sealed class SmartUpdateManifest
 {
     public const string FileName = "update.json";
@@ -30,21 +15,13 @@ public sealed class SmartUpdateManifest
     public string Product { get; set; } = "FreeVideoStudio";
     public string Version { get; set; } = string.Empty;
 
-    /// <summary>The exact text of the release's install.manifest.json (UPGRADE_06).</summary>
     public string InstallManifest { get; set; } = string.Empty;
 
     public List<SmartFile> Files { get; set; } = [];
     public List<SmartPatch> Patches { get; set; } = [];
 
-    /// <summary>The full installer, for any machine the smart path cannot serve.</summary>
     public SmartAsset? FullInstaller { get; set; }
 
-    /// <summary>
-    /// REVOKE_01 — publisher leaf thumbprints (SHA-256) the publisher has withdrawn, copied from
-    /// <c>build/revoked-signers.txt</c> into every signed list. A client that verifies this list
-    /// remembers them (<see cref="PublisherRoot.AddRevoked"/>) and refuses those leaves from then on.
-    /// Older clients ignore the field (unknown JSON members are skipped).
-    /// </summary>
     public List<string> RevokedSigners { get; set; } = [];
 
     public static string ContentAssetName(string sha256) => "f-" + sha256.ToLowerInvariant() + ".br";
@@ -54,7 +31,6 @@ public sealed class SmartUpdateManifest
 
     public byte[] ToJsonBytes() => JsonSerializer.SerializeToUtf8Bytes(this, SmartUpdateJsonContext.Default.SmartUpdateManifest);
 
-    /// <summary>Parses and checks internal consistency (every installed file has exactly one asset).</summary>
     public static SmartUpdateManifest Parse(byte[] json)
     {
         SmartUpdateManifest manifest = JsonSerializer.Deserialize(json, SmartUpdateJsonContext.Default.SmartUpdateManifest)
@@ -83,12 +59,6 @@ public sealed class SmartUpdateManifest
         return manifest;
     }
 
-    /// <summary>
-    /// DIST-SMART — WHAT TO DOWNLOAD, decided by CONTENT ONLY. A file is skipped only when some
-    /// installed file already has exactly its SHA-256; a file with the same name but different bytes
-    /// is downloaded. The main program is rebuilt from a patch when one was made from exactly the
-    /// installed program's SHA-256 (BINDELTA_01); otherwise it is downloaded whole.
-    /// </summary>
     public SmartPlan Plan(IReadOnlySet<string> installedSha256, string? installedProgramSha256)
     {
         var download = Files.Where(f => !installedSha256.Contains(f.Sha256.ToLowerInvariant())).ToList();
@@ -108,8 +78,6 @@ public sealed class SmartUpdateManifest
         JsonSerializer.Deserialize(InstallManifest, InstallManifestContext.Default.InstallFileManifest)
         ?? throw new InvalidDataException("The update manifest has no install manifest.");
 
-
-    /// <summary>Signs <paramref name="json"/> with the publisher certificate (build side).</summary>
     public static byte[] Sign(byte[] json, X509Certificate2 signer)
     {
         using RSA key = signer.GetRSAPrivateKey() ?? throw new InvalidOperationException("The signing certificate has no RSA private key.");
@@ -121,21 +89,9 @@ public sealed class SmartUpdateManifest
         return JsonSerializer.SerializeToUtf8Bytes(signature, SmartUpdateJsonContext.Default.SmartSignature);
     }
 
-    /// <summary>
-    /// True when <paramref name="json"/> was signed by the publisher: the signer chains to the pinned
-    /// root, or (for a publicly trusted certificate) is exactly <paramref name="alsoTrustThumbprint"/>
-    /// — the certificate that signed the running program — and chains to a root Windows trusts.
-    /// </summary>
     public static bool VerifySignature(byte[] json, byte[] signatureJson, string? alsoTrustThumbprint, out string detail)
         => VerifySignature(json, signatureJson, alsoTrustThumbprint, requireCurrentSigner: false, DateTimeOffset.UtcNow, out detail);
 
-    /// <summary>
-    /// SIGNEXPIRY_01 — as above; with <paramref name="requireCurrentSigner"/> the signing leaf must also be
-    /// inside its validity period at <paramref name="now"/>. The list signature is a plain RSA signature
-    /// with NO timestamp, so ignoring expiry would let a leaf key sign lists forever. The in-app updater
-    /// (a list fetched from GitHub NOW) requires it; the elevated worker and an installer's packed list,
-    /// which may legitimately be run years after it was signed, do not.
-    /// </summary>
     public static bool VerifySignature(byte[] json, byte[] signatureJson, string? alsoTrustThumbprint,
         bool requireCurrentSigner, DateTimeOffset now, out string detail)
     {
@@ -199,13 +155,10 @@ public sealed class SmartUpdateManifest
     internal static string Utf8(byte[] data) => Encoding.UTF8.GetString(data);
 }
 
-/// <summary>The result of <see cref="SmartUpdateManifest.Plan"/>.</summary>
 public sealed record SmartPlan(IReadOnlyList<SmartFile> Download, SmartPatch? Patch, SmartFile Program)
 {
-    /// <summary>Bytes on the wire: the compressed files plus the patch.</summary>
     public long DownloadBytes => Download.Sum(f => f.AssetLength) + (Patch?.AssetLength ?? 0);
 
-    /// <summary>How many installed files change.</summary>
     public int ChangedFiles => Download.Count + (Patch is null ? 0 : 1);
 }
 
@@ -217,12 +170,6 @@ public sealed class SmartFile
     public string Asset { get; set; } = string.Empty;
     public long AssetLength { get; set; }
 
-    /// <summary>
-    /// ASSETHASH_01 — SHA-256 of the compressed asset itself (the bytes on the wire). The downloaded
-    /// asset is checked against it BEFORE it is decompressed, so a tampered asset is rejected before
-    /// it can expand on disk. Empty in lists written before this field existed; the client then
-    /// relies on the size-capped decompression and the hash of the result.
-    /// </summary>
     public string AssetSha256 { get; set; } = string.Empty;
 }
 
@@ -234,7 +181,6 @@ public sealed class SmartPatch
     public string Asset { get; set; } = string.Empty;
     public long AssetLength { get; set; }
 
-    /// <summary>ASSETHASH_01 — SHA-256 of the patch file; checked before the patch is applied.</summary>
     public string AssetSha256 { get; set; } = string.Empty;
 }
 

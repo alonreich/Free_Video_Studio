@@ -13,7 +13,6 @@ using FreeVideoStudio.App.Services;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>What the user decided in the subject picker (AIOWNBOX_01).</summary>
 public enum AiPickerChoice
 {
     Cancelled,
@@ -21,12 +20,6 @@ public enum AiPickerChoice
     DrawOwnBox,
 }
 
-/// <summary>
-/// UI-AIZOOM phase 3 — the subject picker. Each card's subject is outlined on the frame it is clearest
-/// in (hover previews, click selects); the first subject is pre-selected; frames found by a forward
-/// probe are labelled as being AFTER the segment (AILOOKAHEAD_01); "None of these" hands control back
-/// so the user can draw their own box.
-/// </summary>
 public partial class AiSubjectPickerWindow : Window
 {
     public DiscoveredSubject? SelectedSubject { get; private set; }
@@ -44,8 +37,6 @@ public partial class AiSubjectPickerWindow : Window
     {
     }
 
-    /// <param name="segmentStartSec">The segment's SOURCE start, so the labels can say where each frame sits.</param>
-    /// <param name="segmentDurationSec">The segment's length; frames past it are flagged.</param>
     public AiSubjectPickerWindow(AiDiscoveryResult discovery, double segmentStartSec, double segmentDurationSec)
     {
         _subjects = discovery.Subjects ?? new List<DiscoveredSubject>();
@@ -124,7 +115,6 @@ public partial class AiSubjectPickerWindow : Window
         }
     }
 
-    /// <summary>Outlines the selected subject (solid) and the hovered one (dashed) on the frame each is clearest in.</summary>
     private void RedrawHighlights()
     {
         foreach (Canvas? c in _canvases) c?.Children.Clear();

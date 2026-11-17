@@ -3,7 +3,6 @@ using System.Threading.Channels;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>GRANULARPERF_01 — one writer, one pending snapshot, and a final ordered close marker.</summary>
 public sealed class EditorRecoveryWriter
 {
     private readonly Channel<JsonObject> _pending = Channel.CreateBounded<JsonObject>(

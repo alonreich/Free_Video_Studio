@@ -8,38 +8,10 @@ namespace FreeVideoStudio.Core.Media;
 public class MergerWorker : IDisposable
 {
     private readonly ApplicationPaths _paths;
-    /// <summary>
-    /// PIPELIFE_01 / PIPELIFE_02 — process slot, cancel flag, single-flight finish and the
-    /// teardown ladder, shared with <see cref="ProcessWorker"/>.
-    ///
-    /// <para>
-    /// ⚠️ This replaces a PLAIN, UNSYNCHRONISED <c>Process? _currentProcess</c> field. PROCGATE_01
-    /// fixed a use-after-dispose race in the sibling pipeline — the field read twice, once to
-    /// null-test and once to act on, letting the worker thread run <c>_currentProcess = null;
-    /// proc.Dispose();</c> in between so teardown called Kill() on a disposed Process — and this
-    /// file never received that fix. Its <c>Cancel()</c> passed the raw field to the ladder and
-    /// its <c>Dispose()</c> did exactly the two-read pattern. Routing through the gate closes it.
-    /// </para>
-    /// </summary>
     private readonly FfmpegJobLifetime _lifetime = new("Merger", "FFmpeg MERGE");
-    /// <summary>PIPELIFE_01 — alias over the shared lifetime's single-flight flag.</summary>
     private bool _finishEmitted => _lifetime.FinishEmitted;
     private string _ffmpegPath;
     private string _ffprobePath;
-
-    /// <summary>
-    /// Single-flight gate for the cooperative shutdown ladder. Cancel(), the cancellation-token
-    /// registration inside <see cref="ExecuteFFmpegAsync"/>, and <see cref="Dispose"/> can all
-    /// race; the gate guarantees exactly ONE ladder ('q' quit command → grace period → hard
-    /// kill → exit confirmation) ever runs per FFmpeg process.
-    ///
-    /// PIPEDEDUP_01 — the gate's three fields and their three methods used to be written out here
-    /// AND, separately, in <c>ProcessWorker</c>. Two copies of one mechanism is how
-    /// <c>ReadExitCodeSafely</c> silently diverged between these two files (FFMPEGSTOP_01) and how
-    /// <c>TryRescueFinishedRender</c> shipped the same race twice (RESCUE_01). One copy now lives
-    /// in <see cref="CooperativeShutdownGate"/>; the members below are thin delegations kept at
-    /// their original signatures so no call site in this file changes.
-    /// </summary>
 
     public event Action<int>? ProgressUpdate;
     public event Action<bool, string>? Finished;
@@ -48,126 +20,45 @@ public class MergerWorker : IDisposable
     public MusicTrack? MusicTrack { get; set; }
     public List<MusicTrack> MusicTracks { get; set; } = new();
 
-    /// <summary>
-    /// MUSICWIN_01 — true when <see cref="MusicTracks"/> is ALREADY the finished bed laid out by
-    /// <see cref="MusicBedPlan"/> (every song's chosen part, the crossfade leads and any looping
-    /// applied). The tracks are then used exactly as given: re-probing them and re-looping them here
-    /// would throw away the windows the user chose in the Add Music wizard and lay the songs out
-    /// differently from the preview the user just approved.
-    /// </summary>
     public bool MusicTracksArePlanned { get; set; }
     public JsonObject? MusicConfig { get; set; }
     public string? OutputDirectory { get; set; }
 
-    /// <summary>
-    /// OUTNAME_01 — the user's automatic file-name base for merged videos (Settings › Output
-    /// Files). Output is <c>&lt;base&gt;-&lt;N&gt;.mp4</c>; null or unusable input falls back to
-    /// <see cref="OutputFileNaming.MergerDefaultBaseName"/>.
-    /// </summary>
     public string? OutputBaseName { get; set; }
     public double SpeedFactor { get; set; } = 1.0;
     public enum TargetAspectRatio { Landscape16x9, Portrait9x16 }
     public TargetAspectRatio OutputRatio { get; set; } = TargetAspectRatio.Landscape16x9;
-    /// <summary>
-    /// AICAPTION_EXPORT_01 — live commentary captions track burned into merge via ASS subtitles filter.
-    /// </summary>
     public CaptionTrack? CaptionTrack { get; set; }
 
-    /// <summary>Optional portrait HUD exclusion zones avoided during ASS caption placement.</summary>
     public IReadOnlyList<(double X, double Y, double W, double H)>? CaptionHudRects { get; set; }
 
     public int QualityPercent { get; set; } = 100;
 
-    /// <summary>
-    /// PEAKSAFE_01 — the user's "soften sudden loud moments" switch: a peak tamer on EACH clip's
-    /// gameplay, thresholded against that clip's own measured loudness. The true-peak safety limiter
-    /// on the final mix is always on and is not controlled by this.
-    /// </summary>
     public bool AutoSpikeFlattening { get; set; } = true;
 
-    /// <summary>
-    /// CLIPLEVEL_01 — Settings › Merger "Even out the volume between clips". When on, every clip with
-    /// sound is gained toward the MEDIAN measured loudness of the queue (clamped to
-    /// ±<see cref="ClipMatchMaxGainDb"/>), so clips recorded at different levels do not jump. The
-    /// reference is the queue itself, never an external standard (LOUDSTD_REMOVED_01).
-    /// </summary>
     public bool MatchClipLoudness { get; set; }
 
     public const double ClipMatchMaxGainDb = 12.0;
 
-    /// <summary>
-    /// G03 / ISSUE 2 — which chip should encode. Mirrors <c>ProcessWorker.HardwareStrategy</c>.
-    ///
-    /// ⚠️ CALLERS MUST SET THIS FROM <see cref="ExportEncoderStrategy.Resolve"/>, exactly like the
-    /// Main App does. That is what makes the two applications reach the SAME answer on the same
-    /// machine: Settings override → the suite-wide boot-scan result the Main App published →
-    /// the "unknown, re-probe" sentinel. This worker deliberately runs NO scan of its own.
-    ///
-    /// Accepted values: "NVIDIA" / "AMD" / "INTEL" / "CPU" / <see cref="HardwareScanner.ScanFailed"/>
-    /// / "GPU" / "Auto". "GPU" is the legacy default kept only so an un-set caller still behaves
-    /// sanely (best available hardware encoder); it is NOT the path the UI takes any more.
-    /// </summary>
     public string HardwareStrategy { get; set; } = "GPU";
 
-    /// <summary>
-    /// G09 — last `speed=` value FFmpeg reported for the current attempt (e.g. "3.4x").
-    /// "?" until the first progress line arrives.
-    /// </summary>
     public string LastReportedSpeed { get; private set; } = "?";
     public string LastVideoPipeline { get; private set; } = "";
     public bool UsedGpuVideoProcessing { get; private set; }
 
-    /// <summary>
-    /// IDEA_8 — optional per-clip in/out points, in SOURCE seconds, index-aligned with
-    /// <see cref="InputFiles"/>. A null list, a short list, or an entry that covers the whole file
-    /// all mean "use the clip untrimmed", so an older caller that never sets this behaves exactly
-    /// as before.
-    ///
-    /// Trimming is done with the `trim`/`atrim` FILTERS rather than input-level `-ss`/`-t` on
-    /// purpose. The filters are frame-accurate, and — the part that matters — the identical
-    /// start/end numbers are applied to the video and the audio branch of the same clip in one
-    /// place, followed by `setpts=PTS-STARTPTS`/`asetpts=PTS-STARTPTS` to rebase both to zero.
-    /// That is what keeps picture and sound locked together through the concat. Input seeking
-    /// would have split that decision across two mechanisms and risked exactly the silent
-    /// audio-drift this feature must not introduce.
-    /// </summary>
     public List<ClipTrim>? ClipTrims { get; set; }
 
-    /// <summary>
-    /// A clip's in/out point in SOURCE seconds. <see cref="EndSec"/> of 0 or less means "run to the
-    /// end of the file".
-    /// </summary>
     public readonly record struct ClipTrim(double StartSec, double EndSec);
 
-    /// <summary>
-    /// SCRAPER_02 — per clip, the SOURCE second where the kept content must start because a tagged
-    /// thumbnail intro is removed there (0 = nothing removed). Index-aligned with
-    /// <see cref="InputFiles"/> and produced by <see cref="MergedTimeline.ContentStarts"/>, the same
-    /// object the preview and the Music Wizard use, so export and preview cut at the same frame.
-    /// </summary>
     public List<double>? ClipIntroSkipSec { get; set; }
 
-    /// <summary>SCRAPER_01 — per clip, the tagged intro length (0 = untagged). Decides whether the merged file itself starts with an intro.</summary>
     public List<double>? ClipIntroTagSec { get; set; }
 
-    /// <summary>
-    /// SCRAPER_04 — custom thumbnail. When <see cref="ThumbnailClipIndex"/> is a valid index, a
-    /// <see cref="IntroTag.StandardIntroSec"/> still of that clip's frame at
-    /// <see cref="ThumbnailSourceSec"/> (SOURCE seconds) is prepended to the finished picture, with
-    /// silence under it, AFTER the music mix. Same construction as the Main App's intro.
-    /// </summary>
     public int ThumbnailClipIndex { get; set; } = -1;
     public double ThumbnailSourceSec { get; set; }
 
-    /// <summary>SCRAPER_01 — intro length (output seconds) the finished file starts with; stamped as its tag.</summary>
     private double _outputIntroSec;
 
-    /// <summary>
-    /// MERGEGRAPH_01 — the Merger's edit list. When it describes <see cref="InputFiles"/> (same count,
-    /// same paths, same order), clips with granular effects are rendered through
-    /// <see cref="MergeClipGraph"/> and the output length comes from <see cref="CompositeTimeline"/>.
-    /// Null, or a mismatch, keeps the plain per-clip chain for every clip.
-    /// </summary>
     public MergeEdl? Edl { get; set; }
 
     private bool EdlMatchesInputs()
@@ -178,14 +69,9 @@ public class MergerWorker : IDisposable
         return true;
     }
 
-    /// <summary>A meme file opened as an extra FFmpeg input for one clip's graph.</summary>
     private sealed record MemeInputFile(int Clip, string Path, bool IsImage, bool HasAudio, double DurationSec, double AtRelSec, double GainDb = 0,
         EdlMeme? Source = null, double ClipInSec = 0);
 
-    /// <summary>
-    /// CLIPLEVEL_01 / PEAKSAFE_01 — one measurement per clip with sound, over its kept window, at most
-    /// three at a time. Null entries = no audio or unmeasurable (that clip is then left alone).
-    /// </summary>
     private async Task<double?[]> MeasureClipLoudnessAsync(
         (double start, double end, bool trimmed)[] windows, bool[] hasAudio, CancellationToken token)
     {
@@ -214,7 +100,6 @@ public class MergerWorker : IDisposable
         return result;
     }
 
-    /// <summary>CLIPLEVEL_01 — the per-clip gain toward the queue's median loudness (0 when off/unmeasured).</summary>
     public static double[] ClipMatchGains(IReadOnlyList<double?> clipLufs, bool enabled)
     {
         var gains = new double[clipLufs.Count];
@@ -230,18 +115,8 @@ public class MergerWorker : IDisposable
         return gains;
     }
 
-    /// <summary>
-    /// TIMINGTAG_02 — the merged file's timing tag. Merges are CFR 60. Fades are UNKNOWN (null) until
-    /// Video-Merger-Migration.md P7.3 computes them from clip 1 / the last clip.
-    /// </summary>
     private ExportTiming MergedOutputTiming() => new(60, 1, ExportTiming.SecToFrames(_outputIntroSec, 60), _outputFadeInFrames, _outputFadeOutFrames);
 
-    /// <summary>
-    /// OUTTAG_01 (P7.3) — the merged file's own fades, in its 60 fps frames: clip 1's fade-in and the
-    /// last clip's fade-out, when they survive into the output unchanged (tag known, the kept window
-    /// still contains the fade, no granular effects on that clip, no meme at that edge). Otherwise
-    /// null = unknown, never a guess. The base speed shortens a fade like any other footage.
-    /// </summary>
     private int? _outputFadeInFrames;
     private int? _outputFadeOutFrames;
 
@@ -267,18 +142,8 @@ public class MergerWorker : IDisposable
         CoreLogger.Info("Merger", $"Output fades for the timing tag: in={(_outputFadeInFrames?.ToString(CultureInfo.InvariantCulture) ?? "unknown")}, out={(_outputFadeOutFrames?.ToString(CultureInfo.InvariantCulture) ?? "unknown")} frame(s).");
     }
 
-    /// <summary>
-    /// Resolves the effective in/out window for one clip, clamped to the real file duration.
-    /// Returns the untrimmed window when no usable trim is configured. A window that would be
-    /// shorter than this is treated as a mistake and ignored — a zero-length clip in a concat
-    /// chain produces a corrupt output rather than an error.
-    /// </summary>
     private const double MinTrimmedClipSec = 0.05;
 
-    /// <summary>
-    /// FRAMESNAP_01 — trim starts are backed off by 0.5 ms. Cuts are real frame pts, so the frame AT
-    /// the cut must be kept; at any rate below 2000 fps this can never pull in the previous frame.
-    /// </summary>
     internal const double TrimStartEpsilonSec = 0.0005;
 
     internal static double TrimStartSec(double startSec) => Math.Max(0, startSec - TrimStartEpsilonSec);
@@ -317,16 +182,8 @@ public class MergerWorker : IDisposable
         return (start, end, trimmed);
     }
 
-    /// <summary>
-    /// ISSUE_06 — raw error text (FFmpeg stderr tail / exception) behind the last failure.
-    /// The UI hands this to ErrorReporter, which extracts the root-cause line for the dialog.
-    /// </summary>
     public string? FailureDetail { get; private set; }
 
-    /// <summary>
-    /// Strongly typed failure model providing structured category, stage, attempt history,
-    /// exit/error codes, and supporting diagnostics for ErrorReporter.
-    /// </summary>
     public ExportFailure? LastFailure { get; private set; }
 
     public MergerWorker(ApplicationPaths? paths = null)
@@ -336,57 +193,25 @@ public class MergerWorker : IDisposable
         _ffprobePath = FreeVideoStudio.Core.Infrastructure.BinaryPathResolver.Resolve("ffprobe.exe", "backend", "binaries");
     }
 
-    /// <summary>
-    /// ISSUE_04 — the single message used for a user-initiated stop, so the UI can tell
-    /// "you cancelled" apart from "something broke" without string-guessing.
-    /// </summary>
     public const string CancelledMessage = "Merge cancelled.";
 
-    /// <summary>
-    /// PIPELIFE_01 — private alias over the shared lifetime's flag, so every existing read and
-    /// write in this file compiles unchanged. Writing `false` is a deliberate no-op.
-    /// </summary>
     private bool _isCanceled
     {
         get => _lifetime.WasCanceled;
         set { if (value) _lifetime.MarkCanceled(); }
     }
 
-
-    /// <summary>True when this job ended because the user stopped it, not because it failed.</summary>
     public bool WasCanceled => _isCanceled;
 
-    /// <summary>
-    /// PIPELIFE_02 — this used to pass the raw <c>_currentProcess</c> field to the ladder, which
-    /// is the exact two-read race PROCGATE_01 documents. The shared lifetime takes one consistent
-    /// read and acts on that single reference.
-    /// </summary>
     public void Cancel() => _lifetime.Cancel(
         stoppingMessage: "Merge cancelled by user. Stopping the FFmpeg process tree (cooperative quit, then hard kill).",
         idleMessage: "Merge worker released on shutdown (no encode was running).");
 
-    /// <summary>
-    /// Starts the bounded cooperative shutdown ladder for <paramref name="proc"/> exactly once.
-    /// Single-flight: Cancel(), the token registration, and Dispose() may all race each other,
-    /// but only one ladder ever runs per process. Faults are observed so a background stop can
-    /// never surface as an unobserved task exception.
-    /// </summary>
     private void BeginCooperativeShutdown(Process? proc)
         => _lifetime.BeginCooperativeShutdown(proc, attemptQuitCommand: true);
 
-    /// <summary>Awaits the in-flight shutdown ladder, if any. Bounded by the ladder itself.</summary>
     private Task AwaitActiveShutdownAsync() => _lifetime.AwaitActiveShutdownAsync();
 
-    /// <summary>
-    /// ISSUE_04 — reads a child process's exit code without ever throwing.
-    ///
-    /// Callers reach here after a CANCELLABLE wait whose OperationCanceledException is
-    /// deliberately swallowed, so the process may still be dying (Kill is asynchronous) and
-    /// `ExitCode` would throw InvalidOperationException. Give it a short grace period, then fall
-    /// back to a sentinel rather than letting that exception masquerade as a pipeline crash.
-    /// </summary>
-    /// ⚠️ attemptQuitCommand STAYS false here. The caller has already attempted the cooperative
-    /// stop, so a second 'q' would only burn the grace budget. See CooperativeShutdownGate.
     private static int ReadExitCodeSafely(Process proc, string logTag, int graceMs = 5000)
         => CooperativeShutdownGate.ReadExitCodeSafely(proc, logTag, graceMs, attemptQuitCommand: false);
 
@@ -1374,13 +1199,6 @@ public class MergerWorker : IDisposable
         return looped.Count > 0 ? looped : normalized;
     }
 
-    /// <summary>
-    /// T01 — runs the analysis pass and the real pass against the pre-rendered scratch master.
-    ///
-    /// Audio is NOT re-encoded: it was finalised in the master and is stream-copied through by
-    /// pass 2, so it is encoded exactly once across the whole merge and suffers no double loss.
-    /// Progress occupies the 60-100 slice of the bar (the master render owned 0-60).
-    /// </summary>
     private async Task<(bool Success, ExportFailure? Failure)> RunTwoPassTailAsync(
         string masterPath, string finalPath, string passLogPrefix,
         int videoBitrateKbps, double outputDuration, CancellationToken cancellationToken,
@@ -1420,11 +1238,6 @@ public class MergerWorker : IDisposable
         return (exists, null);
     }
 
-    /// <param name="progressFloor">
-    /// T01 — start of this invocation's slice of the 0-100 bar. Defaults keep every pre-existing
-    /// caller on the full 0-100 range, so single-pass merges behave exactly as before.
-    /// </param>
-    /// <param name="progressCeiling">T01 — end of this invocation's slice of the 0-100 bar.</param>
     private async Task<(bool Success, ExportFailure? Failure)> ExecuteFFmpegAsync(
         List<string> cmdArgs,
         double totalDuration,
@@ -1605,13 +1418,6 @@ public class MergerWorker : IDisposable
         }
     }
 
-    /// <summary>
-    /// Removes every artifact a cancelled FFmpeg job may have left behind: the per-job temp
-    /// directory plus any explicitly listed partial outputs. Runs BEFORE the cancelled status
-    /// is emitted, so by the time the UI reports the stop there are no 0-byte or truncated
-    /// video files left in the output location. Never throws — a cleanup failure must not
-    /// mask the cancellation itself.
-    /// </summary>
     private static async Task CleanupCancelledJobAsync(string? tempJobDir, params string?[] partialFiles)
     {
         foreach (string? file in partialFiles)
@@ -1625,11 +1431,6 @@ public class MergerWorker : IDisposable
         }
     }
 
-    /// <summary>
-    /// Deletes a file, retrying briefly: a just-stopped encoder's file handles can take a
-    /// moment to be released by the OS, and a single un-retried delete is exactly how
-    /// cancelled jobs leave partial outputs behind on disk. Never throws.
-    /// </summary>
     private static async Task TryDeleteFileWithRetryAsync(string? path, string logTag)
     {
         if (string.IsNullOrEmpty(path)) return;
@@ -1664,7 +1465,6 @@ public class MergerWorker : IDisposable
         CoreLogger.Fail(logTag, $"Could not remove partial output '{path}' after 3 attempts.");
     }
 
-    /// <summary>Directory counterpart of <see cref="TryDeleteFileWithRetryAsync"/>. Never throws.</summary>
     private static async Task TryDeleteDirectoryWithRetryAsync(string? path, string logTag)
     {
         if (string.IsNullOrEmpty(path)) return;
@@ -1701,19 +1501,6 @@ public class MergerWorker : IDisposable
     private void EmitFinished(bool success, string message)
         => _lifetime.EmitFinished(Finished, success, message);
 
-    /// genuinely nothing left to save.
-    /// </summary>
-    /// <summary>
-    /// RESCUE_01 — delegates to <see cref="RescuedOutputPath.TryRescue"/>. This was a byte-for-byte
-    /// copy of <c>ProcessWorker.TryRescueFinishedRender</c> carrying the same
-    /// File.Exists-then-File.Move race and the same unbounded index loop; see
-    /// <see cref="RescuedOutputPath"/> for the full failure analysis. Keeping one copy is
-    /// deliberate: the twin pair <c>ReadExitCodeSafely</c> silently diverged between these two
-    /// files, and duplicated logic is how that happened.
-    ///
-    /// ⚠️ "Merged-Videos-RECOVERED-" and the "Merger" tag are preserved verbatim — they are how
-    /// the user and the crash digest know a rescued file came from the Merger and not the editor.
-    /// </summary>
     private string? TryRescueFinishedRender(string sourcePath)
         => RescuedOutputPath.TryRescue(
             sourcePath,
@@ -1722,21 +1509,6 @@ public class MergerWorker : IDisposable
             "Merger",
             "Could not preserve the finished merge");
 
-    /// <summary>
-    /// ISSUE_11 — disposing the worker now also STOPS the encoder.
-    ///
-    /// WHAT WAS WRONG: this released the bookkeeping object and nothing else. Every caller is
-    /// expected to call <see cref="Cancel"/> first, but nothing enforced that, so any path that
-    /// disposed a worker without cancelling left FFmpeg grinding at full CPU on a merge whose
-    /// progress window had already gone — the machine stayed hot and loud for a file nobody would
-    /// ever receive. Killing the tree here makes the object's own teardown sufficient.
-    /// </summary>
-    /// <summary>
-    /// Maps <paramref name="source"/> captions onto the merger export body-output clock.
-    /// When <paramref name="frameAuthority"/> is present it already accounts for speed, cuts, freezes,
-    /// and inline meme splice offsets (so <paramref name="splices"/> is null to avoid double-shifting),
-    /// while lines spanning across an inline meme insertion point are trimmed cleanly at the meme boundary.
-    /// </summary>
     internal static CaptionTrack MapCaptionTrackForExport(
         CaptionTrack source,
         CompositeTimeline? frameAuthority,

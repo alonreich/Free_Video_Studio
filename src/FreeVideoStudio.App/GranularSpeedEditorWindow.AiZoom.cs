@@ -17,11 +17,6 @@ using static FreeVideoStudio.App.Infrastructure.GranularEditorVisuals;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// Universal AI Smart Tracking Zoom for <see cref="GranularSpeedEditorWindow"/> (docs/04 UI-AIZOOM):
-/// consent, subject discovery, the subject picker (or the user's own box), chunked tracking, the
-/// loop preview and its ACCEPT / DISCARD — plus "Re-frame" of an existing AI zoom without a new AI call.
-/// </summary>
 public partial class GranularSpeedEditorWindow
 {
     private CancellationTokenSource? _aiTrackingCts;
@@ -35,7 +30,6 @@ public partial class GranularSpeedEditorWindow
     private SpeedSegment? _aiPreviewOriginalSegment;
     private SpeedSegment? _aiPreviewCandidateSegment;
 
-    /// <summary>Where the AI should look for one block: which file, which source seconds, and how far that file goes.</summary>
     private readonly record struct AiSource(string VideoPath, double SourceStartSec, double DurationSec, double SourceEndLimitSec, double BlockUpperLimitMs);
 
     private void WireAiTrackingControls()
@@ -162,15 +156,6 @@ public partial class GranularSpeedEditorWindow
         }
     }
 
-    /// <summary>
-    /// Finalizes or discards the loop preview.
-    ///
-    /// <para>AIUNDO_01 (docs/07) — the preview puts the candidate block into the session WITHOUT a
-    /// checkpoint, so it can be thrown away silently. <see cref="PushUndo"/> records the state BEFORE a
-    /// change (UNDO_01), so ACCEPT must first put the ORIGINAL block back, checkpoint, and only then
-    /// commit the candidate. Checkpointing with the candidate already in place recorded the AI zoom as
-    /// the "before" state, so Ctrl+Z could never take it off.</para>
-    /// </summary>
     private void EndAiPreviewLoop(bool accept)
     {
         if (!_isAiPreviewLooping) return;
@@ -212,7 +197,6 @@ public partial class GranularSpeedEditorWindow
         UpdateAiSmartZoomBtnVisualState();
     }
 
-    /// <summary>Puts <paramref name="trajectory"/> on block <paramref name="index"/> as an un-checkpointed preview and starts the loop.</summary>
     private void BeginAiPreview(int index, SpeedSegment original, AiTrajectorySmoother.SmoothedTrajectory trajectory, int sw, int sh, double? newEndMs)
     {
         if (index < 0 || index >= _edit.Segments.Count || trajectory.Keyframes.Count == 0) return;
@@ -254,10 +238,6 @@ public partial class GranularSpeedEditorWindow
         Notify("AI Smart Zoom ready — review the loop, then ACCEPT & APPLY or DISCARD.");
     }
 
-    /// <summary>
-    /// AIZOOMCONSENT_01 / SETNOCONSENTUI_01 — saving a key in Settings › AI or the Setup Wizard records consent;
-    /// this verifies the active vendor key exists and keeps legacy consent flags synchronized.
-    /// </summary>
     private Task<bool> EnsureAiZoomConsentAsync()
     {
         var settings = SettingsManager.Instance;
@@ -272,13 +252,10 @@ public partial class GranularSpeedEditorWindow
         return Task.FromResult(true);
     }
 
-    /// <summary>
-    /// AIMERGE_01 — which file and which SOURCE seconds a block covers. In merge mode that is the clip
-    /// the block starts in; a block that runs into the next clip is refused (one clip = one video file
-    /// = one tracking run). <see cref="AiSource.SourceEndLimitSec"/> is the last source second of THAT
-    /// file the lookahead may probe (trim end, or the clip's kept end) — never the merged timeline's
-    /// length, which used to let the probe run past the clip.
-    /// </summary>
+    internal static string LocalAiFailureAdvice(bool packHealthy) => packHealthy
+        ? "The PC AI files are fine, so there is nothing to reinstall. Try again; if it keeps failing, restart Free Video Studio (this resets the graphics card), or press Remove in Settings › AI › PC AI to follow targets with online AI instead."
+        : "Open Settings › AI › PC AI. Reinstall it there if it is offered, or press Remove to follow targets with online AI instead.";
+
     private bool TryResolveAiSource(SpeedSegment seg, out AiSource source, out string? refusal)
     {
         refusal = null;
@@ -311,7 +288,6 @@ public partial class GranularSpeedEditorWindow
         return true;
     }
 
-    /// <summary>The zoom box the user drew (or the block's existing zoom), in 0-1000 frame units, or null.</summary>
     private (int ymin, int xmin, int ymax, int xmax)? GetUserZoomBox(SpeedSegment seg, int sw, int sh)
     {
         var canvas = ZoomOverlayCanvasCtl;
@@ -344,11 +320,6 @@ public partial class GranularSpeedEditorWindow
             Math.Clamp((int)Math.Round((x + w) * 1000.0 / fw), 0, 1000));
     }
 
-    /// <summary>
-    /// AIHUDZONE_01 / B8 — the HUD areas the camera keeps clear of: the Crop Tool layout the user built
-    /// (exactly where THIS game's HUD is) when there is one, otherwise the profile's usual corners.
-    /// Read-only and best-effort: any failure falls back to the defaults.
-    /// </summary>
     private static async Task<IReadOnlyList<AiNormalizedRect>> LoadAiHudZonesAsync(AiGameProfile profile, int sw, int sh, Action<string>? log)
     {
         if (profile == AiGameProfile.Generic) return AiHudAvoidZones.DefaultsFor(profile);
@@ -382,11 +353,18 @@ public partial class GranularSpeedEditorWindow
         };
     }
 
-    /// <summary>
-    /// AIRESMOOTH_01 — "EDIT AI ZOOM › Re-frame": the stored raw waypoints are smoothed again with the
-    /// CURRENT camera settings. Instant, offline, and goes through the same preview / ACCEPT path.
-    /// </summary>
     private sealed record LastZoomRun(IReadOnlyList<RawSubjectWaypoint> Raw);
+
+    private sealed record LastZoomBlock(bool Exists);
+
+    internal const string ReuseBeforeApprovalTag = "AIREUSEFIRST_01";
+
+    private static string LastZoomBlockKey(string videoPath, double startSec, double durationSec, AiVendor vendor, string model)
+    {
+        string identity = File.Exists(videoPath) ? AiResultCache.FileIdentity(videoPath) : videoPath;
+        string Num(double v) => v.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture);
+        return AiResultCache.Key("zoom-last-block-v1", identity, Num(startSec), Num(durationSec), vendor.ToString(), AiVisionProviders.EffectiveModel(vendor, model, null));
+    }
 
     private static string LastZoomRunKey(AiTrackingRequest r, GeminiModelSession session)
     {
@@ -445,6 +423,51 @@ public partial class GranularSpeedEditorWindow
         return parts;
     }
 
+    internal const string ClipEdgeSplitTag = "AIMERGESPLIT_01";
+
+    internal static IReadOnlyList<double> ClipEdgesInside(double startMs, double endMs, IEnumerable<double> clipEndsMs, double frameMs)
+    {
+        var edges = new List<double>();
+        foreach (double e in clipEndsMs)
+            if (e > startMs + frameMs && e < endMs - frameMs) edges.Add(e);
+        edges.Sort();
+        return edges;
+    }
+
+    private async Task<bool> OfferSplitAtClipEdgesAsync(int segIndex, string feature)
+    {
+        if (!IsMergeMode || _mergeSource == null || segIndex < 0 || segIndex >= _edit.Segments.Count) return false;
+        var seg = _edit.Segments[segIndex];
+        var edges = ClipEdgesInside(seg.StartMs, seg.EndMs, _mergeSource.Clips.Select(c => c.EndMs), MergeEditorSource.FrameMs);
+        if (edges.Count == 0) return false;
+        if (seg.ZoomW.HasValue || !string.IsNullOrEmpty(seg.AiTrackingTrajectory))
+        {
+            await ErrorReporter.ShowAsync(this, "Block Runs Across Two Clips",
+                $"{feature} works inside one clip, and this block runs across {edges.Count + 1} clips. It already has a zoom, so it is not split automatically: remove its zoom first, or split it at the clip edge yourself.");
+            return false;
+        }
+        if (!await ConfirmDialogWindow.AskAsync(this,
+                $"This block runs across {edges.Count + 1} clips. {feature} works inside one clip at a time.\n\n" +
+                $"Split it at the clip edge{(edges.Count == 1 ? "" : "s")}? {feature} then continues with the part in the first clip. " +
+                "For the others, click the block and press the button again. Ctrl+Z puts the block back.",
+                "Block Runs Across Two Clips", "Split at the clip edge", "Cancel"))
+            return false;
+
+        PushUndo("split block at clip edge for AI");
+        var bounds = new List<double> { seg.StartMs };
+        bounds.AddRange(edges);
+        bounds.Add(seg.EndMs);
+        _edit.Segments[segIndex] = seg with { StartMs = bounds[0], EndMs = bounds[1] };
+        for (int k = 1; k < bounds.Count - 1; k++)
+            _edit.Segments.Insert(segIndex + k, seg with { StartMs = bounds[k], EndMs = bounds[k + 1] });
+        _edit.SelectedSegmentIndex = segIndex;
+        RefreshSegmentList();
+        RedrawTimeline();
+        UpdateDeleteButtonVisibility();
+        RuntimeLog.Info("AiTracking", $"{ClipEdgeSplitTag}: split block {segIndex + 1} at {edges.Count} clip edge(s) for {feature}.");
+        return true;
+    }
+
     private async Task<bool> OfferSplitForAiZoomAsync(int segIndex, SpeedSegment seg, double durationSec)
     {
         var ci = CultureInfo.InvariantCulture;
@@ -477,7 +500,6 @@ public partial class GranularSpeedEditorWindow
         return true;
     }
 
-    /// <summary>Main handler for AI SMART ZOOM / EDIT AI ZOOM.</summary>
     private async Task OnAiSmartZoomClickedAsync()
     {
         if (_aiTrackingCts != null) return;
@@ -534,7 +556,14 @@ public partial class GranularSpeedEditorWindow
         if (_zoomModeActive) ExitZoomMode();
         followAimedBox = followAimedBox && userBox != null;
 
-        if (!TryResolveAiSource(seg, out AiSource source, out string? refusal))
+        bool resolved = TryResolveAiSource(seg, out AiSource source, out string? refusal);
+        if (!resolved && existing == null && await OfferSplitAtClipEdgesAsync(segIndex, "AI SMART ZOOM"))
+        {
+            seg = _edit.Segments[segIndex];
+            userBox = GetUserZoomBox(seg, sw, sh);
+            resolved = TryResolveAiSource(seg, out source, out refusal);
+        }
+        if (!resolved)
         {
             if (existing != null && await ConfirmDialogWindow.AskAsync(this,
                     (refusal ?? "This block cannot be tracked again.") + "\n\nRe-aim the AI zoom it already has with your current Zoom strength instead?",
@@ -575,6 +604,15 @@ public partial class GranularSpeedEditorWindow
         string findCost = localTracking
             ? $"Sends 3 pictures to {findVendor}; the following itself runs on this PC. " + AiCostEstimator.PlainCost(findEstimate, u1Config.Vendor, u1Model)
             : $"Sends this part of the video (no sound) to {trackVendor}. " + About(zoomParts + 1) + AiCostEstimator.PlainCost(findEstimate, u2Config.Vendor, u2Model);
+
+        bool reusableBlock = !localTracking
+            && AiResultCache.Has<LastZoomBlock>(LastZoomBlockKey(source.VideoPath, source.SourceStartSec, source.DurationSec, u2Config.Vendor, u2Model));
+        if (reusableBlock)
+        {
+            const string ReuseNote = " A result from a few minutes ago may be reused for free; you choose before anything is sent for tracking.";
+            followCost += ReuseNote;
+            findCost += ReuseNote;
+        }
 
         bool skipDiscoveryWithUserBox = false;
         bool askedAtStart = false;
@@ -641,12 +679,13 @@ public partial class GranularSpeedEditorWindow
 
         AiEstimatedUsage estimatedUsage = skipDiscoveryWithUserBox ? followEstimate : findEstimate;
 
-        if (!localTracking && !askedAtStart)
+        string zoomSent = AiVisionProviders.WatchesVideoWithAudio(u2Config.Vendor)
+            ? $"this part of the video without sound, in {zoomParts} piece{(zoomParts == 1 ? "" : "s")}."
+            : $"2 pictures per second of this part of the video.";
+        bool approvalDeferred = !localTracking && !askedAtStart && reusableBlock;
+        if (!localTracking && !askedAtStart && !approvalDeferred)
         {
             int zoomRequests = zoomParts + (skipDiscoveryWithUserBox ? 0 : 1);
-            string zoomSent = AiVisionProviders.WatchesVideoWithAudio(u2Config.Vendor)
-                ? $"this part of the video without sound, in {zoomParts} piece{(zoomParts == 1 ? "" : "s")}."
-                : $"2 pictures per second of this part of the video.";
             if (!await AiRunApproval.ConfirmAsync(this, "AI Smart Zoom", zoomSent, zoomRequests,
                     (int)Math.Ceiling(zoomRequests * 20 / 60.0), estimatedUsage, u2Config.Vendor, u2Model))
                 return;
@@ -743,6 +782,7 @@ public partial class GranularSpeedEditorWindow
             return ReportAiUsage(usage, consoleLog, estimatedUsage);
         }
 
+        bool retryAfterFix = false;
         try
         {
             if (!localTracking)
@@ -789,6 +829,14 @@ public partial class GranularSpeedEditorWindow
                     source.VideoPath, source.SourceStartSec, source.DurationSec, source.SourceEndLimitSec,
                     discoverySession, profile, consoleLog, token, targetDescription);
                 if (token.IsCancellationRequested) return;
+                if (discovery.ProbesRun > 0)
+                {
+                    var probeCost = AiCostEstimator.EstimateSmartZoomDiscoveryOnly(u1Config.Vendor, u1Model, include: true);
+                    for (int p = 0; p < discovery.ProbesRun; p++)
+                        estimatedUsage = AiCostEstimator.Plus(estimatedUsage, probeCost, u2Config.Vendor, u2Model);
+                    usage.SetEstimate(estimatedUsage);
+                    consoleLog($"Looked further ahead: {discovery.ProbesRun} extra small request{(discovery.ProbesRun == 1 ? "" : "s")} (3 pictures each); the estimate now includes {(discovery.ProbesRun == 1 ? "it" : "them")}.");
+                }
 
                 if (overlay != null) overlay.IsVisible = false;
 
@@ -933,6 +981,19 @@ public partial class GranularSpeedEditorWindow
                     return;
                 }
             }
+            if (trajectory == null && approvalDeferred)
+            {
+                if (overlay != null) overlay.IsVisible = false;
+                bool go = await AiRunApproval.ConfirmAsync(this, "AI Smart Zoom", zoomSent, zoomParts,
+                    (int)Math.Ceiling(zoomParts * 20 / 60.0), followEstimate, u2Config.Vendor, u2Model);
+                if (overlay != null) overlay.IsVisible = true;
+                if (!go)
+                {
+                    if (!reportedUsage) EmitUsage();
+                    FloatingNotice.Info(this, usage.PlainSummary());
+                    return;
+                }
+            }
             trajectory ??= localTracking
                 ? await LocalTrackingService.TrackAsync(request, statusProgress, consoleLog, token, fractionProgress)
                 : await Task.Run(
@@ -940,7 +1001,10 @@ public partial class GranularSpeedEditorWindow
                         (part, parts, failure) => Dispatcher.UIThread.InvokeAsync(() => AskPartFailureAsync("AI Smart Zoom", part, parts, failure,
                             "keep the other parts (the camera stays wide for this stretch)", usage.Id)), fractionProgress), token);
             if (!localTracking && trajectory.RawWaypoints is { Count: > 0 } raw)
+            {
                 AiResultCache.Put(lastRunKey, new LastZoomRun(raw.ToList()));
+                AiResultCache.Put(LastZoomBlockKey(source.VideoPath, source.SourceStartSec, trackDurationSec, u2Config.Vendor, u2Model), new LastZoomBlock(true));
+            }
 
             if (token.IsCancellationRequested) return;
 
@@ -970,7 +1034,10 @@ public partial class GranularSpeedEditorWindow
             RuntimeLog.Fail("AiTracking", $"{ex.Vendor} {ex.Kind}: {ex.Message} {safeDetail}");
             if (overlay != null) overlay.IsVisible = false;
             var (u, a) = EmitUsage();
-            await ErrorReporter.ShowAsync(this, AiProviderErrorTitle(ex.Vendor, ex.Kind), $"{ex.Message}\n\n{usage.PlainSummary()}" + usage.ReferenceSuffix, $"{safeDetail}\n{u}\n{a}");
+            if (AiAccountFix.KindFor(ex.Kind) != AiFixKind.None)
+                retryAfterFix = await AiAccountFix.OfferAsync(this, ex, AiUsage.SubjectDiscovery);
+            else
+                await ErrorReporter.ShowAsync(this, AiProviderErrorTitle(ex.Vendor, ex.Kind), $"{ex.Message}\n\n{usage.PlainSummary()}" + usage.ReferenceSuffix, $"{safeDetail}\n{u}\n{a}");
         }
         catch (FreeVideoStudio.Core.LocalAi.OrtException ex)
         {
@@ -979,7 +1046,7 @@ public partial class GranularSpeedEditorWindow
             EmitUsage();
             await ErrorReporter.ShowAsync(this, "Following on This PC Failed",
                 $"This PC could not follow the target:\n{ex.Message}\n\n" +
-                "Open Settings › AI › PC AI. Reinstall it there if it is offered, or press Remove to follow targets with online AI instead." +
+                LocalAiFailureAdvice(LocalAiPackService.IsReady) +
                 $"\n\n{usage.PlainSummary()}", ex.ToString());
         }
         catch (Exception ex)
@@ -1001,6 +1068,11 @@ public partial class GranularSpeedEditorWindow
             _aiTrackingCts?.Dispose();
             _aiTrackingCts = null;
         }
+        if (retryAfterFix)
+        {
+            RuntimeLog.Info("AiTracking", $"{AiAccountFix.Tag}: the AI account was fixed; starting AI Smart Zoom again.");
+            Dispatcher.UIThread.Post(() => _ = OnAiSmartZoomClickedAsync());
+        }
     }
 
     internal static string AiTimeLeft(DateTime? followStartedUtc, double fraction, DateTime nowUtc)
@@ -1013,7 +1085,6 @@ public partial class GranularSpeedEditorWindow
         return left >= 90 ? $" · about {(int)Math.Round(left / 60.0)} min left" : $" · about {left} s left";
     }
 
-    /// <summary>AIUSAGE_01 — logs the task's usage report + cost estimate comparison, writes to console, and returns its two lines.</summary>
     private static (string Usage, string Allowance) ReportAiUsage(AiUsageMeter.Scope scope, Action<string>? consoleLog)
         => ReportAiUsage(scope, consoleLog, estimated: null);
 
@@ -1028,10 +1099,6 @@ public partial class GranularSpeedEditorWindow
         return (u, a);
     }
 
-    /// <summary>
-    /// AIUSAGE_01 — shows (or hides, with null) the two usage lines inside a preview bar. The lines are the bar's
-    /// own children, found by walking the bar (no window-wide name lookup, MVVM_01).
-    /// </summary>
     private static void SetAiUsageLines(Border bar, string prefix, (string Usage, string Allowance)? lines, string? details = null)
     {
         foreach (var tb in Avalonia.LogicalTree.LogicalExtensions.GetLogicalDescendants(bar).OfType<TextBlock>())
@@ -1050,10 +1117,6 @@ public partial class GranularSpeedEditorWindow
         }
     }
 
-    /// <summary>
-    /// AIPARTRETRY_01 — one part of a multi-part AI run failed twice. Retry it, keep the other parts, or stop.
-    /// Closing the question is "stop". Shared by AI Smart Zoom and AI Commentary.
-    /// </summary>
     private async Task<AiPartFailureChoice> AskPartFailureAsync(string feature, int part, int parts, AiProviderException failure, string keepText, string reference)
     {
         var choice = await ConfirmDialogWindow.AskThreeWayAsync(this, $"{feature}: part {part} of {parts} failed",
@@ -1068,7 +1131,6 @@ public partial class GranularSpeedEditorWindow
         };
     }
 
-    /// <summary>AIOWNBOX_01 — the user's own zoom box as a tracking target (no AI discovery behind it).</summary>
     private static DiscoveredSubject UserBoxTarget((int ymin, int xmin, int ymax, int xmax) box) => new()
     {
         Id = 0,

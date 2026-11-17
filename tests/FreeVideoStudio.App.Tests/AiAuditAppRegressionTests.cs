@@ -10,11 +10,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// Regression tests covering App-layer AI audit fixes: model newest-first sorting,
-/// Retry-After Delta + HTTP-date parsing, key-fingerprint-scoped 404 session remapping,
-/// elimination tracker malformed-JSON distinction, cost estimator formatting, and viral post caching.
-/// </summary>
 public sealed class AiAuditAppRegressionTests
 {
     private sealed class FakeVisionProvider : IAiVisionProvider

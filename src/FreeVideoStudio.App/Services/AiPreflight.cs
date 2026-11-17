@@ -6,11 +6,6 @@ using System.Threading.Tasks;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>AIPREFLIGHT_03 (docs/05 SYS-AISETTINGS §7.7) — before a multi-request job prepares any media (Smart Zoom,
-/// Commentary, Kill Tracker), one tiny request proves the key works, the model exists and it reads a picture and
-/// answers JSON. A wrong key fails in seconds with the Settings › AI fix instead of after the clips are cut.
-/// No balance API is assumed. A success is reused for 30 minutes per key + model (<see cref="AiResultCache"/>).
-/// Single-request features (Music Auto-Fit, Viral Post, Magic Wand) skip it: their one request IS the check.</summary>
 internal static class AiPreflight
 {
     private static readonly byte[] TestImage = CreateImage();

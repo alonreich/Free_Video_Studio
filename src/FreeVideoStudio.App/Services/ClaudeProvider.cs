@@ -15,11 +15,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// CLAUDEPROVIDER_01 / AIPROVIDER_01 (docs/05 SYS-AISETTINGS) — Anthropic Claude implementation of <see cref="IAiVisionProvider"/>.
-/// Uses Messages API with x-api-key and anthropic-version headers, base64 images, tool use structured JSON schemas,
-/// and extended thinking / reasoning controls. Enforces GEMINICLIENT_01 security and error handling invariants.
-/// </summary>
 public sealed class ClaudeProvider : IAiVisionProvider
 {
     public const string DefaultModelName = "claude-sonnet-5-5";
@@ -197,6 +192,11 @@ public sealed class ClaudeProvider : IAiVisionProvider
                 {
                     RuntimeLog.Fail("CLAUDE_PARSE", AiDiagnostics.Tag + GeminiClient.Redact($"Model '{resolvedModel}' answer cut off at its length limit. Raw response: {GeminiClient.Truncate(responseBody, 1200)}", key));
                     throw AiAnswerGuard.Truncated(Vendor, AiAnswerGuard.StopReason(Vendor, responseBody));
+                }
+                if (AiAnswerGuard.IsRefusal(Vendor, responseBody))
+                {
+                    RuntimeLog.Fail("CLAUDE_PARSE", AiDiagnostics.Tag + GeminiClient.Redact($"Model '{resolvedModel}' declined to answer. Raw response: {GeminiClient.Truncate(responseBody, 1200)}", key));
+                    throw AiAnswerGuard.Refused(Vendor, "Anthropic", AiAnswerGuard.StopReason(Vendor, responseBody));
                 }
                 if (TryExtractToolResult(responseBody, out string result, out string? error))
                 {
@@ -497,11 +497,16 @@ public sealed class ClaudeProvider : IAiVisionProvider
                 detail, status);
         }
 
+        if (status is 400 or 403 && AiAnswerGuard.LooksLikeRegion(anthropicType, anthropicMsg))
+            return new AiProviderException(AiVendor.Anthropic, AiProviderErrorKind.PermissionDenied,
+                "Anthropic's AI service is not available in your country. Choose Google or OpenAI in Settings › AI.",
+                detail, status) { Problem = AiAccountProblem.RegionNotSupported };
+
         switch (status)
         {
             case 403:
                 return new AiProviderException(AiVendor.Anthropic, AiProviderErrorKind.PermissionDenied,
-                    $"Your Anthropic API key is not permitted to use '{model}'.", detail, status);
+                    $"Your Anthropic API key is not permitted to use '{model}'.", detail, status) { Problem = AiAccountProblem.ModelNotAllowed };
             case 404:
                 return new AiProviderException(AiVendor.Anthropic, AiProviderErrorKind.ModelNotFound,
                     $"The AI model '{model}' is not available on Anthropic (it may have been retired). Choose another model in Settings › AI.", detail, status);

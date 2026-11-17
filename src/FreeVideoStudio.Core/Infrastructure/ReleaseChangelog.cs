@@ -4,59 +4,31 @@ using System.Text.RegularExpressions;
 
 namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>
-/// RELNOTES_01 — the ONE parser for both release logs (09 DIST-RELEASENOTES):
-/// <list type="bullet">
-/// <item><c>docs/CHANGELOG.md</c> — what USERS read. Agents add plain-English bullets under
-///   <c>## Upcoming</c>; the official release turns that heading into <c>## v&lt;version&gt; — &lt;date&gt;</c>,
-///   publishes its bullets as the GitHub release notes (which the in-app update card shows) and keeps
-///   the latest <see cref="PublicReleasesKept"/> releases.</item>
-/// <item><c>docs/changes.md</c> — what ENGINEERS read. Agents log every technical change under
-///   <c>## Unreleased</c>; the release promotes it the same way and keeps <see cref="TechnicalReleasesKept"/>.</item>
-/// </list>
-///
-/// <para>⚠️ WHY A FIXED HEADING. The staging heading used to be a GUESSED version
-/// (<c>## v2026.10.16.1230 (Upcoming)</c>) while the build invents its version from the clock at
-/// build time. The publisher searched for the real version, never found it, and every release went
-/// out with a one-line placeholder instead of its notes. A heading that never contains a version
-/// cannot disagree with the version.</para>
-/// </summary>
 public sealed partial class ReleaseChangelog
 {
-    /// <summary>Staging heading of <c>docs/CHANGELOG.md</c> (user-facing notes).</summary>
     public const string UpcomingTitle = "Upcoming";
 
-    /// <summary>Staging heading of <c>docs/changes.md</c> (technical log).</summary>
     public const string UnreleasedTitle = "Unreleased";
 
-    /// <summary>Released sections kept in <c>docs/CHANGELOG.md</c> (CHANGELOG_01 five-release rule).</summary>
     public const int PublicReleasesKept = 5;
 
-    /// <summary>Released sections kept in <c>docs/changes.md</c>.</summary>
     public const int TechnicalReleasesKept = 10;
 
-    /// <summary>A release a person can read in one glance. More bullets fail the release lint.</summary>
     public const int MaxUserBullets = 15;
 
-    /// <summary>Longest single user-facing bullet, in characters.</summary>
     public const int MaxUserBulletLength = 320;
 
-    /// <summary>One <c>## </c> section: its heading line and every line under it.</summary>
     public sealed class Section(string heading, List<string> body)
     {
         public string Heading { get; set; } = heading;
         public List<string> Body { get; } = body;
 
-        /// <summary>The heading without the leading <c>## </c>.</summary>
         public string Title => Heading.Length > 3 ? Heading[3..].Trim() : string.Empty;
 
-        /// <summary>True for <c>## v&lt;version&gt;…</c> headings.</summary>
         public bool IsRelease => ReleaseHeading().IsMatch(Heading);
 
-        /// <summary>The version of a release heading ("2026.10.17.0905"), or null.</summary>
         public string? Version => ReleaseHeading().Match(Heading) is { Success: true } m ? m.Groups["v"].Value : null;
 
-        /// <summary>The section's bullet lines ("- …"), trimmed, without the dash.</summary>
         public IReadOnlyList<string> Bullets => Body
             .Select(l => l.TrimStart())
             .Where(l => l.StartsWith("- ", StringComparison.Ordinal))
@@ -64,7 +36,6 @@ public sealed partial class ReleaseChangelog
             .Where(l => l.Length > 0)
             .ToList();
 
-        /// <summary>The body without leading/trailing blank lines and section rules.</summary>
         public string Text => string.Join("\n", Trimmed(Body)).Trim();
     }
 
@@ -77,13 +48,10 @@ public sealed partial class ReleaseChangelog
         _newline = newline;
     }
 
-    /// <summary>Everything above the first <c>## </c> heading (title and introduction).</summary>
     public List<string> Preamble { get; }
 
-    /// <summary>Every <c>## </c> section in file order.</summary>
     public List<Section> Sections { get; }
 
-    /// <summary>Released sections (<c>## v…</c>) in file order, newest first by convention.</summary>
     public IReadOnlyList<Section> Releases => Sections.Where(s => s.IsRelease).ToList();
 
     public static ReleaseChangelog Parse(string text)
@@ -107,16 +75,9 @@ public sealed partial class ReleaseChangelog
         return new ReleaseChangelog(preamble, sections, newline);
     }
 
-    /// <summary>The section titled exactly <paramref name="title"/> (<c>## Upcoming</c>), or null.</summary>
     public Section? Find(string title) =>
         Sections.FirstOrDefault(s => string.Equals(s.Title, title, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// RELNOTES_01 — turns the staging section <paramref name="pendingTitle"/> into the release
-    /// <c>## v<paramref name="version"/> — <paramref name="date"/></c>, puts a fresh, empty staging
-    /// section above it, and removes the oldest releases beyond <paramref name="keepReleases"/>.
-    /// Throws when the staging section is missing, so a release can never silently skip its notes.
-    /// </summary>
     public IReadOnlyList<Section> Promote(string pendingTitle, string version, DateOnly date, int keepReleases)
     {
         if (string.IsNullOrWhiteSpace(version)) throw new ArgumentException("A release needs a version.", nameof(version));
@@ -139,11 +100,6 @@ public sealed partial class ReleaseChangelog
         return removed;
     }
 
-    /// <summary>
-    /// RELRECORD_01 — <paramref name="archiveText"/> (or a new archive titled <paramref name="title"/>) with
-    /// <paramref name="sections"/> added at the TOP, newest first, keeping everything already archived.
-    /// A version already in the archive is not added twice.
-    /// </summary>
     public static string Archive(string? archiveText, IEnumerable<Section> sections, string title)
     {
         ReleaseChangelog archive = Parse(string.IsNullOrWhiteSpace(archiveText)
@@ -160,7 +116,6 @@ public sealed partial class ReleaseChangelog
         return archive.ToString();
     }
 
-    /// <summary>The whole document, with the line endings it was read with.</summary>
     public override string ToString()
     {
         var builder = new StringBuilder();
@@ -176,12 +131,6 @@ public sealed partial class ReleaseChangelog
         return text.EndsWith(_newline, StringComparison.Ordinal) ? text : text + _newline;
     }
 
-    /// <summary>
-    /// RELNOTES_02 — the release lint for USER-FACING notes. Every problem is one plain sentence; an
-    /// empty list means the bullets are fit to publish. Catches what slipped into the old changelog:
-    /// engineering tags (<c>NODROPPER_01</c>), file names, code (<c>Class.Method</c>, backticks),
-    /// over-long bullets, the same headline twice and a release nobody can read in one sitting.
-    /// </summary>
     public static IReadOnlyList<string> LintUserNotes(IReadOnlyList<string> bullets)
     {
         ArgumentNullException.ThrowIfNull(bullets);
@@ -216,12 +165,6 @@ public sealed partial class ReleaseChangelog
         return problems;
     }
 
-    /// <summary>
-    /// RELNOTES_03 — up to <paramref name="max"/> bullets of release-notes markdown as plain text, for
-    /// the in-app update card: bold markers, code marks and links removed, nothing else reworded. With
-    /// <paramref name="headlinesOnly"/>, a bullet that opens with a bold headline ("**Faster export:** …")
-    /// is reduced to that headline, so four highlights fit a small card.
-    /// </summary>
     public static IReadOnlyList<string> PlainHighlights(string? markdown, int max, bool headlinesOnly = false)
     {
         if (string.IsNullOrWhiteSpace(markdown) || max <= 0) return [];

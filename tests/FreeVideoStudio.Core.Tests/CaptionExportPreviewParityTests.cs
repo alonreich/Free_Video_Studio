@@ -9,10 +9,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// AICAPTION_EXPORT_01 — unit and parity tests verifying that the exported ASS subtitles burned into
-/// the video stream via FFmpeg match the preview ASS subtitles loaded into libmpv bit-for-bit.
-/// </summary>
 public sealed class CaptionExportPreviewParityTests
 {
     [Fact]

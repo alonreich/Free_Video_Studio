@@ -43,11 +43,6 @@ public partial class MainWindow
         return TakeTimingAt(take, before.Plan, end) != TakeTimingAt(take, after.Plan, end);
     }
 
-    /// <summary>
-    /// VOTIMING_01: one guard for dial, presets, trim drags, cut tools and the granular editor.
-    /// The edit stays provisional until the gesture settles. Cancel restores timing only and
-    /// creates no undo entry; Keep records one edit and marks the affected takes for review.
-    /// </summary>
     private bool DeferVoiceTimingChange(bool sync, string label, string? gestureKey)
     {
         if (_committingVoiceTiming || _isRestoring) return false;
@@ -130,8 +125,7 @@ public partial class MainWindow
             SetGranularButtonActive(saved.Granular);
             SpeedPresetButtons.SetSpinningWheelValue(MainSpeedSliderCtl, saved.Speed);
             UpdateSpeedLabel(); UpdateTimelineMarkers(); UpdateEstimatedQuality();
-            if (ActiveVideoHost?.IpcClient is { } ipc)
-                _ = ipc.SetPropertyAsync("speed", saved.Speed.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            ForcePreviewSpeed();
         }
         finally { _isRestoring = restoring; }
     }

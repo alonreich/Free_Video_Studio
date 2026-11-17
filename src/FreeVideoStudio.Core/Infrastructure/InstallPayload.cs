@@ -4,7 +4,6 @@ using System.Text.Json.Serialization;
 
 namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>UPGRADE_06 — validate every staged payload byte before replacing an installed file.</summary>
 public static class InstallPayload
 {
     public const string ManifestName = "install.manifest.json";
@@ -34,11 +33,6 @@ public static class InstallPayload
         return manifest;
     }
 
-    /// <summary>
-    /// UPGRADEUX_01 — <paramref name="progress"/> receives the fraction (0..1) of manifest bytes
-    /// already checked, so a caller can show the user that hashing hundreds of MB is moving.
-    /// It never changes what is verified.
-    /// </summary>
     public static void Verify(string directory, Action<double>? progress = null)
     {
         List<InstallFile> files = ReadManifest(directory).Files;
@@ -53,10 +47,6 @@ public static class InstallPayload
         }
     }
 
-    /// <summary>
-    /// UPGRADEUX_01 — <paramref name="progress"/> receives 0..1 across unpacking (first 70 %),
-    /// reusing installed runtime files (next 15 %) and the final verification (last 15 %).
-    /// </summary>
     public static void Extract(Stream embeddedZip, string destination, string? reuseRoot = null, Action<double>? progress = null)
     {
         UpgradeFiles.RequirePlainPath(destination);
@@ -101,15 +91,6 @@ public static class InstallPayload
 
     private static bool HashMismatch(string path, InstallFile entry) => UpgradeFiles.Hash(path) != entry.Sha256;
 
-    /// <summary>
-    /// DIST-SMART — builds the complete new installation in <paramref name="destination"/> from a
-    /// SIGNATURE-VERIFIED <see cref="SmartUpdateManifest"/>: each file comes from
-    /// <paramref name="downloaded"/> (named by its SHA-256, or at its install path for the Inno Setup
-    /// installer, NODROPPER_01) or is reused from an installed root when a
-    /// file there has the SAME SHA-256 — never just the same name. Downloaded files sit in a folder the
-    /// user can write, so they are COPIED and the copy is hashed; reused installed files are hard-linked
-    /// (FASTINSTALL_01). Ends with a full <see cref="Verify"/>.
-    /// </summary>
     public static void ExtractFromSmartUpdate(SmartUpdateManifest manifest, string downloaded, string destination,
         IEnumerable<string> reuseRoots, Action<double>? progress = null)
     {
@@ -146,7 +127,6 @@ public static class InstallPayload
         Verify(destination, progress == null ? null : f => progress(0.85 + 0.15 * f));
     }
 
-    /// <summary>An installed file with exactly this content: same path first, then any path of equal size.</summary>
     private static string? FindSameContent(InstallFile entry, string[] roots, ref Dictionary<long, List<string>>? bySize)
     {
         foreach (string root in roots)

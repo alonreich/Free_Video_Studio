@@ -6,7 +6,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>MERGEGRAPH_01 — Video-Merger-Migration.md P7.1 (T7.1a; T7.1b runs in the container harness).</summary>
 public class MergeClipGraphTests
 {
     private const string Canvas = "scale=1920:1080:flags=lanczos,setsar=1";

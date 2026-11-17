@@ -11,34 +11,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// PREVIEWMIX_01 — THE PREVIEW PLAYS THE EXPORT'S OWN AUDIO.
-///
-/// The live preview is three independent players (gameplay, music bed, voice-over takes), so it
-/// could never reproduce what only exists in the export's filter graph: the multiband ducking and
-/// speech carving (the GAME is the music's sidechain), the voice-over protection, the peak tamer,
-/// the safety limiter and the meme levels. Whenever the edit has any of those, the export's audio is
-/// rendered in the background — ProcessWorker builds the export graph itself and AudioGraphPruner
-/// runs only its audio half (measured: the rendered mix and the exported file's audio differ by
-/// -60 dB RMS, i.e. AAC noise) — and played here in place of the live players, following the video
-/// in output time exactly like the music bed does (seek-only correction, MUSICSYNC_02).
-///
-/// After every edit the old mix is dropped at once (the live players take over, so nothing stale is
-/// ever heard) and a new one is rendered ~0.8 s after the edits stop.
-///
-/// PREVIEWMIX_02 — which mix may be heard is decided by ONE gate (<see cref="RenderedMixGate"/>): the
-/// signature is re-observed on every playback tick BEFORE any preview audio is driven (not only on the
-/// 250 ms scheduler), every render is a numbered ticket that completes only if it is the newest and its
-/// signature is still the edit's signature re-computed at completion, a WAV being overwritten stops
-/// being a valid mix, and a failed render is latched instead of retried every 250 ms.
-///
-/// VOPREVIEW_01 — until a mix is ready (or when the edit has nothing the export would change), the
-/// live players do what can be done live and exactly: the voice-over protection's 85% dip is a pure
-/// time pulse (VOPRIO_01: voice first, then gameplay, then music), and the peak tamer is a static
-/// filter on the gameplay player.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class MainWindow
 {
     private const int MixDebounceMs = 800;
@@ -46,25 +18,20 @@ public partial class MainWindow
 
     private DispatcherTimer? _mixTimer;
     private FreeVideoStudio.Core.Media.MpvIpcClient? _mixClient;
+    private readonly AudioPlayerClock _mixClock = new();
     private readonly RenderedMixGate _mixGate = new();
     private long _mixObservedAtTicks;
     private CancellationTokenSource? _mixCts;
     private bool _mixPlaying;
     private string? _mixLoadedPath;
-    private int _mixDriftStrikes;
+    private long _mixDriftSinceMs;
     private long _mixHoldUntilTicks;
     private int _mixSlot;
     private double _previewVoicePulse;
     private string? _liveGameFilter;
 
-    /// <summary>True while the rendered mix matches the current edit and replaces the live players.</summary>
     private bool PreviewMixActive => _mixGate.IsActive;
 
-    /// <summary>
-    /// PREVIEWMIX_02 — re-observes the edit's signature. Called first thing on every playback tick (and by
-    /// the scheduler), so an edit silences the old mix before any preview audio is driven again. Several
-    /// callers in one tick share one computation.
-    /// </summary>
     private void RefreshPreviewMixState()
     {
         long now = Environment.TickCount64;
@@ -74,7 +41,6 @@ public partial class MainWindow
         bool wasActive = PreviewMixActive;
         if (_mixGate.Observe(PreviewMixSignature(), now) && wasActive != PreviewMixActive) OnPreviewMixActiveChanged();
     }
-
 
     private double PreviewGameDuckGain()
     {
@@ -88,7 +54,6 @@ public partial class MainWindow
         return _voiceOverResult?.ProtectFromMusic == true ? 1.0 - AudioFilterChain.VoiceDuckDepth * _previewVoicePulse : 1.0;
     }
 
-    /// <summary>The voice-over pulse at output time <paramref name="outputSec"/>: the export's 0.3 s ramps, exactly.</summary>
     private void UpdatePreviewVoicePulse(double outputSec)
     {
         double pulse = outputSec < 0 ? 0 : AudioFilterChain.VoiceProtectionPulseAt(outputSec,
@@ -98,7 +63,6 @@ public partial class MainWindow
         if (_voiceOverResult?.DuckAudio == true || _voiceOverResult?.ProtectFromMusic == true) ApplyPreviewPlayersVolume();
     }
 
-    /// <summary>PEAKSAFE_01 in the live preview: the gameplay player gets the same tamer as the export.</summary>
     private void ApplyLivePreviewFilters()
     {
         var settings = Infrastructure.SettingsManager.Instance;
@@ -109,7 +73,6 @@ public partial class MainWindow
         _liveGameFilter = filter;
         _ = ActiveVideoHost?.IpcClient?.SetPropertyAsync("af", filter);
     }
-
 
     private void EnsurePreviewMixScheduler()
     {
@@ -189,6 +152,7 @@ public partial class MainWindow
     {
         if (PreviewMixActive)
         {
+            _freezeSound.Stop();
             StopMusicPreview();
         }
         else
@@ -198,7 +162,6 @@ public partial class MainWindow
         ApplyPreviewPlayersVolume();
     }
 
-    /// <summary>Called on every playback tick, after the live music/voice followers.</summary>
     private void UpdatePreviewMix(double sourceTimeSec, bool videoEnded)
     {
         EnsurePreviewMixScheduler();
@@ -231,13 +194,16 @@ public partial class MainWindow
         }
 
         if (Environment.TickCount64 < _mixHoldUntilTicks || _mixClient == null || _mixClient.IsSeeking) return;
-        if (Math.Abs(_mixClient.CurrentTime - want) <= Infrastructure.PreviewAudioSync.DriftToleranceSec)
+        if (Math.Abs(_mixClock.PositionSec(!_mixClient.IsPaused) - want) <= Infrastructure.PreviewAudioSync.DriftToleranceSec)
         {
-            _mixDriftStrikes = 0;
+            _mixDriftSinceMs = 0;
             return;
         }
-        if (++_mixDriftStrikes < Infrastructure.PreviewAudioSync.DriftStrikes) return;
-        _mixDriftStrikes = 0;
+        long nowMs = Environment.TickCount64;
+        if (_mixDriftSinceMs <= 0) { _mixDriftSinceMs = nowMs; return; }
+        if (nowMs - _mixDriftSinceMs < Infrastructure.PreviewAudioSync.DriftConfirmMs) return;
+        _mixDriftSinceMs = 0;
+        _mixClock.Reset();
         _ = _mixClient.SendCommandAsync("seek", want, "absolute");
         _mixHoldUntilTicks = Environment.TickCount64 + MixSyncSettleMs;
     }
@@ -251,12 +217,26 @@ public partial class MainWindow
             {
                 _mixClient = new FreeVideoStudio.Core.Media.MpvIpcClient();
                 await _mixClient.StartAudioOnlyAsync("");
+                _mixClock.Attach(_mixClient);
             }
-            await _mixClient.ApplyPreviewGainAsync();
-            await _mixClient.SetPropertyDoubleAsync("speed", 1.0);
-            await _mixClient.LoadFileAsync(path, Math.Max(0, positionSec));
+            long decidedAt = Environment.TickCount64;
+            var client = _mixClient;
+            await client.ApplyPreviewGainAsync();
+            await client.SetPropertyDoubleAsync("speed", 1.0);
+            await client.SetPropertyAsync("pause", "yes");
+            await client.SetPropertyDoubleAsync("start", Math.Max(0, positionSec));
+            await client.SendCommandAsync("loadfile", path);
+            long deadline = Environment.TickCount64 + 1500;
+            while (Environment.TickCount64 < deadline &&
+                   !(client.Duration > 0 && string.Equals(await client.ReadPropertyAsync("path"), path, StringComparison.OrdinalIgnoreCase)))
+                await Task.Delay(5);
+            if (!_mixPlaying) return;
+            double catchUp = Math.Max(0, (Environment.TickCount64 - decidedAt) / 1000.0);
+            await client.SendCommandAsync("seek", Math.Max(0, positionSec + catchUp), "absolute+exact");
+            _mixClock.Reset();
+            await client.SetPropertyAsync("pause", "no");
             _mixLoadedPath = path;
-            _mixDriftStrikes = 0;
+            _mixDriftSinceMs = 0;
             _mixHoldUntilTicks = Environment.TickCount64 + MixSyncSettleMs;
         }
         catch (Exception ex)
@@ -279,12 +259,12 @@ public partial class MainWindow
         _mixLoadedPath = null;
     }
 
-    /// <summary>Re-applies the master to the mix player (called with the other players).</summary>
     private void ApplyPreviewMixVolume() => _ = _mixClient?.ApplyPreviewGainAsync();
 
     private void DisposePreviewMix()
     {
         try { _mixCts?.Cancel(); } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+        _mixClock.Attach(null);
         try { _mixClient?.Dispose(); } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
         _mixClient = null;
         _mixPlaying = false;
@@ -292,11 +272,6 @@ public partial class MainWindow
         _mixGate.Reset();
     }
 
-    /// <summary>
-    /// Everything the export's AUDIO depends on. Null when the edit has nothing the live players
-    /// cannot already reproduce (no music, no voice-over, no meme, no peak tamer) — then no mix is
-    /// rendered at all.
-    /// </summary>
     private string? PreviewMixSignature()
     {
         if (string.IsNullOrEmpty(_loadedVideoPath) || _loadedVideoDurationMs <= 0) return null;
@@ -324,7 +299,9 @@ public partial class MainWindow
           .Append('|').Append(_keepMusicDuringMeme)
           .Append('|').Append(tamer).Append(_gameplayLoudnessLufs?.ToString("F2", ci))
           .Append('|').Append(settings.Defaults.DuckingEnabled).Append(settings.Defaults.DuckingStrength)
-          .Append(settings.Defaults.CarvingEnabled).Append(settings.Defaults.CarvingStrength);
+          .Append(settings.Defaults.CarvingEnabled).Append(settings.Defaults.CarvingStrength)
+          .Append('|').Append(FreezeSoundEffect.NameOf(FreezeSoundEffect.Selected))
+          .Append('|').Append(VideoLoudnessCache.TryGet(_loadedVideoPath)?.ToString("F2", ci));
         if (music != null)
         {
             sb.Append("|M:").Append(music.MusicFilePath).Append(string.Join(",", music.MusicFilePaths))

@@ -5,11 +5,6 @@ using FreeVideoStudio.Core.Abstractions;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// LOGVIS_01 — per-session fault totals by tier and area. The spec (COMP-FAULTCHANNEL) promised
-/// that routed failures would be "classified, counted, in the diagnostic bundle". Nothing counted
-/// them. This does, lock-free, and <see cref="DiagnosticBundle"/> prints it.
-/// </summary>
 public static class FaultCounters
 {
     private static readonly ConcurrentDictionary<string, long> Counts = new();

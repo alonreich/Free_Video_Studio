@@ -49,7 +49,7 @@ public sealed class AiModeWindow : Window
         _local = Option("On this PC only", "Nothing leaves your PC.",
             "100% free. Works: Smart Zoom on a box you draw, Magic Wand. Everything else needs online AI." + download, pcNote, _pcAvailable);
         _online = Option("Online only", "Your video goes to the AI company you pick (Google, Anthropic or OpenAI).",
-            "Free with Google's free plan or your ChatGPT Plus/Pro plan. Other keys cost a few cents per use.", string.Empty, true);
+            "Free with Google's free plan or your ChatGPT Plus/Pro plan. Other keys cost a few cents per use. On Google's free plan, Google may use what you send to improve its products.", string.Empty, true);
         _both = Option("Recommended: Both", "Online AI says who to follow; your PC does the heavy work.",
             "Cheap: online AI sees only a few pictures." + download, pcNote, _pcAvailable);
 

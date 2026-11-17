@@ -4,10 +4,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AIGAME_01 — the AI SMART ZOOM prompts, built from the user's game profile (Settings › AI Features)
-/// instead of hard-coding one game and one player skin. Pure text; no I/O.
-/// </summary>
 public static class AiTrackingPrompts
 {
     private static string FootageSentence(AiGameProfile profile) => profile switch
@@ -18,7 +14,6 @@ public static class AiTrackingPrompts
         _ => "These come from a video recording (often a video game).",
     };
 
-    /// <summary>The "never this" rule for the player's own character, or empty when the profile has none.</summary>
     public static string ExclusionRule(AiGameProfile profile) => profile switch
     {
         AiGameProfile.ThirdPerson or AiGameProfile.Fortnite =>
@@ -40,7 +35,6 @@ public static class AiTrackingPrompts
         _ => string.Empty,
     };
 
-    /// <summary>Multi-angle subject discovery over three stills.</summary>
     public static string Discovery(AiGameProfile profile, string? targetDescription = null)
     {
         var sb = new StringBuilder();
@@ -66,7 +60,6 @@ public static class AiTrackingPrompts
         return sb.ToString();
     }
 
-    /// <summary>TEXTTARGET_01 — the user's own words, one line, at most <see cref="MaxDescriptionLength"/> characters, quotes removed.</summary>
     public static string CleanDescription(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
@@ -82,9 +75,6 @@ public static class AiTrackingPrompts
 
     public const int MaxDescriptionLength = 120;
 
-    /// <summary>Dense tracking over one video chunk.</summary>
-    /// <param name="observedAtSec">Seconds into THIS clip where the box was seen (0 = the first frame).</param>
-    /// <param name="intervalSec">0.5 when the request asks for 2 fps sampling, otherwise 1.0.</param>
     public static string Tracking(
         AiGameProfile profile, string label, (int ymin, int xmin, int ymax, int xmax) box,
         double observedAtSec, bool hasReferenceImage, double intervalSec, double clipDurationSec)

@@ -48,7 +48,7 @@ public sealed class SettingsMusicFolderTests : IDisposable
         {
             if (Directory.Exists(_tempDir)) Directory.Delete(_tempDir, true);
         }
-        catch (Exception) { /* best-effort cleanup */ }
+        catch (Exception) {  }
     }
 
     private sealed class GatedCommit
@@ -169,7 +169,6 @@ public sealed class SettingsMusicFolderTests : IDisposable
         Assert.Null(writer.ReadSnapshot()["CustomMusicDirectory"]);
     }
 
-    /// <summary>SETMERGERMOVED_01 — "Skip cover pictures" lives in the Video Merger only (one place, no duplicate).</summary>
     [AvaloniaFact]
     public void ScraperSwitch_IsNotDuplicatedInSettings()
     {

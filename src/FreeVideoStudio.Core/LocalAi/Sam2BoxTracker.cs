@@ -3,12 +3,6 @@ using System.Collections.Generic;
 
 namespace FreeVideoStudio.Core.LocalAi;
 
-/// <summary>
-/// LOCALTRACK_01 (docs/01 TL-LOCALTRACK) — SAM 2.1 used as a frame-to-frame box tracker: every frame is encoded once,
-/// then the mask decoder is prompted with the previous box (moved by its motion, widened by a margin) and the best
-/// mask becomes the new box. The model is class-agnostic, so it follows whatever the first box held — a player, an
-/// animal, a vehicle — and never "prefers" the large foreground character.
-/// </summary>
 public sealed class Sam2BoxTracker : IDisposable
 {
     private readonly OrtSession _encoder;
@@ -49,7 +43,6 @@ public sealed class Sam2BoxTracker : IDisposable
         _memory = new float[_maskInput.Length];
     }
 
-    /// <summary>LOCALMEMORY_01 — keeps mask <paramref name="index"/> of the last <see cref="Step"/> as the next frame's mask prompt.</summary>
     public void Remember(int index)
     {
         int m = LocalAiPackManifest.MaskSize;
@@ -63,14 +56,8 @@ public sealed class Sam2BoxTracker : IDisposable
         _hasMemory = true;
     }
 
-    /// <summary>Drops the remembered mask (a new direction, or the target has been lost for a while).</summary>
     public void Forget() => _hasMemory = false;
 
-    /// <summary>
-    /// Runs one frame (RGB24, model size square) with a box prompt and an expected centre in SOURCE pixels. Returns every
-    /// non-empty mask the decoder proposed and the decoder's "object present" logit (above 0 = in the picture; +infinity
-    /// when the model has no such output).
-    /// </summary>
     public (IReadOnlyList<MaskCandidate> Candidates, double ObjectLogit) Step(ReadOnlySpan<byte> rgb, PixelBox prompt, double centreX, double centreY, int sourceW, int sourceH,
         double memoryShiftX = 0, double memoryShiftY = 0)
     {
@@ -113,7 +100,6 @@ public sealed class Sam2BoxTracker : IDisposable
         return (Candidates(masks, maskShape, scores, sourceW, sourceH), objectLogit);
     }
 
-    /// <summary>Every non-empty mask of the decoder output as a box with its predicted IoU.</summary>
     public static IReadOnlyList<MaskCandidate> Candidates(float[] masks, long[] maskShape, float[] scores, int sourceW, int sourceH)
     {
         var list = new List<MaskCandidate>(4);

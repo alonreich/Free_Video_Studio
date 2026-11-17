@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -7,34 +6,6 @@ using FreeVideoStudio.App.Infrastructure;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// DETACH_01 — ONE implementation of "pop the video preview out into its own window", shared by
-/// every screen in the suite that shows a live preview.
-///
-/// The Main App had this behaviour and nothing else did. Rather than copy the reparenting dance
-/// into the Granular editor, the Music Wizard, the Voice Over window and the Merger — four more
-/// places to get the teardown order wrong — the whole mechanism lives here and each window
-/// supplies only two things:
-///
-///   • a BOUNDS KEY, which is what gives every screen its OWN memory of size, position, maximised
-///     state and therefore which physical display it was last opened on. They are deliberately
-///     separate keys: detaching the Granular preview onto the second monitor must not drag the
-///     Main App's preview there next time.
-///   • a CONTENT ACCESSOR returning the control to move. Usually the <see cref="MpvVideoView"/>
-///     itself, but the Granular editor hands over its whole Viewbox so the zoom overlay and the
-///     phone frame travel WITH the picture and stay in register with it.
-///
-/// ⚠️ THE ORIGIN IS CAPTURED, NOT ASSUMED. The Main App's original version hard-coded
-/// "put it back into MainVideoGrid at index 0" on reattach. That only worked because it was the
-/// only caller. This records the actual parent — Panel (with its child index), Decorator or
-/// ContentControl — and restores exactly that, so a preview nested behind other overlays comes
-/// back in the same z-order it left from.
-///
-/// ⚠️ THE OWNER'S Closing REATTACHES FIRST. A detached preview is a live mpv render surface
-/// parented to a different window. If the owner closed while it was still out there, the surface
-/// would be torn down by whichever window happened to die first. Reattaching on the owner's
-/// Closing puts it back in its home tree so the owner's normal disposal path runs unchanged.
-/// </summary>
 public sealed class PreviewDetachController
 {
     public const string MainWindowKey = "PreviewMonitorWindowBounds";
@@ -58,12 +29,10 @@ public sealed class PreviewDetachController
 
     private bool _transitioning;
 
-    /// <summary>Raised after every completed transition, with the new detached state.</summary>
     public event Action<bool>? StateChanged;
 
     public bool IsDetached => _monitor != null;
 
-    /// <summary>The floating window while detached, so an owner can mirror portrait overlays onto it.</summary>
     public PreviewMonitorWindow? Monitor => _monitor;
 
     public PreviewDetachController(Window owner, string boundsKey, string title, Func<Control?> contentAccessor)
@@ -80,23 +49,10 @@ public sealed class PreviewDetachController
         };
     }
 
-    /// <summary>
-    /// UXQA_01: is there actually something to pop out right now? A detached preview always counts,
-    /// because the button's job in that state is to bring it back.
-    /// </summary>
     public bool CanDetach => IsDetached || _content() != null;
 
-    /// <summary>
-    /// UXQA_01: raised when the user asked to detach and there was nothing to move. The button used
-    /// to just swallow the click — no message, no disabled look — so the app appeared broken.
-    /// </summary>
     public event Action<string>? DetachUnavailable;
 
-    /// <summary>
-    /// UXQA_01: puts the toggle button into the right state — correct caption, and greyed out with
-    /// an explanatory tooltip when there is no preview to move. Call it after wiring, and again
-    /// whenever the preview appears or disappears.
-    /// </summary>
     public void SyncButton(Button? btn)
     {
         if (btn == null) return;
@@ -110,7 +66,6 @@ public sealed class PreviewDetachController
 
     public bool Toggle() => IsDetached ? Attach() : Detach();
 
-    /// <summary>Moves the preview into its own window. Returns false when there is nothing to move.</summary>
     public bool Detach()
     {
         if (_monitor != null || _transitioning) return false;
@@ -145,7 +100,6 @@ public sealed class PreviewDetachController
         return true;
     }
 
-    /// <summary>Moves the preview back where it came from and closes the floating window.</summary>
     public bool Attach()
     {
         if (_monitor == null || _transitioning) return false;
@@ -183,14 +137,6 @@ public sealed class PreviewDetachController
         return true;
     }
 
-    /// <summary>
-    /// First detach only. <see cref="WindowBoundsHelper"/> leaves StartupLocation on CenterScreen
-    /// when it found nothing saved under this key — that is the signal that this screen has never
-    /// had its preview popped out before. Centre it on the owner instead of on whatever the OS
-    /// considers the primary display, so the window appears where the user is looking. From the
-    /// second detach onwards the saved geometry wins and this does nothing, which is what makes
-    /// "it reopens on the monitor I left it on" work per screen.
-    /// </summary>
     private void PlaceOnFirstDetach(Window monitor)
     {
         if (monitor.WindowStartupLocation != WindowStartupLocation.CenterScreen) return;

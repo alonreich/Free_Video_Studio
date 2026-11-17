@@ -1,8 +1,3 @@
-<!-- ISSUE_11 — progress + cancel for cloud asset downloads.
-     Transient modal, so WindowStartupLocation="CenterOwner" is correct here (same intentional
-     exception as ConfirmDialogWindow); it is NOT one of the 8 WindowBoundsHelper-tracked
-     windows. Previously a cloud sync gave the user a single toast and then silence for however
-     long the transfer took, with no way to stop it. -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
         x:Class="FreeVideoStudio.App.Controls.CloudSyncProgressWindow"
@@ -50,8 +45,6 @@
 
                 <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center"
                             Spacing="15" Margin="0,6,0,22">
-                    <!-- ISSUE_04 (audit round 5): MinHeight="34" removed — it overrode the global
-                         AppButtonMinHeight token (44) and blocked font-scale growth. -->
                     <Button Name="CancelSyncBtn" ToolTip.Tip="Stop the download now. Anything already downloaded is kept." Classes="Danger" Content="CANCEL DOWNLOAD"
                             MinWidth="180" Cursor="Hand"
                             AutomationProperties.Name="Cancel the download" />

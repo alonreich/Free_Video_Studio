@@ -12,7 +12,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>LOCALTRACK_01 / LOCALAI_01 / SCENECUT_01 / KILLGATE_01 — docs/01 TL-LOCALTRACK, docs/05 SYS-LOCALAI.</summary>
 public sealed class LocalAiTests
 {
     private static string Work(string name)
@@ -374,9 +373,6 @@ public sealed class LocalAiTests
     }
 }
 
-/// <summary>ONNX Runtime folder for the interop tests: FVS_TEST_ORT_DIR with onnxruntime.dll (+ DirectML.dll) and tiny.onnx
-/// (y = 2x, s = sum x). Without it the interop tests are SKIPPED (never passed empty); the A/V gate leaves the
-/// <see cref="OrtFactAttribute.Category"/> trait out and prints that they did not run (LOCALAITEST_01).</summary>
 internal static class OrtTestFolder
 {
     public static readonly string? Folder = Environment.GetEnvironmentVariable("FVS_TEST_ORT_DIR") is { Length: > 0 } d
@@ -434,10 +430,6 @@ public sealed class OrtRuntimeTests
         => Assert.Throws<OrtException>(() => OrtRuntime.Load(Path.Combine(Path.GetTempPath(), "fvs-no-ort-" + Guid.NewGuid().ToString("N"))));
 }
 
-/// <summary>
-/// LOCALTRACK_01 end to end with the REAL pack: FVS_TEST_LOCALAI_DIR = a Local AI pack folder (onnxruntime.dll,
-/// DirectML.dll, the two SAM 2.1 .onnx files). Without it these are SKIPPED and the A/V gate reports them as not run (LOCALAITEST_01).
-/// </summary>
 public sealed class LocalTrackerEndToEndTests
 {
     private static string Pack => LocalAiPackFactAttribute.Pack!;

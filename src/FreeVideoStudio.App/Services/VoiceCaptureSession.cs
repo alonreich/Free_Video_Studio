@@ -6,8 +6,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-
-/// <summary>VOCAPTURE_01 — lifecycle states of the capture device owner.</summary>
 public enum VoiceCaptureState
 {
     Idle,
@@ -20,7 +18,6 @@ public enum VoiceCaptureState
     Disposed,
 }
 
-/// <summary>MICHEALTH_01 — Truthful microphone health states distinguishing device, connection, silence, and callbacks.</summary>
 public enum MicrophoneHealth
 {
     Idle,
@@ -31,21 +28,15 @@ public enum MicrophoneHealth
     Faulted,
 }
 
-/// <summary>How a queued recorder open ended.</summary>
 public enum RecordingOpenOutcome
 {
-    /// <summary>A recorder is owned and can be finalized. Failure may describe a fault after positive opening PCM.</summary>
     Opened,
-    /// <summary>The device refused to open. The session is <see cref="VoiceCaptureState.Faulted"/>.</summary>
     Failed,
-    /// <summary>Stop, release or dispose arrived while the driver was opening; the take file was deleted.</summary>
     Cancelled,
 }
 
-/// <summary>Result of a queued recorder open, delivered through the session's post delegate.</summary>
 public sealed record RecordingOpenResult(RecordingOpenOutcome Outcome, Exception? Failure);
 
-/// <summary>Capture accounting read after the drain (VODIAG_01 / VOASYNC_01).</summary>
 public sealed record CapturedTake(
     long Bytes,
     int Buffers,
@@ -56,13 +47,11 @@ public sealed record CapturedTake(
     Exception? Error = null,
     bool WriteFailed = false);
 
-/// <summary>The idle level meter's device (VOMON_01). Seam over <see cref="MicLevelMonitor"/>.</summary>
 public interface IMicMonitorDevice : IDisposable
 {
     event EventHandler<float>? LevelChanged;
     event EventHandler<Exception?>? Stopped;
 
-    /// <summary>SPECTRUM_02 — raw PCM per buffer (capture thread, only valid during the event). Default: none.</summary>
     event EventHandler<PcmBuffer>? PcmAvailable { add { } remove { } }
 
     bool IsRunning { get; }
@@ -74,7 +63,6 @@ public interface IMicMonitorDevice : IDisposable
     void Stop();
 }
 
-/// <summary>One take's capture device. Seam over <see cref="VoiceRecorder"/>.</summary>
 public interface IVoiceRecorderDevice : IDisposable
 {
     bool WriteFailed => false;
@@ -83,7 +71,6 @@ public interface IVoiceRecorderDevice : IDisposable
     event EventHandler<float>? VolumeChanged;
     event EventHandler<Exception?>? Stopped;
 
-    /// <summary>SPECTRUM_02 — raw PCM per recorded buffer (capture thread, only valid during the event). Default: none.</summary>
     event EventHandler<PcmBuffer>? PcmAvailable { add { } remove { } }
 
     bool IsRecording { get; }
@@ -98,7 +85,6 @@ public interface IVoiceRecorderDevice : IDisposable
     void StopRecording();
 }
 
-/// <summary>Creates the capture devices. Tests inject fakes; production uses <see cref="NAudioVoiceCaptureDevices"/>.</summary>
 public interface IVoiceCaptureDeviceFactory
 {
     bool HasInputDevice { get; }
@@ -108,7 +94,6 @@ public interface IVoiceCaptureDeviceFactory
     IVoiceRecorderDevice CreateRecorder(string outputPath, int deviceNumber);
 }
 
-/// <summary>VOCAPTURE_01 / MICHEALTH_01 — the microphone resource owner, as seen by the window.</summary>
 public interface IVoiceCaptureSession : IAsyncDisposable, IDisposable
 {
     VoiceCaptureState State { get; }
@@ -127,30 +112,16 @@ public interface IVoiceCaptureSession : IAsyncDisposable, IDisposable
     int BuffersDelivered { get; }
     bool HasAudibleSignal { get; }
 
-    /// <summary>Peak of each idle-monitor buffer, raised on the capture thread.</summary>
     event EventHandler<float>? MonitorLevel;
 
-    /// <summary>Peak of each recorded buffer, raised on the capture thread.</summary>
     event EventHandler<float>? RecordingLevel;
 
-    /// <summary>MICHEALTH_01 — Truthful microphone health state changes posted to the UI thread.</summary>
     event EventHandler<MicrophoneHealth>? HealthChanged;
 
-    /// <summary>
-    /// SPECTRUM_02 — newest frequency spectrum of the ACTIVE capture source (idle monitor or take),
-    /// or null when no source is live (stopped, switching device, faulted, disposed). An immutable
-    /// latest-value slot: the UI samples it on its own tick; nothing is queued per buffer.
-    /// </summary>
     MicrophoneSpectrumSnapshot? LatestSpectrum => null;
 
-    /// <summary>SPECTRUM_02 — raised on the capture thread after <see cref="LatestSpectrum"/> changes.</summary>
     event EventHandler<MicrophoneSpectrumSnapshot>? SpectrumAvailable { add { } remove { } }
 
-    /// <summary>
-    /// VOLIVE_01 — what the take in progress has REALLY captured (delivered buffers, captured audio
-    /// seconds, bounded amplitude envelope), fed from the recorder's own PCM. Null when no take is
-    /// opening or live. A latest-value snapshot the UI samples on its tick; nothing is dispatched.
-    /// </summary>
     LiveTakeSnapshot? LiveTake => null;
 
     Task StartMonitorAsync(int deviceNumber);
@@ -164,7 +135,6 @@ public interface IVoiceCaptureSession : IAsyncDisposable, IDisposable
     void CheckHealth();
 }
 
-/// <summary>Production devices: NAudio WinMM through the Core types, unchanged.</summary>
 public sealed class NAudioVoiceCaptureDevices : IVoiceCaptureDeviceFactory
 {
     public static readonly NAudioVoiceCaptureDevices Instance = new();
@@ -264,11 +234,6 @@ public sealed class NAudioVoiceCaptureDevices : IVoiceCaptureDeviceFactory
     }
 }
 
-/// <summary>
-/// VOCAPTURE_01 — owns the recorder, the idle monitor and the VOASYNC_02 device chain.
-/// Every public member is callable from any thread; the window calls them from the UI thread and
-/// none of them blocks it. All device work runs on the chain, on the thread pool, in issue order.
-/// </summary>
 public sealed class VoiceCaptureSession : IVoiceCaptureSession
 {
     private readonly IVoiceCaptureDeviceFactory _devices;
@@ -286,10 +251,8 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
     private int _buffersDelivered;
     private bool _hasAudibleSignal;
 
-    /// <summary>Identity of the open currently queued. Cleared (cancelled) by stop/release/dispose.</summary>
     private object? _openAttempt;
 
-    /// <summary>VOASYNC_02 — takes whose drain is still in flight.</summary>
     private readonly List<TaskCompletionSource> _pendingFinalizes = new();
 
     private Task? _disposeTask;
@@ -304,14 +267,8 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
     private MicrophoneSpectrumSnapshot? _latestSpectrum;
     private PcmCaptureFormat? _rejectedSpectrumFormat;
 
-    /// <summary>VOLIVE_01 — the take in progress. Created with the open attempt, frozen and dropped when it ends.</summary>
     private LiveTakeMeter? _liveTake;
 
-    /// <summary>
-    /// SPECTRUM_05 test seam: runs on the capture thread after a buffer passed admission and before
-    /// it is analysed, with the admitting source. Lets tests hold one admitted buffer in flight
-    /// while the source is retired. Never set in production.
-    /// </summary>
     internal Action<object>? SpectrumAdmittedForTesting { get; set; }
 
     public static TimeSpan BufferStarvationTimeout { get; set; } = TimeSpan.FromSeconds(6);
@@ -326,13 +283,10 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
     public event EventHandler<float>? MonitorLevel;
     public event EventHandler<float>? RecordingLevel;
 
-    /// <summary>SPECTRUM_02 — raised on the capture thread when <see cref="LatestSpectrum"/> changes.</summary>
     public event EventHandler<MicrophoneSpectrumSnapshot>? SpectrumAvailable;
 
-    /// <summary>SPECTRUM_02 — newest spectrum of the active source, or null when none is live.</summary>
     public MicrophoneSpectrumSnapshot? LatestSpectrum { get { lock (_gate) return _latestSpectrum; } }
 
-    /// <summary>VOLIVE_01 — newest view of the take in progress, or null when none is opening or live.</summary>
     public LiveTakeSnapshot? LiveTake { get { lock (_gate) return _liveTake?.Snapshot(); } }
 
     public event EventHandler<MicrophoneHealth>? HealthChanged;
@@ -353,7 +307,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
     public int BuffersDelivered { get { lock (_gate) return _buffersDelivered; } }
     public bool HasAudibleSignal { get { lock (_gate) return _hasAudibleSignal; } }
 
-    /// <summary>VOMON_01 / MICHEALTH_01 — opens idle monitoring. Ignored while a take owns the device.</summary>
     public Task StartMonitorAsync(int deviceNumber)
     {
         lock (_gate)
@@ -468,7 +421,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         }
     }
 
-    /// <summary>VOMON_01 — releases the device so the recorder can claim it.</summary>
     public Task StopMonitorAsync()
     {
         lock (_gate)
@@ -485,11 +437,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         }
     }
 
-    /// <summary>
-    /// VOASYNC_02 / MICHEALTH_01 — queues the recorder open. Returns null (and opens nothing) when a take is
-    /// already opening or live, so a burst of record presses can never open the device twice.
-    /// The monitor is stopped on the chain FIRST, inside the same job, whatever the caller did.
-    /// </summary>
     private Task<RecordingOpenResult>? _boundedOpen;
     private Task<CapturedTake>? _openingFinalization;
     private long _openingPcmBytes;
@@ -736,12 +683,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         }
     }
 
-    /// <summary>
-    /// VOASYNC_02 / MICHEALTH_01 — detaches the live recorder and drains it on the chain. <paramref name="onSettled"/>
-    /// runs through the post delegate BEFORE <see cref="WhenFinalizationsSettled"/> and the returned
-    /// Task complete (VOCAPTURE_02), so a caller awaiting either always sees the take. Returns null when no recorder is live (an
-    /// open still in flight is cancelled instead).
-    /// </summary>
     public Task<CapturedTake>? FinalizeRecordingAsync(Action<CapturedTake> onSettled)
     {
         lock (_gate)
@@ -896,7 +837,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         }
     }
 
-    /// <summary>VOASYNC_02 — retires the recorder (no verdict) and cancels an open in flight. Never blocks.</summary>
     public Task ReleaseRecorderAsync()
     {
         lock (_gate)
@@ -914,7 +854,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         }
     }
 
-    /// <summary>Completes once every queued drain has run and its verdict callback has returned.</summary>
     public Task WhenFinalizationsSettled()
     {
         lock (_gate)
@@ -926,10 +865,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         }
     }
 
-    /// <summary>
-    /// Releases everything. The recorder is drained exactly once and the monitor disposed, both on
-    /// the chain, after any drain already queued. The returned task completes when the device is free.
-    /// </summary>
     public ValueTask DisposeAsync() => new(Shutdown());
 
     public void Dispose() => _ = Shutdown();
@@ -1031,14 +966,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         });
     }
 
-    /// <summary>
-    /// VOCAPTURE_02 — THE SETTLEMENT CONTRACT. Runs <paramref name="callback"/> through the post
-    /// delegate (the UI thread in production) and only then <paramref name="complete"/>, inside the
-    /// same posted action, so a caller that awaits the returned Task can never observe it before the
-    /// callback has published the same result. The callback runs at most once; <paramref name="complete"/>
-    /// runs even if the callback throws. If the post target refuses the work, the callback is
-    /// skipped and the Task is still completed, so no caller hangs. Never blocks the chain.
-    /// </summary>
     private void PostThenComplete(Action callback, Action complete)
     {
         int completed = 0;
@@ -1062,7 +989,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         }
     }
 
-    /// <summary>VOASYNC_02 — appends blocking device work to the chain. Caller holds <see cref="_gate"/>.</summary>
     private Task Enqueue(Action work)
     {
         _chain = _chain.ContinueWith(
@@ -1176,8 +1102,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         MonitorLevel?.Invoke(this, level);
     }
 
-
-    /// <summary>SPECTRUM_05 — the one admission/publication predicate. Caller holds <see cref="_gate"/>.</summary>
     private bool IsSpectrumSourceEligibleLocked(object source)
     {
         if (ReferenceEquals(source, _monitor))
@@ -1187,7 +1111,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         return false;
     }
 
-    /// <summary>SPECTRUM_02 — idle monitor PCM. Admitted only from the current monitor while it may publish.</summary>
     private void OnMonitorPcm(object? sender, PcmBuffer pcm)
     {
         int epoch;
@@ -1200,7 +1123,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         AnalyzeAndPublish(sender, epoch, pcm);
     }
 
-    /// <summary>SPECTRUM_02 — take PCM. Admitted only from the live recorder.</summary>
     private void OnRecorderPcm(object? sender, PcmBuffer pcm)
     {
         int epoch;
@@ -1218,7 +1140,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         if (analyse) AnalyzeAndPublish(sender, epoch, pcm);
     }
 
-    /// <summary>VOLIVE_01 — ends the current take's meter. Caller holds <see cref="_gate"/>.</summary>
     private void RetireLiveTakeLocked()
     {
         _liveTake?.Freeze();
@@ -1267,7 +1188,6 @@ public sealed class VoiceCaptureSession : IVoiceCaptureSession
         SpectrumAvailable?.Invoke(this, snapshot);
     }
 
-    /// <summary>SPECTRUM_02 — invalidates any spectrum in flight and clears the latest. Caller holds <see cref="_gate"/>.</summary>
     private void ResetSpectrumLocked()
     {
         Volatile.Write(ref _spectrumEpoch, unchecked(_spectrumEpoch + 1));

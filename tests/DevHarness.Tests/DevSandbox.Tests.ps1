@@ -1,9 +1,7 @@
-# Behavioural tests: real filesystem cleanup, preservation, locked files and junction boundaries.
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $repo 'build\DevSandbox.ps1')
 . (Join-Path $repo 'tests\TestHarness.ps1')
-# TESTOUT_01: this suite's own output folder is logs\DevSandbox_Results\work.
 $testRoot = Enter-SuiteOutput $repo 'DevSandbox'
 $data = Join-Path $testRoot 'dev\data'
 $keep = Join-Path $testRoot 'dev\keep'
@@ -48,7 +46,6 @@ Clear-DevRuntimeCaches $data
 foreach ($name in $caches) { Check (-not (Test-Path (Join-Path $data $name))) "Cache survived: $name" }
 foreach ($name in $preserved) { Check ([Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $data $name))) -eq $hashes[$name]) "User data changed: $name" }
 
-# A second boot cannot overwrite changed settings from an old backup.
 Put (Join-Path $data 'settings.json') '{"theme":"changed"}'
 Initialize-DevSandbox $data $old $keep $oldMedia
 Check ((Get-Content (Join-Path $data 'settings.json') -Raw) -match 'changed') 'Current settings must win.'
@@ -81,7 +78,6 @@ foreach ($name in @('backend\codec.dll', 'frontend\player.dll', 'starter\meme\sa
 Check (Test-Path (Join-Path $output 'build\obj\compiler.bin')) 'Compiler intermediates were lost.'
 Check (-not (Test-Path (Join-Path $app 'obsolete.dll'))) 'Obsolete managed assembly survived.'
 Check (-not (Test-Path (Join-Path $app 'old-package'))) 'Obsolete package directory survived.'
-# DEVHELPERTEMP_01: an old console/native helper retains a handle after UI closure.
 $helperHome = Join-Path $testRoot 'helpers'
 $helperRoot = Join-Path $helperHome 'scratch\os'
 $helperLocked = Join-Path $helperRoot 'old-console.tmp'
@@ -104,4 +100,3 @@ New-Item -ItemType Junction -Path (Join-Path $helperRoot 'outside') -Target $pro
 Must-Refuse { New-DevHelperScratch $helperRoot $helperHome } 'Helper cleanup followed a junction.'
 Check (Test-Path (Join-Path $production 'settings.json')) 'Helper cleanup touched production.'
 Write-Host 'Dev sandbox: preservation, managed refresh, retained dependencies, path/lock/junction guards and locked helper relaunch passed.'
-# Small synthetic fixtures stay in logs\DevSandbox_Results\work until this suite runs again.

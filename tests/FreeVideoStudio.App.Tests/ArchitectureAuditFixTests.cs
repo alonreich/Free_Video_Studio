@@ -15,13 +15,8 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// Architecture audit fixes: ASYNCSAFE_01, SETTINGSFREEZE_01, MEMEPURE_01, SETTINGSDI_01,
-/// AIKEYCANCEL_01, SETBACKUPIO_01, CTSSLOT_01, SHELLLAUNCH_01, SETTINGSTYPES_01.
-/// </summary>
 public sealed class ArchitectureAuditFixTests
 {
-
     [Fact]
     public void FrozenSettings_RejectEveryWrite_IncludingNestedObjects()
     {
@@ -54,7 +49,6 @@ public sealed class ArchitectureAuditFixTests
         clone.Defaults.DefaultSpeed = 2.5;
         Assert.Equal(2.5, clone.Defaults.DefaultSpeed);
     }
-
 
     private static AppSettings Parse(string json) =>
         JsonSerializer.Deserialize(json, SettingsJsonContext.Default.AppSettings)!;
@@ -104,7 +98,6 @@ public sealed class ArchitectureAuditFixTests
     public void ConsentCovers_IsTyped_AndNoStampMeansGoogle(AiVendor? stamp, AiVendor current, bool expected)
         => Assert.Equal(expected, AppSettings.ConsentCovers(true, stamp, current));
 
-
     [Fact]
     public void MemeFolderLookup_IsPure_AndCreatesNothing()
     {
@@ -123,7 +116,6 @@ public sealed class ArchitectureAuditFixTests
         Assert.DoesNotContain("Migrat", getActive);
         Assert.DoesNotContain("CreateDirectory", getActive);
     }
-
 
     [Fact]
     public void CtsSlot_RenewCancelsThePreviousOperation_AndDisposeCancelsTheLast()
@@ -165,7 +157,6 @@ public sealed class ArchitectureAuditFixTests
         Assert.True(offenders.Count == 0, "SHELLLAUNCH_01 — discarded Process.Start handles:\n" + string.Join("\n", offenders));
     }
 
-
     [Fact]
     public void DispatcherHook_LetsOnlyProcessCorruptingFaultsThrough()
     {
@@ -182,7 +173,6 @@ public sealed class ArchitectureAuditFixTests
         foreach (string name in new[] { "OnVideoDrop", "RdpFixButton_Click", "InitializeMpv" })
             Assert.DoesNotMatch(@"async\s+void\s+" + name + @"\b", code);
     }
-
 
     private sealed class FakeStore : ISettingsStore
     {
@@ -209,7 +199,6 @@ public sealed class ArchitectureAuditFixTests
         public void Enqueue(JsonObject updates) => Writes.Add(updates);
     }
 
-    /// <summary>Google's test waits until released or cancelled; every other company answers at once.</summary>
     private sealed class GatedKeys : IAiKeyValidator
     {
         public readonly TaskCompletionSource GoogleGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -264,7 +253,6 @@ public sealed class ArchitectureAuditFixTests
         Assert.False(vm.Commit());
         Assert.Empty(state.Writes);
     }
-
 
     [Fact]
     public async Task ViralPost_ShowsTheHonestOutcome_AndPassesTheOldTitleOnRegenerate()

@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,17 +7,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// WAVEPIXEL_01 (04 UI-MERGERQUEUE) — ONE peak fetch per clip, shared by every lane run.
-///
-/// A resize or a reorder restarts the waveform lane's <see cref="ProgressiveLaneRunner"/>, which cancels
-/// the old run. When the old run's item owned the ffmpeg process, that cancel killed it and the new run
-/// started the same extraction again. Here a clip's fetch (disk cache → ffmpeg → disk write) is keyed by
-/// its width-independent cache key and NOT tied to any run: a superseded run only stops WAITING; a new
-/// run for the same clip joins the fetch already in flight. ffmpeg stays bounded at
-/// <paramref name="maxParallel"/> per lane. Only <see cref="Dispose"/> (window closed) cancels a fetch.
-/// The disk write completes before the fetch does, so a later miss in the memory cache finds the file.
-/// </summary>
 internal sealed class WaveformPeakSource : IDisposable
 {
     private readonly Func<LaneTile, CancellationToken, Task<float[]?>> _extract;
@@ -43,11 +31,8 @@ internal sealed class WaveformPeakSource : IDisposable
         _gate = new SemaphoreSlim(Math.Max(1, maxParallel));
     }
 
-    /// <summary>ffmpeg extractions started since construction (the redundancy this class exists to prevent).</summary>
     public int Extractions => Volatile.Read(ref _extractions);
 
-    /// <summary>The clip's peaks (null: no audio / failed). <paramref name="ct"/> cancels only this caller's wait.
-    /// LANEINSTANCE_01 — keyed by the SOURCE (cache key): every occurrence of the same clip shares one fetch.</summary>
     public Task<float[]?> GetAsync(LaneTile tile, CancellationToken ct)
     {
         Task<float[]?> shared;
@@ -67,7 +52,7 @@ internal sealed class WaveformPeakSource : IDisposable
     private async Task ForgetWhenDoneAsync(string key, Task<float[]?> fetch)
     {
         try { await fetch.ConfigureAwait(false); }
-        catch (OperationCanceledException) { /* window closed */ }
+        catch (OperationCanceledException) {  }
         catch (Exception ex) { RuntimeLog.Swallowed(ex); }
         lock (_lock)
         {

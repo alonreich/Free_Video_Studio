@@ -8,9 +8,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// Unit tests for AiEliminationTrackerService: marker models, JSON parsing, settings roundtripping, and validation.
-/// </summary>
 public sealed class AiEliminationTrackerTests
 {
     [Fact]

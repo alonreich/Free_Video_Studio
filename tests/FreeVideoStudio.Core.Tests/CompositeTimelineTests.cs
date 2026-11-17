@@ -6,7 +6,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>COMPOSITE_01 — Video-Merger-Migration.md P2.3 (T2.3a–c).</summary>
 public class CompositeTimelineTests
 {
     private static EdlClip Clip(string name, double durSec, int introFrames = 0, int? fadeOut = null, EdlEffects? fx = null)

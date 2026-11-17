@@ -1,17 +1,7 @@
-﻿
-using System.Windows.Input;
+﻿using System.Windows.Input;
 
 namespace FreeVideoStudio.App.ViewModels;
 
-/// <summary>
-/// BGUPDATE_01 — the small update card in the corner of the main window. Bound, not looked up (MVVM_01).
-///
-/// <para>Replaces the two modal windows of the old flow (a 4-button question, then a download
-/// window the user had to stare at). The update now downloads while the user keeps working, and this
-/// card asks exactly ONE question at the end with TWO buttons: <b>Restart &amp; update</b> (install
-/// now) and <b>Later</b> (install by itself the next time the app is closed). "Skip this version" and
-/// "stop checking" live in Settings › About (R3).</para>
-/// </summary>
 public sealed class UpdateToastViewModel : ViewModelBase
 {
     private string _headline = "Updating Free Video Studio";
@@ -38,11 +28,9 @@ public sealed class UpdateToastViewModel : ViewModelBase
     public double Percent { get => _percent; private set => SetProperty(ref _percent, value); }
     public bool IsIndeterminate { get => _isIndeterminate; private set => SetProperty(ref _isIndeterminate, value); }
 
-    /// <summary>RELNOTES_03 — "What's new" in the version being installed, one highlight per line.</summary>
     public string WhatsNew { get => _whatsNew; private set { if (SetProperty(ref _whatsNew, value)) OnPropertyChanged(nameof(HasWhatsNew)); } }
     public bool HasWhatsNew => _whatsNew.Length > 0 && _state is ToastState.Working or ToastState.Ready;
 
-    /// <summary>RELNOTES_03 — shows up to four release-note highlights while downloading and when ready.</summary>
     public void SetReleaseNotes(IReadOnlyList<string> highlights) =>
         WhatsNew = string.Join(Environment.NewLine, highlights.Select(h => "• " + h));
 

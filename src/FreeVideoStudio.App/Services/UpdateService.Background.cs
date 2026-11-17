@@ -1,5 +1,4 @@
-﻿
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
@@ -11,18 +10,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// BGUPDATE_01 — the update downloads in the BACKGROUND and asks once (R2/R3).
-///
-/// <para>Old flow: a 4-button question → a modal download window the user had to watch (296 MB) →
-/// a second choice. New flow: a newer version is found → <see cref="UpdatePreparer"/> downloads only
-/// what changed (DIST-SMART), resuming broken transfers (DLRESUME_01), while a small card in the corner
-/// shows progress → the verified installer is started and waits (--wait-pid) → the card asks ONE
-/// question: <b>Restart &amp; update</b> or <b>Later</b> (installs when the app is next closed).</para>
-///
-/// <para>Everything that runs elevated is still SHA-256- and publisher-checked before it is started
-/// (UPDATEPIN_01). Nothing here changes what is trusted; it only changes when the user is asked.</para>
-/// </summary>
 internal static partial class UpdateService
 {
     private static readonly object BackgroundGate = new();
@@ -34,13 +21,11 @@ internal static partial class UpdateService
     private static UpdateRelease? _backgroundRelease;
     private static PreparedUpdate? _preparedUpdate;
 
-    /// <summary>The version being downloaded or waiting to install, or null.</summary>
     public static string? PendingVersion
     {
         get { lock (BackgroundGate) return _backgroundTag?.TrimStart('v', 'V'); }
     }
 
-    /// <summary>Starts (or shows) the background update for <paramref name="release"/>.</summary>
     internal const string DownloadStatusTag = "UPDATESTATUS_01";
     internal const string CannotDownloadMessage =
         "This update can't be downloaded automatically. Download it from the app's website instead.";
@@ -129,12 +114,6 @@ internal static partial class UpdateService
         return true;
     }
 
-    /// <summary>
-    /// Starts the verified installer. It waits for this app to close (--wait-pid), then shows its own
-    /// progress window (UPGRADEUX_01). For a full update it is the Inno Setup installer (NODROPPER_01).
-    /// For a smart update the installer is the NEW program itself,
-    /// and --smart names the folder holding the signed list and the changed files (DIST-SMART).
-    /// </summary>
     private static Process LaunchInstaller(PreparedUpdate prepared, bool noLaunch = false)
     {
         if (DevelopmentEnvironment.IsActive)
@@ -167,10 +146,6 @@ internal static partial class UpdateService
         return Process.Start(installer) ?? throw new IOException("Could not start the update.");
     }
 
-    /// <summary>
-    /// R3 — "Skip this version" now lives in Settings › About. Stops the download (or the waiting
-    /// installer, which has not changed anything yet) and remembers the version as skipped.
-    /// </summary>
     public static void SkipPendingVersion()
     {
         string? tag;
@@ -302,10 +277,8 @@ internal static partial class UpdateService
         _toast = null;
     }
 
-    /// <summary>PAUSESTICK_01 — the release the user paused in this session, or null.</summary>
     private static string? _pausedTag;
 
-    /// <summary>PAUSESTICK_01 — true while the user's pause of <paramref name="tag"/> stands (this session).</summary>
     internal static bool IsPaused(string tag)
     {
         lock (BackgroundGate) return _pausedTag is not null && string.Equals(_pausedTag, tag, StringComparison.OrdinalIgnoreCase);
@@ -313,12 +286,6 @@ internal static partial class UpdateService
 
     private static int _exitHookInstalled;
 
-    /// <summary>
-    /// INSTALLONEXIT_01 — the status line says a ready update "installs when you restart or close the app",
-    /// but the installer used to start only when the user clicked Restart or Later on the card. Dismissing
-    /// the card, or just quitting, installed nothing. Now the app's exit starts the waiting installer
-    /// (--no-launch: no surprise reopen) unless one is already running or the version was skipped.
-    /// </summary>
     private static void EnsureInstallOnExit()
     {
         if (Interlocked.Exchange(ref _exitHookInstalled, 1) != 0) return;
@@ -328,7 +295,6 @@ internal static partial class UpdateService
             _exitHookInstalled = 0;
     }
 
-    /// <summary>INSTALLONEXIT_01 — starts the deferred installer for a ready, not-skipped update.</summary>
     internal static void InstallPendingOnExit()
     {
         lock (BackgroundGate)
@@ -346,7 +312,6 @@ internal static partial class UpdateService
         }
     }
 
-    /// <summary>WHATSNEW_01 — the notes of the update being installed, for the new version's first start.</summary>
     internal const string PendingNotesFile = "update_pending_notes.txt";
 
     private static void RememberPendingNotes(UpdateRelease release)
@@ -361,10 +326,6 @@ internal static partial class UpdateService
         }
     }
 
-    /// <summary>
-    /// WHATSNEW_01 — up to <paramref name="max"/> plain bullets of the notes remembered for the RUNNING
-    /// version (written by the previous version while it downloaded this one), else empty.
-    /// </summary>
     internal static IReadOnlyList<string> WhatsNewForThisVersion(int max)
     {
         (string tag, string body) = ReadPendingNotes();
@@ -372,7 +333,6 @@ internal static partial class UpdateService
         return ReleaseChangelog.PlainHighlights(body, max);
     }
 
-    /// <summary>WHATSNEW_01 — the GitHub page with this version's full notes (or the list of releases).</summary>
     internal static string ReleaseNotesPageUrl()
     {
         (string tag, _) = ReadPendingNotes();
@@ -398,10 +358,6 @@ internal static partial class UpdateService
     private static Window? MainWindowOrNull() =>
         (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
 
-    /// <summary>
-    /// DLRESUME_01 — keeps THIS release's folder (its partial downloads resume) and removes the rest.
-    /// A folder still in use by a waiting installer is left for next time.
-    /// </summary>
     private static void PurgeOtherDownloadFolders(string keep)
     {
         try

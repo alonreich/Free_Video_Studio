@@ -8,11 +8,6 @@ public partial class VideoMergerWindow
     private object? _cornerMemePlan;
     private (int W, int H)? _mergeCanvasForCorners;
 
-    /// <summary>
-    /// MEMEMODE_01 — corner memes in the Merger preview, on the plan's GAMEPLAY clock
-    /// (<see cref="Core.Media.MergerPreviewPlan.GameplaySecAt"/>). Hidden while a full-screen cutaway
-    /// owns the player; never pauses, seeks or swaps it.
-    /// </summary>
     private void UpdateMergerCornerMemes(bool cutawayActive)
     {
         var plan = _plan;
@@ -37,7 +32,6 @@ public partial class VideoMergerWindow
         _cornerMemes.Update(plan.GameplaySecAt(_videoHost.IpcClient.CurrentTime));
     }
 
-    /// <summary>CACHEBOUND_05 — detaches and disposes merger corner memes on close or queue reset.</summary>
     private void TeardownMergerCornerMemes()
     {
         _cornerMemes?.Dispose();

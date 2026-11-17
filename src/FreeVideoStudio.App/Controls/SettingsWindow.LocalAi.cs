@@ -115,5 +115,4 @@ public partial class SettingsWindow
         Closed += (_, _) => _localAiCts?.Cancel();
         Show();
     }
-
 }

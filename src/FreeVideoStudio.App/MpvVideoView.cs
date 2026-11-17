@@ -59,13 +59,6 @@ public sealed class MpvVideoView : Control, IDisposable
     private readonly nint[] _renderTexturePtrs = new nint[SwapChainSize];
     private readonly nint[] _sharedTextureHandles = new nint[SwapChainSize];
     private readonly nint[] _dxInteropObjects = new nint[SwapChainSize];
-    /// <summary>
-    /// GPUSLOT_01 — one imported GPU image plus the generation stamp that identifies it.
-    ///
-    /// The generation is what makes a stale UI-thread completion callback harmless: the callback
-    /// compares the slot it was handed against the slot that is there NOW, and if they differ it
-    /// knows a newer import has already replaced it and does nothing.
-    /// </summary>
     internal sealed class ImportedImageSlot
     {
         public ImportedImageSlot(ICompositionImportedGpuImage image, long generation)
@@ -78,54 +71,10 @@ public sealed class MpvVideoView : Control, IDisposable
         public long Generation { get; }
     }
 
-    /// <summary>
-    /// GPUSLOT_01 — THE SWAP-CHAIN SLOTS. READ AND WRITTEN BY THREE THREADS. NEVER TOUCH AN ELEMENT
-    /// WITH A BARE ARRAY ASSIGNMENT.
-    ///
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// WHAT WAS WRONG: this was a plain ICompositionImportedGpuImage?[] with no lock, no volatile
-    /// and no Interlocked, and it was written from three places on three different threads:
-    ///
-    ///   • the RENDER thread, in EnsureImportedImage (import / replace a lost image),
-    ///   • the UI thread, inside ImportAndPresentTexture's fire-and-forget continuation, which on a
-    ///     failed present disposed "whatever is in the slot" and nulled it,
-    ///   • the teardown path (OnDetachedFromVisualTree / ReleaseRenderTexture).
-    ///
-    /// The catch blocks did not dispose the `image` they had actually failed on — they disposed
-    /// _importedImages[index], which by that point could be a DIFFERENT, newly imported object. So a
-    /// failed present could destroy the live image the render thread was about to draw with, and the
-    /// render thread could hand a freshly disposed import to UpdateWithKeyedMutexAsync. That is a
-    /// use-after-dispose across a COM boundary on the hot path, and the silent swallow of
-    /// COMException 0x80070057 (E_INVALIDARG) further down was the field evidence of it.
-    ///
-    /// THE RULE NOW:
-    ///   • The RENDER thread is the sole importer and the sole publisher (Interlocked.Exchange).
-    ///   • The UI thread is a pure observer. It may only remove a slot with
-    ///     Interlocked.CompareExchange against the EXACT slot it was given, and may dispose only if
-    ///     that CompareExchange proves the slot is still the one it failed on.
-    ///   • Teardown claims slots with Interlocked.Exchange too.
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
     private readonly ImportedImageSlot?[] _importedImages = new ImportedImageSlot?[SwapChainSize];
 
-    /// <summary>GPUSLOT_01 — monotonic stamp; every successful import takes the next value.</summary>
     private long _imageGeneration;
 
-    /// <summary>
-    /// GPUPRESENT_01 — one permit per swap-chain slot, so at most ONE UpdateWithKeyedMutexAsync is
-    /// ever in flight for a given slot.
-    ///
-    /// ImportAndPresentTexture posts to the UI thread and does NOT await the result, so the render
-    /// thread could issue present N+1 for a slot while present N was still running. Two overlapping
-    /// UpdateWithKeyedMutexAsync calls on the SAME IDXGIKeyedMutex with the same
-    /// (ConsumerKey, ProducerKey) pair produce an unordered AcquireSync/ReleaseSync sequence, and an
-    /// AcquireSync for a key no producer will release is an UNBOUNDED BLOCK — on the UI thread. That
-    /// is the one deadlock ZOOMHANG_01's render-thread timeout cannot save you from, because it is
-    /// the UI thread that stops.
-    ///
-    /// A frame that cannot take its slot's permit promptly is DROPPED, not queued: at 60fps the next
-    /// one is 16ms away and a queue here is latency the user sees as lag.
-    /// </summary>
     private readonly System.Threading.SemaphoreSlim[] _presentGates = CreatePresentGates();
 
     private static System.Threading.SemaphoreSlim[] CreatePresentGates()
@@ -135,21 +84,12 @@ public sealed class MpvVideoView : Control, IDisposable
         return gates;
     }
 
-    /// <summary>GPUPRESENT_01 — log the first drop only.</summary>
     private volatile bool _presentDropLogged;
 
-    /// <summary>FREEZEDIAG_03 — INERT diagnostic. Last coarse step seen on the UI thread.</summary>
     public static volatile string LastUiStep = "idle";
 
-    /// <summary>FREEZEDIAG_03 — INERT diagnostic. Last coarse step seen on the render thread.</summary>
     public static volatile string LastRenderStep = "idle";
 
-    /// <summary>
-    /// FREEZEDIAG_04 — INERT diagnostic. _renderLock is the only lock both threads take, so a
-    /// 6-second UI stall is either inside it or behind it. This records every acquisition that
-    /// took longer than a frame, with the thread that was waiting and the site that asked.
-    /// Semantics are unchanged: it is still the same `lock`, only measured.
-    /// </summary>
     public static volatile string LastLockStep = "idle";
 
     private const int LockWaitReportMs = 250;
@@ -174,15 +114,8 @@ public sealed class MpvVideoView : Control, IDisposable
     private TaskCompletionSource? _swThreadCompletion;
     private readonly PreviewShutdownCoordinator _shutdownCoordinator = new();
 
-    /// <summary>MPVSHUTDOWN_01 — bounded wait for Phase A (worker quiescence), milliseconds.</summary>
     private const int WorkerQuiescenceTimeoutMs = 5000;
 
-    /// <summary>
-    /// MPVSHUTDOWN_01 — set when a preview teardown could NOT be proven complete in this process.
-    /// Once set, the old native stack may still be alive (holding the D3D device, GL context and
-    /// libmpv handle), so building a REPLACEMENT MpvVideoView beside it is unsafe: window close
-    /// paths and TOOLRETURN_01 refuse to create a new host until the app is restarted.
-    /// </summary>
     public static bool HasUnverifiedTeardown { get; private set; }
 
     private static void MarkUnverifiedTeardown(string where)
@@ -191,7 +124,6 @@ public sealed class MpvVideoView : Control, IDisposable
         RuntimeLog.Fail(InteropLogStep,
             $"Preview teardown could not be verified ({where}); no replacement preview will be created in this process until it is restarted.");
     }
-
 
     private int _renderTextureW;
     private int _renderTextureH;
@@ -250,7 +182,6 @@ public sealed class MpvVideoView : Control, IDisposable
         if (handle == nint.Zero) throw new InvalidOperationException("Could not create the video player.");
         try
         {
-
         MpvWrapper.mpv_set_option_string(handle, "wid", "0");
         MpvWrapper.mpv_set_option_string(handle, "vo", "libmpv");
         MpvWrapper.mpv_set_option_string(handle, "hwdec", useHardwareInterop ? "cuda,dxva2,auto-safe" : "no");
@@ -304,7 +235,6 @@ public sealed class MpvVideoView : Control, IDisposable
     private readonly object _swRenderGate = new object();
     private volatile bool _swDisposing;
     private volatile bool _swThreadExited;
-
 
     private bool InitializeSoftwareRender()
     {
@@ -635,7 +565,7 @@ public sealed class MpvVideoView : Control, IDisposable
         _dummyHwnd = WglInterop.CreateWindowEx(
             0, "STATIC", "dummy", 0,
             0, 0, 1, 1, nint.Zero, nint.Zero, nint.Zero, nint.Zero);
-        
+
         _dummyHdc = WglInterop.GetDC(_dummyHwnd);
 
         var pfd = new WglInterop.PIXELFORMATDESCRIPTOR
@@ -655,7 +585,7 @@ public sealed class MpvVideoView : Control, IDisposable
 
         _hglrc = WglInterop.wglCreateContext(_dummyHdc);
         WglInterop.wglMakeCurrent(_dummyHdc, _hglrc);
-        
+
         WglInterop.LoadExtensions();
 
         var creationFlags = DeviceCreationFlags.BgraSupport | DeviceCreationFlags.VideoSupport;
@@ -708,7 +638,6 @@ public sealed class MpvVideoView : Control, IDisposable
             Marshal.FreeHGlobal(initParamsPtr);
         }
         }
-
 
         WglInterop.glGenTextures(SwapChainSize, _glTextures);
 
@@ -779,23 +708,9 @@ public sealed class MpvVideoView : Control, IDisposable
         return _initializationTask ??= InitializeMpvAsync(mpvPath);
     }
 
-    /// <summary>Let render threads finish while the dispatcher can still service their queued imports.</summary>
-    /// <summary>
-    /// MPVSHUTDOWN_01 — the supported preview teardown: two-phase, awaitable, bounded, idempotent.
-    /// Interactive UI paths MUST use this, not <see cref="Dispose()"/> (which is the process-final
-    /// fallback). Calling it twice returns/awaits the same operation, or AlreadyStopped.
-    /// </summary>
     public Task<PreviewShutdownResult> ShutdownAsync(System.Threading.CancellationToken cancellationToken = default)
         => _shutdownCoordinator.RunAsync(ShutdownCoreAsync, cancellationToken);
 
-    /// <summary>
-    /// MPVSHUTDOWN_01 — PHASE A: signal stop, then AWAIT proof that the render/software workers (and
-    /// an in-flight startup) have all finished. The UI thread never joins a thread here; the wait
-    /// is a bounded Task.WhenAny over completion tasks the workers set in their finally blocks.
-    /// PHASE B: the thread-affine native finalization (WGL/D3D/Avalonia/compositor resources) runs
-    /// on the UI thread. A failure is RETURNED, logged and never disguised as success; nothing is
-    /// freed unless every worker was accounted for, so a failed attempt is retryable.
-    /// </summary>
     private async Task<PreviewShutdownResult> ShutdownCoreAsync(System.Threading.CancellationToken cancellationToken)
     {
         if (_isDisposed) return PreviewShutdownResult.AlreadyStopped;
@@ -956,12 +871,6 @@ public sealed class MpvVideoView : Control, IDisposable
         }
     }
 
-    /// <summary>
-    /// MPVSHUTDOWN_01 — PHASE B, UI thread only, and only after every worker has been PROVEN
-    /// stopped (so no lock below is contended by a live render loop; the bounded TryEnters are a
-    /// defensive backstop, not the correctness argument). Frees each native resource exactly once
-    /// in the documented order and reports the outcome to the caller.
-    /// </summary>
     internal sealed record NativeDetachedResources(
         bool Success,
         string? ErrorMessage,
@@ -982,13 +891,6 @@ public sealed class MpvVideoView : Control, IDisposable
         ID3D11Texture2D?[]? SharedTextures = null,
         IDXGIKeyedMutex?[]? SharedTextureMutexes = null);
 
-    /// <summary>
-    /// MPVSHUTDOWN_01 / VOAPPLY_02 — PHASE B1: UI thread only.
-    /// Releases genuinely thread-affine resources: Win32 HWND, WGL context unbind,
-    /// Avalonia compositor images. Detaches non-UI resources and driver interop objects
-    /// (render context, WGL context, DirectX interop objects, framebuffers, textures,
-    /// MpvIpcClient, libmpv handle, D3D device) to be torn down off the UI thread.
-    /// </summary>
     private async Task<NativeDetachedResources> FinalizeUiResourcesOnUiThreadAsync()
     {
         if (_isDisposed)
@@ -1186,12 +1088,6 @@ public sealed class MpvVideoView : Control, IDisposable
         }
     }
 
-    /// <summary>
-    /// MPVSHUTDOWN_01 / VOAPPLY_02 / VOAPPLY_06 — PHASE B2: Worker thread only.
-    /// Runs potentially blocking native teardown (render context free, mpv event loop join, mpv_terminate_destroy)
-    /// completely off the UI thread so the Avalonia dispatcher is never stalled. Validates return codes and
-    /// halts dependent frees if an earlier prerequisite failed.
-    /// </summary>
     private async Task<PreviewShutdownResult> ExecuteDetachedNativeTeardown(NativeDetachedResources detached)
     {
         _activeTeardownOperation ??= new NativeTeardownOperation(detached);
@@ -1842,7 +1738,7 @@ public sealed class MpvVideoView : Control, IDisposable
         _drawingSurface = null;
         _surfaceVisual = null;
         _gpuInterop = null;
-        
+
         for (int i = 0; i < SwapChainSize; i++)
         {
             ImportedImageSlot? claimed = System.Threading.Interlocked.Exchange(ref _importedImages[i], null);
@@ -1926,12 +1822,6 @@ public sealed class MpvVideoView : Control, IDisposable
         catch (System.Exception __ex) { RuntimeLog.SwallowedThrottled(__ex); }
     }
 
-    /// <summary>
-    /// The one and only thread that ever calls <see cref="UpdateSurface"/> (and therefore
-    /// mpv_render_context_render). AutoResetEvent coalesces bursts, mirroring the old
-    /// _isUpdateQueued gate. UpdateSurface releases the GL context each pass, so Dispose can
-    /// still take _renderLock and free GL resources without fighting this thread for the context.
-    /// </summary>
     private void RenderThreadLoop()
     {
         try
@@ -2061,7 +1951,6 @@ public sealed class MpvVideoView : Control, IDisposable
 
                 try
                 {
-
                     WglInterop.wglMakeCurrent(_dummyHdc, _hglrc);
                     glContextCurrent = true;
 
@@ -2171,13 +2060,10 @@ public sealed class MpvVideoView : Control, IDisposable
 
     private bool _pumpFailLogged;
 
-    /// <summary>DXGI WAIT_TIMEOUT: AcquireSync returns it when the requested key is not current.</summary>
     private const int DxgiWaitTimeout = 0x102;
 
-    /// <summary>GPUPRESENT_02 — consecutive unrecoverable producer-key timeouts, per slot.</summary>
     private readonly int[] _producerKeyTimeouts = new int[SwapChainSize];
 
-    /// <summary>GPUPRESENT_02 — set when a slot is wedged; EnsureRenderTexture rebuilds the chain.</summary>
     private volatile bool _forceSwapChainRebuild;
 
     private volatile bool _orphanReclaimLogged;
@@ -2189,18 +2075,6 @@ public sealed class MpvVideoView : Control, IDisposable
         return acquireSync(keyedMutex.NativePointer, key, timeoutMs);
     }
 
-    /// <summary>
-    /// GPUPRESENT_02 — acquire the producer key for a slot whose present permit the caller HOLDS.
-    ///
-    /// Holding the permit proves no UpdateWithKeyedMutexAsync is in flight for this slot. So a
-    /// texture found on ConsumerKey is an orphan: a present failed, or was never posted, before the
-    /// compositor acquired it. It is reclaimed (AcquireSync(ConsumerKey, 0) + ReleaseSync(ProducerKey))
-    /// instead of waiting for a consumer that will never come. Render thread only, _renderLock held.
-    ///
-    /// NON-BLOCKING GUARANTEE: Never blocks for 1000ms while holding _renderLock. If the slot is
-    /// still being sampled by the compositor, it returns false immediately (0ms) so the search
-    /// loop can test the remaining slots in the 16-slot ring.
-    /// </summary>
     private bool TryAcquireProducerKey(IDXGIKeyedMutex keyedMutex, int index)
     {
         int hr = AcquireSyncRaw(keyedMutex, ProducerKey, 0);
@@ -2230,47 +2104,12 @@ public sealed class MpvVideoView : Control, IDisposable
         return false;
     }
 
-    /// <summary>
-    /// ISSUE_05 — set whenever a frame had to be declined, cleared as soon as one is presented.
-    /// Drives the render loop's short retry wait so the ONLY behavioural change on a healthy
-    /// GPU machine is: none. When frames are flowing this is always false and the loop blocks
-    /// indefinitely exactly as it always has.
-    /// </summary>
     private volatile bool _retryPending;
 
-    /// <summary>ZOOMHANG_01 — declines since the last presented frame. Reset in UpdateSurface.</summary>
     private int _consecutiveDeclines;
 
-    /// <summary>
-    /// ZOOMHANG_01 — how many consecutive declines before the render loop stops short-retrying.
-    /// 90 x 66ms is roughly six seconds: far longer than any legitimate stall (a resize, a seek, a
-    /// keyed-mutex contention spike), far shorter than "forever".
-    /// </summary>
     private const int ConsecutiveDeclineLimit = 90;
 
-    /// <summary>
-    /// ISSUE_05 — this method used to have a COMPLETELY EMPTY BODY while its name promised the
-    /// opposite, and every "cannot draw this frame" branch in <see cref="UpdateSurface"/> called
-    /// it and returned.
-    ///
-    /// WHY THAT FROZE THE PREVIEW: with <c>vo=libmpv</c> mpv hands the client one frame and then
-    /// WAITS — it only decodes and announces the next frame once the current one has been
-    /// consumed by a call to <c>mpv_render_context_render</c>. So declining to render (surface
-    /// not created yet, control not laid out, or the 1-second keyed-mutex acquire timing out
-    /// under load) meant: no render -&gt; no new frame -&gt; no new frame-ready callback -&gt; the
-    /// picture stays frozen on one image for the rest of the session while the audio plays on.
-    /// Restarting the app was the only way out.
-    ///
-    /// THE FIX: consume the frame with <c>MPV_RENDER_PARAM_SKIP_RENDERING=1</c>. mpv does all the
-    /// timing/frame-advance bookkeeping and skips only the draw, so the clock keeps moving and
-    /// the very next frame is offered normally. It does not touch the graphics API, so this is
-    /// safe to call with no GL context current — which matters, because these branches are
-    /// reached precisely when the GL/D3D side is not usable.
-    ///
-    /// FAIL-SAFE: any failure is swallowed. The bounded 66ms wait in <see cref="RenderThreadLoop"/>
-    /// is the second, independent line of defence — even if this pump never works on some driver,
-    /// the loop still retries ~15x/sec, so the preview recovers either way.
-    /// </summary>
     private void PumpEmptyRender()
     {
         if (++_consecutiveDeclines <= ConsecutiveDeclineLimit)
@@ -2388,12 +2227,6 @@ public sealed class MpvVideoView : Control, IDisposable
         }
     }
 
-
-    /// <summary>
-    /// GPUSLOT_01 — render thread only. The sole importer and the sole publisher for a slot.
-    /// Returns the slot (image + generation) rather than a bare image, because the present path must
-    /// be able to prove later that the slot has not been replaced underneath it.
-    /// </summary>
     private ImportedImageSlot? EnsureImportedImage(int index)
     {
         ImportedImageSlot? current = System.Threading.Volatile.Read(ref _importedImages[index]);
@@ -2423,11 +2256,6 @@ public sealed class MpvVideoView : Control, IDisposable
         return slot;
     }
 
-    /// <summary>
-    /// GPUSLOT_01 — the single disposal funnel. Imported GPU images belong to the compositor, so the
-    /// release is posted to the UI thread; every call site goes through here so there is exactly one
-    /// place that can destroy one.
-    /// </summary>
     private static void DisposeImportedImageOnUiThread(ICompositionImportedGpuImage image)
     {
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -2441,10 +2269,6 @@ public sealed class MpvVideoView : Control, IDisposable
         });
     }
 
-    /// <summary>
-    /// GPUSLOT_01 — remove a slot ONLY if it is still the exact slot the caller was working with.
-    /// Returns true when this caller won the race and therefore owns the disposal.
-    /// </summary>
     private bool TryRetireSlot(int index, ImportedImageSlot expected)
     {
         if (ReferenceEquals(System.Threading.Interlocked.CompareExchange(ref _importedImages[index], null, expected), expected))
@@ -2457,16 +2281,6 @@ public sealed class MpvVideoView : Control, IDisposable
         return false;
     }
 
-    /// <summary>
-    /// GPUSLOT_01 / GPUPRESENT_01 / GPUPRESENT_02 — hand one slot's image to the compositor.
-    ///
-    /// Takes the SLOT, not a bare image, so the completion callback can prove the slot is still the
-    /// one it was given before it destroys anything.
-    /// ⚠️ GPUPRESENT_02: the caller has ALREADY taken this slot's present permit (UpdateSurface takes
-    /// it before AcquireSync). This method owns releasing it on every path. A failed present
-    /// leaves the texture on ConsumerKey. That is safe now, because the next producer to take the
-    /// permit reclaims it (TryAcquireProducerKey) instead of timing out on it.
-    /// </summary>
     private void ImportAndPresentTexture(int index, CompositionDrawingSurface surface, ImportedImageSlot slot)
     {
         var gate = _presentGates[index];
@@ -2518,7 +2332,6 @@ public sealed class MpvVideoView : Control, IDisposable
             }
         }
     }
-
 
     private ICompositionImportedGpuImage? TryImportSharedTexture(int index)
     {
@@ -2620,7 +2433,6 @@ public sealed class MpvVideoView : Control, IDisposable
         return null;
     }
 
-    /// <summary>RENDERIMPORT_01 — one in-flight UI-thread import for a swap-chain slot.</summary>
     private sealed class PendingImport
     {
         public PendingImport(long epoch, nint handle) { Epoch = epoch; Handle = handle; }
@@ -2630,18 +2442,15 @@ public sealed class MpvVideoView : Control, IDisposable
         private ICompositionImportedGpuImage? _image;
         private volatile bool _done;
 
-        /// <summary>Written once by the UI thread; the volatile flag publishes <see cref="Image"/> to the render thread.</summary>
         public void Complete(ICompositionImportedGpuImage? image) { _image = image; _done = true; }
         public bool IsDone => _done;
         public ICompositionImportedGpuImage? Image => _image;
 
         private int _claimed;
 
-        /// <summary>Exactly one party (the render thread using it, or whoever abandons it) owns the image.</summary>
         public bool TryClaim() => System.Threading.Interlocked.Exchange(ref _claimed, 1) == 0;
     }
 
-    /// <summary>RENDERIMPORT_01 — abandon every in-flight import (textures released); a finished image is disposed here, a late one by its UI callback.</summary>
     private void AbandonPendingImports()
     {
         for (int i = 0; i < SwapChainSize; i++)
@@ -2651,10 +2460,8 @@ public sealed class MpvVideoView : Control, IDisposable
         }
     }
 
-    /// <summary>RENDERIMPORT_01 — per-slot import hand-off (render thread reads, UI thread completes).</summary>
     private readonly PendingImport?[] _pendingImports = new PendingImport?[SwapChainSize];
 
-    /// <summary>RENDERIMPORT_01 — bumped whenever the shared textures are released, so a late import for old textures is discarded.</summary>
     private long _textureEpoch;
 
     private static bool SupportsImageHandleType(ICompositionGpuInterop gpu, string handleType)
@@ -2711,7 +2518,6 @@ public sealed class MpvVideoView : Control, IDisposable
             ImportedImageSlot? claimed = System.Threading.Interlocked.Exchange(ref _importedImages[i], null);
             if (claimed != null) DisposeImportedImageOnUiThread(claimed.Image);
         }
-
     }
 
     ~MpvVideoView()
@@ -2727,14 +2533,6 @@ public sealed class MpvVideoView : Control, IDisposable
 
     private bool _isDisposed;
 
-    /// <summary>
-    /// MPVSHUTDOWN_01 — the SYNCHRONOUS teardown is the PROCESS-FINAL FALLBACK ONLY. Every
-    /// interactive UI path (tool navigation, window close) uses <see cref="ShutdownAsync"/>, whose
-    /// waits are asynchronous. This body may still join threads and try locks with bounds because
-    /// its callers are immediately followed by Environment.Exit — the one case where a bounded
-    /// block cannot strand the user. If an async shutdown is already in flight, it is observed
-    /// first so the two paths can never free the same native handles.
-    /// </summary>
     private void Dispose(bool disposing)
     {
         var inFlight = _shutdownCoordinator.Pending ?? _activeNativeReleaseTask;

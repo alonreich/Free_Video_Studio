@@ -25,13 +25,20 @@ internal static class Program
         Root = Directory.GetCurrentDirectory();
         if (!File.Exists(Path.Combine(Root, "FreeVideoStudio.sln"))) throw new InvalidOperationException("Run from repository root.");
         using var outputLease = TestArtifactDirectory.Begin(Root,
-            !args.Contains("--merger") ? "DesktopPreview" : args.Contains("--silent-middle") ? "MergerSilentDesktop" : "MergerDesktop",
+            args.Contains("--speed-editor") ? "SpeedEditorDesktop" : !args.Contains("--merger") ? "DesktopPreview" : args.Contains("--silent-middle") ? "MergerSilentDesktop" : "MergerDesktop",
             out Work);
         Environment.SetEnvironmentVariable(ApplicationPaths.ProgramDataRootOverrideEnvironmentVariable, Path.Combine(Work, "state"));
         Environment.SetEnvironmentVariable("FVS_DEV_LOG_DIR", Directory.CreateDirectory(Path.Combine(Work, "logs")).FullName);
         string temp = Directory.CreateDirectory(Path.Combine(Work, "temp")).FullName;
         Environment.SetEnvironmentVariable("TEMP", temp);
         Environment.SetEnvironmentVariable("TMP", temp);
+        if (args.Contains("--speed-editor"))
+        {
+            SpeedEditorSmokeApp.CreateMedia();
+            using var editorWatchdog = new Timer(_ => { Console.Error.WriteLine("FAIL: Speed Editor desktop timeout (frozen preview or stuck close)."); Environment.Exit(1); }, null, 90000, Timeout.Infinite);
+            return AppBuilder.Configure<SpeedEditorSmokeApp>().UsePlatformDetect().WithInterFont()
+                .StartWithClassicDesktopLifetime(args);
+        }
         if (args.Contains("--merger"))
         {
             MergerSmokeApp.CreateMedia(args.Contains("--silent-middle"));

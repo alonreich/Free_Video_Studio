@@ -6,7 +6,6 @@ using FreeVideoStudio.App.Services;
 
 namespace FreeVideoStudio.App.ViewModels;
 
-/// <summary>What the Viral Post card shows right now (AIVIRAL_HONEST_01: the badge always tells the truth).</summary>
 public sealed record ViralPostView(
     string Badge,
     string? Message,
@@ -17,15 +16,8 @@ public sealed record ViralPostView(
     string RegenerateLabel,
     ViralPostResult? Post);
 
-/// <summary>
-/// VIRALVM_01 (UI-LOGIC separation) — the Finished screen's "Write my post" card. Choosing the AI
-/// company/model/key, running the generation off the UI thread, cancellation and turning the outcome
-/// into an honest card state live here; FinishedDialogWindow only draws <see cref="View"/>. The
-/// generator is injectable, so the whole flow is testable without the internet or FFmpeg.
-/// </summary>
 public sealed class ViralPostViewModel : IDisposable
 {
-    /// <summary>Writes a post for a video. Returns the outcome and a "(1,234 tokens)" note (may be empty).</summary>
     public delegate Task<(ViralPostOutcome Outcome, string TokenInfo)> PostGenerator(string videoPath, string? avoidTitle, CancellationToken ct);
 
     private readonly ISettingsStore _store;
@@ -41,18 +33,14 @@ public sealed class ViralPostViewModel : IDisposable
         View = Writing();
     }
 
-    /// <summary>The card state to draw.</summary>
     public ViralPostView View { get; private set; }
 
-    /// <summary>Raised (on the caller's thread) whenever <see cref="View"/> changes.</summary>
     public event Action<ViralPostView>? Changed;
 
-    /// <summary>Settings › AI › "Write my post".</summary>
     public bool IsEnabled => _store.Current.AiViralPostHelperEnabled && _store.Current.AiMode != AiMode.LocalOnly;
 
     internal const string PcOnlyTag = "AIVIRALPCONLY_01";
 
-    /// <summary>The company the post is written with (for the "connect your AI" wizard).</summary>
     public AiVendor Vendor => _store.Current.GetUsageConfig(AiUsage.ViralPost).Vendor;
 
     public Task StartAsync(string videoPath)
@@ -61,10 +49,8 @@ public sealed class ViralPostViewModel : IDisposable
         return RequestAsync(avoidTitle: null);
     }
 
-    /// <summary>NEW VERSION / RETRY: asks again, avoiding the current title.</summary>
     public Task RegenerateAsync() => RequestAsync(View.Post?.Title);
 
-    /// <summary>After the AI wizard added a key.</summary>
     public Task RetryAsync() => RequestAsync(avoidTitle: null);
 
     public void Cancel()
@@ -100,13 +86,14 @@ public sealed class ViralPostViewModel : IDisposable
         Show(ToView(result.outcome, result.tokenInfo, _lastReference));
     }
 
-    /// <summary>AIVIRAL_HONEST_01 — the outcome as the card shows it. Pure.</summary>
     public static ViralPostView ToView(ViralPostOutcome outcome, string tokenInfo = "", string? reference = null) => outcome.Status switch
     {
         ViralPostStatus.AiGenerated when outcome.Post != null =>
             new ViralPostView($"AI WRITTEN{tokenInfo}", outcome.Message, true, true, false, false, "↻ NEW VERSION", outcome.Post),
         ViralPostStatus.NoKey =>
             new ViralPostView("NO AI KEY", outcome.Message, false, false, true, false, "↻ NEW VERSION", null),
+        ViralPostStatus.AccountProblem =>
+            new ViralPostView("AI KEY PROBLEM", outcome.Message, false, false, true, false, "↻ NEW VERSION", null),
         _ =>
             new ViralPostView("AI FAILED", (outcome.Message ?? "The AI could not write the post.") + (reference != null ? "\n\nReference: " + reference : AiUsageMeter.ReferenceSuffix), false, true, false, false, "↻ RETRY", null),
     };
@@ -122,7 +109,6 @@ public sealed class ViralPostViewModel : IDisposable
         Changed?.Invoke(view);
     }
 
-    /// <summary>The production generator: current AI settings, FFmpeg stills, pre-run cost estimate, and live verbose beats off the UI thread.</summary>
     private async Task<(ViralPostOutcome Outcome, string TokenInfo)> ProductionRunAsync(
         string videoPath,
         string? avoidTitle,

@@ -8,10 +8,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// AI Tracking raw waypoint received from the Gemini vision protocol.
-/// Coordinates are normalized to a 0-1000 scale relative to the frame.
-/// </summary>
 public record RawSubjectWaypoint
 {
     [JsonPropertyName("time")]
@@ -33,10 +29,6 @@ public record RawSubjectWaypoint
     public bool Visible { get; init; } = true;
 }
 
-/// <summary>
-/// A time-indexed keyframe along a smoothed AI camera zoom path.
-/// Coordinates are in source video pixels.
-/// </summary>
 public record AiTrackingKeyframe
 {
     [JsonPropertyName("t")]
@@ -61,9 +53,6 @@ public record AiTrackingKeyframe
     public bool Visible { get; init; }
 }
 
-/// <summary>
-/// JSON serializer context for AI tracking data structures to ensure Native AOT compliance.
-/// </summary>
 [JsonSerializable(typeof(RawSubjectWaypoint))]
 [JsonSerializable(typeof(List<RawSubjectWaypoint>))]
 [JsonSerializable(typeof(AiTrackingKeyframe))]
@@ -71,10 +60,6 @@ public record AiTrackingKeyframe
 [JsonSerializable(typeof(AiTrajectorySmoother.SmoothedTrajectory))]
 public partial class AiTrackingJsonContext : JsonSerializerContext { }
 
-/// <summary>
-/// Mathematical smoothing, velocity-adaptive breathing, and vanishing-target fallback
-/// engine for universal AI subject tracking.
-/// </summary>
 public static class AiTrajectorySmoother
 {
     public class SmoothedTrajectory
@@ -91,12 +76,6 @@ public static class AiTrajectorySmoother
         [JsonPropertyName("segmentDuration")]
         public double SegmentDurationSec { get; set; }
 
-        /// <summary>
-        /// AIRESMOOTH_01 — the raw waypoints Gemini returned (after sanitising, times relative to the
-        /// zoom start). Kept so "EDIT AI ZOOM" can re-frame with new settings WITHOUT another paid AI
-        /// call. Null for trajectories written before this field existed (they can only be re-tracked).
-        /// Omitted from the JSON when null so older documents round-trip byte-identically.
-        /// </summary>
         [JsonPropertyName("raw")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<RawSubjectWaypoint>? RawWaypoints { get; set; }
@@ -164,7 +143,6 @@ public static class AiTrajectorySmoother
             }
         }
 
-        /// <summary>True when the keyframes change the zoom scale (the export then uses the scale+crop form).</summary>
         private bool IsScaleDynamic()
         {
             if (Keyframes.Count <= 1) return false;
@@ -174,17 +152,6 @@ public static class AiTrajectorySmoother
             return false;
         }
 
-        /// <summary>
-        /// AIPARITY_01 — the SOURCE-pixel region the EXPORT's crop expression (<see cref="ToFfmpegCropFilter"/>)
-        /// selects at <paramref name="relSec"/> seconds after the zoom's own start, on an input frame of
-        /// <paramref name="inW"/> x <paramref name="inH"/> (the zoom's resolution after the pre-scale).
-        ///
-        /// <para>This is the expression evaluated in C#, term for term: the same 2-decimal rounding of
-        /// every keyframe value and time, the same LINEAR piecewise interpolation (the export never used
-        /// <see cref="EvaluateAt"/>'s smoothstep), the same even truncation and the same
-        /// <c>min(in-out, max(0, v))</c> clamp. The live preview (<see cref="ZoomPreviewSimulator"/>) uses
-        /// THIS, so preview and export frame the same region by construction.</para>
-        /// </summary>
         public (double X, double Y, double W, double H) EvaluateExportCrop(double relSec, int inW, int inH)
         {
             if (Keyframes.Count == 0) return (0, 0, inW, inH);
@@ -225,7 +192,6 @@ public static class AiTrajectorySmoother
             }
         }
 
-        /// <summary>The value <see cref="BuildPiecewiseExpr"/>'s expression evaluates to at time <paramref name="t"/>.</summary>
         private static double Piecewise(List<AiTrackingKeyframe> kfs, Func<AiTrackingKeyframe, double> selector, double t)
         {
             for (int i = 0; i < kfs.Count - 1; i++)
@@ -241,19 +207,9 @@ public static class AiTrajectorySmoother
             return Round2(Math.Round(selector(kfs[^1]), 2));
         }
 
-        /// <summary>What a "0.00"-formatted number reads back as.</summary>
         private static double Round2(double v) =>
             double.Parse(v.ToString("0.00", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
 
-        /// <summary>
-        /// Formulates an FFmpeg piecewise-lerp crop filter expression across keyframes:
-        /// crop=w='W(t)':h='H(t)':x='X(t)':y='Y(t)':eval=frame
-        ///
-        /// <para>AIPARITY_01 — <paramref name="timeOffsetSec"/> is how far into the zoom the CHUNK this filter
-        /// runs in starts. Every export chunk restarts its own clock at 0 (<c>setpts=PTS-STARTPTS</c>), so a
-        /// zoom split into several chunks (a cut or a freeze inside it) used to restart the trajectory from
-        /// its first keyframe at every split. 0 (the default) emits exactly the previous expression.</para>
-        /// </summary>
         public string ToFfmpegCropFilter(double timeOffsetSec = 0)
         {
             if (Keyframes.Count == 0) return string.Empty;
@@ -791,13 +747,6 @@ public static class AiTrajectorySmoother
         }
     }
 
-    /// <summary>
-    /// AIHUDZONE_01 — moves one crop window out of every HUD zone it overlaps, by the SMALLEST single
-    /// horizontal or vertical shift that (a) clears the zone, (b) keeps the window inside the frame and
-    /// (c) keeps the whole target box inside the window. When no shift satisfies all three the window
-    /// is left where it is: the target always wins over the HUD. Two passes, so clearing one zone
-    /// cannot silently push the window into another without a second look.
-    /// </summary>
     internal static (double X, double Y) AvoidHudZones(
         double cropX, double cropY, double cropW, double cropH, int sourceW, int sourceH,
         double targetL, double targetT, double targetR, double targetB,

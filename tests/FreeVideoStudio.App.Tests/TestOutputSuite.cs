@@ -2,11 +2,14 @@ using System.Runtime.CompilerServices;
 
 namespace FreeVideoStudio.Testing;
 
-/// <summary>TESTOUT_01: this suite writes only to logs\App_Results\ (replaced once per run).</summary>
 internal static class TestOutputSuite
 {
     internal const string Name = "App";
 
     [ModuleInitializer]
-    internal static void Prepare() => TestArtifactDirectory.SuiteWork(Name);
+    internal static void Prepare()
+    {
+        string freezeCache = System.IO.Path.Combine(TestArtifactDirectory.SuiteWork(Name), "freeze-sfx");
+        FreeVideoStudio.Core.Media.FreezeSoundEffect.CacheDirectoryProvider = () => freezeCache;
+    }
 }

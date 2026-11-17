@@ -7,27 +7,8 @@ using Avalonia.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// MERGERPLAYHEAD_01 (user 2026-09-28) — the Merger's playhead is a red LINE from the top of the time scale down
-/// through the scrub row, the thumbnail blocks and the waveform, instead of the slider's small resting dot.
-///
-/// <para>
-/// It is purely a picture: one non-hit-testable layer spanning every row of the timeline grid, so it never steals a
-/// press from the thumbnail blocks (which select and reorder clips). Seeking and dragging it happen where they always
-/// did — the overlay's press/move handlers, on the scale + scrub row and (now) on the waveform lane
-/// (<see cref="IsOnSeekRows"/>). The line follows the scrub slider's value, which both the playback tick and a
-/// pointer scrub set, so it moves the instant the user presses, not a tick later.
-/// </para>
-///
-/// <para>
-/// The x position uses the SAME mapping as the seek (x / width of the timeline column × duration), so the line sits
-/// exactly where a click would seek and exactly over the matching thumbnail and waveform pixel. The slider's own dot
-/// was 22 px inset at each end (its rail), so it was never exactly aligned with the lanes below it.
-/// </para>
-/// </summary>
 public partial class VideoMergerWindow
 {
-    /// <summary>Stroke of the yellow selection ants (upper timeline and thumbnail blocks). Was 2.</summary>
     private const double AntsThickness = 1.25;
 
     private const double PlayheadWidth = 2;
@@ -36,7 +17,6 @@ public partial class VideoMergerWindow
     private Rectangle? _playheadLine;
     private Avalonia.Controls.Shapes.Path? _playheadCap;
 
-    /// <summary>Adds the playhead layer over every row of the timeline grid and keeps it on the slider's value.</summary>
     private void AttachMergerPlayhead(Canvas? seekRow, Slider? slider)
     {
         if (seekRow?.Parent is not Grid grid || slider == null || _playheadLayer != null) return;

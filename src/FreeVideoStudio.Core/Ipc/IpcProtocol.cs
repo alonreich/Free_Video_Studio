@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Buffers.Binary;
 using System.IO;
 using System.IO.Pipes;
@@ -115,41 +114,6 @@ public static class IpcProtocol
     }
 
     public static string PipeName => $"FreeVideoStudio_StateIpc_{UserScope}{DevelopmentEnvironment.ScopeSuffix}";
-    /// <summary>
-    /// IPCLEASE_01 — THE SINGLE-SERVER LEASE. IT IS THE OPEN HANDLE, NOT AN ACQUIRED LOCK.
-    ///
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// WHAT WAS WRONG: the server created this mutex with <c>initiallyOwned: true</c> — that is,
-    /// it OWNED it — and released it in Dispose. A Win32 mutex is THREAD-AFFINE: only the thread
-    /// that acquired it may release it. Ownership was taken on whichever thread called TryStart
-    /// (startup) and released on whichever thread ran Dispose (shutdown / app teardown), which is
-    /// almost never the same one. So <c>ReleaseMutex</c> threw
-    ///   "Object synchronization method was called from an unsynchronized block of code"
-    /// on EVERY CLEAN SHUTDOWN, was swallowed by a bare catch, and the handle was then closed while
-    /// still owned — which marks the mutex ABANDONED. The next launch duly hit the
-    /// AbandonedMutexException branch and logged "Prior server process exited abruptly": a
-    /// permanently false crash signal on a completely normal exit.
-    ///
-    /// THE FIX IS TO STOP OWNING IT. A named kernel object lives exactly as long as one handle to
-    /// it remains open, so "I hold a handle" is already a perfect lease:
-    ///   • <c>new Mutex(initiallyOwned: false, name, out createdNew)</c> — createdNew is true only
-    ///     for the process that created it, which is the one that becomes the server.
-    ///   • Nothing is ever acquired, so there is nothing to release, no thread affinity, and no
-    ///     abandoned state that can exist at all.
-    ///   • A crashed server closes its handle with the process; the name frees itself and the next
-    ///     launch simply creates it again.
-    ///
-    /// ⚠️ The NAME is deliberately unchanged. A build from before this fix, still running, OWNS this
-    /// mutex — and because <c>initiallyOwned</c> is ignored when the object already exists, old and
-    /// new builds still see each other's lease correctly and exactly one of them serves. Renaming it
-    /// (or switching to a Semaphore, which cannot share a name with a Mutex) would let two servers
-    /// bind the same pipe and silently diverge the session state. Keep the name.
-    ///
-    /// ⚠️ Mutex is also the only named primitive .NET implements on every platform. Named Semaphore
-    /// and EventWaitHandle are Windows-only and throw PlatformNotSupportedException elsewhere, which
-    /// takes the IPC test suite with them. Do not substitute one.
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
     public static string ServerMutexName => $@"Local\FreeVideoStudio_IpcServerMutex_{UserScope}{DevelopmentEnvironment.ScopeSuffix}";
 
     public static bool IsConnectedClientTrusted(NamedPipeServerStream server)
@@ -324,16 +288,6 @@ public static class IpcProtocol
         return new IpcFrame(opcode, payload);
     }
 
-    /// <summary>
-    /// IPCDEADLINE_01 — one request/response exchange under ONE end-to-end deadline.
-    ///
-    /// Connect, write AND read share a single linked token that fires after <paramref name="deadline"/>;
-    /// the registration additionally disposes the stream so a peer that accepts the connection and then
-    /// never answers cannot hold the caller past the deadline even if an I/O primitive ignored the
-    /// token. The previous synchronous client bounded only <c>Connect()</c>; its <c>ReadFrame</c> had no
-    /// deadline at all and froze the UI thread forever against a hung peer.
-    /// Returns null on timeout, cancellation, a closed pipe or any I/O failure — never throws.
-    /// </summary>
     public static async Task<IpcFrame?> ExchangeAsync(
         Func<NamedPipeClientStream> connect,
         IpcOpcode request,

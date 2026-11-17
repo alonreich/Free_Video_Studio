@@ -11,15 +11,11 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// Verified elimination event detected in gameplay footage. <see cref="TimestampSec"/> is ABSOLUTE source seconds.
-/// </summary>
 public sealed record AiEliminationMarker(
     double TimestampSec,
     double Confidence,
     string Description);
 
-/// <summary>AIELIM_02 — what one scan found, and a plain sentence the timeline shows (success or why it failed).</summary>
 public sealed record AiEliminationScanResult(
     IReadOnlyList<AiEliminationMarker> Markers,
     bool Failed,
@@ -29,19 +25,8 @@ public sealed record AiEliminationScanResult(
     public bool AccountProblem { get; init; }
 }
 
-/// <summary>
-/// Smart Hybrid AI Elimination Tracker.
-/// <para>
-/// AIELIM_02 — local FFmpeg audio energy finds the loud moments (gunfire, chimes, explosions); for each moment
-/// TWO frames are taken just AFTER the sound (+<see cref="FrameOffsetsSec"/>), because kill feeds and banners
-/// appear a beat after the shot. Moments are sent in batches of <see cref="MomentsPerRequest"/> (up to
-/// <see cref="MaxMoments"/> per video). Every image is labelled with a moment ID ("M3") and the AI must echo
-/// that ID, so an answer can never be shifted onto the wrong moment (no 0-vs-1 counting). Zero local AI models.
-/// </para>
-/// </summary>
 public static class AiEliminationTrackerService
 {
-    /// <summary>AIELIM_03 — the fewest moments checked in one video (short clips).</summary>
     public const int MinMomentBudget = 24;
 
     internal const string PreflightErrorTag = "AIELIMERR_01";
@@ -62,29 +47,45 @@ public static class AiEliminationTrackerService
         return TryGetCached(s_scanCache, key) != null || AiAnswerDiskStore.Read("kills", key) != null;
     }
 
+    public static bool HasSavedScan(string videoPath, double durationSec, AiVendor vendor, string? model, double rangeStartSec, double rangeEndSec)
+    {
+        if (HasSavedScan(videoPath, durationSec, vendor, model)) return true;
+        double from = Math.Clamp(rangeStartSec, 0, durationSec);
+        double to = Math.Clamp(rangeEndSec, from, durationSec);
+        if (from <= 0.01 && to >= durationSec - 0.01) return false;
+        string effectiveModel = !string.IsNullOrWhiteSpace(model) ? model : AiVisionProviders.Get(vendor).DefaultModel;
+        string key = $"{VideoFingerprint(videoPath, durationSec)}|{vendor}|{effectiveModel}|{from.ToString("0.00", CultureInfo.InvariantCulture)}-{to.ToString("0.00", CultureInfo.InvariantCulture)}";
+        return TryGetCached(s_scanCache, key) != null || AiAnswerDiskStore.Read("kills", key) != null;
+    }
+
     public static int MomentBudgetForRanges(IEnumerable<double> rangeSeconds)
         => rangeSeconds.Where(s => s > 0.05).Sum(MomentBudget);
 
-    /// <summary>AIELIM_03 — the most moments checked in one video (the loudest ones), whatever its length.</summary>
     public const int MaxMoments = 60;
 
-    /// <summary>AIELIM_03 — one moment per this many seconds of video, between <see cref="MinMomentBudget"/> and <see cref="MaxMoments"/>.</summary>
     public const double SecondsPerMoment = 5.0;
 
-    /// <summary>AIELIM_03 — how many loud moments a video of <paramref name="durationSec"/> gets checked (it used to be 24 for any length).</summary>
     public static int MomentBudget(double durationSec)
         => Math.Clamp((int)Math.Ceiling(Math.Max(0, durationSec) / SecondsPerMoment), MinMomentBudget, MaxMoments);
 
-    /// <summary>
-    /// AIELIM_03 — width of each still. Kill feeds and elimination banners are small text: at the old 640 px a
-    /// 1080p kill feed was ~6 px tall and unreadable. 1280 px keeps it legible.
-    /// </summary>
     public const int FrameWidth = 1280;
 
-    /// <summary>Moments per AI request (each moment is two images).</summary>
     public const int MomentsPerRequest = 10;
 
-    public const int ParallelBatches = 3;
+    public const int ParallelBatches = 2;
+
+    internal const string ParallelSpecTag = "AIPARALLEL_02";
+
+    public const double AutoScanUnderUsd = 0.05;
+
+    internal const string SharedGateTag = "AIELIMGATE_01";
+
+    public static bool StartsByItself(bool userAsked, bool saved, AiEstimatedUsage est, AiVendor vendor, string? model, double autoApproveUnderUsd)
+    {
+        if (userAsked || saved) return true;
+        if (!AiCostEstimator.HasReferenceRate(vendor, model)) return false;
+        return (double)est.EstimatedUsd < Math.Max(AutoScanUnderUsd, autoApproveUnderUsd);
+    }
 
     internal const string FastScanTag = "AIELIMFAST_01";
 
@@ -92,10 +93,14 @@ public static class AiEliminationTrackerService
 
     public const string RangeTag = "AIMERGEKILLS_02";
 
-    /// <summary>Where the two frames of a moment are taken, after the loud sound.</summary>
     public static readonly double[] FrameOffsetsSec = { 0.4, 1.2 };
 
-    /// <summary>Minimum AI confidence for a marker.</summary>
+    public const string PopupCropEnvVar = "FVS_AI_KILLCROP";
+
+    public const int OverviewWidth = 640;
+
+    public static bool PopupCropEnabled => Environment.GetEnvironmentVariable(PopupCropEnvVar) == "1";
+
     public const double MinConfidence = 0.60;
 
     private const int MaxCacheEntries = 32;
@@ -156,7 +161,6 @@ public static class AiEliminationTrackerService
         }
         """;
 
-    /// <summary>Back-compatible wrapper returning only the markers. Prefer <see cref="ScanAsync"/>.</summary>
     public static async Task<IReadOnlyList<AiEliminationMarker>> ScanVideoForEliminationsAsync(
         string ffmpegPath,
         string videoPath,
@@ -292,6 +296,8 @@ public static class AiEliminationTrackerService
             RuntimeLog.Info("AI_ELIM", plan.GateUsed
                 ? $"{peaks.Count} loud moment(s), {overlays!.Count} on-screen pop-up(s): checking {moments.Count} (sound + pop-up {plan.AudioConfirmed}, pop-up only {plan.SilentAdded}, sound only skipped {plan.AudioDropped}; budget {budget} for {durationSec:0}s)."
                 : $"{peaks.Count} loud moment(s) found; checking the loudest {moments.Count} (budget {budget} for {durationSec:0}s; no on-screen pop-ups to confirm with).");
+            if (PopupCropEnabled)
+                RuntimeLog.Info("AI_ELIM", $"{AiFrameCrop.Tag}: {PopupCropEnvVar}=1, moments with a pop-up send a smaller whole frame and a close-up of the pop-up area.");
             if (plan.GateUsed && plan.AudioDropped > 0)
                 statusCallback?.Invoke($"Skipped {plan.AudioDropped} loud moment{(plan.AudioDropped == 1 ? "" : "s")} where nothing appeared on screen — fewer AI requests.");
 
@@ -349,16 +355,33 @@ public static class AiEliminationTrackerService
                 var frameTimes = batchFrameTimes[b];
                 var framePaths = batchFramePaths[b];
                 bool[] extracted = await extraction[b].ConfigureAwait(false);
+                bool cropPopups = PopupCropEnabled;
                 for (int k = batchStart, slot = 0; k < batchEnd; k++)
                 {
                     string id = $"M{k + 1}";
                     bool any = false;
+                    PopupRegion? region = cropPopups ? KillMomentPlanner.RegionFor(moments[k], overlays) : null;
                     for (int f = 0; f < FrameOffsetsSec.Length; f++, slot++)
                     {
                         if (!extracted[slot]) continue;
                         byte[] data = await File.ReadAllBytesAsync(framePaths[slot], ct).ConfigureAwait(false);
-                        images.Add(new AiImageInput(data, "image/jpeg", $"[Moment {id} · frame {(char)('A' + f)} · {frameTimes[slot].ToString("0.0", CultureInfo.InvariantCulture)}s]",
-                            AiReasoningPolicy.ImageDetail(AiUsage.EliminationTracker)));
+                        string label = $"[Moment {id} · frame {(char)('A' + f)} · {frameTimes[slot].ToString("0.0", CultureInfo.InvariantCulture)}s]";
+                        if (region is { } popup)
+                        {
+                            try
+                            {
+                                bool closeUp = f == FrameOffsetsSec.Length - 1;
+                                data = closeUp ? AiFrameCrop.Crop(data, popup) : AiFrameCrop.Downscale(data, OverviewWidth);
+                                label = closeUp
+                                    ? $"[Moment {id} · frame {(char)('A' + f)} · {frameTimes[slot].ToString("0.0", CultureInfo.InvariantCulture)}s · close-up of the part of the screen where something popped up]"
+                                    : $"[Moment {id} · frame {(char)('A' + f)} · {frameTimes[slot].ToString("0.0", CultureInfo.InvariantCulture)}s · whole screen, smaller]";
+                            }
+                            catch (IOException ex)
+                            {
+                                RuntimeLog.Swallowed(ex);
+                            }
+                        }
+                        images.Add(new AiImageInput(data, "image/jpeg", label, AiReasoningPolicy.ImageDetail(AiUsage.EliminationTracker)));
                         any = true;
                     }
                     if (any) momentTimes[id] = moments[k];
@@ -494,7 +517,6 @@ public static class AiEliminationTrackerService
         }
     }
 
-    /// <summary>AIREUSE_04 — the saved form of a successful scan (AOT-safe, no reflection).</summary>
     internal static string ToJson(AiEliminationScanResult r)
     {
         var buffer = new System.Buffers.ArrayBufferWriter<byte>();
@@ -519,7 +541,6 @@ public static class AiEliminationTrackerService
         return System.Text.Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
-    /// <summary>AIREUSE_04 — reads <see cref="ToJson"/>; anything unexpected is a cache miss (null).</summary>
     internal static AiEliminationScanResult? FromJson(string? json)
     {
         if (string.IsNullOrWhiteSpace(json)) return null;
@@ -564,20 +585,12 @@ public static class AiEliminationTrackerService
         (one of: {string.Join(", ", momentIds)}). Keep "description" under 8 words.
         """;
 
-    /// <summary>
-    /// AIELIM_02 — maps each answer to its moment by the echoed ID. Unknown IDs, duplicates, low confidence and
-    /// "not an elimination" are dropped. Unreadable JSON yields no markers.
-    /// </summary>
     public static IReadOnlyList<AiEliminationMarker> ParseMomentResults(string? json, IReadOnlyDictionary<string, double> momentTimes)
     {
         TryParseMomentResults(json, momentTimes, out var markers, out _);
         return markers;
     }
 
-    /// <summary>
-    /// Validates and parses an elimination-scan JSON response, distinguishing valid empty results
-    /// (<c>{"results":[]}</c> -> <c>true</c>) from malformed/missing-results payloads (<c>false</c>).
-    /// </summary>
     public static bool TryParseMomentResults(
         string? json,
         IReadOnlyDictionary<string, double> momentTimes,
@@ -640,11 +653,9 @@ public static class AiEliminationTrackerService
     private static string Truncate(string? s, int max)
         => string.IsNullOrEmpty(s) ? "" : (s.Length <= max ? s : s[..max] + "…");
 
-
     private static readonly Dictionary<string, IReadOnlyList<OverlayEvent>> s_overlayCache = new(StringComparer.Ordinal);
     private static readonly Queue<string> s_overlayOrder = new();
 
-    /// <summary>KILLGATE_01 — the on-screen pop-up events of this video (cached per video); null when the scan could not run.</summary>
     internal static async Task<IReadOnlyList<OverlayEvent>?> ScanOverlaysAsync(string ffmpegPath, string videoPath, double durationSec, string fingerprint, CancellationToken ct)
     {
         if (TryGetCached(s_overlayCache, fingerprint) is { } cached) return cached;
@@ -665,10 +676,6 @@ public static class AiEliminationTrackerService
         }
     }
 
-    /// <summary>
-    /// Computes audio energy RMS in 250ms windows across 8kHz 16-bit mono PCM and returns peak timestamps
-    /// (ABSOLUTE source seconds), loudest first.
-    /// </summary>
     public static async Task<IReadOnlyList<double>> DetectAudioPeaksAsync(
         string ffmpegPath,
         string videoPath,
@@ -684,7 +691,6 @@ public static class AiEliminationTrackerService
         return FindPeaks(pcmBytes, SampleRate);
     }
 
-    /// <summary>Peak picking over raw s16le mono PCM: windows above max(600, 1.75 × average RMS), one per 2.5 s burst (its loudest window).</summary>
     internal static IReadOnlyList<double> FindPeaks(byte[] pcmBytes, int sampleRate)
     {
         int sampleCount = pcmBytes.Length / 2;

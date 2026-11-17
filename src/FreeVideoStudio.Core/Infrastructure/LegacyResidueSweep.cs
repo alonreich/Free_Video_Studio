@@ -7,41 +7,10 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>
-/// REBRAND_02 / LEGACYKEEP_01 — rescues previous-brand renders while preserving legacy user data.
-///
-/// <para>
-/// REBRAND_01 (<see cref="AppDataPaths"/>) and UPGRADE_04 (<see cref="UserDataUpgrade"/>) migrate
-/// the data; neither deletes the copy-only sources. This sweep is the last step and runs on every
-/// normal UI launch (never inside a deployment helper, never with the development override):
-/// </para>
-/// <list type="number">
-///   <item><b>Legacy temp roots</b> (<c>%TEMP%\&lt;legacy temp names&gt;</c>) may contain referenced user media.
-///   Rescued renders (<c>*-RECOVERED-*.mp4</c>, RESCUE_01) are user work and are MOVED into the
-///   current temp root first, renamed to <see cref="OutputFileNaming.MainRecoveredPrefix"/>
-///   (Merger rescues keep <see cref="OutputFileNaming.MergerRecoveredPrefix"/>). All remaining files are retained (LEGACYKEEP_01).</item>
-///   <item><b>Legacy per-user roots</b> under %LOCALAPPDATA% and %APPDATA% are retained automatically, including conflicting versions and paths referenced by old projects.
-///   Only an explicit uninstall or manual cleanup may remove them (LEGACYKEEP_01).</item>
-/// </list>
-///
-/// <para>
-/// ⚠️ SAFETY GATES — the sweep does nothing at all while any of these hold:
-/// a legacy installation is still present in Program Files (a rolled-back update brings the old
-/// app back, and it needs its own folders); a legacy process is running; or a user-data upgrade
-/// transaction (<c>FreeVideoStudioMigration</c> journal) is not yet committed — that transaction
-/// owns the legacy roots and moves them itself. The shared machine root under %ProgramData% is
-/// NEVER touched here (other Windows accounts may not have migrated yet); the elevated uninstaller
-/// removes it (DeploymentFootprint.GetDirectoryPurgeTargets).
-/// </para>
-///
-/// TOTAL BY CONTRACT: never throws; every failure is logged and retried on the next launch.
-/// </summary>
 public static class LegacyResidueSweep
 {
-    /// <summary>Result of one sweep, for the log and for tests.</summary>
     public sealed record SweepResult(int RescuedRendersMoved, int LegacyRootsRemoved, int LegacyRootsKept, string? SkippedReason);
 
-    /// <summary>REBRAND_02 — production entry point. Resolves the real Windows locations.</summary>
     public static SweepResult RunForCurrentUser()
     {
         try
@@ -82,10 +51,6 @@ public static class LegacyResidueSweep
         }
     }
 
-    /// <summary>
-    /// REBRAND_02 — the testable core. <paramref name="blockedReason"/> non-null means a safety
-    /// gate is closed and nothing is touched.
-    /// </summary>
     public static SweepResult Run(
         IEnumerable<string> legacyTempRoots,
         string currentTempRoot,
@@ -116,10 +81,8 @@ public static class LegacyResidueSweep
         return new SweepResult(moved, removed, kept, null);
     }
 
-    /// <summary>Previous-brand storage folder names (REBRAND_01 resource), for the uninstaller.</summary>
     public static IEnumerable<string> LegacyStorageNames() => AppDataPaths.LegacyDirectoryNames;
 
-    /// <summary>Legacy %TEMP% folder names: the underscore display name and the compact name.</summary>
     public static IEnumerable<string> LegacyTempNames()
     {
         yield return LegacyProductIdentity.TempName;
@@ -197,7 +160,6 @@ public static class LegacyResidueSweep
         }
     }
 
-    /// <summary>Null means "could not be read completely" — callers then keep the folder.</summary>
     private static string[]? SafeEnumerateFiles(string root, string pattern, SearchOption option = SearchOption.TopDirectoryOnly)
     {
         try { return Directory.EnumerateFiles(root, pattern, option).ToArray(); }

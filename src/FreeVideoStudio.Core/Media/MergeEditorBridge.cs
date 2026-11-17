@@ -6,11 +6,6 @@ using System.Text;
 
 namespace FreeVideoStudio.Core.Media;
 
-//   • PLAYBACK — mpv plays an inline EDL (edl://) of every clip's kept window. Each segment's LENGTH
-
-/// <summary>One clip as the merge editor sees it (merged ms ↔ this clip's source µs).</summary>
-//   • PLAYBACK — mpv plays an inline EDL (edl://) of every clip's kept window. Each segment's LENGTH
-//   • PLAYBACK — mpv plays an inline EDL (edl://) of every clip's kept window. Each segment's LENGTH
 public sealed record MergeEditorClip(
     int Index, Guid ClipId, string Path,
     double StartMs, double EndMs,
@@ -26,7 +21,6 @@ public sealed record MergeEditorClip(
         => StartMs + Math.Clamp(sourceUs - KeepInUs, 0, KeepOutUs - KeepInUs) / 1000.0;
 }
 
-/// <summary>What the editor is opened with / hands back — all positions in MERGED milliseconds.</summary>
 public sealed record MergeEditorState(
     IReadOnlyList<SpeedSegment> Segments,
     double FreezeTimeMs,
@@ -36,19 +30,15 @@ public sealed record MergeEditorState(
     double BaseSpeed,
     CaptionTrack? Captions = null);
 
-/// <summary>The whole merge as ONE editor source.</summary>
 public sealed class MergeEditorSource
 {
-    /// <summary>One merged frame, the tolerance for "on the first/last frame" (D17).</summary>
     public const double FrameMs = 1000.0 / CompositeTimeline.MergeFps;
 
     public IReadOnlyList<MergeEditorClip> Clips { get; }
     public double TotalMs { get; }
 
-    /// <summary>mpv inline EDL that plays the merge as one file whose clock is the merged clock.</summary>
     public string MpvUrl { get; }
 
-    /// <summary>Freezes that the v1 editor (one freeze for the whole merge) could not show; kept on Accept.</summary>
     public int ExtraFreezes { get; private set; }
 
     private MergeEditorSource(List<MergeEditorClip> clips, double totalMs, string url)
@@ -89,18 +79,8 @@ public sealed class MergeEditorSource
         return new MergeEditorSource(clips, tl.TotalMergedFrames * FrameMs, url.ToString());
     }
 
-    /// <summary>Length of the silent file <see cref="PreviewUrl"/> repeats under a soundless clip.</summary>
     public const double SilenceChunkSec = 10.0;
 
-    /// <summary>
-    /// MERGEPREVIEW_SILENT_01 — the preview URL when some clips have NO sound track. mpv's EDL assumes
-    /// every segment has the same tracks; a soundless clip leaves a hole in the audio clock (mpv logs
-    /// "Invalid audio PTS") and the picture races through that clip at ~1.5x, then the playhead jumps.
-    /// So the URL gets a SECOND, audio-only stream: each clip's own audio, or <paramref name="silencePath"/>
-    /// (a <see cref="SilenceChunkSec"/> silent file, repeated) under a soundless clip. The caller then
-    /// selects that stream's audio track (<see cref="SilentStreamAudioTrack"/>). When every clip has
-    /// sound, or no silent file is available, this is exactly <see cref="MpvUrl"/>.
-    /// </summary>
     public static (string Url, bool UsesAudioStream) PreviewUrl(CompositeTimeline tl, Func<string, bool> hasAudio, string? silencePath)
     {
         var plain = Build(tl).MpvUrl;
@@ -121,10 +101,6 @@ public sealed class MergeEditorSource
         return ("edl://!new_stream;" + plain["edl://".Length..] + ";!new_stream;" + string.Join(";", audio), true);
     }
 
-    /// <summary>
-    /// MERGEPREVIEW_SILENT_01 — writes (once) the small silent FLAC <see cref="PreviewUrl"/> repeats under
-    /// soundless clips into <paramref name="directory"/>; returns its path, or null when it cannot be made.
-    /// </summary>
     public static async System.Threading.Tasks.Task<string?> EnsureSilenceFileAsync(string ffmpegPath, string directory)
     {
         try
@@ -149,11 +125,6 @@ public sealed class MergeEditorSource
         }
     }
 
-    /// <summary>
-    /// MERGEPREVIEW_SILENT_01 — the audio track of the audio-only stream: the LAST audio track mpv lists
-    /// (the first stream may or may not expose one, depending on whether its first clip has sound).
-    /// <paramref name="trackListJson"/> is mpv's <c>track-list</c> property. Null when none is listed.
-    /// </summary>
     public static int? SilentStreamAudioTrack(string? trackListJson)
     {
         if (string.IsNullOrWhiteSpace(trackListJson)) return null;
@@ -169,7 +140,6 @@ public sealed class MergeEditorSource
         catch (System.Text.Json.JsonException ex) { Infrastructure.CoreLogger.Swallowed(ex); return null; }
     }
 
-    /// <summary>The clip that owns merged position <paramref name="ms"/>. A boundary belongs to the clip that STARTS there; the very end to the last clip.</summary>
     public int ClipAt(double ms)
     {
         if (Clips.Count == 0) return -1;
@@ -183,7 +153,6 @@ public sealed class MergeEditorSource
         for (int i = 0; i < Clips.Count; i++) if (Clips[i].ClipId == id) return i;
         return -1;
     }
-
 
     public MergeEditorState ToEditor(MergeEdl edl)
     {
@@ -233,11 +202,6 @@ public sealed class MergeEditorSource
         return new MergeEditorState(segments, freezeAt, freezeDur, cuts, memes, edl.BaseSpeed, edl.Captions);
     }
 
-
-    /// <summary>
-    /// Puts the editor's result back into the clips. Freezes the v1 editor could not show
-    /// (<see cref="ExtraFreezes"/>) are kept in their clips; everything else is replaced.
-    /// </summary>
     public MergeEdl FromEditor(MergeEditorState st, MergeEdl edl)
     {
         int n = Clips.Count;
@@ -310,13 +274,6 @@ public sealed class MergeEditorSource
         };
     }
 
-    /// <summary>
-    /// MERGEMEME_02 — what the merge will really do with a meme the editor holds at
-    /// <paramref name="mergedSec"/>: a FULL SCREEN meme inside a clip's fade-in / fade-out is moved to
-    /// that clip's start / where its fade-out begins (D17), and a CORNER meme stops where its clip ends
-    /// (effects stay inside one clip, D4). The editor applies the first at once, so what it shows is
-    /// what is exported, and draws the second.
-    /// </summary>
     public double ResolveMemeAt(double mergedSec, bool corner, out double clipEndSec, out string? note)
     {
         note = null;
@@ -341,7 +298,6 @@ public sealed class MergeEditorSource
         return snapped / 1000.0;
     }
 
-    /// <summary>D17 — Start/Mid/End by where the meme was dropped.</summary>
     public static EdlMemePlacement PlacementAt(MergeEditorClip clip, double atMs)
     {
         double rel = atMs - clip.StartMs;
@@ -351,7 +307,6 @@ public sealed class MergeEditorSource
         return EdlMemePlacement.Mid;
     }
 
-    /// <summary>Splits [a, b) merged ms at clip boundaries. Pieces shorter than 1 ms are dropped.</summary>
     public IEnumerable<(int Clip, double A, double B)> Split(double a, double b)
     {
         if (b < a) (a, b) = (b, a);

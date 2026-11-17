@@ -4,24 +4,6 @@ using NAudio.Wave.SampleProviders;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// AOTCLEAN_02 — A WAV-ONLY REPLACEMENT FOR NAudio's <c>AudioFileReader</c>.
-///
-/// <c>AudioFileReader</c> lives in the NAudio umbrella assembly and falls back to
-/// <c>MediaFoundationReader</c> for anything that is not WAV/MP3/AIFF. MediaFoundationReader is
-/// built on classic COM interop (<c>[ComImport]</c> interfaces marshalled through P/Invoke), which
-/// NativeAOT does not support at all: the ILC reported it as IL2050, and at runtime that path would
-/// throw. Referencing the umbrella package also dragged NAudio.Wasapi, NAudio.Asio, NAudio.Midi and
-/// NAudio.WinForms into a NativeAOT binary that uses none of them.
-///
-/// Every file this suite reads through NAudio is a WAV it wrote itself (voice-over takes from
-/// <see cref="VoiceRecorder"/>, the bundled UI cue sounds). So this reader is exactly what
-/// AudioFileReader does for a WAV (WaveFileReader → SampleChannel → IEEE float, with the same
-/// byte-position conversion), and the solution now references only NAudio.Core and NAudio.WinMM.
-/// A non-WAV path fails loudly here instead of silently taking an interop route AOT cannot run.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public sealed class WavAudioReader : WaveStream, ISampleProvider
 {
     private readonly WaveFileReader _reader;
@@ -60,7 +42,6 @@ public sealed class WavAudioReader : WaveStream, ISampleProvider
         set { lock (_lock) { _reader.Position = DestToSource(value); } }
     }
 
-    /// <summary>Linear gain applied to the samples (1.0 = unchanged).</summary>
     public float Volume
     {
         get => _channel.Volume;

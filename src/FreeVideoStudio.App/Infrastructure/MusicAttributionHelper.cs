@@ -4,11 +4,6 @@ using System.IO;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// ATTRIBUTION_01 — resolves copyright and platform attribution credentials for background music tracks.
-/// Reads companion .txt credentials (e.g. NCS licenses) or formats title credits for '!_' tracks
-/// to prevent automatic muting / copyright blocks on YouTube and TikTok.
-/// </summary>
 public static class MusicAttributionHelper
 {
     public static string? ResolveAttribution(IEnumerable<string>? musicPaths)

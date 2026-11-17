@@ -330,5 +330,3 @@ public class SpeedBuilderTests
         Assert.NotEmpty(graph);
     }
 }
-
-

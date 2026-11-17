@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using FreeVideoStudio.Core.Media;
@@ -9,11 +8,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// UNDO_24 — the sidecar described in <c>07_UNDO_AND_HISTORY.md</c> §4 and listed as open work in
-/// §5. History that survives closing the application, kept out of the <c>.fvsproj</c> because the
-/// project file is meant to be portable and small.
-/// </summary>
 public sealed class UndoSidecarStoreTests : IDisposable
 {
     private readonly string _folder =
@@ -27,7 +21,7 @@ public sealed class UndoSidecarStoreTests : IDisposable
     public void Dispose()
     {
         try { if (Directory.Exists(_folder)) Directory.Delete(_folder, recursive: true); }
-        catch (IOException) { /* a temp folder the OS is still holding; harmless. */ }
+        catch (IOException) {  }
     }
 
     private UndoSidecarStore NewStore() => new(_folder);
@@ -46,12 +40,6 @@ public sealed class UndoSidecarStoreTests : IDisposable
         return stack;
     }
 
-
-    /// <summary>
-    /// UNDO_24 — §4's actual promise: history survives an app restart. Before the sidecar existed,
-    /// quitting the application discarded every step of how a montage was built, with no warning
-    /// and nothing to press Ctrl+Z against on the way back in.
-    /// </summary>
     [Fact]
     public void HistorySurvivesARoundTripThroughDisk()
     {
@@ -87,16 +75,10 @@ public sealed class UndoSidecarStoreTests : IDisposable
         Assert.Single(loaded!.Redo);
     }
 
-
     [Fact]
     public void NoSidecarIsNotAnError()
         => Assert.Null(NewStore().Load(_projectPath, "fp-1"));
 
-    /// <summary>
-    /// UNDO_24 — the fingerprint check. A project edited elsewhere, or restored from a backup, has
-    /// a history that no longer describes it. Replaying those snapshots would hand the user a
-    /// document they never authored — quietly, which is the worst version of wrong.
-    /// </summary>
     [Fact]
     public void AHistoryForADifferentVersionOfTheProjectIsDiscarded()
     {
@@ -136,11 +118,6 @@ public sealed class UndoSidecarStoreTests : IDisposable
         Assert.Null(NewStore().Load(_projectPath, "fp-1"));
     }
 
-
-    /// <summary>
-    /// UNDO_24 — two projects called <c>montage.fvsproj</c> in two folders are two projects.
-    /// Sharing one history between them would hand a user edits they never made.
-    /// </summary>
     [Fact]
     public void TwoProjectsWithTheSameFileNameDoNotShareAHistory()
     {
@@ -161,10 +138,6 @@ public sealed class UndoSidecarStoreTests : IDisposable
         Assert.Equal(store.PathFor(a), store.PathFor(b));
     }
 
-    /// <summary>
-    /// U2 — the ceiling applies to the FILE. A cap enforced only in memory is a cap a second code
-    /// path walks straight past, and a sidecar is exactly that second path.
-    /// </summary>
     [Fact]
     public void TheStoredHistoryIsCapped()
     {
@@ -194,11 +167,6 @@ public sealed class UndoSidecarStoreTests : IDisposable
         Assert.Null(store.Load(_projectPath, "fp-1"));
     }
 
-    /// <summary>
-    /// UNDO_24 — one unreadable entry costs that step, not the session. The stack is a list of
-    /// independent states rather than a chain, so dropping one and keeping the rest is strictly
-    /// better than discarding everything.
-    /// </summary>
     [Fact]
     public void OneCorruptEntryDoesNotDiscardTheRest()
     {

@@ -6,7 +6,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>GRANULARPERF_01 — one drawing surface, regardless of the number of timeline chunks.</summary>
 public sealed class TimelineFilmstrip : Control
 {
     public Bitmap? Bitmap { get; set; }

@@ -11,9 +11,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// CLAUDEPROVIDER_01 — unit tests for ClaudeProvider Messages API transport and structured outputs.
-/// </summary>
 public sealed class ClaudeProviderTests
 {
     private const string FakeClaudeKey = "sk-" + "ant-dummy-test-claude-key-00000000";

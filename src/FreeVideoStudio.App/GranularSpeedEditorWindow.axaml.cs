@@ -20,11 +20,6 @@ using static FreeVideoStudio.App.Infrastructure.GranularEditorVisuals;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// Granular Speed Editor dialog window.
-/// Mirrors the Python GranularSpeedEditor: lets the user mark time ranges and assign
-/// a playback speed (including freeze-frame at 0x) to each segment.
-/// </summary>
 public partial class GranularSpeedEditorWindow : Window
 {
     private MpvVideoView? _videoHost;
@@ -32,28 +27,10 @@ public partial class GranularSpeedEditorWindow : Window
     private long _lastSeekTimestamp = 0;
     private double? _nextSeekTarget = null;
 
-    /// <summary>
-    /// SEEKSTORM_01 — minimum wall-clock gap between two REAL seeks sent to mpv. Anything faster is
-    /// coalesced into <see cref="_nextSeekTarget"/> and flushed by <see cref="_seekFlushTimer"/>.
-    /// 60ms caps the preview at ~16 seeks/sec, which still reads as a live drag-follow while giving
-    /// mpv time to finish a playback restart between them.
-    /// </summary>
     private const int SeekCoalesceMs = 60;
 
-    /// <summary>
-    /// SEEKSTORM_01 — guarantees the LAST target of a drag lands even when no further seek arrives.
-    /// Without it a time-based gate silently drops the final pointer position.
-    /// </summary>
     private DispatcherTimer? _seekFlushTimer;
 
-    /// <summary>
-    /// EDITSTATE_01 — EVERY VALUE THE USER IS EDITING LIVES HERE, NOT IN THIS WINDOW: segments, cuts,
-    /// memes (both presentation modes), base speed, the freeze, zoom configuration, the logical
-    /// selection, MARK START/END, dirty bookkeeping, history and the values the Main App and crash
-    /// recovery read back (Core/Editing/GranularEditSession). This window keeps the view: canvases,
-    /// pointer capture and drag deltas, timers, the filmstrip, the mpv host and the timeline caches.
-    /// Gestures become logical commands on it; the window re-renders afterwards.
-    /// </summary>
     private readonly FreeVideoStudio.Core.Editing.GranularEditSession _edit;
 
     private bool _isSafeToClose = false;
@@ -66,54 +43,46 @@ public partial class GranularSpeedEditorWindow : Window
 
     private DispatcherTimer? _playbackTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
     private bool _isTimelineDrawn = false;
-    private double _lastAppliedSpeed = 1.0;
+    private readonly FreeVideoStudio.Core.Media.PreviewSpeedGovernor _previewSpeed = new();
+    private readonly FreeVideoStudio.App.Controls.MusicBedPreviewPlayer _musicBed = new();
+    private FreeVideoStudio.App.Models.EditorPreviewLayers _previewLayers = FreeVideoStudio.App.Models.EditorPreviewLayers.None;
+
+    public FreeVideoStudio.App.Models.EditorPreviewLayers PreviewLayers
+    {
+        get => _previewLayers;
+        set
+        {
+            _previewLayers = value ?? FreeVideoStudio.App.Models.EditorPreviewLayers.None;
+            _musicBed.Result = _previewLayers.Music;
+            _musicBed.KeepMusicDuringMeme = _previewLayers.KeepMusicDuringMeme;
+            if (_previewLayers.VoiceOver != null && !ReferenceEquals(_previewLayers.VoiceOver, _voiceOverPlayer.Result))
+                _voiceOverPlayer.Result = _previewLayers.VoiceOver;
+        }
+    }
 
     public bool Accepted { get; private set; }
     public IReadOnlyList<SpeedSegment> ResultSegments => _edit.ResultSegments;
 
-    /// <summary>MEME_06 — the meme being dragged by its band, by Id. Null = not dragging.</summary>
     private string? _draggingMemeId;
 
-    /// <summary>MEMEDRAG_03 — true while the meme being dragged is a CORNER meme (its strip, not a band).</summary>
     private bool _memeDragIsCorner;
 
-    /// <summary>MEME_06 — where in the band the grab started, so the block does not jump under the pointer.</summary>
     private double _memeDragGrabOffsetOutSec;
 
-    /// <summary>MEME_06 (DRAG_FIX) — last canvas X consumed by a meme drag; -1 when none is running.</summary>
     private double _memeDragLastX = -1;
 
-    /// <summary>
-    /// MEME_07 — plays the meme in the preview instead of holding the anchor frame. See
-    /// <see cref="Infrastructure.MemePreviewDirector"/> for why it swaps the file in the one host
-    /// rather than layering a second one, and for the rule its host tick has to follow.
-    /// </summary>
     private Infrastructure.MemePreviewDirector? _memePreview;
 
-    /// <summary>MEME_07 — true while the blocking rebuild stall is up; the timeline is frozen.</summary>
     private bool _memeRebuildStallActive;
 
-    /// <summary>
-    /// MEME_08 — while set AND the player is paused, the playback tick must not overwrite the
-    /// caret, so a meme drag can park the caret on the block's START while mpv sits on the anchor
-    /// FRAME. Any scrub, and any resumption of playback, releases it.
-    /// </summary>
     private bool _memeCaretSticky;
 
-    /// <summary>MEME_08 — was the preview playing when this meme drag began? Restored on release.</summary>
     private bool _memeDragWasPlaying;
 
-    /// <summary>
-    /// MEME_09 — the smallest the meme's INVISIBLE grab area may be, in pixels. The coloured band
-    /// is still painted at its true width; this only governs what the pointer can catch (HITBOX_01 /
-    /// HITBOX_02).
-    /// </summary>
     private const double MemeGrabMinWidthPx = 18;
 
-    /// <summary>MEME_06 — the placements the Main App reads back, in clip-relative source seconds.</summary>
     public IReadOnlyList<FreeVideoStudio.Core.Media.MemePlacement> ResultMemes => _edit.ResultMemes;
 
-    /// <summary>CUT_02 — the cut list in ABSOLUTE source ms, for the Main App.</summary>
     public IReadOnlyList<FreeVideoStudio.Core.Media.CutRange> ResultCuts => _edit.ResultCuts;
 
     public double ResultBaseSpeed => _edit.BaseSpeed;
@@ -123,75 +92,20 @@ public partial class GranularSpeedEditorWindow : Window
 
     private readonly FreeVideoStudio.App.Controls.VoiceOverPreviewPlayer _voiceOverPlayer = new();
 
-    /// <summary>
-    /// FREEZE_ARM — true when the playhead is BEHIND the freeze point and the hold is therefore
-    /// still owed. Set the moment the playhead is seen before the freeze, cleared the moment the
-    /// hold fires.
-    ///
-    /// <para>
-    /// ⚠️ THIS REPLACED A DISTANCE GUARD, AND THE DISTANCE GUARD IS WHY THE FREEZE PLAYED ONCE AND
-    /// THEN SOMETIMES NOT AGAIN. The old test was
-    /// <c>Math.Abs(currentAbsMs - _lastFreezeTriggerAbsMs) &gt; 500</c>, with
-    /// <c>_lastFreezeTriggerAbsMs</c> set to the freeze point after firing. It was trying to say
-    /// "do not immediately re-fire the hold we just finished" — but what it actually asks is "is
-    /// the playhead more than half a second away from the freeze point", and on the SECOND pass the
-    /// playhead crosses that point again at a distance of ~0. So the guard, which cannot tell a
-    /// re-entry from an echo, silently suppressed the freeze. Whether it fired depended on how far
-    /// the tick happened to land past the mark: near it, suppressed; a slow frame that overshot by
-    /// more than 500ms, fired. Hence "sometimes".
-    /// </para>
-    /// <para>
-    /// Arming is the right question. "Have we approached the mark from before it since the last
-    /// time it fired?" has one answer, the same answer every pass, and it re-arms itself for free
-    /// on a rewind, a seek backwards or a replay.
-    /// </para>
-    /// </summary>
     private bool _freezeArmed = true;
     private double _prevFreezeTickAbsMs = -1;
 
     private enum FreezeDragMode { None, Move, ResizeStart, ResizeEnd }
     private FreezeDragMode _freezeDragMode = FreezeDragMode.None;
 
-    /// <summary>Which end of the hold a popsicle marker represents — and which one has focus.</summary>
     private enum FreezeMarkerEnd { None, Start, End }
 
-    /// <summary>
-    /// FOCUS_01 — which freeze marker is currently in focus, or None.
-    ///
-    /// <para>
-    /// The hold has TWO popsicles now, one per edge, so "the freeze is selected" is no longer
-    /// enough to know which set of marching ants to run. Focus is cleared by Esc, by a right-click
-    /// anywhere, or by selecting any other object — see <see cref="ClearTimelineSelection"/>.
-    /// </para>
-    /// </summary>
     private FreezeMarkerEnd _freezeFocus = FreezeMarkerEnd.None;
 
-    /// <summary>
-    /// FOCUS_01 — every marching-ants rectangle belonging to the freeze markers, rebuilt on each
-    /// redraw. A list rather than two named fields because there are now two markers with two
-    /// rectangles each, and the animation timer does not care which is which.
-    /// </summary>
-    /// <summary>
-    /// Every marching-ants rectangle currently mounted on the timeline overlay — freeze heads and
-    /// (ZOOMPOP_01) zoom heads alike. The ants ticker walks this one list, so a marker that forgets
-    /// to register its two rectangles here is drawn selected but never animates.
-    /// </summary>
     private readonly List<Avalonia.Controls.Shapes.Rectangle> _freezeMarkerAnts = new();
 
-    /// <summary>
-    /// ZOOMPOP_01 — which zoom popsicle currently holds focus, or null for none. Focus on the
-    /// timeline is exclusive across ALL object kinds: setting this clears the freeze focus and the
-    /// selected-segment index, and <see cref="ClearTimelineSelection"/> clears this.
-    /// </summary>
     private (int Segment, bool IsStart)? _zoomFocus;
 
-    /// <summary>
-    /// ZOOMPOP_01 — the zoom edge being dragged right now, or -1. The drag is driven from the
-    /// CANVAS handlers, not the marker's own, because <c>RedrawTimeline</c> tears the marker control
-    /// down and rebuilds it on every frame of the drag; a pointer captured to that control loses
-    /// capture the instant it leaves the visual tree. This is the identical reason the freeze
-    /// popsicle captures to the canvas. DO NOT move this back onto the marker.
-    /// </summary>
     private int _zoomDragSegment = -1;
     private bool _zoomDragIsStart;
     private double _freezeDragGrabOffsetSec;
@@ -212,13 +126,17 @@ public partial class GranularSpeedEditorWindow : Window
     private string? _killScanDetail;
     private bool _killScanIsError;
     private Action? _killScanCancel;
+    private Action? _killScanStart;
 
-    public void SetKillScanStatus(string? text, string? detail, bool isError, Action? cancel)
+    internal const string KillScanStartTag = "AIELIMGATE_01";
+
+    public void SetKillScanStatus(string? text, string? detail, bool isError, Action? cancel, Action? start = null)
     {
         _killScanStatus = text;
         _killScanDetail = detail;
         _killScanIsError = isError;
         _killScanCancel = cancel;
+        _killScanStart = start;
         RedrawTimeline();
     }
 
@@ -236,6 +154,20 @@ public partial class GranularSpeedEditorWindow : Window
             MaxWidth = Math.Max(120, width * 0.5),
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
         });
+        if (_killScanStart is { } start)
+        {
+            var go = new TextBlock
+            {
+                Text = "▶ Start",
+                FontSize = Infrastructure.ThemeManager.ScaledFontSize(10),
+                FontWeight = Avalonia.Media.FontWeight.Bold,
+                Foreground = Infrastructure.ThemeResources.Brush(this, "AppAccentBrush", Avalonia.Media.Brushes.DeepSkyBlue),
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            };
+            go.PointerPressed += (_, e) => { e.Handled = true; start(); };
+            panel.Children.Add(go);
+        }
         if (_killScanCancel is { } cancel)
         {
             var stop = new TextBlock
@@ -266,59 +198,15 @@ public partial class GranularSpeedEditorWindow : Window
         canvas.Children.Add(chip);
     }
 
-
-    /// <summary>
-    /// MARKER_01 — LaneABorder's BorderThickness. The marker overlay spans the whole grid cell
-    /// while the lane's content sits INSIDE that 2px border, so an X measured against the segment
-    /// canvas is 2px left of the same moment on the overlay. Two pixels is small enough to look
-    /// like sloppiness rather than a bug, which is exactly why it is named rather than inlined.
-    /// </summary>
     private const double LaneBorderInsetPx = 2.0;
 
-    /// <summary>
-    /// MARKER_01 — where the freeze popsicle hangs, measured from the TOP OF THE RULER.
-    ///
-    /// <para>
-    /// The camera control is 52x103: head at y 28..56, stick at 56..103. At -52 the head bottom
-    /// lands at 4 — just clear of the ruler — and the stick runs from 4 down to 51, straight
-    /// through the ruler and into the upper lane where the frozen band is drawn. So the head floats
-    /// ABOVE the timeline and the stick points at the exact instant, which is the whole shape of
-    /// the Main App's thumbnail mark.
-    /// </para>
-    /// </summary>
     private const double FreezeMarkerOverlayTop = -52.0;
 
-    /// <summary>
-    /// FREEZE_GRAB / LEVEL_01 — how far BELOW the start marker the end marker hangs
-    /// <b>WHEN, AND ONLY WHEN, THE TWO HEADS WOULD PHYSICALLY COVER EACH OTHER.</b>
-    ///
-    /// <para>
-    /// Each camera is 52px wide and centred on its own instant (`ClampTimelineCameraLeft`), so a
-    /// 1.5s hold on a 60s clip puts the two heads ~20px apart inside 52px of width and they cover
-    /// each other by more than half. For that case the vertical stagger is what makes them two
-    /// aimable objects instead of one lump. 30 is chosen so the 28px-tall heads clear each other
-    /// completely with 2px to spare.
-    /// </para>
-    /// <para>
-    /// ⚠️ IT IS APPLIED CONDITIONALLY. Once the heads are <see cref="FreezeMarkerHeadWidthPx"/>
-    /// or more apart there is no occlusion left to solve, and dropping the end head 30px below the
-    /// start head is then pure visual noise — it reads as a misaligned pair, which is exactly the
-    /// bug this note exists to prevent. Compare the two <i>clamped</i> lefts, not the raw lane X:
-    /// the clamp pins a head at the canvas edge, so raw separation lies at both ends of the ruler.
-    /// </para>
-    /// </summary>
     private const double FreezeMarkerEndStaggerPx = 30.0;
 
-    /// <summary>
-    /// LEVEL_01 — the on-screen width of one timeline camera/magnifier head, which is the outer
-    /// canvas built by <c>MainWindow.CreateTimelineCameraIcon</c> / <c>CreateZoomTimelineCameraIcon</c>
-    /// (52x103) and the same figure <c>ClampTimelineCameraLeft</c> centres on. Two heads whose
-    /// clamped lefts differ by at least this much cannot overlap by a single pixel.
-    /// </summary>
     private const double FreezeMarkerHeadWidthPx = 52.0;
     private bool _isCurrentlyFrozen = false;
     private DateTime _freezeStartTime;
-    /// <summary>FREEZESFX_02 — the freeze's slow-motion sound in this preview (the player is paused during a hold).</summary>
     private readonly Services.FreezeSoundPreview _freezeSound = new();
     private bool _isFreezeCameraSelected = false;
     private int _draggingSegmentIndex = -1;
@@ -333,15 +221,10 @@ public partial class GranularSpeedEditorWindow : Window
     private double? _dragOrigZoomEndMs;
     private bool _isCanvasScrubbing;
 
-    /// <summary>
-    /// SEAM_01 — two block edges this close (ms) are treated as ONE seam. GranularEditSession.SegGapMs is 0, so
-    /// `A.EndMs == B.StartMs` is a normal state and the two edges land on the same pixel.
-    /// </summary>
     private const double SeamEpsilonMs = 1.0;
 
     private volatile string _uiCrumb = "idle";
 
-    /// <summary>FREEZEDIAG_05 — how often the watchdog checks, and how long a gap counts as stalled.</summary>
     private const int WatchdogTickMs = 1000;
     private const int StallReportAfterMs = 2000;
     private const int MaxStallReports = 6;
@@ -368,7 +251,8 @@ public partial class GranularSpeedEditorWindow : Window
                         $"Last editor step: {_uiCrumb} | " +
                         $"preview UI step: {MpvVideoView.LastUiStep} | " +
                         $"preview render step: {MpvVideoView.LastRenderStep} | " +
-                        $"render lock: {MpvVideoView.LastLockStep}");
+                        $"render lock: {MpvVideoView.LastLockStep} | " +
+                        $"blocking calls: {FreeVideoStudio.Core.Infrastructure.BlockingCallTracker.Describe()}");
                 }
             }
             else
@@ -382,53 +266,16 @@ public partial class GranularSpeedEditorWindow : Window
         }, null, WatchdogTickMs, WatchdogTickMs);
     }
 
-
-    /// <summary>
-    /// POPSICLE_01 — height assumed for the marker overlay when it has not been laid out yet
-    /// (first render, before the first measure pass). Ruler 22 + two 60px lanes inside 2px borders
-    /// = 22 + 64 + 64 = 150. It is a FALLBACK ONLY: once the control has real Bounds those are used,
-    /// which is what keeps the sticks correct at any font scale or window size.
-    /// </summary>
     private const double MarkerOverlayFallbackHeightPx = 150.0;
 
     private const double LaneHeight = 60.0;
 
-    /// <summary>Coloured speed/freeze blocks fill the lane from the top down to here.</summary>
     private const double LaneBlockHeight = 60.0;
 
-    /// <summary>
-    /// LANES_01 — playhead position in ms relative to the trim start.
-    ///
-    /// This replaces the 44px `CompactSlider` that used to BE the playhead model (its 0-1000 Value
-    /// was the source of truth). With the slider gone the position needs its own home, and having
-    /// one plain field is considerably easier to reason about than a control's Value property that
-    /// also fires change notifications while the user drags it.
-    /// </summary>
     private double _playheadMs;
 
-    /// <summary>
-    /// FREEZE_CARET — the caret's OUTPUT position, when the source position cannot supply it.
-    ///
-    /// <para>
-    /// Everywhere else the caret is derived: <c>SourceToOutput(_playheadMs)</c>. That works because
-    /// the map is one-to-one — except across a held frame, where it is deliberately many-to-one.
-    /// Every output moment of a 1.5s freeze maps to the SAME source instant, and
-    /// <c>SourceToOutput</c> of that instant is defined to already include the WHOLE hold. So while
-    /// the freeze plays, a derived caret sits pinned at the far edge of the hold: it leaps the
-    /// frozen seconds in one step at the moment the freeze begins and then does not move for 1.5
-    /// seconds. The ruler grew by the freeze — correctly, TIME_02 — but the caret refused to walk
-    /// across the space it added.
-    /// </para>
-    ///
-    /// <para>
-    /// The source position simply does not carry the answer during a hold, so it is supplied
-    /// directly instead. Non-null ONLY while the caret is inside a held span; every path that moves
-    /// the playhead by ordinary means clears it. See <see cref="UpdateCaret"/>.
-    /// </para>
-    /// </summary>
     private double? _holdCaretOutSec;
 
-    /// <summary>Pointer travel (px) before an armed press counts as a drag rather than a click.</summary>
     private const double CreateDragThresholdPx = 4.0;
 
     private bool _createDragArmed;
@@ -436,37 +283,6 @@ public partial class GranularSpeedEditorWindow : Window
     private double _createDragStartMs;
     private double _createDragCurrentMs;
 
-    /// <summary>
-    /// FREEZE_VIS — MAKES A HELD SPAN LOOK HELD.
-    ///
-    /// <para>
-    /// The thumbnail lane already stretched the frozen frame across the whole hold (TIME_02/F4),
-    /// which is literally what the exported file shows — and that is exactly why it was not
-    /// readable. A stretched frame looks like ordinary footage that happens to be slow, or like a
-    /// rendering glitch. Nothing said "time is stopped here".
-    /// </para>
-    ///
-    /// <para>
-    /// Four cues, each doing a different job, because one alone is ambiguous:
-    /// <list type="number">
-    ///   <item><description>A cool blue WASH — the same blue as the freeze block above it, so the
-    ///   two read as one object spanning both lanes rather than a marker and some odd footage.</description></item>
-    ///   <item><description>Diagonal HATCHING — the universal "this region is not normal content"
-    ///   cue. It also survives where colour alone does not: over a blue-ish frame, over a blown-out
-    ///   white one, and for a colour-blind user.</description></item>
-    ///   <item><description>Solid POSTS at both ends — the wash says "something here", the posts
-    ///   say exactly WHERE it starts and stops, which is the thing being asked of the timeline.</description></item>
-    ///   <item><description>A centred ❄ LABEL with the duration, when there is room for it. Removes
-    ///   the last of the guesswork; suppressed on narrow spans rather than clipped to mush.</description></item>
-    /// </list>
-    /// </para>
-    ///
-    /// <para>
-    /// Everything added here is <c>IsHitTestVisible = false</c>. The upper lane runs its own pointer
-    /// pipeline for block move, edge resize and drag-to-create; a decoration that swallowed a press
-    /// would break editing over every freeze.
-    /// </para>
-    /// </summary>
     private void DecorateFrozenSpan(Avalonia.Controls.Canvas host, double x, double spanW, double h,
                                     bool withLabel, bool withGrips = false)
     {
@@ -572,35 +388,8 @@ public partial class GranularSpeedEditorWindow : Window
     private Avalonia.Controls.Shapes.Rectangle? _selectedSegmentBorderRef;
     private DispatcherTimer? _freezePulseTimer;
 
-    /// <summary>
-    /// Parameterless ctor required by Avalonia's XAML runtime loader.
-    /// Do not call directly — use the overload that accepts a video path.
-    /// </summary>
     public GranularSpeedEditorWindow() : this(string.Empty, 0, 0) { }
 
-    /// <summary>
-    /// Creates the Granular Speed Editor constrained to a trim region.
-    /// The editor will only show/seek between trimStartMs and trimEndMs.
-    /// Segments are stored in absolute video timestamps.
-    /// </summary>
-    /// <summary>
-    /// <summary>
-    /// GRANPROBE_01 — THE SUPPORTED WAY TO OPEN THIS WINDOW.
-    ///
-    /// Resolves the clip duration OFF the UI thread and only then constructs the window, so the
-    /// constructor keeps its "everything is final on exit" contract — which
-    /// TryRehydrateGranularRecovery (RECOVERY_03) and the whole deferred-close chain
-    /// (docs/05 §SYS-WINSTATE) depend on — without the dispatcher ever blocking.
-    ///
-    /// The probe is bounded at 10 seconds here. MediaProber runs ffprobe through AsyncProcessRunner,
-    /// which carries its own 15-second timeout, registers the child with ChildProcessTracker and
-    /// terminates it through the graceful ladder while draining both pipes — so a probe that
-    /// overruns this wait cannot leave an orphaned ffprobe behind either.
-    ///
-    /// A probe that fails or times out is NOT fatal: the window opens on the trim window the caller
-    /// supplied, exactly as it did when the old 500ms blocking wait expired. The difference is that
-    /// the UI stayed responsive while it happened.
-    /// </summary>
     public static async Task<GranularSpeedEditorWindow> CreateAsync(
         string videoPath,
         double trimStartMs = 0,
@@ -649,14 +438,6 @@ public partial class GranularSpeedEditorWindow : Window
             existingMemes, probedSec, existingCaptions);
     }
 
-    /// <summary>
-    /// ⚠️ GRANPROBE_01 — PREFER <see cref="CreateAsync"/>. This constructor no longer probes.
-    ///
-    /// <paramref name="preProbedDurationSec"/> is the clip length already resolved OFF the UI thread
-    /// by <see cref="CreateAsync"/>. Constructing this window directly with a zero
-    /// <paramref name="trimEndMs"/> and no pre-probe now yields a zero-length timeline instead of
-    /// silently blocking the dispatcher — which is the correct trade, and why CreateAsync exists.
-    /// </summary>
     public GranularSpeedEditorWindow(string videoPath, double trimStartMs = 0, double trimEndMs = 0, IEnumerable<SpeedSegment>? existingSegments = null, double baseSpeed = 1.1, double freezeTimeMs = -1, double freezeDurationS = 1.0, bool isMobileFormat = false, string originalResolution = "1920x1080", VoiceOverWindow.VoiceOverResult? voiceOverResult = null, IEnumerable<FreeVideoStudio.Core.Media.CutRange>? existingCuts = null,
         IEnumerable<FreeVideoStudio.Core.Media.MemePlacement>? existingMemes = null,
         double preProbedDurationSec = 0,
@@ -818,15 +599,17 @@ public partial class GranularSpeedEditorWindow : Window
         AttachResizeGrip();
         StartUiWatchdog();
         FreeVideoStudio.Core.Media.MpvIpcClient.GlobalMasterVolumeChanged += OnGlobalMasterVolumeChanged;
-        
+        _ = FreeVideoStudio.Core.Media.VideoLoudnessCache.EnsureAsync(
+            FreeVideoStudio.Core.Infrastructure.BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries"), FreezeLoudnessPath);
+
         _edit.PendingSpeed = _edit.BaseSpeed;
-        _lastAppliedSpeed = _edit.BaseSpeed;
+        _previewSpeed.Invalidate();
 
         var initialSpeedSlider = PendingSpeedSliderCtl; if(initialSpeedSlider!=null)initialSpeedSlider.SetRange(1, 40);
         SpeedPresetButtons.SetSpinningWheelValue(initialSpeedSlider, _edit.PendingSpeed);
         var initialSpeedLabel = PendingSpeedLabelCtl;
         if (initialSpeedLabel != null) initialSpeedLabel.Text = $"{_edit.PendingSpeed:0.0}x";
-        
+
         if (!restoredGranularSession) _edit.SeedSegmentsFromAbsolute(existingSegments);
 
         BuildLaneContent();
@@ -969,22 +752,20 @@ public partial class GranularSpeedEditorWindow : Window
         var kb = FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.KeyBinds;
         var playBtn = this.FindControl<Button>("GranularPlayPause");
         if (playBtn != null) ToolTip.SetTip(playBtn, $"Play or pause the video ({kb.PlayPause})");
-        
+
         var startBtn = this.FindControl<Button>("MarkStartBtn");
         if (startBtn != null) ToolTip.SetTip(startBtn, $"Mark the start of the segment ({kb.MarkStart})");
-        
+
         var endBtn = this.FindControl<Button>("MarkEndBtn");
         if (endBtn != null) ToolTip.SetTip(endBtn, $"Mark the end of the segment ({kb.MarkEnd})");
 
         RefreshTransportKeyBindings();
     }
 
-
     private FreeVideoStudio.App.ViewModels.RelayCommand? _playPauseCommand;
     private FreeVideoStudio.App.ViewModels.RelayCommand? _markStartCommand;
     private FreeVideoStudio.App.ViewModels.RelayCommand? _markEndCommand;
 
-    /// <summary>Attaches the transport Commands and settings-bound KeyBindings to the transport buttons.</summary>
     private void RefreshTransportKeyBindings()
     {
         var kb = FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.KeyBinds;
@@ -1229,26 +1010,6 @@ public partial class GranularSpeedEditorWindow : Window
         }
     }
 
-    /// <summary>
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// SEEKSTORM_01 — THE GATE BELOW IS TIME-BASED ON PURPOSE. DO NOT RE-COUPLE IT TO _isSeeking.
-    ///
-    /// It used to read `if (_isSeeking && (now - _lastSeekTimestamp < 350))`. On a GPU/cuda path mpv
-    /// raises SeekCompleted 1–3ms after each seek, and that handler clears _isSeeking — so the first
-    /// half of the condition was false again before the next pointer-move arrived and the 350ms
-    /// window was NEVER consulted. The coalescer looked present and did nothing: every single
-    /// PointerMoved during a segment-edge drag issued a real absolute seek.
-    ///
-    /// MEASURED (dev log 2026-09-11, mpv_debug_27808): one drag produced 310 seeks in 1.74s, 271 of
-    /// them ≤3ms apart, 78 in the final 200ms. Each seek forces a FULL mpv playback restart —
-    /// lavf seek, decoder re-init, WASAPI `Thread Reset`/`Thread Pause`. The render thread stops
-    /// draining, the UI thread blocks behind it, and the app freezes with mpv still spinning (the
-    /// app log dies while mpv_debug keeps growing — that asymmetry is the signature).
-    ///
-    /// This is the same rule §42 Edge Case J already states for the zoom prime and DRAG_FIX already
-    /// enforced for the meme block: NOTHING that talks to mpv may run per pointer-move.
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
     private async Task SeekInternal(double time) {
         long now = Environment.TickCount64;
         if (_isSeeking || (now - _lastSeekTimestamp < SeekCoalesceMs)) {
@@ -1274,12 +1035,6 @@ public partial class GranularSpeedEditorWindow : Window
         }
     }
 
-    /// <summary>
-    /// SEEKSTORM_01 — drains <see cref="_nextSeekTarget"/> once the coalescing window has elapsed.
-    /// SeekCompleted also drains it, but only while a seek is genuinely in flight; the tail of a
-    /// drag (pointer stops, no further move, no seek outstanding) has no other way home. The timer
-    /// stops itself the moment there is nothing pending, so it never runs during idle playback.
-    /// </summary>
     private void EnsureSeekFlushTimer()
     {
         if (_seekFlushTimer != null) { if (!_seekFlushTimer.IsEnabled) _seekFlushTimer.Start(); return; }
@@ -1307,12 +1062,12 @@ public partial class GranularSpeedEditorWindow : Window
 
         await _videoHost.IpcClient.LoadFileAsync(_edit.VideoPath, startSec);
         await _videoHost.IpcClient.SetPropertyAsync("pause", "yes");
+        _previewSpeed.Invalidate();
         RuntimeLog.Info("Granular", $"Loaded preview video at {startSec:0.###}s.");
     }
 
     private void WireUpControls()
     {
-
         var canvas = _segmentCanvas;
         if (canvas != null)
         {
@@ -1495,10 +1250,10 @@ public partial class GranularSpeedEditorWindow : Window
                     var zNow = _edit.Segments[_zoomDragSegment];
                     UpdateDragReadout(zNow.StartMs, zNow.EndMs);
                     RedrawTimeline();
-                    
+
                     double zFollowRelSec = (_zoomDragIsStart ? zNow.StartMs : zNow.EndMs) / 1000.0;
                     _ = SeekInternal(zFollowRelSec);
-                    
+
                     e.Handled = true;
                     return;
                 }
@@ -1538,9 +1293,9 @@ public partial class GranularSpeedEditorWindow : Window
                     UpdateDragReadout(_edit.FreezeTimeMs - _edit.TrimStartMs,
                                       _edit.FreezeTimeMs - _edit.TrimStartMs + _edit.FreezeDurationS * 1000.0);
                     RedrawTimeline();
-                    
+
                     _ = SeekInternal(Math.Max(0, (_edit.FreezeTimeMs - _edit.TrimStartMs) / 1000.0));
-                    
+
                     e.Handled = true;
                     return;
                 }
@@ -1587,7 +1342,7 @@ public partial class GranularSpeedEditorWindow : Window
                     double desiredStart = _dragOrigStartMs + delta;
                     newStart = Math.Clamp(desiredStart, lowerBound, Math.Max(lowerBound, upperBound - width));
                     newEnd = newStart + width;
-                    
+
                     if (desiredStart <= lowerBound && lowerBound > 0 && lowerBlockIdx >= 0) hitLeftWall = true;
                     if (desiredStart >= upperBound - width && upperBound < totalMs && upperBlockIdx >= 0) hitRightWall = true;
                 }
@@ -1596,7 +1351,7 @@ public partial class GranularSpeedEditorWindow : Window
                     double desiredStart = pointerMs;
                     newStart = Math.Clamp(desiredStart, lowerBound, Math.Max(lowerBound, _dragOrigEndMs - GranularEditSession.SegMinWidthMs));
                     newEnd = _dragOrigEndMs;
-                    
+
                     if (desiredStart <= lowerBound && lowerBound > 0 && lowerBlockIdx >= 0) hitLeftWall = true;
                 }
                 else if (_segDragMode == SegDragMode.ResizeEnd)
@@ -1604,7 +1359,7 @@ public partial class GranularSpeedEditorWindow : Window
                     double desiredEnd = pointerMs;
                     newEnd = Math.Clamp(desiredEnd, Math.Min(upperBound, _dragOrigStartMs + GranularEditSession.SegMinWidthMs), upperBound);
                     newStart = _dragOrigStartMs;
-                    
+
                     if (desiredEnd >= upperBound && upperBound < totalMs && upperBlockIdx >= 0) hitRightWall = true;
                 }
 
@@ -1697,11 +1452,9 @@ public partial class GranularSpeedEditorWindow : Window
             };
         }
 
-
         WireDeletePartsButton();
         WireMemeButtons();
         WireUndoRedo();
-
 
         var speedSlider = PendingSpeedSliderCtl;
         if (speedSlider != null)
@@ -1731,6 +1484,8 @@ public partial class GranularSpeedEditorWindow : Window
         });
 
         var clearBtn = ClearAllSegmentsBtnCtl;
+        if (clearBtn != null)
+            Infrastructure.ConfirmFlyoutGate.Attach(clearBtn, () => FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.ConfirmGranularClearAll);
         clearBtn?.AddHandler(Button.ClickEvent, (_, _) =>
         {
             UpdateClearAllPromptText();
@@ -1937,7 +1692,7 @@ public partial class GranularSpeedEditorWindow : Window
                     if (promptPreset)
                     {
                         ShowFeedback("SELECT FREEZE DURATION");
-                        
+
                         _freezePulseCount = 0;
                         _freezePulseTimer?.Start();
 
@@ -2014,19 +1769,8 @@ public partial class GranularSpeedEditorWindow : Window
         });
     }
 
-    /// <summary>
-    /// Issue #6: Update visibility of DELETE SEGMENT and CLEAR ALL buttons.
-    /// DELETE SEGMENT: visible only when a segment is selected.
-    /// CLEAR ALL: visible when any segment exists.
-    /// </summary>
-
     private Avalonia.Controls.Primitives.FlyoutBase? _cancelConfirmFlyout;
 
-    /// <summary>
-    /// Attaches the confirm flyout only while dirty. Called from
-    /// <see cref="UpdateDeleteButtonVisibility"/>, which already runs after essentially every
-    /// mutation, so the state cannot go stale.
-    /// </summary>
     private void UpdateCancelConfirmState()
     {
         var btn = CancelGranularBtnCtl;
@@ -2064,14 +1808,6 @@ public partial class GranularSpeedEditorWindow : Window
         SyncZoomModeChecksFromSegment();
     }
 
-    /// <summary>
-    /// LANES_02 — commits a segment swept out by dragging across the upper lane.
-    ///
-    /// Routes through the SAME validation the MARK START / MARK END buttons use rather than
-    /// inserting directly: the neighbour clamp, the overlap ban and the minimum length are
-    /// export-correctness rules, not UI politeness, and a second creation path that skipped them
-    /// would produce filter graphs the buttons could never produce.
-    /// </summary>
     private void CreateSegmentFromDrag(double startMs, double endMs)
     {
         double dur = GetDuration();
@@ -2242,24 +1978,6 @@ public partial class GranularSpeedEditorWindow : Window
         }
     }
 
-    /// <summary>
-    /// FOCUS_01 — grabbing a freeze popsicle takes focus and starts the matching edge drag.
-    ///
-    /// <para>
-    /// ⚠️ THE PRESS CAPTURES THE LANE CANVAS, NOT THE MARKER. This looks wrong and is the only
-    /// thing that works: <see cref="RedrawTimeline"/> rebuilds the whole marker overlay on every
-    /// drag step, so a pointer captured by the marker is captured by a control that is destroyed
-    /// microseconds later — the drag dies on the first frame. The canvas outlives every redraw, and
-    /// its existing PointerMoved / the window's PointerReleased already know how to run a
-    /// <see cref="FreezeDragMode"/> to completion. So this handler's whole job is to set the mode,
-    /// take focus, and hand the gesture over.
-    /// </para>
-    /// <para>
-    /// Start marker resizes from the start, end marker resizes from the end — matching the band's
-    /// own edge grips exactly, so grabbing the popsicle and grabbing the edge beneath it do the
-    /// same thing. Moving the hold whole is the band's BODY, as it is for every speed block.
-    /// </para>
-    /// </summary>
     private void AttachFreezeMarkerInteractions(Control marker, FreezeMarkerEnd which, Canvas timelineCanvas)
     {
         marker.PointerEntered += (_, _) => MainWindow.SetTimelineCameraHover(marker, true);
@@ -2301,10 +2019,6 @@ public partial class GranularSpeedEditorWindow : Window
         };
     }
 
-    /// <summary>
-    /// FOCUS_01 — gives one freeze marker focus, taking it away from everything else.
-    /// Focus is exclusive across the whole timeline: one object at a time, always.
-    /// </summary>
     private void FocusFreezeMarker(FreezeMarkerEnd which)
     {
         _isFreezeCameraSelected = which != FreezeMarkerEnd.None;
@@ -2318,16 +2032,6 @@ public partial class GranularSpeedEditorWindow : Window
         UpdateDeleteButtonVisibility();
     }
 
-    /// <summary>
-    /// FOCUS_01 — DROPS FOCUS FROM EVERYTHING ON THE TIMELINE.
-    ///
-    /// <para>
-    /// A selected object stays selected until the user says otherwise, and there are exactly three
-    /// ways to say it: Esc, a right-click anywhere, or selecting something else. All three land
-    /// here, so they cannot drift apart — and any object added to this lane later has one obvious
-    /// place to be cleared from.
-    /// </para>
-    /// </summary>
     private void ClearTimelineSelection()
     {
         bool hadSomething = _isFreezeCameraSelected
@@ -2351,39 +2055,8 @@ public partial class GranularSpeedEditorWindow : Window
         SetStatus("Nothing selected.");
     }
 
-    /// <summary>
-    /// FOCUS_01 — selects a speed block and syncs every control that reflects the selection.
-    ///
-    /// <para>
-    /// Extracted because the click path did all of this inline and the drag-to-create path did
-    /// none of it, which is exactly why a freshly swept-out block came back unselected: the block
-    /// existed, but nothing had told the slider, the delete button or the marching ants about it.
-    /// </para>
-    /// </summary>
     private void SelectSegment(int index) => SelectSegment(index, jumpPlayhead: true);
 
-    /// <summary>
-    /// ZOOMLIVE_02 — THE ONE WAY A SEGMENT BECOMES SELECTED. Everything funnels here.
-    ///
-    /// <para>
-    /// There used to be FOUR selection paths — this method, <c>SelectSegmentAt</c>, the timeline's
-    /// own pointer handler and the right-hand list row's click — and they did different things.
-    /// Clicking a row did not move the playhead; clicking the timeline did not sync the Slow/Instant
-    /// radios; only one of them closed zoom mode. So "select a segment" meant four different things
-    /// depending on where you clicked, which is exactly the complaint this change answers.
-    /// </para>
-    /// <para>
-    /// THREE THINGS ALWAYS HAPPEN NOW: the block is selected, the playhead jumps to its first frame
-    /// and PAUSES there (you cannot aim a zoom box at a moving picture), and if the block carries a
-    /// zoom its editing box re-opens exactly as it was registered — position, size and ramp mode.
-    /// A block with no zoom just gets selected; the box does not appear uninvited.
-    /// </para>
-    /// <para>
-    /// <paramref name="jumpPlayhead"/> is false only for callers that are ALREADY driving the
-    /// playhead themselves — a drag in progress, or an undo restore — where seeking would fight
-    /// them.
-    /// </para>
-    /// </summary>
     private void SelectSegment(int index, bool jumpPlayhead)
     {
         if (index < 0 || index >= _edit.Segments.Count) return;
@@ -2438,18 +2111,6 @@ public partial class GranularSpeedEditorWindow : Window
         }
     }
 
-    /// <summary>
-    /// ZOOMLIVE_02 — parks the playhead on the first (or last) frame of a block and STOPS there.
-    ///
-    /// <para>
-    /// Pausing is not incidental. The whole reason to jump is so the user can see the frame they
-    /// are aiming a zoom box at; a picture that keeps moving under the box makes the aim guesswork.
-    /// </para>
-    /// <para>
-    /// ⚠️ The caret is set through the same sticky-hold path the meme drag uses, so the playback
-    /// tick cannot immediately drag it back to wherever mpv happens to be mid-seek.
-    /// </para>
-    /// </summary>
     private void JumpPlayheadToSegmentEdge(int index, bool toStart)
     {
         if (index < 0 || index >= _edit.Segments.Count) return;
@@ -2465,11 +2126,6 @@ public partial class GranularSpeedEditorWindow : Window
         catch (Exception ex) { RuntimeLog.SwallowedThrottled(ex); }
     }
 
-    /// <summary>
-    /// FREEZE_DRAG — keeps the hold inside the clip and inside its own legal length (EDITSTATE_01:
-    /// the rule is the session's). Called after every drag step, so a sweep off the end of the
-    /// timeline parks at the end instead of storing a freeze the exporter would have to guess about.
-    /// </summary>
     private void ClampFreezeIntoClip() => _edit.ClampFreezeIntoClip(GetDuration());
 
     private void MoveFreezeCameraByFrames(int frameDelta)
@@ -2480,10 +2136,6 @@ public partial class GranularSpeedEditorWindow : Window
         SetStatus($"Freeze moved to {FormatMs(_edit.FreezeTimeMs - _edit.TrimStartMs)}.");
     }
 
-    /// <summary>
-    /// FOCUS_01 — trims or extends the hold a frame at a time, for when the end marker has focus.
-    /// The start stays where it is; only how long the frame is held changes.
-    /// </summary>
     private void NudgeFreezeDurationByFrames(int frameDelta)
     {
         if (!_edit.NudgeFreezeDurationByFrames(frameDelta)) return;
@@ -2518,11 +2170,11 @@ public partial class GranularSpeedEditorWindow : Window
         double w = canvas.Bounds.Width;
         double dur = GetDuration();
         if (dur <= 0 || w <= 0) return;
-        
+
         double x1 = SrcMsToX(newStartMs, w);
         double x2 = SrcMsToX(newEndMs, w);
         double segW = Math.Max(2, x2 - x1);
-        
+
         foreach (Avalonia.Controls.Control child in canvas.Children)
         {
             if (child.Name == $"SegRect_{segIndex}" || child.Name == $"SegBorder_{segIndex}")
@@ -2621,14 +2273,6 @@ public partial class GranularSpeedEditorWindow : Window
         }
     }
 
-    /// <summary>
-    /// LANES_03 — fills the shared control's two lane slots with THIS window's content.
-    ///
-    /// The controls are created here rather than in XAML because they used to be named XAML
-    /// elements that the rest of this file looks up by name; creating them with the SAME names and
-    /// adding them to the shared host keeps every existing `FindControl` call working, so the
-    /// drawing and drag pipelines did not have to be rewritten alongside the layout.
-    /// </summary>
     private void BuildLaneContent()
     {
         var lanes = GranularLanesCtl;
@@ -2834,7 +2478,7 @@ public partial class GranularSpeedEditorWindow : Window
                 {
                     double zsMs = seg.ZoomStartMs ?? seg.StartMs;
                     double zeMs = seg.ZoomEndMs ?? seg.EndMs;
-                    
+
                     double zx1 = SrcMsToX(zsMs, w);
                     double zx2 = SrcMsToX(zeMs, w);
 
@@ -2935,7 +2579,7 @@ public partial class GranularSpeedEditorWindow : Window
                 {
                     var antsBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#fde047"));
                     double segW = Math.Max(2, x2 - x1);
-                    
+
                     var borderRect = new Avalonia.Controls.Shapes.Rectangle
                     {
                         Name = $"SegBorder_{i}",
@@ -3187,32 +2831,8 @@ public partial class GranularSpeedEditorWindow : Window
         });
     }
 
-
     private bool _isDraggingZoomMarker;
 
-    /// <summary>
-    /// ZOOMPOP_01 — pointer wiring for a zoom popsicle. Deliberately a mirror of
-    /// <see cref="AttachFreezeMarkerInteractions"/>, and the three things it mirrors are the three
-    /// things that were wrong before:
-    ///
-    /// <para>
-    /// 1. THE GRABBED EDGE IS <paramref name="isStart"/>, NOT WHATEVER THE POINTER IS NEAREST. The
-    /// head is 52px wide and centred on its own instant, so on a short zoom span the START head
-    /// physically reaches past the midpoint of the span. Any positional inference resolves it to
-    /// the far edge, which drives the wrong grip while the head under the cursor sits still — the
-    /// user reads that as stutter/stick. See GRAB_01 on the freeze path for the same failure.
-    /// </para>
-    /// <para>
-    /// 2. CAPTURE GOES TO THE CANVAS, NOT TO THE MARKER. Every drag step calls RedrawTimeline,
-    /// which tears this control out of the visual tree and builds a replacement; a pointer captured
-    /// to the control loses capture the moment it is unparented, and the drag dies mid-gesture. The
-    /// canvas survives the redraw, so the move/release handlers there carry the gesture through.
-    /// </para>
-    /// <para>
-    /// 3. FOCUS IS EXCLUSIVE. Pressing a zoom head takes focus away from the freeze heads and hands
-    /// the segment its selection, so exactly one object on the timeline is ever selected.
-    /// </para>
-    /// </summary>
     private void AttachZoomMarkerInteractions(Control marker, int segIndex, bool isStart, Avalonia.Controls.Canvas timelineCanvas)
     {
         marker.PointerEntered += (_, _) => MainWindow.SetTimelineCameraHover(marker, true);
@@ -3248,24 +2868,8 @@ public partial class GranularSpeedEditorWindow : Window
         };
     }
 
-    /// <summary>ZOOMLIVE_05 — keep a zoom inside the block that owns it (the rule is the session's).</summary>
     private void ClampZoomInsideItsBlock(int index) => _edit.ClampZoomInsideItsBlock(index);
 
-    /// <summary>
-    /// ZOOMLIVE_04 — the right-click menu on a coloured timeline block.
-    ///
-    /// <para>
-    /// It used to hold a single "Delete Segment" entry. The two zoom actions are the ones a user
-    /// reaches for most and had no home: EDIT ZOOM opens the box on this block, REMOVE ZOOM strips
-    /// the zoom and KEEPS the speed change. Both are hidden on a block that has no zoom rather than
-    /// shown greyed out — a menu of things you cannot do is noise.
-    /// </para>
-    /// <para>
-    /// ⚠️ DELETE BLOCK REMOVES THE WHOLE THING, speed and zoom together. That is deliberate and it
-    /// is why REMOVE ZOOM sits directly above it: a zoomed slow-motion block is one object, and
-    /// "delete" on one object means the object.
-    /// </para>
-    /// </summary>
     private void ShowSegmentContextMenu(Avalonia.Controls.Canvas canvas, int segIndex)
     {
         if (segIndex < 0 || segIndex >= _edit.Segments.Count) return;
@@ -3317,15 +2921,6 @@ public partial class GranularSpeedEditorWindow : Window
         menu.Open(canvas);
     }
 
-    /// <summary>
-    /// ZOOMLIVE_03 — parks the picture on the first or last frame of a segment's ZOOM span.
-    ///
-    /// <para>
-    /// The zoom's own start/end are <see cref="SpeedSegment.ZoomStartMs"/> / <c>ZoomEndMs</c>, which
-    /// are independent of the block's edges — that is the entire point of the two magnifiers. When
-    /// they are unset the zoom covers the whole block, so the block's edges ARE the zoom's edges.
-    /// </para>
-    /// </summary>
     private void JumpPlayheadToZoomEdge(int segIndex, bool toStart)
     {
         if (segIndex < 0 || segIndex >= _edit.Segments.Count) return;
@@ -3344,11 +2939,6 @@ public partial class GranularSpeedEditorWindow : Window
         catch (Exception ex) { RuntimeLog.SwallowedThrottled(ex); }
     }
 
-    /// <summary>
-    /// ZOOMPOP_01 / FOCUS_01 — gives one zoom popsicle focus and takes it from everything else.
-    /// The owning segment is selected too, because the zoom span belongs to that segment and every
-    /// control that edits the zoom reads <c>_edit.SelectedSegmentIndex</c>.
-    /// </summary>
     private void FocusZoomMarker(int segIndex, bool isStart)
     {
         if (_edit.SelectedSegmentIndex != segIndex) SelectSegment(segIndex, jumpPlayhead: false);
@@ -3372,16 +2962,6 @@ public partial class GranularSpeedEditorWindow : Window
         }
     }
 
-    /// <summary>
-    /// Grabbable vertical edge marker for the SELECTED speed segment — visual and drag
-    /// behavior copied from the Main App's MARK START/END trim markers (24px hitbox,
-    /// 3px SeaGreen stick, SizeWestEast cursor, hover highlight).
-    /// The press routes into the EXISTING segment drag pipeline (ResizeStart/ResizeEnd,
-    /// capture to the canvas), so the 1000ms neighbour gap, 200ms minimum width, the
-    /// RuntimeLog "settled" entry, status text, segment list refresh, live preview
-    /// speed mapping, Main App recovery persistence on Accept, and the FFmpeg export
-    /// all flow through the exact same code path as block-edge resizing.
-    /// </summary>
     private PreviewDetachController? _previewDetach;
 
     private void WirePreviewDetach()
@@ -3408,12 +2988,6 @@ public partial class GranularSpeedEditorWindow : Window
         _previewDetach.SyncButton(btn);
     }
 
-    /// <summary>
-    /// UXQA_02: the detach button lives over the video, so while the user is drawing or adjusting a
-    /// zoom box it is both a target that steals drags and visual clutter on the exact surface being
-    /// worked on. Hide it for the duration; zoom mode is a focused sub-task and popping the monitor
-    /// out mid-draw is not something anyone needs.
-    /// </summary>
     private void UpdateDetachButtonForZoomMode()
     {
         var btn = this.FindControl<Button>("GranularDetachPreviewBtn");
@@ -3517,31 +3091,10 @@ public partial class GranularSpeedEditorWindow : Window
     private const double ZoomHandlePx = 16;
     private const double ZoomHandleVisualPx = 13.6;
 
-    /// <summary>
-    /// ZOOMANTS_02 — stroke width of the zoom rubber-band, in pixels. Raised from the original 1px
-    /// hairline, which was hard to see against bright gameplay and nearly invisible while dragging.
-    /// This is the ONE place to tune the band's weight.
-    ///
-    /// <para>
-    /// ⚠️ STROKE DASHES ARE MEASURED IN MULTIPLES OF THIS VALUE, NOT IN PIXELS. Avalonia scales
-    /// both <c>StrokeDashArray</c> and <c>StrokeDashOffset</c> by the stroke thickness, so raising
-    /// this number lengthens the dashes and the gaps by the same factor. That is intentional here:
-    /// a thick line wearing 1px dashes reads as a smudge rather than as marching ants.
-    /// </para>
-    ///
-    /// <para>
-    /// ⚠️ THE ANIMATION INVARIANT SURVIVES THIS, AND HERE IS WHY. ZOOMANTS_01 requires the dash
-    /// period to divide the offset wrap, because <c>_marchingAntsOffset</c> advances as
-    /// <c>(offset + 1) % 8</c>. Both quantities are expressed in THICKNESS UNITS, so the {2,2} dash
-    /// keeps its period of 4 units and 4 keeps dividing 8 no matter what this value is. Changing
-    /// the thickness is therefore safe; changing the DASH ARRAY is not.
-    /// </para>
-    /// </summary>
     private const double ZoomBandThicknessPx = 2.5;
 
     private const double MaxZoomUpscale = 8.0;
 
-    /// <summary>ZOOM_02 — how tight the auto-placed box starts. 2x = half the usable width.</summary>
     private const double DefaultZoomFactor = 2.0;
 
     private bool _zoomDragAttemptedConflict;
@@ -3551,10 +3104,6 @@ public partial class GranularSpeedEditorWindow : Window
             ? b
             : new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse(fallbackHex));
 
-    /// <summary>
-    /// ZOOMLIVE_05 / SLOWZOOMGLIDE_01 — a SLOW zoom edge held one ramp's gap clear of its SLOW neighbour (the rule is the
-    /// session's); the window only says so when it bit. During edge drag, preserves clamping and shows attempted conflict.
-    /// </summary>
     private double ClampZoomEdgeAgainstSlowNeighbours(int segIndex, double proposedMs, bool isStart)
     {
         double clamped = _edit.ClampZoomEdgeAgainstSlowNeighbours(segIndex, proposedMs, isStart);
@@ -3600,7 +3149,6 @@ public partial class GranularSpeedEditorWindow : Window
         }
         return clamped;
     }
-
 
     private double ZoomAspect => _edit.IsMobileFormat ? (2.0 / 3.0) : (16.0 / 9.0);
 
@@ -3682,22 +3230,6 @@ public partial class GranularSpeedEditorWindow : Window
         if (badge != null) badge.IsVisible = false;
     }
 
-    /// <summary>
-    /// ⚠️ ISSUE_01 — THE ONE GUARDED DOOR FOR EVERY "DELETE THIS BLOCK" THAT IS NOT THE BUTTON.
-    ///
-    /// There turned out to be THREE ways to delete a speed block, and the confirmation only ever
-    /// covered one of them:
-    ///   1. the DELETE SEGMENT button        — guarded (its Flyout)
-    ///   2. the Delete / Backspace key       — was NOT guarded, called RemoveAt outright
-    ///   3. the little red ✕ on each list row — was NOT guarded, called RemoveAt outright
-    /// Same irreversible action, three doors, one lock. Doors 2 and 3 now come through here.
-    ///
-    /// It deliberately does NOT build its own dialog. It selects the block being deleted (so the
-    /// prompt names the right one) and then opens the REAL flyout that hangs off DeleteSegmentBtn,
-    /// so the wording and the KEEP IT escape are guaranteed identical to the button for ever.
-    /// ⚠️ IF THE CONFIRMATION CANNOT BE SHOWN, NOTHING IS DELETED. "Guard unavailable" must never
-    ///    resolve to "delete anyway".
-    /// </summary>
     private void RequestDeleteSegment(int index) => _ = RequestDeleteSegmentAsync(index);
 
     private async System.Threading.Tasks.Task RequestDeleteSegmentAsync(int index)
@@ -3730,33 +3262,13 @@ public partial class GranularSpeedEditorWindow : Window
         {
             double curMs = GetCurrentTime() * 1000.0;
             double spd = _edit.SpeedAt(curMs);
-            _lastAppliedSpeed = spd;
-            _ = _videoHost.IpcClient.SetPropertyAsync("speed",
-                spd.ToString("0.0###", System.Globalization.CultureInfo.InvariantCulture));
+            _ = _previewSpeed.Force(_videoHost.IpcClient, spd);
         }
         SetStatus("Selected segment deleted.");
         NotifyUndoable("Segment deleted", "DeleteSegmentBtn");
         ScheduleGranularRecoverySave();
     }
 
-    /// <summary>
-    /// FREEZE_CLEAR_01 — the ONE teardown for the frozen frame, used by the UNFREEZE toggle and by
-    /// CLEAR ALL SEGMENTS.
-    ///
-    /// <para>
-    /// It is a method rather than the inline block it used to be because the teardown is nine
-    /// separate pieces of state, not one: the mark itself, the chosen preset, the two focus fields,
-    /// the drag mode, the toggle button's icon/label/Danger class, the pulse timer, both hint
-    /// labels, the six preset buttons' manually-painted brushes, and the controls that the
-    /// "pick a duration" prompt greys out. A second caller that clears only <c>_edit.FreezeTimeMs</c>
-    /// leaves the button reading UNFREEZE IMAGE over a timeline with no freeze on it, and leaves
-    /// MARK START / Play / the speed slider disabled if the prompt was open — which is a dead UI.
-    /// </para>
-    /// <para>
-    /// Every lookup is by control NAME, so this does not need the locals from
-    /// <c>WireUpFreezeImage</c> and can be called from anywhere in the window.
-    /// </para>
-    /// </summary>
     private void ClearFreezeImage(string? feedback)
     {
         _edit.ClearFreeze();
@@ -3801,11 +3313,6 @@ public partial class GranularSpeedEditorWindow : Window
         ScheduleGranularRecoverySave();
     }
 
-    /// <summary>
-    /// FREEZE_CLEAR_01 — the prompt-time enable/disable set, promoted from a local function inside
-    /// <c>WireUpFreezeImage</c> so <see cref="ClearFreezeImage"/> can re-enable what the
-    /// "pick a duration" prompt turned off. Nothing about the list changed.
-    /// </summary>
     private void SetFreezePromptControlsEnabled(bool enabled)
     {
         var controlsToToggle = new Control?[] {
@@ -3823,24 +3330,6 @@ public partial class GranularSpeedEditorWindow : Window
         }
     }
 
-    /// <summary>
-    /// FREEZE_CLEAR_01 — CLEAR ALL SEGMENTS now clears the FROZEN FRAME too.
-    ///
-    /// <para>
-    /// ⚠️ THIS IS A DELIBERATE REVERSAL of the earlier behaviour, and the confirmation copy in
-    /// <c>UpdateClearAllPromptText</c> was reversed with it — it used to end "Your frozen frame and
-    /// your video file are not touched." Do not restore that sentence without also restoring the
-    /// carve-out here; a prompt that promises the freeze survives while the code deletes it is
-    /// worse than either behaviour on its own.
-    /// </para>
-    /// <para>
-    /// The reason for the reversal: the freeze IS a segment as far as the exporter is concerned —
-    /// <c>BuildExportSpeedSegments()</c> synthesises it as <c>SpeedSegment(t, t+d, 0.0)</c> — and it
-    /// is the one block on the lane that CHANGES THE LENGTH of the finished video. "Clear all" that
-    /// leaves the single length-changing block behind does not put the clip back to normal, which
-    /// is the only thing the button claims to do.
-    /// </para>
-    /// </summary>
     private void ExecuteClearAllSegments()
     {
         bool hadFreeze = _edit.HasFreeze;
@@ -3859,9 +3348,7 @@ public partial class GranularSpeedEditorWindow : Window
         ScheduleGranularRecoverySave();
         if (_videoHost?.IpcClient != null)
         {
-            _lastAppliedSpeed = _edit.BaseSpeed;
-            _ = _videoHost.IpcClient.SetPropertyAsync("speed",
-                _edit.BaseSpeed.ToString("0.0###", System.Globalization.CultureInfo.InvariantCulture));
+            _ = _previewSpeed.Force(_videoHost.IpcClient, _edit.BaseSpeed);
         }
         SetStatus(hadFreeze
             ? "All segments, the frozen frame and pending selections cleared."
@@ -3870,7 +3357,6 @@ public partial class GranularSpeedEditorWindow : Window
             "ClearAllSegmentsBtn");
     }
 
-    /// <summary>ISSUE_01 — tells the user exactly how much is about to be erased.</summary>
     private void UpdateClearAllPromptText()
     {
         var t = this.FindControl<TextBlock>("ClearAllDetailText");
@@ -3903,11 +3389,6 @@ public partial class GranularSpeedEditorWindow : Window
 
     private bool _syncingZoomChecks;
 
-    /// <summary>
-    /// SETEDITORMEMORY_01 — the Speed Editor remembers the zoom style and the freeze length the user
-    /// picked last (they were Settings › Editing options; now the editor itself is the setting).
-    /// A failed write is logged and never interrupts editing.
-    /// </summary>
     private static void RememberEditorChoice(Func<Infrastructure.DefaultValues, bool> differs, Action<Infrastructure.DefaultValues> write)
     {
         try
@@ -3918,7 +3399,6 @@ public partial class GranularSpeedEditorWindow : Window
         catch (Exception ex) { FreeVideoStudio.App.RuntimeLog.Swallowed(ex); }
     }
 
-    /// <summary>true when the user has selected the SLOW (gradual) zoom ramp; false = INSTANT.</summary>
     private bool ZoomSlowSelected => SlowZoomCheckCtl?.IsChecked == true;
 
     private void OnZoomModeChanged(bool fromSlow)
@@ -3977,8 +3457,6 @@ public partial class GranularSpeedEditorWindow : Window
         }
     }
 
-    /// <summary>Reflect the ramp mode into the checkboxes: an existing zoom keeps its own mode;
-    /// a segment with no zoom yet (or no selection) shows the global Settings default.</summary>
     private void SyncZoomModeChecksFromSegment()
     {
         bool slow;
@@ -4007,13 +3485,6 @@ public partial class GranularSpeedEditorWindow : Window
         return new Avalonia.Rect((cw - vidW) / 2.0, (ch - vidH) / 2.0, vidW, vidH);
     }
 
-    /// <summary>
-    /// ZOOMLIVE_01 — ZOOM-IN is now a TOGGLE, not a one-way door.
-    ///
-    /// It used to refuse and scold ("press the ✅…") because a zoom session was a transaction that
-    /// had to be closed. There is no transaction any more: the box writes itself to the segment as
-    /// it is dragged, so pressing the button again simply puts the box away, with the work kept.
-    /// </summary>
     private void ToggleZoomMode()
     {
         if (_zoomModeActive) { ExitZoomMode(); return; }
@@ -4025,17 +3496,8 @@ public partial class GranularSpeedEditorWindow : Window
 
     private bool _zoomSessionCreatedSegment;
 
-    /// <summary>
-    /// ZOOMLIVE_07 — WHICH block ZOOM-IN auto-created, by index.
-    ///
-    /// ⚠️ ExitZoomMode must NOT read `_edit.SelectedSegmentIndex` to find it. Selecting a different
-    /// block calls ExitZoomMode as part of switching, and by then `_edit.SelectedSegmentIndex` is
-    /// already the NEW block — so cleaning up "the selected one" would delete the block the user
-    /// just clicked on instead of the empty one they abandoned.
-    /// </summary>
     private int _zoomCreatedSegmentIndex = -1;
 
-    /// <summary>ZOOMLIVE_01 — the tactile half of a committed box: a sound.</summary>
     private void PulseZoomConfirmFeedback()
     {
         try
@@ -4045,12 +3507,6 @@ public partial class GranularSpeedEditorWindow : Window
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
-
-    /// <summary>
-    /// ZOOM_04 — takes the zoom off the selected block, leaving the block itself alone.
-    /// This is the ONLY way to change an existing zoom: ZOOM-IN refuses to reopen a block that
-    /// already has one (see EnsureZoomTargetSegment), so editing is remove-then-redo by design.
-    /// </summary>
     private void RemoveZoomFromSelectedSegment()
     {
         if (!_edit.HasSelectedSegment) return;
@@ -4065,38 +3521,6 @@ public partial class GranularSpeedEditorWindow : Window
         Notify("Zoom removed. Press ZOOM-IN to set a new one.");
     }
 
-    /// <summary>
-    /// IDEA_3 — "let a zoom exist without making a speed block first".
-    ///
-    /// THE PROBLEM: a zoom is stored ON a <see cref="SpeedSegment"/> (ZoomX/Y/W/H live there and
-    /// are threaded through ChunkSpec into the FFmpeg graph), so the data model genuinely needs a
-    /// segment to hang the zoom on. The UI used to expose that internal requirement directly: the
-    /// ZOOM-IN button was HIDDEN until a block was selected, so users had to work out on their own
-    /// that "make a speed block you don't want, then zoom it". Nobody guesses that.
-    ///
-    /// THE FIX: keep the data model exactly as it is, and make the UI create the container itself.
-    /// The user asks for a zoom; the app quietly provides something for it to live on.
-    ///
-    /// Order of preference — least surprising first:
-    ///   1. A block is already selected → use it (unchanged behaviour).
-    ///   2. The playhead is sitting inside an existing block → select that one. This is what the
-    ///      user means when they scrub to a moment and press ZOOM-IN.
-    ///   3. Nothing there → create a block at the BASE speed (i.e. no speed change at all, so the
-    ///      zoom is the only visible effect) starting at the playhead, and say so in the status bar
-    ///      so the new block on the timeline is never a mystery.
-    ///
-    /// Returns false only when a block genuinely cannot be placed, with the reason in the status
-    /// bar. It NEVER silently does nothing — that was the old failure mode.
-    /// </summary>
-    /// <summary>
-    /// ZOOM_05 — turns a MARK START / MARK END span into the block the zoom lives on.
-    ///
-    /// Enforces exactly the same three rules the manual "add segment" path does, because a block
-    /// created here is an ordinary block in every other respect: it must be at least
-    /// <see cref="GranularEditSession.SegMinWidthMs"/> long, it must not overlap an existing block, and it must keep
-    /// <see cref="GranularEditSession.SegGapMs"/> clear of its neighbours. Each failure explains itself in plain words
-    /// rather than silently producing something odd.
-    /// </summary>
     private bool CreateZoomBlockFromPendingMarks()
     {
         double start = Math.Min(_edit.PendingStartMs, _edit.PendingEndMs);
@@ -4109,7 +3533,6 @@ public partial class GranularSpeedEditorWindow : Window
         return true;
     }
 
-    /// <summary>IDEA_3 / ZOOMLIVE_07 — the view's half of a zoom container the session just created and selected.</summary>
     private void AfterZoomContainerCreated(int newIndex)
     {
         SelectSegmentAt(newIndex);
@@ -4168,23 +3591,8 @@ public partial class GranularSpeedEditorWindow : Window
         return true;
     }
 
-    /// <summary>
-    /// IDEA_3 helper — selects a block and brings the rest of the UI in line with it, without the
-    /// status-bar text the list-row click path writes.
-    /// </summary>
-    /// <summary>
-    /// ZOOMLIVE_02 — kept as a name several call sites already use; it is now one line.
-    /// The two implementations had drifted apart (this one never synced the ramp radios and never
-    /// moved the playhead), which is precisely the class of bug a second selection path invites.
-    /// </summary>
     private void SelectSegmentAt(int index) => SelectSegment(index, jumpPlayhead: true);
 
-    /// <summary>
-    /// APPLY ZOOM-IN commit path. On the GPU preview path, stall the UI behind a
-    /// blocking "Applying changes..." overlay while the simulated crop is primed in
-    /// mpv (buffering round-trip), per docs/README.md (formerly project_structure.txt) Section 8 item (b).
-    /// On CPU-only machines this is a plain ExitZoomMode (no overlay, no simulation).
-    /// </summary>
     private async System.Threading.Tasks.Task CommitZoomAndPrimePreviewAsync()
     {
         if (!_gpuLiveZoomPreview) return;
@@ -4198,7 +3606,8 @@ public partial class GranularSpeedEditorWindow : Window
             string want = _lastLiveCrop;
             for (int i = 0; i < 20 && want.Length > 0; i++)
             {
-                var applied = _videoHost?.IpcClient?.GetPropertyString("video-crop");
+                var cropClient = _videoHost?.IpcClient;
+                var applied = cropClient == null ? null : await cropClient.ReadPropertyAsync("video-crop");
                 if (!string.IsNullOrEmpty(applied) && applied != "no") break;
                 await System.Threading.Tasks.Task.Delay(50);
             }
@@ -4215,7 +3624,6 @@ public partial class GranularSpeedEditorWindow : Window
         }
     }
 
-    /// <summary>Removes any simulated live crop from the mpv preview.</summary>
     private void ClearLiveZoomCrop()
     {
         if (!_gpuLiveZoomPreview || _lastLiveCrop.Length == 0) return;
@@ -4223,16 +3631,6 @@ public partial class GranularSpeedEditorWindow : Window
         _ = _videoHost?.IpcClient?.SetPropertyAsync("video-crop", "");
     }
 
-    /// <summary>
-    /// GPU live zoom preview engine. Mirrors GranularSpeedBuilder's export math 1:1:
-    /// steal windows (>=0.5s available, capped at 1.0s, vs neighboring zooms only),
-    /// linear ramp progress, zVal = 1 + (targetZ - 1) * p with the view center lerping
-    /// from frame center to the zoom-box center. The equivalent visible source region
-    /// is applied via mpv `video-crop` ("WxH+X+Y"); mpv's own aspect-fit letterboxing
-    /// then matches the export's force_original_aspect_ratio=decrease + pad stage.
-    /// NOTE: near frame edges the export shows black padding where this preview clamps
-    /// the crop inside the frame — an accepted, minor visual difference.
-    /// </summary>
     private void UpdateLiveZoomCrop()
     {
         if (!_gpuLiveZoomPreview || _videoHost?.IpcClient == null) return;
@@ -4407,7 +3805,6 @@ public partial class GranularSpeedEditorWindow : Window
             canvas.Children.Add(edge);
         }
 
-
         _zoomFactorText = new TextBlock
         {
             Foreground = Infrastructure.ThemeResources.Brush(this, "AppOnAccentTextBrush", new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#ffffff"))),
@@ -4429,38 +3826,14 @@ public partial class GranularSpeedEditorWindow : Window
         canvas.Children.Add(_zoomFactorBadge);
     }
 
-
-    /// <summary>
-    /// ZOOMLIVE_01 — HAS THIS BOX BEEN TOUCHED YET?
-    ///
-    /// <para>
-    /// Pressing ZOOM-IN drops a default box in the middle of the picture. That box is a SUGGESTION,
-    /// not a zoom: until the user drags or resizes it, nothing is written to the segment and the
-    /// box is drawn faint. Otherwise pressing ZOOM-IN and walking away would silently zoom the
-    /// video into its own middle — a zoom the user never aimed and never saw the point of.
-    /// </para>
-    /// <para>
-    /// ⚠️ It also decides what LEAVING zoom mode means. If ZOOM-IN auto-created a speed block for
-    /// this zoom and the box was never touched, that block is removed on exit; leaving it behind
-    /// accumulates invisible 1x blocks the user never asked for and cannot see.
-    /// </para>
-    /// </summary>
     private bool _zoomBoxTouched;
     private Border? _zoomFactorBadge;
     private TextBlock? _zoomFactorText;
 
-    /// <summary>IDEA_6 — left/right markers for the surviving portrait slice. Null until
-    /// <see cref="EnsureZoomVisuals"/> runs; only ever visible when _edit.IsMobileFormat is true.</summary>
     private readonly Avalonia.Controls.Shapes.Rectangle?[] _portraitEdges = new Avalonia.Controls.Shapes.Rectangle?[2];
 
-    /// <summary>IDEA_6 — shading over the two columns portrait mode discards.</summary>
     private readonly Avalonia.Controls.Shapes.Rectangle?[] _portraitShade = new Avalonia.Controls.Shapes.Rectangle?[2];
 
-    /// <summary>
-    /// IDEA_6 — positions the portrait boundary markers. Uses the SAME expression as the clamp in
-    /// ZoomCanvas_PointerMoved (vid.Height * 2/3, centred) so the line the user sees is exactly the
-    /// wall the drag hits. If those two ever disagree, the guide is lying — keep them together.
-    /// </summary>
     private void RenderPortraitBoundary(Avalonia.Controls.Canvas canvas)
     {
         if (_portraitEdges[0] == null || _portraitEdges[1] == null
@@ -4509,11 +3882,6 @@ public partial class GranularSpeedEditorWindow : Window
     }
 
     private bool _isZoomRenderPending = false;
-    /// <summary>
-    /// ZOOM_09 — places the auto box once the canvas genuinely has a size, then commits it so a box
-    /// the user never touches still exports. Retries once at Background priority for the case where
-    /// even the Loaded pass has not produced a rect (a detached preview mid-reattach, for example).
-    /// </summary>
     private void PlaceDefaultZoomBoxWhenLaidOut(Avalonia.Controls.Canvas canvas, bool isRetry = false)
     {
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -4537,15 +3905,6 @@ public partial class GranularSpeedEditorWindow : Window
                    : Avalonia.Threading.DispatcherPriority.Loaded);
     }
 
-    /// <summary>
-    /// ZOOM_02 — the box that appears the instant ZOOM-IN is pressed: DefaultZoomFactor tight,
-    /// centred in the usable area.
-    /// ⚠️ CENTRED ON <see cref="ZoomBoundsUi"/>, NOT ON THE VIDEO. In portrait the usable area is
-    /// the 2:3 centre strip; centring on the full frame would look right and be wrong, because the
-    /// strip is narrower than the picture and the box would straddle the discarded columns.
-    /// The height guard matters at extreme aspect ratios: a 2x-wide box in portrait is 1.5x as tall
-    /// as it is wide, so on a very short source the width has to give way to keep it inside.
-    /// </summary>
     private Avalonia.Rect BuildDefaultZoomRect(Avalonia.Controls.Canvas canvas)
     {
         var bounds = ZoomBoundsUi(canvas);
@@ -4564,7 +3923,6 @@ public partial class GranularSpeedEditorWindow : Window
             bounds.Y + (bounds.Height - h) / 2.0,
             w, h);
     }
-
 
     private void RenderZoomBox()
     {
@@ -4663,7 +4021,6 @@ public partial class GranularSpeedEditorWindow : Window
         e.Handled = true;
     }
 
-    /// <summary>§7B/§7C: cursor to show while hovering (not dragging) the zoom rubber-band.</summary>
     private Avalonia.Input.StandardCursorType ZoomHoverCursor(Avalonia.Point p)
     {
         if (_hasZoomBox)
@@ -4734,9 +4091,6 @@ public partial class GranularSpeedEditorWindow : Window
         e.Handled = true;
     }
 
-    /// <summary>
-    /// ZOOM_07 — did the pointer actually MOVE between press and release, or was this a bare click?
-    /// </summary>
     private bool _zoomDragMoved;
 
     private void ZoomCanvas_PointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
@@ -4776,33 +4130,6 @@ public partial class GranularSpeedEditorWindow : Window
         e.Handled = true;
     }
 
-    /// <summary>
-    /// Clamp a candidate box into the video rect, preserving aspect and floor.
-    ///
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// ⚠️ ZOOM_06 — THE Math.Max ON EACH AXIS IS LOAD-BEARING. DO NOT "SIMPLIFY" IT AWAY.
-    ///
-    /// This method used to call `Math.Clamp(r.X, vid.X, vid.Right - w)` directly, and that CRASHED
-    /// THE WHOLE APPLICATION:
-    ///     ArgumentException: '600.2810304449649' cannot be greater than 600.2810304449648
-    /// Math.Clamp throws when min > max, and here they differed by ONE UNIT IN THE LAST PLACE.
-    ///
-    /// HOW TWO IDENTICAL NUMBERS DISAGREE. Drag the box wider than the area it is allowed to fill
-    /// and the first line pins `w` to exactly `vid.Width`. The maximum X is then `vid.Right - w`,
-    /// and `vid.Right` is itself stored as `vid.X + vid.Width`. In exact arithmetic
-    /// (vid.X + vid.Width) - vid.Width is vid.X. In binary floating point it can land one ulp
-    /// BELOW it — so min (vid.X) becomes greater than max, and Math.Clamp throws rather than
-    /// returning either. A pointer-move handler is the worst possible place for that: it fires on
-    /// every mouse movement, the throw escapes into Avalonia's input loop, and the process dies
-    /// mid-drag with the user's segment work unsaved.
-    ///
-    /// THE SECOND CASE THIS ALSO FIXES: on a very small preview, or a low-resolution source in
-    /// portrait, the quality floor `minW` can legitimately exceed the usable width. Then
-    /// `vid.Right - w` is genuinely, largely below `vid.X` — not a rounding hair — and the old code
-    /// would have thrown just the same. Pinning to `vid.X` puts the oversized box at the left edge
-    /// of the usable area, which is the only sane answer.
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
     private Avalonia.Rect ClampToVideo(Avalonia.Rect r, Avalonia.Rect vid, double aspect, double minW, double minH)
     {
         double w = Math.Min(r.Width, vid.Width);
@@ -4819,20 +4146,6 @@ public partial class GranularSpeedEditorWindow : Window
 
     private int GetSourceW() => FreeVideoStudio.Core.Media.CoordinateMath.GetResolutionInts(_edit.OriginalResolution).w;
 
-    /// <summary>
-    /// ZOOM_01 — the width of the frame the VIEWER finally sees, IN SOURCE PIXELS.
-    ///
-    /// ⚠️ UNITS_01 — THIS RETURNED AN OUTPUT-PIXEL COUNT WHERE EVERY CALLER USES SOURCE PIXELS.
-    /// It handed back `CoordinateConstants.PortraitW` (1080) in portrait — the width of the
-    /// FINISHED FILE. What the viewer actually sees is the surviving slice of the SOURCE, which is
-    /// 720px on a 1920x1080 capture and 960px on a 2560x1440 one: `InternalW / scale`, the same
-    /// quantity `ZoomPreviewSimulator.PortraitSurvivingWidth` computes. Feeding an output width
-    /// into a source-pixel divisor inflated the minimum zoom box by exactly the ratio between them
-    /// (1080/720 = 1.5x), so the `MaxZoomUpscale` quality floor bit 1.5x too early and the real
-    /// ceiling was 5.33x, not the 8x this constant declares. It is also what produced the W=134
-    /// box in the drift report — the user drew smaller and the floor silently snapped it up.
-    /// Landscape was always correct, which is why it went unnoticed.
-    /// </summary>
     private double ZoomOutputWidthSource()
     {
         if (!_edit.IsMobileFormat) return Math.Max(1, GetSourceW());
@@ -4846,21 +4159,9 @@ public partial class GranularSpeedEditorWindow : Window
         return FreeVideoStudio.Core.Media.CoordinateConstants.InternalW / scale;
     }
 
-    /// <summary>
-    /// ZOOM_01 — the smallest legal box width, expressed on the CANVAS in UI pixels.
-    /// <paramref name="uiPerSourcePx"/> is the video's on-screen scale (vid.Width / sourceW).
-    /// </summary>
     private double MinZoomWidthUi(double uiPerSourcePx)
         => (ZoomOutputWidthSource() / MaxZoomUpscale) * uiPerSourcePx;
 
-    /// <summary>
-    /// ZOOM_02 — the rectangle the box is allowed to live in, on the canvas.
-    /// In portrait that is NOT the whole picture: it is the 2:3 centre strip the export keeps
-    /// (the "brick wall"). Centring the auto box on the full frame instead of on this strip would
-    /// drop half of it into the shaded columns portrait throws away.
-    /// This calculation was duplicated inline in ZoomCanvas_PointerMoved; both now call here so the
-    /// draw clamp and the auto-placement can never disagree about where the wall is.
-    /// </summary>
     private Avalonia.Rect ZoomBoundsUi(Avalonia.Controls.Canvas canvas)
     {
         var vid = GetVideoDisplayRect(canvas);
@@ -4869,11 +4170,6 @@ public partial class GranularSpeedEditorWindow : Window
         return new Avalonia.Rect(vid.X + (vid.Width - portraitW) / 2.0, vid.Y, portraitW, vid.Height);
     }
 
-    /// <summary>
-    /// ZOOM_03 — how many times closer the box is than the un-zoomed picture. Measured against the
-    /// USABLE width (the portrait strip in mobile format), because that is what actually fills the
-    /// screen — measuring against the full frame would report a portrait zoom as weaker than it is.
-    /// </summary>
     private double ZoomFactorOf(Avalonia.Rect boxUi, Avalonia.Rect boundsUi)
         => boxUi.Width < 1 ? 1.0 : boundsUi.Width / boxUi.Width;
 
@@ -4919,7 +4215,6 @@ public partial class GranularSpeedEditorWindow : Window
         RefreshSegmentList();
         RedrawTimeline();
     }
-
 
     private static bool _zoomTutorialShownThisSession = false;
     private void MaybeShowZoomTutorial(Avalonia.Controls.Canvas canvas)
@@ -4974,7 +4269,6 @@ public partial class GranularSpeedEditorWindow : Window
         if (_zoomTutorial != null) { _zoomTutorial.IsVisible = false; }
     }
 
-    /// <summary>§5 Live playhead sync: show the yellow box only while the caret is inside a zoomed segment.</summary>
     private bool SkipPreviewOutOfCut()
     {
         try
@@ -5048,6 +4342,7 @@ public partial class GranularSpeedEditorWindow : Window
         {
             _cornerMemes?.Hide();
             HoldCaretDuringMeme();
+            UpdatePreviewLayers(_videoHost.IpcClient.CurrentTime, double.PositiveInfinity, memeActive: true);
             return;
         }
 
@@ -5118,7 +4413,7 @@ public partial class GranularSpeedEditorWindow : Window
                 _isCurrentlyFrozen = true;
                 _freezeArmed = false;
                 _freezeStartTime = DateTime.UtcNow;
-                _freezeSound.Play(_edit.FreezeDurationS, FreeVideoStudio.Core.Media.MpvIpcClient.GlobalMasterVolume / 100.0);
+                _freezeSound.PlayHold(_edit.FreezeDurationS, FreezeLoudnessPath, SpeedEditorGameBalance, FreezeTailRoomSec());
                 _ = _videoHost.IpcClient.SetPropertyAsync("pause", "yes");
                 _ = _videoHost.IpcClient.SetPropertyAsync("time-pos", (_edit.FreezeTimeMs / 1000.0).ToString(System.Globalization.CultureInfo.InvariantCulture));
                 _memePreview?.NotifySeek();
@@ -5145,16 +4440,9 @@ public partial class GranularSpeedEditorWindow : Window
             }
         }
 
-        if (!_videoHost.IpcClient.IsPaused)
-        {
-            double targetSpeed = _edit.SpeedAt(currentRelMs);
-            if (Math.Abs(targetSpeed - _lastAppliedSpeed) > 0.001)
-            {
-                _lastAppliedSpeed = targetSpeed;
-                _ = _videoHost.IpcClient.SetPropertyAsync("speed",
-                    targetSpeed.ToString("0.0###", System.Globalization.CultureInfo.InvariantCulture));
-            }
-        }
+        FollowPreviewSpeed();
+        _ = _previewSpeed.ApplyAt(_videoHost.IpcClient, currentAbsMs / 1000.0, !_videoHost.IpcClient.IsPaused && !_videoHost.IpcClient.IsSeeking && !_isSeeking,
+            CurrentPreviewTimeMapper()(t));
 
         var playIcon = this.FindControl<Avalonia.Controls.Shapes.Path>("PlayIcon");
         var pauseIcon = this.FindControl<Avalonia.Controls.Shapes.Path>("PauseIcon");
@@ -5180,30 +4468,58 @@ public partial class GranularSpeedEditorWindow : Window
             }
         }
 
-        if (_voiceOverPlayer.Result == null) return;
-        var voiceTimeline = _voiceTimelineCache.Get(Math.Max(0.001, GetDuration()) * 1000,
-            _edit.Segments, _edit.Cuts, [], _edit.BaseSpeed,
-            _edit.FreezeTimeMs >= 0 ? _edit.FreezeTimeMs - _edit.TrimStartMs : -1, _edit.FreezeDurationS);
-        if (!ReferenceEquals(_voiceTimeline, voiceTimeline))
-        {
-            _voiceTimeline = voiceTimeline;
-            _voiceTimeMapper = absoluteSeconds => voiceTimeline.SourceToOutput(absoluteSeconds - _edit.TrimStartMs / 1000.0);
-        }
-        var timeMapper = _voiceTimeMapper!;
-        double editedTimeSec = timeMapper(t);
-        if (_isCurrentlyFrozen)
-        {
-            editedTimeSec = FreezeHoldStartOutSec() + Math.Clamp((DateTime.UtcNow - _freezeStartTime).TotalSeconds, 0, _edit.FreezeDurationS);
-        }
-        bool isVoicePaused = _videoHost.IpcClient.IsPaused;
-        _voiceOverPlayer.UpdatePlayback(isVoicePaused, t >= trimEndSec, editedTimeSec, timeMapper, _isCurrentlyFrozen);
+        UpdatePreviewLayers(t, trimEndSec, memeActive: false);
     }
 
-    /// <summary>
-    /// LANES_01 — moves the playhead because the USER dragged, and seeks the video to match.
-    /// Distinct from the playback-driven update above, which must NOT seek (that would fight the
-    /// player). <paramref name="msFromTrimStart"/> is trim-relative, like everything else here.
-    /// </summary>
+    private void FollowPreviewSpeed()
+    {
+        _previewSpeed.IsSuspended ??= () => _memePreview?.IsActive == true;
+        _previewSpeed.UseSchedule(_edit.Segments, _edit.BaseSpeed, _edit.TrimStartMs);
+        _previewSpeed.Follow(_videoHost?.IpcClient);
+    }
+
+    internal static Func<double, double> EditorPreviewTimeMapper(OutputTimeline timeline, double trimStartMs) =>
+        absoluteSeconds => timeline.SourceToOutput(absoluteSeconds - trimStartMs / 1000.0);
+
+    internal static OutputTimeline EditorPreviewTimeline(GranularEditSession edit, double durationSec, Services.EditorTimelineCache cache) =>
+        cache.Get(Math.Max(0.001, durationSec) * 1000, edit.Segments, edit.Cuts, [], edit.BaseSpeed,
+            edit.FreezeTimeMs >= 0 ? edit.FreezeTimeMs - edit.TrimStartMs : -1, edit.FreezeDurationS);
+
+    private Func<double, double> CurrentPreviewTimeMapper()
+    {
+        var voiceTimeline = EditorPreviewTimeline(_edit, GetDuration(), _voiceTimelineCache);
+        if (!ReferenceEquals(_voiceTimeline, voiceTimeline) || _voiceTimeMapper == null)
+        {
+            _voiceTimeline = voiceTimeline;
+            _voiceTimeMapper = EditorPreviewTimeMapper(voiceTimeline, _edit.TrimStartMs);
+        }
+        return _voiceTimeMapper;
+    }
+
+    private void UpdatePreviewLayers(double t, double trimEndSec, bool memeActive)
+    {
+        var ipc = _videoHost?.IpcClient;
+        if (ipc == null) return;
+        bool hasVoice = _voiceOverPlayer.Result != null;
+        if (!hasVoice && !_musicBed.HasMusic) return;
+        var timeMapper = CurrentPreviewTimeMapper();
+        double editedTimeSec = _isCurrentlyFrozen
+            ? FreezeHoldStartOutSec() + Math.Clamp((DateTime.UtcNow - _freezeStartTime).TotalSeconds, 0, _edit.FreezeDurationS)
+            : timeMapper(t);
+        bool paused = ipc.IsPaused && !_isCurrentlyFrozen;
+        bool ended = !memeActive && t >= trimEndSec;
+        if (hasVoice)
+            _voiceOverPlayer.UpdatePlayback(paused || memeActive, ended, editedTimeSec, timeMapper, _isCurrentlyFrozen && !memeActive);
+        var inlineMemes = new List<(double AnchorOutputSec, double DurationSec)>();
+        foreach (var m in FreeVideoStudio.Core.Media.MemePlacement.InlineOnly(_edit.Memes))
+            inlineMemes.Add((timeMapper(_edit.TrimStartMs / 1000.0 + m.AtSourceSecRelative), m.DurationSec));
+        _musicBed.Update(new FreeVideoStudio.App.Controls.MusicPreviewFrame(_edit.TrimStartMs,
+            _edit.TrimStartMs + GetDuration() * 1000.0, ms => timeMapper(ms / 1000.0), editedTimeSec,
+            !paused && !ended, ipc.IsSeeking || _isSeeking, !_isCanvasScrubbing, memeActive, inlineMemes,
+            _memePreview?.CurrentPhase == Infrastructure.MemePreviewDirector.Phase.PlayingMeme,
+            _voiceTimeline?.FreezeOutputRanges()));
+    }
+
     private void SetPlayheadFromScrub(double msFromTrimStart)
     {
         double dur = GetDuration();
@@ -5339,31 +4655,9 @@ public partial class GranularSpeedEditorWindow : Window
         }
     }
 
-    /// <summary>
-    /// TIME_02 / F4 — lays the SOURCE-LINEAR thumbnail strip out along the OUTPUT-TIME axis.
-    ///
-    /// <para>
-    /// One slot per <see cref="FreeVideoStudio.Core.Media.OutputTimeline"/> chunk. Each slot is
-    /// a clipping Canvas placed at the chunk's OUTPUT position and width; inside it the strip is
-    /// scaled and offset so that exactly the chunk's SOURCE window fills the slot. A half-speed
-    /// segment therefore shows its frames spread over twice the width, and a freeze shows the held
-    /// frame stretched across the whole hold — which is what the exported file looks like.
-    /// </para>
-    /// <para>
-    /// A freeze chunk covers a hair of source time by construction, so scaling by its true source
-    /// width would blow the image up astronomically. One frame's worth of source time is estimated
-    /// from the strip geometry instead (frames are laid out at the strip's own height and a 16:9
-    /// aspect), which shows the frozen frame rather than a smear.
-    /// </para>
-    /// <para>
-    /// Degrades safely: on ANY failure the lane falls back to the plain stretched strip, because a
-    /// mis-drawn background must never block editing.
-    /// </para>
-    /// </summary>
     private bool _frameLaneQueued;
     private bool _inFrameLaneRelayout;
 
-    /// <summary>LAYOUTLOOP_02 — coalesced, deferred. Safe to call from a layout/size callback.</summary>
     private void QueueRelayoutFrameLane()
     {
         if (_frameLaneQueued) return;
@@ -5456,13 +4750,6 @@ public partial class GranularSpeedEditorWindow : Window
         _thumbStripFile = null;
     }
 
-    /// <summary>
-    /// LANES_01 — positions the single caret that crosses BOTH lanes.
-    ///
-    /// It is deliberately parented to a Panel that spans the whole two-lane row rather than being
-    /// drawn into either canvas: one line, one X, so the frame under it and the segment above it
-    /// can never disagree about what moment they are showing.
-    /// </summary>
     private void UpdateCaret()
     {
         var lanes = GranularLanesCtl;
@@ -5475,26 +4762,12 @@ public partial class GranularSpeedEditorWindow : Window
         lanes.PositionSeconds = Math.Clamp(outSec, 0, outDur);
     }
 
-    /// <summary>
-    /// FREEZE_CARET — output seconds at which the current freeze's hold BEGINS.
-    ///
-    /// <para>
-    /// <c>SourceToOutput</c> of the freeze instant already counts the whole hold (documented
-    /// boundary behaviour in <see cref="FreeVideoStudio.Core.Media.OutputTimeline"/>, and the
-    /// reason F3 exists), so it returns the moment the hold ENDS. Subtracting the hold gives the
-    /// moment it starts. This is the same correction the freeze marker uses when it is drawn.
-    /// </para>
-    /// </summary>
     private double FreezeHoldStartOutSec()
     {
         double freezeRelSec = Math.Max(0, (_edit.FreezeTimeMs - _edit.TrimStartMs) / 1000.0);
         return Math.Max(0, OutTimeline().SourceToOutput(freezeRelSec) - _edit.FreezeDurationS);
     }
 
-    /// <summary>
-    /// Returns the current playback position relative to the trim region.
-    /// 0.0 = MARK START position.
-    /// </summary>
     private double GetCurrentTime()
     {
         if (_videoHost?.IpcClient == null) return 0;
@@ -5506,19 +4779,12 @@ public partial class GranularSpeedEditorWindow : Window
         return relTime;
     }
 
-
     private readonly Services.EditorTimelineCache _outputTimelineCache = new();
     private readonly Services.EditorTimelineCache _voiceTimelineCache = new();
     private OutputTimeline? _voiceTimeline;
     private Func<double, double>? _voiceTimeMapper;
 
-
-    /// <summary>
-    /// MEME_06 — the memes the Main App scanned, handed over so this editor does not re-scan the
-    /// folder or re-probe every file. Set before ShowDialog; empty is legal and the picker says so.
-    /// </summary>
     public IReadOnlyList<MemeItem> AvailableMemes { get; set; } = System.Array.Empty<MemeItem>();
-
 
     private void OnRemoveMemeClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => RemoveSelectedMeme();
 
@@ -5536,12 +4802,6 @@ public partial class GranularSpeedEditorWindow : Window
         Notify("Meme removed");
     }
 
-    /// <summary>
-    /// MEME_06 — how long this meme runs. A still image has no intrinsic length and is given
-    /// <see cref="FreeVideoStudio.Core.Media.MemePlacement.StillImageDurationSec"/>; a video is
-    /// probed. The timeline cannot be laid out without this number, because every position after
-    /// the meme depends on it — which is why it is resolved here and not at export time.
-    /// </summary>
     private async Task<double> ResolveMemeDurationAsync(MemeItem item)
     {
         if (item.IsImage) return FreeVideoStudio.Core.Media.MemePlacement.StillImageDurationSec;
@@ -5561,26 +4821,11 @@ public partial class GranularSpeedEditorWindow : Window
         }
     }
 
-
-    /// <summary>
-    /// MEME_06 — drops the LIVE timeline cache. Adding, moving or removing a meme changes where the
-    /// block sits on the finished ruler, and that cache is keyed on a signature that includes the
-    /// memes, so clearing it is what makes the ruler redraw correctly.
-    ///
-    /// <para>
-    /// (DRAG_FIX) It deliberately does NOT touch <c>_baseTimeline</c>. BaseTimeline is built with
-    /// <c>insertions: null</c> and its signature covers only duration, segments and cuts — a meme
-    /// can never invalidate it. Clearing it anyway forced a full <c>OutputTimeline.Create</c> on
-    /// every single pointer move of a drag (MoveMemeTo calls BaseTimeline for the snap), which is
-    /// where the drag stutter came from.
-    /// </para>
-    /// </summary>
     private void InvalidateMemeTimelines()
     {
         _outputTimelineCache.Clear();
     }
 
-    /// <summary>MEME_06 — REMOVE MEME appears only while a meme is selected, mirroring REMOVE ZOOM.</summary>
     private void UpdateMemeButtonsState()
     {
         if (_removeMemeBtn != null) _removeMemeBtn.IsVisible = _edit.SelectedMemeId != null;
@@ -5601,49 +4846,15 @@ public partial class GranularSpeedEditorWindow : Window
             freezeStartMs: _edit.FreezeTimeMs >= 0 ? _edit.FreezeTimeMs - _edit.TrimStartMs : -1,
             freezeDurationSeconds: _edit.FreezeDurationS);
 
-    /// <summary>Length of the FINISHED video in seconds - what the ruler is drawn against.</summary>
     private double OutDurationSec() => Math.Max(0.001, OutTimeline().TotalOutputSeconds);
 
     private readonly Services.EditorTimelineCache _baseTimelineCache = new();
 
-    /// <summary>
-    /// FREEZE_DRAG — the timeline WITHOUT the freeze spliced in.
-    ///
-    /// <para>
-    /// Dragging the freeze cannot be done in the timeline the freeze is part of, because that
-    /// timeline moves as you drag it. Ask "which gameplay moment is under this pixel" of a ruler
-    /// that already contains the hold and, inside the hold, every pixel answers with the SAME
-    /// instant — the frozen one — so the freeze pins itself in place and will not move. Worse,
-    /// as the duration changes under a resize, every position past the hold shifts, so the pointer
-    /// and the edge it is dragging chase each other.
-    /// </para>
-    /// <para>
-    /// This timeline holds only the speed segments, so it is fixed for the whole gesture and the
-    /// hold occupies zero width in it. That makes the drag arithmetic simple and, more importantly,
-    /// stable: the answer to "where did the user point" does not depend on the edit in progress.
-    /// </para>
-    /// </summary>
     private FreeVideoStudio.Core.Media.OutputTimeline BaseTimeline()
         => _baseTimelineCache.Get(Math.Max(0.001, GetDuration()) * 1000, _edit.Segments, _edit.Cuts, [], EditorBaseSpeed);
 
-    /// <summary>
-    /// MEMERULER_01 — the speed footage OUTSIDE blocks plays at, on every ruler of this window. The
-    /// playback (<c>SpeedAt</c>), the voice-over clock and the export always used the base speed;
-    /// the rulers were built at 1.0x, so with the default 1.1x every meme band, the "+X sec" texts
-    /// and the corner-meme timing sat about 10 % away from where they play.
-    /// </summary>
     private double EditorBaseSpeed => _edit.BaseSpeed > 0.001 && double.IsFinite(_edit.BaseSpeed) ? _edit.BaseSpeed : 1.0;
 
-    /// <summary>
-    /// FREEZE_DRAG — an X on the output-time canvas -> seconds on the FREEZE-FREE timeline.
-    ///
-    /// <para>
-    /// Pixels before the hold pass through untouched; pixels inside it collapse onto its start; and
-    /// pixels after it shift back by the hold, because that much of the ruler is time the freeze
-    /// itself inserted. The result is "where would this pixel be if the freeze did not exist",
-    /// which is the only frame of reference in which moving the freeze is a well-posed question.
-    /// </para>
-    /// </summary>
     private double OutXToBaseOutSec(double x, double w)
     {
         if (w <= 0) return 0;
@@ -5655,14 +4866,9 @@ public partial class GranularSpeedEditorWindow : Window
         return Math.Max(holdStart, outSec - Math.Min(_edit.FreezeDurationS, outSec - holdStart));
     }
 
-    /// <summary>FREEZE_DRAG — an X on the output-time canvas -> seconds on the FULL ruler.</summary>
     private double OutXToOutSec(double x, double w)
         => w <= 0 ? 0 : Math.Clamp((x / w) * OutDurationSec(), 0, OutDurationSec());
 
-    /// <summary>
-    /// FREEZE_DRAG — commits a new hold START, expressed on the freeze-free timeline, back into the
-    /// SOURCE instant the rest of the app stores.
-    /// </summary>
     private void SetFreezeStartFromBaseOutSec(double baseOutSec)
     {
         double relSec = BaseTimeline().OutputToSourceRelative(
@@ -5670,39 +4876,13 @@ public partial class GranularSpeedEditorWindow : Window
         _edit.MoveFreezeToSourceRelSec(relSec, "freeze-drag");
     }
 
-    /// <summary>
-    /// ZOOM_01 — the current horizontal timeline zoom (1.0–10.0), owned by the shared lanes
-    /// control. Read-only here: it changes only through Ctrl+mouse-wheel on the timeline.
-    /// </summary>
     private double TimelineZoomFactor
         => GranularLanesCtl
                ?.ZoomFactor ?? 1.0;
 
-    /// <summary>
-    /// TRIM-RELATIVE source ms -> an X pixel on the output-time canvas.
-    ///
-    /// <para>
-    /// ZOOM_01 — <paramref name="w"/> MUST be a ZOOMED layer width (the canvas' own
-    /// <c>Bounds.Width</c>, which the shared control lays out at viewport × TimelineZoomFactor).
-    /// The zoom factor therefore multiplies into the pixel map exactly once, through this width —
-    /// every caller already passes a layer's <c>Bounds.Width</c>, so zooming needs no other change
-    /// anywhere on this path. Passing an UNZOOMED (viewport) width here while zoomed is the same
-    /// class of bug as the pre-ZOOMMAP_01 hand-rolled `x/w * duration`.
-    /// </para>
-    /// </summary>
     private double SrcMsToX(double srcRelMs, double w)
         => (OutTimeline().SourceToOutput(srcRelMs / 1000.0) / OutDurationSec()) * w;
 
-    /// <summary>
-    /// An X pixel on the output-time canvas -> TRIM-RELATIVE source ms.
-    ///
-    /// <para>
-    /// ZOOM_01 — the exact inverse of <see cref="SrcMsToX"/>: <paramref name="w"/> is the ZOOMED
-    /// layer width the pointer coordinate came from, so the zoom factor divides back out through
-    /// it. Pointer positions obtained with <c>e.GetPosition(canvas)</c> carry the same zoomed
-    /// basis and round-trip losslessly at any zoom level.
-    /// </para>
-    /// </summary>
     private double XToSrcMs(double x, double w)
     {
         if (w <= 0) return 0;
@@ -5727,20 +4907,11 @@ public partial class GranularSpeedEditorWindow : Window
         return Math.Max(0.1, trimEndSec - trimStartSec);
     }
 
-    /// <summary>
-    /// Returns the timeline overlay color for a speed segment, based on its speed
-    /// relative to the base (natural) speed:
-    ///   • Freeze (≈0x)    → blue
-    ///   • Below base speed → red
-    ///   • ≥ base speed     → green
-    /// The color is independent of selection state so that live edits recolor
-    /// immediately even while a segment is highlighted.
-    /// </summary>
     private Avalonia.Media.Color GetSegmentOverlayColor(SpeedSegment seg)
     {
         double speed = seg.Speed;
         double baseSpd = _edit.BaseSpeed;
-        
+
         if (speed < 0.01)
         {
             return Avalonia.Media.Color.FromArgb(230, 96, 165, 250);
@@ -5761,21 +4932,6 @@ public partial class GranularSpeedEditorWindow : Window
         }
     }
 
-
-    /// <summary>
-    /// GUIDE_01 — THE DUMMY-PROOF PATH. Shown when an action that needs a marked range is pressed
-    /// without one.
-    ///
-    /// A short red warning first, then a ONE SECOND pause so the user actually reads it, then the
-    /// walkthrough: the app dims, a ghost cursor presses MARK START, presses PLAY, sweeps the
-    /// timeline as the video runs, and presses MARK END — the exact sequence they were missing.
-    ///
-    /// Drawn, not recorded. ISSUE_04 explains why the suite has no GIF assets: mandate #2 forbids
-    /// shipping loose files beside the .exe, and a recording would go stale the moment a button
-    /// moves or the font scale changes. CoachOverlay renders vector shapes over the window's own
-    /// live controls, so it follows the real layout at any size, theme or scale, and costs nothing
-    /// to ship. Returns true when it took over, so the caller aborts.
-    /// </summary>
     private bool GuideWhenNothingMarked(string actionName)
     {
         if (_edit.CurrentMarkedRange() != null) return false;
@@ -5813,7 +4969,6 @@ public partial class GranularSpeedEditorWindow : Window
         return true;
     }
 
-    /// <summary>MEME_06 — ADD MEME / REMOVE MEME, wired alongside DELETE PARTS.</summary>
     private void WireMemeButtons()
     {
         var addBtn = this.FindControl<Button>("AddMemeBtn");
@@ -5914,8 +5069,6 @@ public partial class GranularSpeedEditorWindow : Window
         catch (Exception ex) { RuntimeLog.Fail("CUT", ex); }
     }
 
-
-    /// <summary>ISSUE_09 — the one suite-wide notice. See MainWindow.ShowTacticalFeedback.</summary>
     private void ShowFeedback(string text)
         => Controls.FloatingNotice.Show(this, text);
 
@@ -5925,20 +5078,17 @@ public partial class GranularSpeedEditorWindow : Window
         if (lbl != null) lbl.Text = msg;
     }
 
-    /// <summary>ISSUE_09 — status line + the suite-wide notice. Discrete events only.</summary>
     private void Notify(string msg)
     {
         SetStatus(msg);
         Controls.FloatingNotice.Success(this, msg);
     }
 
-    /// <summary>ISSUE_09 — status line + the suite-wide notice, in red. Discrete rejections only.</summary>
     private void NotifyError(string msg)
     {
         SetStatus(msg);
         Controls.FloatingNotice.Error(this, msg);
     }
-
 
     private const int GranularRecoveryDebounceMs = 300;
 
@@ -5947,11 +5097,6 @@ public partial class GranularSpeedEditorWindow : Window
     private DispatcherTimer? _granularRecoveryTimer;
     private Services.EditorRecoveryWriter? _granularRecoveryWriter;
 
-    /// <summary>
-    /// RECOVERY_03 — arms the debounce. Safe to call from anywhere on the UI thread and any number
-    /// of times in quick succession: each call discards the pending window and restarts it, so
-    /// only the state settled 300ms after the LAST edit is ever written to disk.
-    /// </summary>
     private void ScheduleGranularRecoverySave()
     {
         if (_editorClosing || IsMergeMode) return;
@@ -5973,11 +5118,6 @@ public partial class GranularSpeedEditorWindow : Window
         _granularRecoveryTimer.Start();
     }
 
-
-    /// <summary>
-    /// RECOVERY_03 — constructor-time rehydration. The window reads the file; the session decides
-    /// whether the node is THIS clip and trim window and takes its values (GranularRecoveryCodec).
-    /// </summary>
     private bool TryRehydrateGranularRecovery()
     {
         JsonObject? node = null;
@@ -6062,33 +5202,28 @@ public partial class GranularSpeedEditorWindow : Window
         _memePreview = null;
         TeardownEditorCornerMemes();
         _voiceOverPlayer.Dispose();
+        _musicBed.Dispose();
+        _previewSpeed.Dispose();
         _videoHost = null;
         base.OnClosed(e);
     }
 
+    internal const double SpeedEditorGameBalance = 1.0;
+
+    private string? FreezeLoudnessPath => IsMergeMode ? null : _edit.VideoPath;
+
+    private double FreezeTailRoomSec() =>
+        Math.Max(0, OutDurationSec() - (FreezeHoldStartOutSec() + _edit.FreezeDurationS));
+
     private void OnGlobalMasterVolumeChanged(int masterVolumePercentage)
     {
+        _freezeSound.SetGameBalance(SpeedEditorGameBalance);
         if (_videoHost?.IpcClient != null)
         {
             _ = _videoHost.IpcClient.ApplyPreviewGainAsync();
         }
     }
 
-    /// <summary>
-    /// WINSEED_01 — visible bottom-right resize affordance, identical to the Voice Over Studio's.
-    /// ExtendClientAreaToDecorationsHint leaves only the thin OS border to grab, which is hard to
-    /// hit and invisible; this gives the corner a 24x24 target and a real cursor.
-    /// </summary>
-    /// <summary>
-    /// SEAM_01 — when the grabbed edge sits on a seam shared with a neighbouring block, hand the
-    /// drag to whichever of the two edges is on the pointer's side. Identical rule to the canvas
-    /// hit test, so both routes to a block edge behave the same way.
-    /// </summary>
-    /// <summary>
-    /// FREEZEDIAG_02 — four samples a second of what the drag is actually computing, so an
-    /// "expanding timeline" report can be read off the log instead of reproduced. Rate-limited by
-    /// wall clock, so a 60fps drag costs four lines a second, not sixty.
-    /// </summary>
     private long _lastDragSampleTicks;
     private void LogDragSample(int idx, double pointerMs, double newStart, double newEnd,
                                double totalMs, double lowerBound, double upperBound)

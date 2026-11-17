@@ -8,7 +8,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>AIAUDIT_01 (docs/05 SYS-AISETTINGS §7.3/7.4) — guards for the 2026-10-16 AI audit fixes.</summary>
 public sealed class AiAuditFixTests
 {
     [Theory]

@@ -56,7 +56,8 @@ internal static class AiDiagnostics
                     media.Items++;
                     media.Base64Chars += value.GetString()?.Length ?? 0;
                 }
-                else if (name == "url" && value.ValueKind == JsonValueKind.String && parentName == "image_url")
+                else if ((name == "url" && value.ValueKind == JsonValueKind.String && parentName == "image_url")
+                      || (name == "image_url" && value.ValueKind == JsonValueKind.String && value.GetString()?.StartsWith("data:", StringComparison.Ordinal) == true))
                 {
                     media.Items++;
                     media.Base64Chars += value.GetString()?.Length ?? 0;

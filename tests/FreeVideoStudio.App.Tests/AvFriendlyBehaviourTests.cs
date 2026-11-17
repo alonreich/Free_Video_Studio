@@ -9,11 +9,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// SYS-AVCLEAN / SYS-CFASAFE (docs/05_SYSTEM_LIFECYCLE_STORAGE.md) — NOHIDDENTOOLS_01 (no hidden
-/// Windows tools), NOLOGONHOOK_01 (no run-at-logon registry entry) and CFASAFE_01 (the app keeps
-/// working, quietly, when Windows' "Controlled folder access" refuses it).
-/// </summary>
 public sealed class AvFriendlyBehaviourTests
 {
     private static string Source(string relative) =>
@@ -168,7 +163,6 @@ public sealed class AvFriendlyBehaviourTests
         }
     }
 
-    /// <summary>NOMEMREAD_01 — no process is opened with memory-read rights to learn its program path.</summary>
     [Fact]
     public void NoMemRead01_ProgramPathsAreAskedWithoutReadingProcessMemory()
     {
@@ -187,7 +181,6 @@ public sealed class AvFriendlyBehaviourTests
         Assert.Contains("installRoot + Path.DirectorySeparatorChar", lifecycle);
     }
 
-    /// <summary>OPENWITHHOME_01 — only the installed program registers Explorer's "Open with" command.</summary>
     [Fact]
     public void OpenWithHome01_OnlyTheInstalledProgramRegistersOpenWith()
     {
@@ -197,7 +190,6 @@ public sealed class AvFriendlyBehaviourTests
         Assert.Contains("if (!IsInstalledProgram(exePath)) return;", Source("src/FreeVideoStudio.App/ShellFileAssociation.cs"));
     }
 
-    /// <summary>NOMUIWIPE_01 — Windows' own run caches are never edited.</summary>
     [Fact]
     public void NoMuiWipe01_WindowsRunCachesAreLeftAlone()
     {
@@ -209,7 +201,6 @@ public sealed class AvFriendlyBehaviourTests
         Assert.True(offenders.Count == 0, "NOMUIWIPE_01 — Windows trace caches are edited again:\n" + string.Join("\n", offenders));
     }
 
-    /// <summary>NOLURKER_01 — "Later" does not leave an installer waiting in the background.</summary>
     [Fact]
     public void NoLurker01_LaterStartsNoWaitingInstaller()
     {
@@ -222,7 +213,6 @@ public sealed class AvFriendlyBehaviourTests
         Assert.Contains("EnsureInstallOnExit", block);
     }
 
-    /// <summary>SIGNDEPS_01 — bundled tools are signed only with a publicly trusted certificate.</summary>
     [Fact]
     public void SignDeps01_BundledToolsAreSignedOnlyWithAPublicCertificate()
     {
@@ -237,7 +227,6 @@ public sealed class AvFriendlyBehaviourTests
         Assert.Contains("CodeSigning.SignDependenciesWhenPubliclyTrusted(Staging.StagingDirPath", Source("build/FvsBuild/Program.cs"));
     }
 
-    /// <summary>CFAFFMPEG_01 — an unprotected folder is never probed with FFmpeg.</summary>
     [Fact]
     public void CfaFfmpeg01_UnprotectedFoldersAreNotProbed()
     {

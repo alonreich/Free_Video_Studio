@@ -1,23 +1,9 @@
-﻿
-using NAudio.Wave;
+﻿using NAudio.Wave;
 using System;
 using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// VOMON_01 — LISTENS WITHOUT RECORDING.
-///
-/// The EQ meter used to be fed only by <see cref="VoiceRecorder"/>, so it was frozen until a take
-/// was already running. That made the single most common failure — the wrong input device selected,
-/// or Windows microphone privacy blocking the app — invisible until AFTER a take had been lost.
-/// This opens the same device with the same format, throws every buffer away, and reports only the
-/// peak, so the meter proves the microphone works before the user commits to a take.
-///
-/// ⚠️ It must be stopped before <see cref="VoiceRecorder"/> opens the same device: some drivers
-/// (and every exclusive-mode endpoint) refuse a second capture handle. <c>Stop</c> is idempotent
-/// and safe to call from the UI thread.
-/// </summary>
 public sealed class MicLevelMonitor : IDisposable
 {
     private WaveIn? _waveIn;
@@ -28,41 +14,24 @@ public sealed class MicLevelMonitor : IDisposable
     private int _buffersSeen;
     private Exception? _lastError;
 
-    /// <summary>Peak of the last buffer, 0..1. Raised on NAudio's capture thread.</summary>
     public event EventHandler<float>? LevelChanged;
 
-    /// <summary>MICHEALTH_01 — Raised when monitoring stops unexpectedly with a hardware or driver fault.</summary>
     public event EventHandler<Exception?>? Stopped;
 
-    /// <summary>
-    /// SPECTRUM_01 — the raw PCM of every buffer, in the format the device was actually opened
-    /// with, for the frequency-spectrum meter. Raised on NAudio's capture thread. ⚠️ The buffer is
-    /// the driver's and is only valid during the event; handlers must consume it synchronously.
-    /// </summary>
     public event EventHandler<PcmBuffer>? PcmAvailable;
 
-    /// <summary>True while a capture handle is open and buffers are arriving.</summary>
     public bool IsRunning => _running;
 
-    /// <summary>Device this monitor is currently listening to, or -1 when stopped.</summary>
     public int DeviceNumber => _deviceNumber;
 
-    /// <summary>Number of DataAvailable callbacks received by this monitor.</summary>
     public int BuffersSeen => _buffersSeen;
 
-    /// <summary>Last fault seen on this monitor instance, if any.</summary>
     public Exception? LastError => _lastError;
 
-    /// <summary>Runtime capture fault during active monitoring (unexpected driver stop, buffer failure).</summary>
     public Exception? CaptureError { get; private set; }
 
-    /// <summary>Endpoint stop or disposal failure when closing waveIn.</summary>
     public Exception? ReleaseError { get; private set; }
 
-    /// <summary>
-    /// Opens (or re-opens) the given device. Restarting on the SAME device is a no-op, so this can
-    /// be called freely from selection-changed handlers without churning the driver.
-    /// </summary>
     public void Start(int deviceNumber)
     {
         lock (_gate)
@@ -139,7 +108,6 @@ public sealed class MicLevelMonitor : IDisposable
         }
     }
 
-    /// <summary>Closes the capture handle. Safe to call when already stopped.</summary>
     public void Stop()
     {
         lock (_gate)
@@ -219,7 +187,6 @@ public sealed class MicLevelMonitor : IDisposable
         }
     }
 
-    /// <summary>SPECTRUM_01 — maps the device's NAudio format onto the analyzer's explicit contract.</summary>
     internal static PcmCaptureFormat ToCaptureFormat(WaveFormat format)
         => new(format.SampleRate, format.Channels, format.BitsPerSample,
             format.Encoding == WaveFormatEncoding.IeeeFloat ? PcmSampleEncoding.IeeeFloat : PcmSampleEncoding.Pcm);

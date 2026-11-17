@@ -12,9 +12,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AICOMMENTARY_SERVICE_01 — request payload for AI live commentary generation.
-/// </summary>
 public sealed record CommentaryRequest(
     string VideoPath,
     double StartSec,
@@ -37,55 +34,32 @@ public sealed record CommentaryRequest(
     CaptionSize Size = CaptionSize.Medium,
     int Parallelism = CommentaryService.MaxParallelParts)
 {
-    /// <summary>
-    /// COMMENTARYMIX_01 — the slider mix that drives the prompt; a request made with only a tone uses that tone's
-    /// one-click style.
-    /// </summary>
     public CommentaryPersonality EffectivePersonality =>
         (Personality ?? CommentaryPersonality.FromPreset(CommentaryPersonality.PresetForTone(Tone))).Normalized();
 
-    /// <summary>The tone recorded on the generated track (the mix's dominant tone).</summary>
     public CaptionTone EffectiveTone => Personality?.Normalized().DominantTone ?? Tone;
 }
 
-/// <summary>AICOMMENTARY_REPORT_01 — the generated track plus how many request parts could not be read.</summary>
 public sealed record CommentaryResult(CaptionTrack Track, int FailedChunks, int TotalChunks);
 
-/// <summary>AICOMMENTARY_KEEP_01 — the user cancelled after some parts finished; <see cref="Partial"/> holds their lines.</summary>
 public sealed class CommentaryCancelledException : OperationCanceledException
 {
     public CommentaryCancelledException(CommentaryResult partial) : base("AI Commentary was cancelled.") => Partial = partial;
     public CommentaryResult Partial { get; }
 }
 
-/// <summary>
-/// AICOMMENTARY_SERVICE_01 — AI Live Commentary Captions generation service.
-/// Splits footage into chunked requests (≤ 8 s with 1 s overlap), invokes the configured AI vision provider
-/// (with audio for Google Gemini, timestamped frame sequences for Claude/OpenAI), validates schema compliance,
-/// de-duplicates across chunk boundaries, and produces a complete <see cref="CaptionTrack"/>.
-/// </summary>
 public static class CommentaryService
 {
     public const double MaxChunkSec = 8.0;
     public const double ChunkOverlapSec = 1.0;
     public const double MinLineDurationSec = 0.5;
 
-    /// <summary>AICOMMENTARY_SPEED_01 — shortest time a line stays on screen in the FINISHED video.</summary>
     public const double MinReadableOutputSec = 1.2;
 
-    /// <summary>Test seam: replaces FFmpeg frame sampling for the Claude / OpenAI path (null in the app).</summary>
     internal static Func<string, double, double, CancellationToken, Task<IReadOnlyList<AiImageInput>>>? FrameSamplerForTests { get; set; }
 
-    /// <summary>
-    /// TACTICAL_01 — with Tactical at "A lot" or "Max", lines the AI itself rated below this confidence are dropped:
-    /// an explanation the AI is unsure of is more likely invented than seen.
-    /// </summary>
     public const double TacticalMinConfidence = 0.4;
 
-    /// <summary>
-    /// TACTICAL_03 — kill-tracker times (ABSOLUTE source seconds) inside one part, as seconds from the part's start.
-    /// Null when the tracker gave no times at all.
-    /// </summary>
     public static IReadOnlyList<double>? KillTimesForPart(IReadOnlyList<double>? killTimesSec, double partStartSec, double partEndSec)
     {
         if (killTimesSec is null || killTimesSec.Count == 0) return null;
@@ -95,10 +69,8 @@ public static class CommentaryService
             .ToList();
     }
 
-    /// <summary>AICOMMENTARY_ESTIMATE_01 — more parts than this and the editor asks first, naming the count and time.</summary>
     public const int ConfirmAbovePartCount = 6;
 
-    /// <summary>AICOMMENTARY_ESTIMATE_01 — a typical part's round trip (clip prep + AI answer), for the estimate only.</summary>
     public const double TypicalSecondsPerPart = 12.0;
 
     public const int MaxParallelParts = 2;
@@ -113,9 +85,6 @@ public static class CommentaryService
         return null;
     }
 
-    /// <summary>
-    /// Plans even overlapping chunks of at most <paramref name="maxChunkSec"/> with <paramref name="overlapSec"/> overlap.
-    /// </summary>
     public static IReadOnlyList<(double Start, double End)> PlanChunks(
         double durationSec,
         double maxChunkSec = MaxChunkSec,
@@ -144,7 +113,6 @@ public static class CommentaryService
         return list;
     }
 
-    /// <summary>Generates live commentary captions for the requested video segment.</summary>
     public static async Task<CaptionTrack> GenerateCommentaryAsync(
         CommentaryRequest request,
         string apiKey,
@@ -153,12 +121,6 @@ public static class CommentaryService
         CancellationToken cancellationToken = default)
         => (await GenerateCommentaryWithReportAsync(request, apiKey, progress, consoleLog, cancellationToken).ConfigureAwait(false)).Track;
 
-    /// <summary>
-    /// AICOMMENTARY_REPORT_01 — generates the track and reports parts that failed. Line times are ABSOLUTE
-    /// source seconds (the caption model's contract, TL-CAPTIONS): <see cref="CommentaryRequest.StartSec"/> is added.
-    /// A part whose answer cannot be read is retried once; if it still fails it is skipped and counted.
-    /// Account problems (key, permission, model, quota) stop the whole run at once.
-    /// </summary>
     public static async Task<CommentaryResult> GenerateCommentaryWithReportAsync(
         CommentaryRequest request,
         string apiKey,
@@ -366,16 +328,13 @@ public static class CommentaryService
         return result;
     }
 
-    /// <summary>Failures that belong to one part; account-level problems (key, permission, model, quota) stop the run.</summary>
     private static bool IsPartLevelFailure(AiProviderException ex)
         => ex.Kind is AiProviderErrorKind.MalformedResponse or AiProviderErrorKind.Blocked
             or AiProviderErrorKind.BadRequest or AiProviderErrorKind.Timeout or AiProviderErrorKind.Truncated
             or AiProviderErrorKind.Overloaded or AiProviderErrorKind.Network or AiProviderErrorKind.RateLimited;
 
-    /// <summary>What one part sends: a clip (Gemini) or stills (Claude / OpenAI).</summary>
     private sealed record PartMedia(AiVideoInput? Video, IReadOnlyList<AiImageInput> Frames);
 
-    /// <summary>AICOMMENTARY_CUTS_01 — cut stretches of a part, in seconds from the PART's start.</summary>
     public static IReadOnlyList<(double Start, double End)> SentParts(OutputTimeline? timeline, double timelineOffsetSec, double startSec, double durationSec)
     {
         var sent = new List<(double Start, double End)>();
@@ -403,7 +362,6 @@ public static class CommentaryService
         return list;
     }
 
-    /// <summary>AICOMMENTARY_CUTS_01 — drops stills (frame i is at i / fps seconds) that fall inside a cut.</summary>
     internal static IReadOnlyList<AiImageInput> DropFramesInCuts(IReadOnlyList<AiImageInput> frames, IReadOnlyList<(double Start, double End)> cuts, double fps = 2.0)
     {
         if (cuts.Count == 0) return frames;
@@ -464,13 +422,6 @@ public static class CommentaryService
             GeminiCallOptions.Creative, consoleLog, ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// <paramref name="timelineOffsetSec"/> is subtracted from ABSOLUTE source seconds to reach the timeline's own
-    /// source coordinates (the editor's timeline is trim-relative, so it passes the trim start).
-    /// AICOMMENTARY_SPEED_01 — plain-English playback notes for one part, in seconds from the PART's start,
-    /// so the AI narrates as the viewer experiences it (slow motion lingers, fast forward rushes, cuts vanish).
-    /// Null when the whole part plays at normal speed.
-    /// </summary>
     public static string? DescribePlayback(OutputTimeline? timeline, double timelineOffsetSec, double absStartSec, double absEndSec)
     {
         if (timeline == null) return null;
@@ -502,12 +453,6 @@ public static class CommentaryService
         return allNormal ? null : string.Join("\n", lines);
     }
 
-    /// <summary>
-    /// AICOMMENTARY_SPEED_01 — keeps every line inside [<paramref name="rangeStartSec"/>, <paramref name="rangeEndSec"/>]
-    /// (ABSOLUTE source seconds) and on screen for at least <see cref="MinReadableOutputSec"/> of FINISHED video:
-    /// a line inside a 2x stretch is lengthened in source time so it is still readable, without running into the
-    /// next line or past the range. Without a timeline the check is done 1:1.
-    /// </summary>
     public static List<CaptionLine> EnsureReadableOnScreen(IReadOnlyList<CaptionLine> lines, OutputTimeline? timeline, double timelineOffsetSec, double rangeStartSec, double rangeEndSec,
         double minReadableSec = MinReadableOutputSec)
     {
@@ -541,12 +486,6 @@ public static class CommentaryService
         return result;
     }
 
-    /// <summary>
-    /// AICOMMENTARY_MERGE_01 — puts commentary made for ONE segment into the existing track: existing lines fully
-    /// inside [<paramref name="rangeStartSec"/>, <paramref name="rangeEndSec"/>] are replaced, lines crossing its
-    /// edge are trimmed to the part outside (dropped if under <see cref="MinLineDurationSec"/>), everything else is
-    /// kept. Ids are renumbered in time order. Style, position and tone come from <paramref name="generated"/>.
-    /// </summary>
     public static CaptionTrack MergeSegment(CaptionTrack? existing, CaptionTrack generated, double rangeStartSec, double rangeEndSec)
     {
         var kept = new List<CaptionLine>();
@@ -569,9 +508,6 @@ public static class CommentaryService
         return generated with { Lines = ordered };
     }
 
-    /// <summary>
-    /// Parses the structured JSON response into a list of <see cref="CaptionLine"/> records.
-    /// </summary>
     public static List<CaptionLine> ParseCommentaryResponse(
         string json,
         double chunkOffsetSec,
@@ -582,11 +518,8 @@ public static class CommentaryService
         return lines;
     }
 
-    /// <summary>
-    /// AICOMMENTARY_REPORT_01 — like <see cref="ParseCommentaryResponse"/> but returns false when the answer is
-    /// not readable JSON (an empty list means "nothing worth saying", which is valid). Times are offset by
-    /// <paramref name="chunkOffsetSec"/> (ABSOLUTE source start of the part) and kept before <paramref name="chunkLimitSec"/>.
-    /// </summary>
+    internal const string UnknownShapeTag = "AICOMMSHAPE_01";
+
     public static bool TryParseCommentaryResponse(
         string json,
         double chunkOffsetSec,
@@ -620,10 +553,21 @@ public static class CommentaryService
                             lines.Add(line);
                     }
                 }
-                else if (TryParseLine(root, chunkOffsetSec, chunkLimitSec, ref lineIdCounter, out CaptionLine? line) && line != null)
+                else if (root.TryGetProperty("text", out JsonElement single) && single.ValueKind == JsonValueKind.String)
                 {
-                    lines.Add(line);
+                    if (TryParseLine(root, chunkOffsetSec, chunkLimitSec, ref lineIdCounter, out CaptionLine? line) && line != null)
+                        lines.Add(line);
                 }
+                else
+                {
+                    RuntimeLog.Warn("AiCommentary", $"{UnknownShapeTag}: the answer is an object without lines or a caption line.");
+                    return false;
+                }
+            }
+            else
+            {
+                RuntimeLog.Warn("AiCommentary", $"{UnknownShapeTag}: the answer is a {root.ValueKind}, not a list of caption lines.");
+                return false;
             }
         }
         catch (JsonException ex)
@@ -695,9 +639,6 @@ public static class CommentaryService
         return true;
     }
 
-    /// <summary>
-    /// De-duplicates overlapping lines across chunk boundaries.
-    /// </summary>
     public static List<CaptionLine> DeduplicateLines(IReadOnlyList<CaptionLine> lines)
     {
         if (lines == null || lines.Count <= 1) return lines?.ToList() ?? new List<CaptionLine>();

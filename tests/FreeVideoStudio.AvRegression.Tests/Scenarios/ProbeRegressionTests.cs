@@ -3,7 +3,6 @@ using Xunit;
 
 namespace FreeVideoStudio.AvRegression.Tests;
 
-/// <summary>TESTPROBE_01: the verdict machinery must reject absent evidence, not just bad values.</summary>
 [Collection(AvCollection.Name)]
 public sealed class ProbeRegressionTests
 {

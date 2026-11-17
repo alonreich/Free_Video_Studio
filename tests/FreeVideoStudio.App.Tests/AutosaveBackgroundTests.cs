@@ -11,12 +11,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// AUTOSAVEBG_01 — <see cref="ProjectSession.AutosaveTick"/> must never perform the atomic write,
-/// the hardware flush or the sidecar serialisation on the calling (UI) thread, and must never
-/// throw there. The disk work is proven to be off-thread by a store that BLOCKS: if the tick were
-/// synchronous it could not return while the store is still holding.
-/// </summary>
 public sealed class AutosaveBackgroundTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "FvsAutosaveBg_" + Guid.NewGuid().ToString("N"));
@@ -100,7 +94,6 @@ public sealed class AutosaveBackgroundTests : IDisposable
 
         Assert.True(session.IsDirty, "The file on disk is behind the screen; dirty must survive.");
     }
-
 
     [AvaloniaFact]
     public async Task ExplicitSave_WaitsOffDispatcher_RejectsDuplicate_AndPreservesLaterEdits()
@@ -328,7 +321,6 @@ public sealed class AutosaveBackgroundTests : IDisposable
         public DateTimeOffset UtcNow => _now;
         public void Advance(TimeSpan by) => _now += by;
     }
-
 
     private sealed class GatedCommit
     {

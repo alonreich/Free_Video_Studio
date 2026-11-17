@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,28 +6,14 @@ using FreeVideoStudio.Core.Abstractions;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>One Magic Wand run's inputs.</summary>
-/// <param name="LocalDetect">The offline detector (or its cached answer for this clip). Always runs.</param>
-/// <param name="AiFrame">The ONE frozen frame the AI may see, or null when the AI is not to be
-/// asked this run (no key, no consent, frame unavailable). Null means zero network traffic.</param>
-/// <param name="SourceWidth">Source-frame width every candidate is expressed in.</param>
-/// <param name="SourceHeight">Source-frame height every candidate is expressed in.</param>
 public sealed record HudDetectionRequest(
     Func<CancellationToken, Task<IReadOnlyList<HudCandidate>>> LocalDetect,
     AiHudFrame? AiFrame,
     int SourceWidth,
     int SourceHeight);
 
-/// <summary>
-/// WANDPROGRESSIVE_01 — the offline candidates of run <see cref="Generation"/>, published while the AI
-/// is still thinking so the user can start reviewing them. Suggestions only; nothing is committed.
-/// </summary>
 public sealed record HudLocalPreview(long Generation, IReadOnlyList<HudCandidate> Candidates);
 
-/// <summary>
-/// One Magic Wand run's published answer. Pure data: SUGGESTIONS for the user to pick from.
-/// Nothing in it — and nothing the coordinator does — commits a crop.
-/// </summary>
 public sealed record HudDetectionResult(
     long Generation,
     IReadOnlyList<HudCandidate> Candidates,
@@ -38,27 +23,6 @@ public sealed record HudDetectionResult(
     AiHudOutcome? AiOutcome,
     int AiCandidateCount);
 
-/// <summary>
-/// AIHUD_03 — runs the offline detector and the optional AI detector side by side, fuses their
-/// answers deterministically, and guarantees that a cancelled or superseded run publishes NOTHING.
-///
-/// <para><b>Staleness.</b> Every <see cref="RunAsync"/> takes a new generation and cancels the
-/// previous run's token; <see cref="Cancel"/> does the same without starting anything. A run only
-/// returns a result if, after BOTH detectors have finished, its token is still live and its
-/// generation is still the current one. Otherwise it returns null — so a slow AI response can
-/// never overwrite a newer scan, and a cancelled run cannot surface late.</para>
-///
-/// <para><b>Fallback.</b> The AI side never takes the local side down with it. Missing key,
-/// timeout, rate limit, network or model error, malformed answer, or an outright exception from
-/// the provider: the local candidates are returned exactly as the detector produced them. Each
-/// AI failure is reported once through <see cref="IFaultSink"/> at <see cref="FaultTier.Degraded"/>
-/// — the AI suggestions the user asked for did not happen — with wording that says the local
-/// results are still shown. A missing key is not a fault: it is the default, offline state.</para>
-///
-/// <para><b>Threading.</b> No UI types. Callable from the UI thread; all internal awaits use
-/// <c>ConfigureAwait(false)</c>, and the caller re-checks <see cref="IsCurrent"/> on its own
-/// thread before drawing.</para>
-/// </summary>
 public sealed class HudDetectionCoordinator : IDisposable
 {
     public const string FaultArea = "CROP";
@@ -76,7 +40,6 @@ public sealed class HudDetectionCoordinator : IDisposable
         _faults = faults ?? throw new ArgumentNullException(nameof(faults));
     }
 
-    /// <summary>The provider, if any. The UI reads <see cref="IAiHudDetectionService.ProviderName"/> for the privacy notice.</summary>
     public IAiHudDetectionService? AiService => _ai;
 
     public bool IsCurrent(long generation)
@@ -84,7 +47,6 @@ public sealed class HudDetectionCoordinator : IDisposable
         lock (_gate) return !_disposed && generation == _generation;
     }
 
-    /// <summary>Cancels the run in flight (if any) and invalidates everything it might still publish.</summary>
     public void Cancel()
     {
         CancellationTokenSource? old;
@@ -97,10 +59,6 @@ public sealed class HudDetectionCoordinator : IDisposable
         CancelQuietly(old);
     }
 
-    /// <param name="localReady">WANDPROGRESSIVE_01 — told once, with the local candidates, when the
-    /// offline scan has finished but the AI has not. Not called when there is no AI request, when the AI
-    /// already answered, or when the run is stale or cancelled. The final result still arrives through
-    /// the return value and still obeys AIHUD_03.</param>
     public async Task<HudDetectionResult?> RunAsync(
         HudDetectionRequest request,
         IProgress<HudAutoDetector.DetectionProgress>? progress = null,
@@ -214,7 +172,6 @@ public sealed class HudDetectionCoordinator : IDisposable
         return HudCandidateFusion.Fuse(local, converted);
     }
 
-    /// <summary>The Crop Tool's own floor for a usable box (matches its local-candidate filter).</summary>
     public const int MinSourcePixels = 4;
 
     private void ReportAiOutcome(AiHudDetectionResult result)
@@ -233,7 +190,6 @@ public sealed class HudDetectionCoordinator : IDisposable
             _faults.Degraded(FaultArea, message, technicalDetail: $"AI HUD outcome {result.Outcome}: {result.Detail}");
     }
 
-    /// <summary>Turns a contract-breaking provider exception into a ModelError result. Caller cancellation still propagates.</summary>
     private async Task<AiHudDetectionResult> RunAiGuardedAsync(IAiHudDetectionService ai, AiHudFrame frame, CancellationToken token)
     {
         try

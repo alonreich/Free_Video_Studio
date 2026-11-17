@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -7,19 +6,6 @@ using System.Text.RegularExpressions;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// PREVIEWMIX_01 — cuts an export filter graph down to the chains that produce ONE audio label.
-///
-/// The live preview's rendered mix is the export's OWN audio graph, not a re-implementation of it:
-/// ProcessWorker builds the full graph exactly as it would for the export, and this keeps only the
-/// chains the final audio label depends on. The single coupling between picture and sound in that
-/// graph — the meme splice <c>concat=n=N:v=1:a=1</c> — is rewritten to its audio half
-/// (<c>v=0:a=1</c>, audio inputs and output only). Video inputs are then never decoded, so a whole
-/// clip's final mix renders in seconds.
-///
-/// A kept chain whose output nothing kept consumes (e.g. one pad of a split whose other consumer
-/// was video) is terminated with <c>anullsink</c>, because ffmpeg rejects unconnected pads.
-/// </summary>
 public static class AudioGraphPruner
 {
     private static readonly Regex LeadingLabels = new(@"^(\s*\[[^\]]+\])+", RegexOptions.CultureInvariant);
@@ -29,7 +15,6 @@ public static class AudioGraphPruner
 
     private sealed record Chain(List<string> Inputs, string Body, List<string> Outputs);
 
-    /// <summary>Returns the pruned graph whose only exposed output is <paramref name="finalAudioLabel"/>.</summary>
     public static string Prune(string filterGraph, string finalAudioLabel)
     {
         string final = finalAudioLabel.Trim().Trim('[', ']');
@@ -75,7 +60,6 @@ public static class AudioGraphPruner
         return sb.ToString();
     }
 
-    /// <summary>"0:a", "12:v" — a reference to an input file's stream, not a graph label.</summary>
     private static bool IsStreamSpecifier(string label) => label.Length > 0 && char.IsDigit(label[0]) && label.Contains(':');
 
     private static Chain? Parse(string text)
@@ -99,7 +83,6 @@ public static class AudioGraphPruner
         return new Chain(inputs, t.Trim(), outputs);
     }
 
-    /// <summary>Splits on ';' outside single quotes (expressions may contain anything).</summary>
     private static IEnumerable<string> SplitTopLevel(string graph)
     {
         var sb = new StringBuilder();
@@ -119,19 +102,8 @@ public static class AudioGraphPruner
     }
 }
 
-/// <summary>
-/// PREVIEWMIX_01 — where the live preview's clock lands in the rendered mix.
-///
-/// The preview clock is BODY output seconds from MARK START (OutputTimeline, memes excluded). The
-/// rendered mix is the export's audio: thumbnail intro first, then the body starting at the
-/// fade-in pad, with every meme spliced in at its render-clock cut.
-/// </summary>
-/// <param name="IntroSec">Thumbnail-intro silence at the very start.</param>
-/// <param name="PadStartSec">Fade-in pad before MARK START (output seconds).</param>
-/// <param name="Memes">Each spliced meme: its cut in the render clock (intro included) and its length.</param>
 public sealed record AudioPreviewMap(double IntroSec, double PadStartSec, IReadOnlyList<(double CutRenderSec, double DurationSec)> Memes)
 {
-    /// <summary>Mix position for preview body time <paramref name="bodySec"/> (memes at that instant not yet played).</summary>
     public double MixSecFor(double bodySec)
     {
         double r = IntroSec + PadStartSec + Math.Max(0, bodySec);

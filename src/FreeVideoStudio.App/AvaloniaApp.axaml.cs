@@ -21,10 +21,6 @@ public partial class AvaloniaApp : Application
             Avalonia.Interactivity.RoutingStrategies.Bubble, true);
     }
 
-    /// <summary>
-    /// Never let a UI sound break a user action: the router and the engine are both
-    /// non-throwing by contract, and this is the final guard around both.
-    /// </summary>
     private static void DispatchUiSound(object? sender)
     {
         try
@@ -35,11 +31,6 @@ public partial class AvaloniaApp : Application
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
-    /// <summary>
-    /// AUD-MASTERVOL / VOLSHARED_01 — seed the suite master from what was saved (level from the
-    /// session state, mute from settings), then start the central persistence and the Windows
-    /// Volume Mixer sync (VOLSYNC_01). Never for the install/cleanup workers.
-    /// </summary>
     private static void StartSharedMasterVolume(IClassicDesktopStyleApplicationLifetime desktop)
     {
         try
@@ -63,13 +54,6 @@ public partial class AvaloniaApp : Application
         desktop.Exit += (_, _) => Infrastructure.WindowsAudioSessionSync.Stop();
     }
 
-    /// <summary>
-    /// ASYNCSAFE_01 — the last line of defence for UI-thread faults (an exception escaping an
-    /// event handler or an async continuation). Before this, the only hook was
-    /// AppDomain.UnhandledException, which can only log while the process dies. A recoverable
-    /// fault is now reported through the fault sink (a notice, the session survives); only a
-    /// fault that leaves the runtime itself unusable is allowed to end the process.
-    /// </summary>
     private static void OnDispatcherUnhandledException(object? sender, Avalonia.Threading.DispatcherUnhandledExceptionEventArgs e)
     {
         var ex = e.Exception;
@@ -100,13 +84,17 @@ public partial class AvaloniaApp : Application
 
         FreeVideoStudio.Core.Media.VideoRenderMode.Initialize();
         Infrastructure.SettingsManager.Load();
+        FreeVideoStudio.Core.Media.FreezeSoundEffect.SelectedProvider =
+            () => FreeVideoStudio.Core.Media.FreezeSoundEffect.Parse(Infrastructure.SettingsManager.Instance.FreezeSound);
         Infrastructure.ThemeManager.ApplyFromSettings();
+        Infrastructure.UiStallWatchdog.Start();
 
         Controls.Tactile.EnableGlobalRipple();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.Exit += (_, _) => UiSoundEffect.Shutdown();
+            desktop.Exit += (_, _) => Infrastructure.UiStallWatchdog.Stop();
 
             desktop.Exit += (_, _) => TaskbarProgress.Shutdown();
 
@@ -126,13 +114,13 @@ public partial class AvaloniaApp : Application
             {
                 string title = isInstallWorker ? "Free Video Studio Setup" : "Free Video Studio Uninstall";
                 var window = new DeploymentProgressWindow(title, DeploymentFootprint.InstallReportPath);
-                
+
                 void OnProgressHandler(string detail, int? percent)
                 {
                     window.UpdateStatus(detail);
                     if (percent.HasValue) window.UpdateProgress(percent.Value);
                 }
-                
+
                 DeploymentReporter.OnProgress += OnProgressHandler;
                 window.Closed += (s, e) => DeploymentReporter.OnProgress -= OnProgressHandler;
 
@@ -152,7 +140,7 @@ public partial class AvaloniaApp : Application
                         global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
                         return;
                     }
-                    
+
                     bool quiet = System.Linq.Enumerable.Any(argsList, a => a.Equals("--quiet", System.StringComparison.OrdinalIgnoreCase));
                     if (quiet)
                     {

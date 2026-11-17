@@ -169,7 +169,6 @@ public sealed class CommentaryServiceTests
     }
 }
 
-/// <summary>AICOMMENTARY_SPEED_01 / MERGE_01 / REPORT_01 — absolute times, speed-aware readability, segment merge, part retry.</summary>
 public sealed class CommentaryTimingTests
 {
     static CommentaryTimingTests()

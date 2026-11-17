@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -11,11 +10,6 @@ using FreeVideoStudio.App.Infrastructure;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// Meme System §1: one entry in the active meme directory, carrying the probed native
-/// dimensions and aspect ratio for the §2 UI guardrail. ToString() returns the file NAME so
-/// legacy string-based recovery/state comparisons keep working against combo items.
-/// </summary>
 public sealed class MemeItem
 {
     public string FileName { get; init; } = "";
@@ -23,39 +17,20 @@ public sealed class MemeItem
     public bool IsImage { get; init; }
     public int Width { get; set; }
     public int Height { get; set; }
-    /// <summary>§1 math: (float)Width / (float)Height. 0 when the probe failed.</summary>
     public float AspectRatio => Height > 0 ? (float)Width / Height : 0f;
-    /// <summary>Sentinel for the §4 "Download more memes..." action row (never exportable).</summary>
     public bool IsDownloadAction { get; init; }
 
-    /// <summary>
-    /// DOWNLOAD_01 / MEMECAT_01 — which kind of meme this action row fetches. Null on a real meme.
-    /// Songs have their own button in the Music Wizard.
-    /// The two used to be a SINGLE row that pulled every meme, so a user who wanted one more
-    /// reaction image had to download every video meme too. Both kinds now live in ONE repository
-    /// folder (`meme/`, MEMEFOLDER_01) and the category filters it by extension.
-    /// </summary>
     public MemeCategory? DownloadCategory { get; init; }
 
     public override string ToString() => FileName;
 }
 
-/// <summary>
-/// MEMECAT_01 — the two kinds of meme the library holds. Replaces the "mp4" / "jpeg" strings that
-/// were compared in three files and only meant something while the repository had one folder per
-/// kind.
-/// </summary>
 public enum MemeCategory
 {
     Video,
     Image,
 }
 
-/// <summary>
-/// Meme System §1 (scan + dimension probe) and §4 (cloud delta-sync from GitHub).
-/// All methods are exception-hardened: a failed probe yields Width/Height = 0 (item still
-/// usable), and a failed sync reports gracefully without touching the UI thread.
-/// </summary>
 public static class MemeCatalog
 {
     private static readonly string[] VideoExts = { ".mp4", ".mkv", ".avi" };
@@ -66,69 +41,18 @@ public static class MemeCatalog
     private const string CloudOwner = "alonreich";
     private const string CloudRepo = "Free_Video_Studio";
 
-    /// <summary>
-    /// MEMEFOLDER_01 — the ONE repository folder holding every meme, video and picture alike.
-    /// It replaced the separate `mp4/` and `jpeg/` folders. Clients older than this change still
-    /// ask for those folders and get a "not found" error — updating the app is the fix.
-    /// </summary>
     public const string CloudMemeFolder = "meme";
 
-    /// <summary>MEMECAT_01 — the file extensions that belong to a meme category.</summary>
     public static string[] ExtensionsFor(MemeCategory category) =>
         category == MemeCategory.Image ? ImageExts : VideoExts;
 
-    /// <summary>MEMECAT_01 — user-facing plural label for a category.</summary>
     public static string LabelFor(MemeCategory category) =>
         category == MemeCategory.Image ? "meme pictures" : "meme videos";
 
-    /// <summary>
-    /// ISSUE_10 — repo folder holding the song library.
-    /// docs/README.md (formerly project_structure.txt) documents mp3\ as an identically LFS-distributed asset folder, but
-    /// the sync only ever covered mp4 and jpeg, so there was no way for a user to get the songs
-    /// — the music library was bring-your-own with no in-app path to the shared collection.
-    /// </summary>
     private const string CloudSongFolder = "mp3";
 
-    /// <summary>ISSUE_11 — per-file progress for the sync UI.</summary>
-    /// <param name="FileName">The file currently being fetched.</param>
-    /// <param name="Completed">How many files have finished so far.</param>
-    /// <param name="Total">Total files this sync will fetch (0 until the listing completes).</param>
     public readonly record struct SyncProgress(string FileName, int Completed, int Total);
 
-    /// <summary>
-    /// §1 File Ingestion: scans the ACTIVE meme directory for supported formats, skipping
-    /// zero-byte files, and resolves each file's native dimensions (ffprobe for videos,
-    /// SkiaSharp for images). Runs fully off the UI thread.
-    /// §3 Exception Handling: UnauthorizedAccessException propagates so the Settings flow
-    /// can block the path change and revert; all other per-file errors are swallowed.
-    ///
-    /// <para>
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// MEMESCAN_01 — WHY THIS IS THREE PHASES INSTEAD OF ONE LOOP.
-    ///
-    /// WHAT WAS WRONG: a single foreach spawned ONE ffprobe child process per video, STRICTLY
-    /// SERIALLY, via <c>new MediaProber(...).GetResolutionAsync().GetAwaiter().GetResult()</c>.
-    /// Three separate costs compounded:
-    ///
-    ///   1. Serial process launches. ~100 ms each on Windows (CreateProcess + image load + ffprobe's
-    ///      own demuxer probe), and a single unreadable or network-backed file cost the full
-    ///      15-second MediaProber timeout on its own, blocking every file behind it.
-    ///   2. No memoisation, despite MediaProber having some. A NEW MediaProber was constructed
-    ///      inside the loop body and dropped on the next iteration, so its SemaphoreSlim-guarded
-    ///      _probeData cache never served a single hit on this path.
-    ///   3. Sync-over-async inside Task.Run. .GetAwaiter().GetResult() parks a thread-pool worker
-    ///      for the whole probe. The pool injects roughly one thread per 500 ms, so a large scan
-    ///      starved every other queued Task.Run in the app — filmstrip prewarm, size estimation,
-    ///      loudness probes — behind it.
-    ///
-    /// And this path is re-entered on window Loaded (cold start), on every MemeDirectory.Changed,
-    /// and immediately after a cloud sync — i.e. right when the library is at its largest.
-    ///
-    /// THE FIX: enumerate cheaply, resolve dimensions from a persisted (length, mtime)-keyed cache
-    /// and probe only the misses under a bounded worker pool with real awaits, then assemble.
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </para>
-    /// </summary>
     public static async Task<List<MemeItem>> ScanAsync(string directory, string ffprobePath)
     {
         long startTicks = Environment.TickCount64;
@@ -223,7 +147,6 @@ public static class MemeCatalog
         return items;
     }
 
-    /// <summary>MEMESCAN_01 — one file that survived filtering, carried through the three phases.</summary>
     private sealed class ScanCandidate
     {
         public string FileName = "";
@@ -235,11 +158,6 @@ public static class MemeCatalog
         public int Height;
     }
 
-    /// <summary>
-    /// MEMESCAN_01 — PHASE A. Pure filesystem work, no child processes, no decoding.
-    /// Establishes the canonical ordering (filename, ordinal-ignore-case) that PHASE C re-imposes
-    /// after the unordered parallel probe.
-    /// </summary>
     private static List<ScanCandidate> EnumerateCandidates(string directory)
     {
         var candidates = new List<ScanCandidate>();
@@ -283,13 +201,6 @@ public static class MemeCatalog
         return candidates;
     }
 
-    /// <summary>
-    /// §4 Cloud sync: lists the repo's meme folders via the GitHub contents API, downloads
-    /// only files that don't exist locally in <paramref name="targetDirectory"/> (delta sync).
-    /// Returns (downloadedCount, errorMessage) — errorMessage is null on success; on HTTP 403
-    /// (rate limit) or any network failure it returns the §4 mandated user-facing message.
-    /// </summary>
-    /// <summary>True if the file is a Git-LFS pointer (small text starting with the LFS spec line).</summary>
     private static bool IsLfsPointer(string path)
     {
         try
@@ -308,10 +219,6 @@ public static class MemeCatalog
         }
     }
 
-    /// <summary>
-    /// DOWNLOAD_01 / MEMEFOLDER_01 — downloads the missing memes of ONE category from the single
-    /// repository `meme/` folder into <paramref name="targetDirectory"/>.
-    /// </summary>
     public static Task<(int downloaded, string? error)> SyncMemesAsync(
         string targetDirectory,
         MemeCategory category,
@@ -320,45 +227,12 @@ public static class MemeCatalog
         => SyncFolderAsync(targetDirectory, CloudMemeFolder, ExtensionsFor(category),
                            category == MemeCategory.Image ? "Image memes" : "Video memes", progress, cancellationToken);
 
-    /// <summary>
-    /// ISSUE_10 — downloads missing SONGS (mp3 folder) into the user's music directory.
-    /// Mirrors the meme sync exactly, including the Git-LFS pointer handling, because the mp3
-    /// files are LFS-tracked too and would otherwise land as unplayable 130-byte text files.
-    /// </summary>
     public static Task<(int downloaded, string? error)> SyncSongsFromCloudAsync(
         string targetDirectory,
         IProgress<SyncProgress>? progress = null,
         CancellationToken cancellationToken = default)
         => SyncFolderAsync(targetDirectory, CloudSongFolder, SongSyncExts, "Songs", progress, cancellationToken);
 
-    /// <summary>
-    /// Shared delta-sync engine.
-    ///
-    /// ISSUE_11 — progress (the listing is enumerated FIRST so a real total is known), cancellation
-    /// (a cancelled transfer leaves no partial file behind), and distinct error messages.
-    ///
-    /// <para>
-    /// MEMESYNC_01 — WHY THE LISTING USES THE GIT TREES API AND NOT /contents.
-    /// The contents API returns at most 1,000 entries per folder and has no paging, so a library
-    /// past 1,000 files silently stopped growing. `git/trees/HEAD:{folder}` returns up to 100,000
-    /// entries in one call (and says so with `truncated` beyond that), and it reports each blob's
-    /// SIZE, which MEMESYNC_03 below depends on.
-    /// </para>
-    /// <para>
-    /// MEMESYNC_02 — A MISSING FOLDER IS AN ERROR, NOT "NOTHING NEW". A 404 on the listing used to
-    /// be logged and skipped, so the sync reported zero files to fetch and the UI said "You already
-    /// have everything" — a false statement the user had no way to see through. Any listing failure
-    /// now returns an error message.
-    /// </para>
-    /// <para>
-    /// MEMESYNC_03 — LFS FILES GO STRAIGHT TO THE LFS HOST. Media is Git-LFS tracked, so a raw
-    /// download of it returns a ~130-byte pointer file. The old engine downloaded that pointer
-    /// first, noticed, and then downloaded the real file — two requests per file. A blob whose
-    /// listed size is at most <see cref="LfsPointerMaxBytes"/> is a pointer, so its first request
-    /// goes to media.githubusercontent.com. The other host stays as the fallback, because
-    /// media.githubusercontent.com answers 404 for a file that is NOT in LFS.
-    /// </para>
-    /// </summary>
     private static async Task<(int downloaded, string? error)> SyncFolderAsync(
         string targetDirectory,
         string cloudFolder,
@@ -525,13 +399,8 @@ public static class MemeCatalog
         }
     }
 
-    /// <summary>MEMESYNC_03 — a Git-LFS pointer file is ~130 bytes; anything this small is one.</summary>
     private const long LfsPointerMaxBytes = 1024;
 
-    /// <summary>
-    /// MEMESYNC_03 — one attempt against one host. True only when <paramref name="tmp"/> now holds
-    /// real, non-empty content (not an LFS pointer). A 404 is a normal "not on this host" answer.
-    /// </summary>
     private static async Task<bool> TryDownloadAsync(HttpClient http, string url, string tmp, CancellationToken ct)
     {
         using (var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct))

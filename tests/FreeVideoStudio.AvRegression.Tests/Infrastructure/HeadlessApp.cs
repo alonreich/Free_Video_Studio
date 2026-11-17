@@ -7,7 +7,6 @@ using Avalonia.Themes.Fluent;
 
 namespace FreeVideoStudio.AvRegression.Tests;
 
-/// <summary>Headless Avalonia for the scenarios that open real windows (dialogs, the preview monitor).</summary>
 public class HeadlessApp : Application
 {
     public override void Initialize() => Styles.Add(new FluentTheme());

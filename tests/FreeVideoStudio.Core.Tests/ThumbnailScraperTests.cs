@@ -4,7 +4,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>SCRAPER_01 / SCRAPER_02 — the intro tag and the merged timeline shared by preview, music and export.</summary>
 public class ThumbnailScraperTests
 {
     private static MergeClipSource Clip(string p, double dur, double intro = 0.1) => new(p, dur, intro);

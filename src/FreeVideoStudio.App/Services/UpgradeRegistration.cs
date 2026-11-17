@@ -4,7 +4,6 @@ using Microsoft.Win32;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>UPGRADE_08 — snapshot shell state, replace owned links, and restore it on rollback.</summary>
 internal sealed class UpgradeRegistration(bool machine, string backupDirectory, string[] installRoots)
 {
     public bool DesktopAvailable => machine ? KnownFolders.GetPublicDesktop() != null : KnownFolders.GetDesktop() != null;
@@ -43,11 +42,6 @@ internal sealed class UpgradeRegistration(bool machine, string backupDirectory, 
         InstallDiscovery.Executables.Append("Uninstall.exe").Any(name =>
             string.Equals(Path.Combine(root, name), target, StringComparison.OrdinalIgnoreCase)));
 
-    /// <summary>
-    /// NOSPACE_01 — rewrites this user's EXISTING shortcuts whose target is inside one of
-    /// <paramref name="movedRoots"/> so they point at the current install. Creates nothing,
-    /// deletes nothing, and leaves unrelated shortcuts alone. Returns how many were rewritten.
-    /// </summary>
     public static async Task<int> RetargetUserLinksAsync(string[] movedRoots)
     {
         var probe = new UpgradeRegistration(false, Path.GetTempPath(), movedRoots);
@@ -150,12 +144,6 @@ internal sealed class UpgradeRegistration(bool machine, string backupDirectory, 
         }
     }
 
-    /// <summary>
-    /// CFASAFE_01 — Desktop is a folder Windows' "Controlled folder access" protects. When Windows
-    /// refuses this program there, the Desktop icon is skipped instead of failing the step: it used to
-    /// throw, so the Start menu entry after it was never written, the step was retried at every start,
-    /// and every retry showed a Windows "blocked" notification. The Start menu entry is always written.
-    /// </summary>
     private static bool DesktopWritable(string desktop)
     {
         if (Infrastructure.ProtectedFolderGate.CanWriteNow(desktop)) return true;
@@ -347,6 +335,5 @@ internal sealed class UpgradeRegistration(bool machine, string backupDirectory, 
         }
     }
 
-    /// <summary>NOPOWERSHELL_01 — read through the Shell's own COM object, never powershell.exe.</summary>
     internal static Task<string> ReadTargetAsync(string path) => ShellLinkWriter.ReadTargetAsync(path);
 }

@@ -24,7 +24,6 @@ namespace FreeVideoStudio.App;
 
 public partial class MainWindow : Window
 {
-
     private MpvVideoView? _videoHost;
 
     private PreviewDetachController? _previewDetach;
@@ -74,38 +73,21 @@ public partial class MainWindow : Window
     public int MainSpeedSliderValue { get => _viewModel.MainSpeedSliderValue; set => _viewModel.MainSpeedSliderValue = value; }
     public double MainVolume { get => _viewModel.MainVolume; set => _viewModel.MainVolume = value; }
 
-    /// <summary>
-    /// PREWARM_01 — the film-lane prewarm stays ASLEEP until the user has deliberately marked an
-    /// end point. Loading a video sets a full-range trim automatically, and warming on that would
-    /// spend a background render on a range most users immediately replace. Armed by MARK END and
-    /// by the end-marker drag; reset when a different video is loaded.
-    /// </summary>
     private bool _prewarmArmed = false;
 
-    /// <summary>
-    /// ISSUE_10 — the loaded clip's full length in milliseconds, cached the moment it becomes known.
-    ///
-    /// WHY THIS EXISTS: the export used to take the duration straight off the live mpv player
-    /// (`ActiveVideoHost?.IpcClient?.Duration ?? 0.0`). If the player had been torn down or had not
-    /// reported yet when PROCESS was pressed, that produced 0 — and with no trim end set, the
-    /// exporter was told the clip ends at 0 ms. FFmpeg was then asked for a zero-length segment and
-    /// the user got a cryptic encoder failure instead of their video. This field survives the
-    /// player, so the export always has a real number to fall back on.
-    /// </summary>
     private double _loadedVideoDurationMs = 0;
 
-    private NAudio.Wave.WaveOut? _voiceOverPlayer;
+    private NAudio.Wave.WaveOutEvent? _voiceOverPlayer;
     private FreeVideoStudio.Core.Media.WavAudioReader? _voiceOverReader;
     private readonly List<VoiceOverPreviewTake> _voiceOverPreviewTakes = new();
 
     private sealed class VoiceOverPreviewTake
     {
         public required VoiceOverTake Take { get; init; }
-        public required NAudio.Wave.WaveOut Player { get; init; }
+        public required NAudio.Wave.WaveOutEvent Player { get; init; }
         public required FreeVideoStudio.Core.Media.WavAudioReader Reader { get; init; }
         public double StartProjectSec { get; set; }
-        /// <summary>MUSICSYNC_02 — consecutive out-of-tolerance readings (PreviewAudioSync).</summary>
-        public int DriftStrikes;
+        public long DriftSinceMs;
     }
 
     private Avalonia.Controls.Control? _thumbnailCameraControl;
@@ -137,15 +119,6 @@ public partial class MainWindow : Window
         SchedulePrewarm();
     }
 
-    /// <summary>
-    /// PREWARM_01 — the moment the trim range is known, start building the film lane every later
-    /// screen will want. Called from every place the trim can change; the service debounces, so a
-    /// marker drag firing this per pointer-move costs one render, not one per frame.
-    /// Fire-and-forget by design: it never blocks, never reports, and a failure is invisible
-    /// because every consumer can still render the lane itself.
-    /// The duration MUST be computed the same way the consumers compute theirs
-    /// (`GranularSpeedEditorWindow.GetDuration`, VoiceOver's `durationSec`) or the key will not
-    /// match and the prewarm is silently wasted rather than wrong.
     private static string ResolveFfmpegPath() => ExportViewModel.ResolveFfmpegPath();
 
     private void SchedulePrewarm()
@@ -172,25 +145,12 @@ public partial class MainWindow : Window
     private bool _draggingMusicStart = false;
     private bool _draggingMusicEnd = false;
     private bool _draggingMusicBlock = false;
-    private FreeVideoStudio.Core.Media.MpvIpcClient? _musicPreviewIpcClient;
-    private bool _isMusicPreviewPlaying = false;
     private DispatcherTimer? _playbackTimer;
     private bool _isTimerUpdatingSlider = false;
     private readonly ApplicationPaths _paths = ApplicationPaths.CreateDefault();
 
     private bool _isMusicBlockFocused = false;
 
-    /// <summary>
-    /// Set by the music block's own PointerPressed to stop the window-level "click elsewhere =
-    /// deselect" handler from immediately undoing the selection it just made.
-    ///
-    /// Needed because that window handler now listens with handledEventsToo:true (so the trim
-    /// markers can mark their press Handled and keep their pointer capture). Without this guard
-    /// the sequence would be: musicRect sets focus TRUE -> event bubbles -> window handler sees a
-    /// focused block and sets it FALSE -> the block could never stay selected, and Delete would
-    /// stop working on it. Consumed by the very next bubble of the same gesture, which is
-    /// guaranteed to happen because the window is the root ancestor.
-    /// </summary>
     private bool _suppressNextMusicDeselect = false;
     private Avalonia.Controls.Shapes.Rectangle? _musicBlockRectRef;
     private Avalonia.Controls.Control? _musicStartPopupRef;
@@ -201,25 +161,6 @@ public partial class MainWindow : Window
     private bool _isThumbnailMarkerSelected = false;
     private bool _isDraggingThumbnailMarker = false;
 
-    /// <summary>
-    /// TIMELINEDRAW_01 — THE one list of "a marker gesture is in flight", and the ONLY place it
-    /// may be written down.
-    ///
-    /// <para>WHY THIS EXISTS. <c>UpdateTimelineMarkers</c> clears and recreates the marker controls,
-    /// so a rebuild in the middle of a gesture destroys the very control holding pointer capture —
-    /// the drag then dies under the user's cursor. The guard against that used to be a LOCAL
-    /// boolean, spelled out by hand at one call site in <c>MainWindow.Wireup.cs</c>, while the
-    /// other twenty-nine call sites had no guard at all. THUMB_02 records what that costs: the
-    /// thumbnail marker was simply missing from that hand-written list, and the bug was exactly
-    /// the dropped drag described above.</para>
-    ///
-    /// <para>A hand-copied list of six fields in one place is a list that will be wrong again the
-    /// next time a seventh draggable is added. One property, referenced everywhere, cannot be
-    /// forgotten at a call site — and the render pass itself now consults it, so protection no
-    /// longer depends on each caller remembering.</para>
-    ///
-    /// <para>⚠️ ADD NEW DRAGGABLE TIMELINE ELEMENTS HERE. Nowhere else.</para>
-    /// </summary>
     private bool IsMarkerGestureActive =>
         _draggingStartMarker || _draggingEndMarker ||
         _draggingMusicStart || _draggingMusicEnd || _draggingMusicBlock ||
@@ -230,43 +171,13 @@ public partial class MainWindow : Window
 
     private bool _isTimelineDrawn = false;
     private string _loadedVideoPath = string.Empty;
-    /// <summary>
-    /// EXPORTSESSION_01 / EXPORTSESSION_02 — the export lifecycle (single-flight gate, Running ->
-    /// Cancelling -> Idle, the CancellationTokenSource and the in-flight Task) is owned by
-    /// <see cref="ExportCoordinator"/>, not by this window. See 03 §8b FFM-EXPORTLIFETIME.
-    /// </summary>
     private readonly IExportCoordinator _exportCoordinator =
         new ExportCoordinator(FreeVideoStudio.Core.Abstractions.Faults.Sink);
 
 private readonly RecoveryManager _recovery = new RecoveryManager();
 
-/// <summary>
-/// RECOVERY / WRONG-STATE FIX. True from the moment an export finishes successfully until the
-/// user makes their next real edit.
-///
-/// THE BUG THIS CLOSES. The success path showed FinishedDialogWindow and never cleared the
-/// recovery state, while every edit flag (_trimStartSet, _isMusicActive, _speedSegments, ...)
-/// stayed set. HasUnsavedWork() therefore still reported TRUE for work that had just been
-/// exported and saved, which produced three separate wrong behaviours:
-///   1. switching to Video Merger / Crop Tools re-saved recovery data for finished work and
-///      then asked "you have unsaved work, are you sure?" about a file already on disk;
-///   2. the same switch path wrote a fresh state file on the way out;
-///   3. the NEXT launch saw that state file, RecoveryManager.CheckFault() returned true, and the
-///      user was asked to "restore your previous work" after a session that completed perfectly.
-///
-/// Clearing the state file alone is enough to silence CheckFault (it early-returns when the file
-/// is absent), but not enough on its own: SaveRecoveryState is wired to ~25 UI events and the
-/// very next one would re-arm it, because HasUnsavedWork was still true. Hence this flag, which
-/// HasUnsavedWork honours and which the first genuine edit clears.
-/// </summary>
     private bool _isRestoring = false;
 
-    /// <summary>
-    /// PROJSESSION_01 — the document the user is editing, its undo history, and save/open.
-    /// Built in the constructor so Ctrl+S works before any video is loaded (it reports "load a
-    /// video first" rather than doing nothing, which is the difference between a disabled feature
-    /// and a broken one). Null only if construction itself failed.
-    /// </summary>
     private Services.ProjectSession? _projectSession;
 
     private KineticScrubController? _kineticScrub;
@@ -307,10 +218,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         this.Opened += (s, e) => { _ = FreeVideoStudio.App.Services.UpdateService.RunStartupCheckAsync(this); };
     }
 
-    /// <summary>
-    /// ISSUE_03 — handles a file path pushed to us by another launch of the app. Arrives on a
-    /// background pipe thread, so everything is marshalled to the UI thread.
-    /// </summary>
     private void OnVideoHandedOffFromAnotherLaunch(string path)
     {
         Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
@@ -341,47 +248,8 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     private Task<double> ProbeMusicDurationSecondsAsync(string musicPath)
         => MemeManagementService.ProbeMusicDurationSecondsAsync(ResolveFfmpegPath(), musicPath);
 
-    /// <summary>
-    /// MEMECOMBO_01 — monotonic scan generation. Only the NEWEST scan may write state.
-    ///
-    /// <para>
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// THE DEFECT THIS EXISTS TO CLOSE. <see cref="PopulateMemeComboBox"/> was <c>async void</c>
-    /// with no single-flight gate. It has at least three concurrent entry points — this.Loaded
-    /// (MainWindow.Wireup.cs), the STATIC MemeDirectory.Changed event (raised from SettingsWindow),
-    /// and RunCloudMemeSyncAsync after a download batch — and each returns to its caller at the
-    /// first await. Two overlapping invocations therefore both resumed, and whichever
-    /// ScanMemesAsync finished LAST won the write to _memeItems and to the ComboBox, regardless of
-    /// which was started last.
-    ///
-    /// Because a scan's duration is proportional to library size, the SLOWER, OLDER scan reliably
-    /// won: the user changed the meme folder, the new folder's short scan landed first, and then
-    /// the old folder's long scan overwrote it. The combo then listed memes that were no longer in
-    /// the active directory, and picking one handed a stale FullPath straight into the export
-    /// payload.
-    ///
-    /// _pendingMemeRestorePath made it worse. It is a read-null-write of shared state with no
-    /// ordering guarantee, so the FIRST invocation to resume consumed it — and if a later one won
-    /// the list write, the recovery-restore selection was silently dropped with no error anywhere.
-    ///
-    /// A superseded scan now writes NOTHING: not _memeItems, not ItemsSource, not the restore path.
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </para>
-    /// </summary>
     private int _memeScanGeneration;
 
-    /// <summary>
-    /// MEMECOMBO_01 — the event-compatible member. Kept parameterless and Action-shaped so
-    /// <c>MemeDirectory.Changed += PopulateMemeComboBox</c> and its matching <c>-=</c> in
-    /// MainWindow.Wireup.cs stay symmetrical.
-    ///
-    /// <para>It is deliberately NOT <c>async void</c>. MemeDirectory.NotifyChanged wraps its
-    /// <c>Changed?.Invoke()</c> in a try/catch, but that catch only ever covered the SYNCHRONOUS
-    /// prefix of an async handler — everything up to the first await. Anything thrown after the
-    /// resume (an ItemTemplate build, an ItemsSource assignment) escaped onto the dispatcher
-    /// unobserved and took the process with it. The faulted continuation below is what makes that
-    /// impossible.</para>
-    /// </summary>
     private void PopulateMemeComboBox()
     {
         _ = PopulateMemeComboBoxAsync().ContinueWith(
@@ -469,18 +337,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         }
     }
 
-    /// <summary>
-    /// STARTER_01 — first-run delivery of the shipped songs and memes.
-    ///
-    /// MEMEFOLDER_02 — the move of an old <c>Videos\Free Video Studio\Memes</c> folder to
-    /// <c>Videos\FreeVideoStudio\Memes</c> is NOT done here: it is started once at app startup
-    /// (MEMEPURE_01, <see cref="MemeDirectory.StartLegacyMigration"/>) and awaited here, so the
-    /// scan, a recovery restore and this delivery can never see the folder half-moved.
-    ///
-    /// The combo is populated on window Loaded in parallel with this method. When this method
-    /// actually adds files, the combo is re-scanned afterwards — before, a first launch raced the
-    /// delivery and could show an empty meme list until the app was restarted.
-    /// </summary>
     private async Task PushAssetsAsync()
     {
         try
@@ -640,7 +496,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         e.Handled = true;
     }
 
-    /// <summary>ASYNCSAFE_01 — Avalonia handler; the work is a Task whose every fault is reported, never rethrown on the dispatcher.</summary>
     private void OnVideoDrop(object? sender, DragEventArgs e) => _ = OnVideoDropAsync(e);
 
     private async Task OnVideoDropAsync(DragEventArgs e)
@@ -669,11 +524,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         }
     }
 
-    /// <summary>
-    /// Shared entry point for externally dropped files (Avalonia OLE drop and the
-    /// WM_DROPFILES fallback). Loads the first supported video straight into the
-    /// preview player, exactly as if it had been uploaded.
-    /// </summary>
     private async Task HandleExternalFileDropAsync(string[] paths)
     {
         foreach (var path in paths)
@@ -818,6 +668,8 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             return;
         }
 
+        if (!await ConfirmReplaceLoadedVideoAsync(path)) return;
+
         RuntimeLog.Info("UI", $"User {source} video: {Path.GetFileName(path)}");
         RuntimeLog.Debug("UI", $"Full path: {path}");
         ShowTacticalFeedback("Loading video...");
@@ -859,9 +711,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         var uploadOverlay = UploadOverlayCtl;
         if (uploadOverlay != null) uploadOverlay.IsVisible = false;
 
-        var timelineOverlay = TimelineOverlayCtl;
-        if (timelineOverlay != null) timelineOverlay.IsVisible = true;
-
         EnableEditingControls();
 
         BeginProjectHistory();
@@ -873,28 +722,12 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             _ = RunAiEliminationScanAsync(path);
     }
 
-    /// <summary>The user's peak-softening answer for THIS video. Null until the probe has
-    /// finished, in which case the export falls back to the stored preference.</summary>
     private bool? _applyPeakFlattening;
 
-    /// <summary>
-    /// The uploaded file's measured loudness. Used ONLY as a fallback reference for the export's
-    /// peak tamer and meme matching (the export measures its own range first). Nothing normalises
-    /// the gameplay — LOUDSTD_REMOVED_01.
-    /// </summary>
     private double? _gameplayLoudnessLufs;
 
-    /// <summary>Cancels an in-flight probe when a second video is loaded over the first.</summary>
     private CancellationTokenSource? _peakProbeCts;
 
-    /// <summary>
-    /// PEAKSAFE_01 — on upload, measure the clip and, if it hides a sudden extreme peak, ask (per
-    /// Settings › "Sudden loud moments") whether the export should soften it.
-    ///
-    /// LOUDSTD_REMOVED_01 — this used to ALSO compare the clip against a -14 LUFS "industry
-    /// standard" and offer to normalise it. That offer did nothing (the normalisation pipeline had
-    /// already been removed) and is gone, with its setting.
-    /// </summary>
     private async Task RunAudioPeakCheckAsync(string path)
     {
         try { _peakProbeCts?.Cancel(); } catch (System.ObjectDisposedException swallowed8)
@@ -923,6 +756,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             if (!string.Equals(_loadedVideoPath, path, StringComparison.OrdinalIgnoreCase)) return;
 
             _gameplayLoudnessLufs = reading.IntegratedLufs;
+            FreeVideoStudio.Core.Media.VideoLoudnessCache.Set(path, reading.IntegratedLufs);
 
             if (settings.PeakFlatteningPrompt != Infrastructure.AudioFixPrompt.Ask)
             {
@@ -1019,42 +853,10 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         var voBtn = VoiceOverButtonCtl;
         if (voBtn != null) voBtn.IsEnabled = false;
         _cuts.Clear();
-        
+
         SaveRecoveryState(label: "clear edits");
     }
 
-    /// <summary>
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// CAPTIONWIPE_01 — EMPTIES THE TEXT STRIP'S CAPTION BETWEEN VIDEOS.
-    ///
-    /// THE BUG THIS FIXES. The caption is a per-video TITLE, typed into PortraitTextInput and burnt
-    /// into the top strip of the finished portrait file. It was the only piece of the project that
-    /// survived both a finished export AND the loading of a different clip, so a session's second
-    /// video silently inherited the first one's title, the third inherited it again, and nothing on
-    /// screen flagged it — the box still showed the words, and a user who had already read them once
-    /// does not read them a second time. The mistake only surfaces in the exported file, after it has
-    /// been rendered and possibly uploaded.
-    ///
-    /// WHEN IT RUNS. Both ends of the cycle, because either one alone leaves a hole:
-    ///   • after a SUCCESSFUL export (MainWindow.Export.cs) — that video is finished with;
-    ///   • when a different clip is loaded (<see cref="ResetEditingStateForNewVideo"/>) — covers
-    ///     the user who abandons a clip without exporting it, and the recovery-restore path that
-    ///     loads a clip straight into a fresh session.
-    ///
-    /// It does NOT run on cancel or on a failed export: the user is still working on that video and
-    /// deleting their title would be its own small disaster.
-    ///
-    /// ORDER MATTERS AT THE EXPORT CALL SITE. Writing OverlayText fires the ViewModel's
-    /// NotifyStateDirty, which re-arms the recovery state and clears ExportedCleanSinceLastEdit —
-    /// so this must be called BEFORE `_exportedCleanSinceLastEdit = true`, or a clean export would
-    /// immediately look dirty again and the crash-recovery prompt would be armed for a project that
-    /// is finished and saved.
-    ///
-    /// Settings → Defaults → "Leave text from Video to Video" turns the whole thing off for people
-    /// who genuinely retype the same title every time; the flag ships OFF.
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
-    /// <param name="reason">Logged, so the runtime log says which of the two paths cleared it.</param>
     private void ClearOverlayTextForNextVideo(string reason)
     {
         if (FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.KeepOverlayTextBetweenVideos)
@@ -1123,17 +925,13 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         return ActiveVideoHost.IpcClient.Duration > 0;
     }
 
-    /// <summary>
-    /// Applies user-configured default values from Settings to the UI controls.
-    /// </summary>
     private void ApplyDefaults()
     {
         var d = SettingsManager.Instance.Defaults;
         _baseSpeed = d.StartSpeed;
         var speedSliderReset = MainSpeedSliderCtl;
         if (speedSliderReset != null) speedSliderReset.Value = (int)Math.Round(_baseSpeed * 10.0, MidpointRounding.AwayFromZero);
-        if (ActiveVideoHost?.IpcClient != null)
-            _ = ActiveVideoHost.IpcClient.SetPropertyAsync("speed", _baseSpeed.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
+        ForcePreviewSpeed();
 
         var qs = QualitySliderCtl;
         if (qs != null && !_qualitySliderInitialized) 
@@ -1141,7 +939,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             qs.Value = FreeVideoStudio.App.ViewModels.QualityLadder.ClampIndex(d.StartQualityIndex);
             _qualitySliderInitialized = true;
         }
-
 
         var portrait = PortraitModeCheckboxCtl;
         if (portrait != null) portrait.IsChecked = d.StartPortrait;
@@ -1158,14 +955,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         ApplyMaskProfileToOverlayUi();
     }
 
-    /// <summary>
-    /// Enables all editing controls and right-pane checkboxes after a video is uploaded.
-    /// This reverts the initial disabled state set in XAML (IsEnabled="False").
-    /// </summary>
-    /// <summary>
-    /// UXQA_01: keeps "Detach Preview Monitor" in the menu greyed out until there is actually a clip
-    /// to pop out, with a tooltip explaining why, instead of accepting the click and doing nothing.
-    /// </summary>
     private void SetDetachMenuAvailable(bool available)
     {
         var menuTogglePreview = MenuTogglePreviewMonitorCtl;
@@ -1178,6 +967,9 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
     private void EnableEditingControls()
     {
+        var timelineOverlay = TimelineOverlayCtl;
+        if (timelineOverlay != null) timelineOverlay.IsVisible = true;
+
         var detachBtn = DetachOverlayButtonCtl;
         if (detachBtn != null) detachBtn.IsVisible = true;
         SetDetachMenuAvailable(true);
@@ -1196,7 +988,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
         var playPause = PlayPauseButtonCtl;
         if (playPause != null) playPause.IsEnabled = true;
-        
+
         var voiceOver = VoiceOverButtonCtl;
         if (voiceOver != null) voiceOver.IsEnabled = true;
 
@@ -1265,9 +1057,9 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             try
             {
                 string tempPngPath = System.IO.Path.Combine(_paths.TempDirectory, "preview_portrait_text.png");
-                
+
                 FreeVideoStudio.Core.Media.TextOverlayGenerator.GeneratePng(portraitTextInput.Text ?? "", tempPngPath);
-                
+
                 using (var stream = System.IO.File.OpenRead(tempPngPath))
                 {
                     var bitmap = new Avalonia.Media.Imaging.Bitmap(stream);
@@ -1281,7 +1073,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
                 RuntimeLog.Fail("UI", ex);
             }
         }
-        
+
         ApplyPortraitModeToActiveHost();
     }
 
@@ -1320,7 +1112,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
                 detached.SetSkiaTextPlaceholder(previewPortraitImage.Source as Avalonia.Media.Imaging.Bitmap);
             }
         }
-        
+
         if (ActiveVideoHost?.IpcClient != null)
         {
             _ = ActiveVideoHost.IpcClient.SetPropertyAsync("vf", "");
@@ -1333,24 +1125,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     {
     }
 
-    /// <summary>
-    /// Shows tactical feedback text (e.g., "🏁 01:23.45") that MUST be visible on top of the
-    /// playing video. Because MpvVideoView extends NativeControlHost, the native MPV HWND
-    /// paints over ALL Avalonia overlays on Windows — including MPV's own OSD layer (which
-    /// does not render in --wid embedded mode). The ONLY reliable way to show overlay text
-    /// on top of the embedded native video surface is to use an Avalonia Popup, which creates
-    /// a SEPARATE native popup window (WS_POPUP) with its own z-order that floats above the
-    /// MPV HWND.
-    ///
-    /// The Popup is positioned at bottom-center of the video area (VerticalOffset=-80 from the
-    /// bottom edge of VideoAreaBorder), matching the original bottom-center feedback position.
-    /// Styling: golden text (#facc15) on 50% semi-transparent dark blue (#0f1b3a) background.
-    /// </summary>
-    /// <summary>
-    /// ISSUE_05 — fills the cheat sheet from the user's OWN key binds, never the factory defaults.
-    /// Rebuilt on every open so a rebind in Settings is reflected without restarting the app.
-    /// </summary>
-
     private void BuildShortcutSheetRows()
     {
         var rows = this.FindControl<StackPanel>("ShortcutSheetRows");
@@ -1362,7 +1136,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     private void ShowTacticalFeedback(string text)
         => Controls.FloatingNotice.Show(this, text);
 
-    /// <summary>ISSUE_09 — the red variant, for an action the user attempted that could not run.</summary>
     private void ShowTacticalError(string text)
         => Controls.FloatingNotice.Error(this, text);
 
@@ -1408,10 +1181,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         });
     }
 
-    /// <summary>
-    /// DETACH_01: builds this window's half of the shared detach mechanism. Everything about
-    /// MOVING the preview is the controller's job; this supplies the Main App's own trimmings.
-    /// </summary>
     private PreviewDetachController BuildPreviewDetachController()
     {
         var controller = new PreviewDetachController(
@@ -1466,12 +1235,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
     private double SourceMsToOutputSeconds(double sourceMs, IReadOnlyList<SpeedSegment>? segments = null)
         => _viewModel.Timeline.SourceMsToOutputSeconds(sourceMs, segments);
-    /// <summary>
-    /// SPEEDLABEL_01 — the speed → description/colour ladder was duplicated BYTE FOR BYTE between
-    /// this window and the other one, control name included. It is a product decision the user
-    /// reads ("1.2x — Slight Boost"), so the two windows must never be able to disagree about it.
-    /// One ladder now, in <see cref="Infrastructure.SpeedLabel"/>.
-    /// </summary>
     private void UpdateSpeedLabel() => Infrastructure.SpeedLabel.Apply(this, _baseSpeed);
 
     private void ApplyMainSpeedPreset(double speed)
@@ -1481,12 +1244,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
         double previousSpeed = _baseSpeed;
         _baseSpeed = Math.Clamp(speed, 0.1, 4.0);
-        if (ActiveVideoHost?.IpcClient != null)
-        {
-            _ = ActiveVideoHost.IpcClient.SetPropertyAsync(
-                "speed",
-                _baseSpeed.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
-        }
+        ForcePreviewSpeed();
 
         if (Math.Abs(previousSpeed - _baseSpeed) > 0.001)
             InvalidateVoiceOverRecordingForTimingChange();
@@ -1537,12 +1295,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
     private void AdjustPreviewMasterVolume(int delta) => Infrastructure.MasterVolumeUi.Nudge(delta);
 
-    /// <summary>
-    /// AUD-MASTERVOL — re-applies the suite master to this window's players: the gameplay player with
-    /// the Music Wizard VIDEO fader, the music player with the MUSIC fader (both LINEAR, as exported;
-    /// the master's level/mute/curve is added by ApplyPreviewGainAsync). Runs after every master
-    /// change from ANY window (VOLSHARED_01) and after the Music Wizard returns.
-    /// </summary>
     private void ApplyPreviewPlayersVolume()
     {
         double videoBase = 1.0;
@@ -1555,7 +1307,8 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         }
 
         _ = ActiveVideoHost?.IpcClient?.ApplyPreviewGainAsync(videoBase * PreviewGameDuckGain());
-        _ = _musicPreviewIpcClient?.ApplyPreviewGainAsync(musicBase * PreviewMusicDuckGain());
+        _freezeSound.SetGameBalance(videoBase * PreviewGameDuckGain());
+        _musicBed?.ApplyGain();
         ApplyPreviewMixVolume();
     }
 
@@ -1587,7 +1340,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
     private bool _tickFaultLogged;
 
-    /// <summary>Last crop pushed to mpv, so an unchanged value is never re-sent every tick.</summary>
     private string _lastLiveCrop = "";
 
     private void UpdateLiveZoomCrop()
@@ -1610,10 +1362,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         _ = ipc.SetPropertyAsync("video-crop", result.Crop);
     }
 
-    /// <summary>
-    /// Drops any simulated crop. MUST be called whenever the zoom data changes or the video is
-    /// swapped, otherwise a stale crop from the previous clip stays on screen.
-    /// </summary>
     private void ClearLiveZoomCrop()
     {
         if (_lastLiveCrop.Length == 0) return;
@@ -1642,7 +1390,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         {
             _memePreview.SetMemes(previewMemes);
             _memePreview.Tick();
-            if (_memePreview.IsActive) { _cornerMemes?.Hide(); return; }
+            if (_memePreview.IsActive) { _cornerMemes?.Hide(); UpdateMusicDuringMeme(); return; }
         }
         UpdateCornerMemeOverlay();
 
@@ -1696,6 +1444,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
                     $"Freeze hold started at {currentAbsMs:F0}ms (anchor {_freezeTimeMs:F0}ms, {_freezeDurationS:0.0}s).");
                 TransportTrace("freeze-hold-start", "pause");
                 _ = ActiveVideoHost.IpcClient.SetPropertyAsync("pause", "yes");
+                StartLiveFreezeSound();
                 return;
             }
 
@@ -1719,16 +1468,9 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             }
         }
 
-        if (!ActiveVideoHost.IpcClient.IsPaused && _speedSegments.Count > 0)
-        {
-            double targetSpeed = GetSpeedForPosition(currentAbsMs);
-            if (Math.Abs(targetSpeed - _lastAppliedSpeed) > 0.001)
-            {
-                _lastAppliedSpeed = targetSpeed;
-                _ = ActiveVideoHost.IpcClient.SetPropertyAsync("speed",
-                    targetSpeed.ToString("0.0###", System.Globalization.CultureInfo.InvariantCulture));
-            }
-        }
+        FollowPreviewSpeed(ActiveVideoHost.IpcClient);
+        _ = _previewSpeed.ApplyAt(ActiveVideoHost.IpcClient, currentAbsMs / 1000.0,
+            !ActiveVideoHost.IpcClient.IsPaused && !ActiveVideoHost.IpcClient.IsSeeking && !_isSeeking, PreviewOutputSeconds(time));
 
         var timeElapsed = this.FindControl<TextBlock>("TimeElapsed");
         if (timeElapsed != null) timeElapsed.Text = FormatTime(TimeSpan.FromSeconds(displayTime));
@@ -1764,22 +1506,12 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         }
     }
 
-    /// <summary>
-    /// G03 / issue 2 — resolves which encoder an export requests.
-    ///
-    /// This is now a thin wrapper over <see cref="ExportEncoderStrategy.Resolve"/>, which the
-    /// Video Merger calls too. The precedence logic lives THERE, once, so the two applications
-    /// can no longer drift apart — previously the Merger ignored both the Settings override and
-    /// the boot scan and hardcoded "GPU".
-    /// </summary>
-
     private string ResolveHardwareMode() => _viewModel.Export.ResolveHardwareMode();
 
     private async Task InitializeHardwareScanAsync() => await _viewModel.Export.InitializeHardwareScanAsync();
 
     private bool CheckRdpGpuBlocked() => ExportViewModel.CheckRdpGpuBlocked();
 
-    /// <summary>ASYNCSAFE_01 — XAML Click handler forwards to a Task that reports its own faults.</summary>
     private void RdpFixButton_Click(object? sender, RoutedEventArgs e) => _ = RdpFixAsync();
 
     private async Task RdpFixAsync()
@@ -1804,11 +1536,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     }
     private double GetCurrentMpvTime() { return ActiveVideoHost?.IpcClient?.CurrentTime ?? 0.0; }
 
-    /// <summary>
-    /// Looks up the playback speed for a given absolute position (in ms).
-    /// Returns the segment's speed if the position falls within a speed segment,
-    /// otherwise returns the base speed. Freeze segments (speed ≈ 0) return 0.
-    /// </summary>
     private double GetSpeedForPosition(double positionMs)
     {
         foreach (var seg in _speedSegments)
@@ -1821,7 +1548,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         return _baseSpeed;
     }
 
-    /// <summary>ASYNCSAFE_01 — a video-host start failure is reported, never allowed to end the process.</summary>
     private void InitializeMpv() => _ = InitializeMpvAsync();
 
     private async Task InitializeMpvAsync()
@@ -1848,36 +1574,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         });
     }
 
-    /// <summary>
-    /// Coalescing seek. At most one seek is in flight; anything requested while one is running is
-    /// remembered and issued when <see cref="OnSeekCompleted"/> fires.
-    ///
-    /// ===== ISSUE_06 — the "in flight" flag must only be raised if a seek is REALLY in flight ====
-    /// WHAT WAS WRONG: `_isSeeking = true` was set BEFORE the player was checked for null. The
-    /// only thing that ever clears that flag is the SeekCompleted callback, which the player
-    /// raises. So whenever there was no player — preview failed to start, GPU-less/RDP machine
-    /// where the fallback also failed, libmpv missing, or simply a seek attempted during teardown
-    /// — the flag was raised and NOTHING could ever lower it again. From that instant the
-    /// timeline slider, arrow-key frame stepping and every marker drag stopped moving the
-    /// playhead, silently, for the rest of the session: the user dragged the scrubber and nothing
-    /// happened, with no message anywhere.
-    ///
-    /// The check now happens FIRST and the flag is only raised once the command has actually been
-    /// handed to the player. The try/catch is the matching guarantee for the other direction: if
-    /// the command throws, the flag comes back down instead of wedging the timeline.
-    /// </summary>
-    /// <summary>
-    /// RETURN_01 — park the preview at MARK START, paused, after any sub-editor closes.
-    ///
-    /// Coming back from the Granular editor, the Voice Over studio or the Music Wizard, the
-    /// playhead was left wherever that window had wandered to — in practice the MARK END position,
-    /// i.e. the very end of the clip. The user has just changed something and wants to watch it
-    /// back, and the one thing they cannot do from the end is press play. Parking at the trim
-    /// START with playback paused means the next click reviews the edit that was just made.
-    ///
-    /// Pause FIRST, then seek: seeking a playing clip lets it run on from the new position, which
-    /// would immediately undo the parking.
-    /// </summary>
     private void ReturnToTrimStartPaused()
     {
         var ipc = ActiveVideoHost?.IpcClient;
@@ -1896,17 +1592,13 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         }
     }
 
-
-    /// <summary>MAINEND_01 — the last playable second: the clip duration (preview plays past MARK END to inspect cut footage).</summary>
     private double MainTimelineEndSeconds()
     {
         double duration = ActiveVideoHost?.IpcClient?.Duration ?? 0;
 
-
         return duration;
     }
 
-    /// <summary>MAINEND_01 — is the playhead sitting on (or past) that last second?</summary>
     private bool IsMainPreviewAtEnd()
     {
         var ipc = ActiveVideoHost?.IpcClient;
@@ -1918,10 +1610,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         return ipc.CurrentTime >= end - 0.05;
     }
 
-    /// <summary>
-    /// MAINEND_01 — the one transport both PLAY controls call. Pausing is unchanged. Playing from
-    /// the end rewinds to MARK START first; playing from anywhere else just resumes.
-    /// </summary>
     private void TogglePlayPauseTransport()
     {
         var ipc = ActiveVideoHost?.IpcClient;
@@ -1931,6 +1619,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         {
             _isCurrentlyFrozen = false;
             TransportTrace("user-transport (cancel freeze)", "pause");
+            _freezeSound.Stop();
             _ = ipc.SetPropertyAsync("pause", "yes");
             return;
         }
@@ -1957,19 +1646,8 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         _ = ipc.SetPropertyAsync("pause", "no");
     }
 
-    /// <summary>
-    /// MAINEND_01 — true once the tick has issued its end-of-file pause for the current stop.
-    ///
-    /// The tick used to call SetPropertyAsync("pause","yes") on EVERY pass while eof-reached was
-    /// set — ten redundant IPC writes a second, each one able to land on top of a play the user
-    /// had just asked for. It is a one-shot now, re-armed by any seek or any play.
-    /// </summary>
     private bool _mainEndParkIssued;
 
-    /// <summary>
-    /// FREEZE_01 — the freeze anchor whose hold has already been served, or -1 when armed.
-    /// Compared against <see cref="_freezeTimeMs"/>, so moving the freeze re-arms it automatically.
-    /// </summary>
     private double _lastFreezeTriggerMs = -1;
 
     private void TransportTrace(string who, string action)
@@ -1999,6 +1677,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         }
 
         _lastFreezeTriggerMs = -1;
+        _freezeSound.Stop();
         _mainEndParkIssued = false;
 
         _isSeeking = true;
@@ -2020,7 +1699,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     {
         if (action == "whatsapp")
         {
-            Services.ShellLauncher.TryOpen("whatsapp://send?text=CheckOutThisVideo", "SHARE");   // NOCMD_01 — shell opens the link; no hidden "cmd /c start" (SYS-AVCLEAN).
+            Services.ShellLauncher.TryOpen("whatsapp://send?text=CheckOutThisVideo", "SHARE");
         }
         else if (action == "folder")
         {
@@ -2033,7 +1712,22 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     }
 
     private bool _isSafeToClose = false;
-    private double _lastAppliedSpeed = SpeedPresetButtons.NativeDefaultSpeed;
+    private readonly PreviewSpeedGovernor _previewSpeed = new();
+
+    private void FollowPreviewSpeed(FreeVideoStudio.Core.Media.MpvIpcClient? ipc)
+    {
+        _previewSpeed.IsSuspended ??= () => _memePreview?.IsActive == true;
+        _previewSpeed.UseSchedule(_speedSegments, _baseSpeed);
+        _previewSpeed.Follow(ipc);
+    }
+
+    private void ForcePreviewSpeed()
+    {
+        FollowPreviewSpeed(ActiveVideoHost?.IpcClient);
+        var ipc = ActiveVideoHost?.IpcClient;
+        double atMs = ipc != null && double.IsFinite(ipc.CurrentTime) ? ipc.CurrentTime * 1000.0 : _trimStartMs;
+        _ = _previewSpeed.Force(ipc, GetSpeedForPosition(atMs));
+    }
 
     protected override void OnPointerReleased(Avalonia.Input.PointerReleasedEventArgs e)
     {
@@ -2047,21 +1741,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         ForceReleaseDragStates(e.Pointer);
     }
 
-    /// <summary>
-    /// Safety net for a gesture that ended WITHOUT the hit box's own PointerReleased firing.
-    ///
-    /// THE BUG THIS FIXES ("MARK END leaves the caret stuck as if the button were still held"):
-    /// the trim START/END markers are throwaway controls rebuilt by UpdateTimelineMarkers(). When
-    /// that rebuild happens mid-gesture, the control currently holding pointer capture is removed
-    /// from the visual tree, Avalonia raises PointerCaptureLost, and the hit box's own
-    /// PointerReleased handler — the ONLY place that cleared `_draggingStartMarker` /
-    /// `_draggingEndMarker` — never runs. This method used to clear only the three MUSIC flags, so
-    /// the trim flags stayed true forever. From then on the freshly built hit box's PointerMoved
-    /// saw `_draggingEndMarker == true` and dragged the marker on plain hover, with no button held:
-    /// exactly "stuck as if held and not released".
-    ///
-    /// Every drag flag must be cleared here. If you add another, add it to this list too.
-    /// </summary>
     private void ForceReleaseDragStates(Avalonia.Input.IPointer pointer)
     {
         bool needsUpdate = false;
@@ -2179,12 +1858,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
     private bool _videoPipelineShutDown;
 
-    /// <summary>
-    /// MPVSHUTDOWN_01 — PROCESS-EXIT ONLY. The interactive/awaitable path is
-    /// <see cref="ShutdownVideoPipelineAsync"/> (MainWindow.ToolReturn.cs). This synchronous body
-    /// runs where Environment.Exit follows immediately (OnClosed, OnSuccessAction, config import),
-    /// the one case where the bounded sync teardown of MpvVideoView.Dispose cannot strand the user.
-    /// </summary>
     private void ShutdownVideoPipelineForProcessExit()
     {
         if (_videoPipelineShutDown) return;
@@ -2196,13 +1869,14 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         try { _videoHost?.Dispose(); }
         catch (Exception ex) { RuntimeLog.Fail("UI", $"Video preview teardown reported: {ex.Message}"); }
 
-        try { _musicPreviewIpcClient?.Dispose(); }
-        catch (Exception ex) { RuntimeLog.Fail("UI", $"Music preview teardown reported: {ex.Message}"); }
+        DisposeMusicPreview();
+        _previewSpeed.Follow(null);
         DisposePreviewMix();
     }
 
     protected override void OnClosed(EventArgs e)
     {
+        _freezeSound.Dispose();
         _mainSizeWorker?.Dispose();
         _viewModel.SizeEstimateRequested -= UpdateEstimatedQuality;
         Controls.CoachOverlay.Cancel(this);
@@ -2238,22 +1912,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         }
     }
 
-    /// <summary>
-    /// ══════════════════════════════════════════════════════════════════════════════
-    /// EDIT3_02 — "REMOVE SPEEDS" IS NOW "EDIT SPEEDS", AND IT IS NO LONGER RED.
-    ///
-    /// The red button was honest when the button really did wipe everything on one click. It stopped
-    /// being honest the moment EDIT3_01 put a chooser in front of it: the button's job is now
-    /// "open the thing you already made", and removing is one of three answers inside. A red button
-    /// that opens a dialog trains people to fear a control that is safe, and the suite reserves red
-    /// for actions that destroy data on the spot.
-    ///
-    /// GREEN, not blue, for the active state. Blue is the inactive state, so reusing it would make
-    /// "you have speed changes" and "you have none" look identical. Green reads as "this is done" —
-    /// the same thing the VOICE OVER button says by swapping its gradient for a flat fill and its
-    /// label for EDIT VOICE OVER. All three entry buttons now behave the same way.
-    /// ══════════════════════════════════════════════════════════════════════════════
-    /// </summary>
     private void SetGranularButtonActive(bool active)
     {
         var btn = GranularButtonCtl;
@@ -2299,16 +1957,12 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         SaveRecoveryState(label: "granular speed edits");
     }
 
-    /// <summary>
-    /// EDIT3_02 — "REMOVE MUSIC" is now "EDIT MUSIC" in green. See SetGranularButtonActive above
-    /// for why the red went: the button opens a chooser now, it does not delete anything itself.
-    /// </summary>
     private void SetMusicButtonActive(bool active)
     {
         var btn = AddMusicButtonCtl;
         if (btn == null) return;
         var txt = this.FindControl<TextBlock>("AddMusicText");
-        
+
         _isMusicActive = active;
         if (active)
         {
@@ -2330,11 +1984,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         SaveRecoveryState(label: "music");
     }
 
-    /// <summary>
-    /// Serializes all editing-session state to the crash-recovery file
-    /// (recovery_v2.json) so it can be restored if the app crashes.
-    /// Called on every meaningful state change (trim, speed, quality, etc.).
-    /// </summary>
     private static bool HasVoiceOverWav(VoiceOverWindow.VoiceOverResult? result)
     {
         foreach (var take in GetExistingVoiceOverTakes(result))
@@ -2381,16 +2030,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     private void DisposeVoiceOverPreviewTakes()
     {
         foreach (var take in _voiceOverPreviewTakes)
-        {
-            try { take.Player.Dispose(); } catch (System.Exception swallowed2)
-            {
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);
-            }
-            try { take.Reader.Dispose(); } catch (System.Exception swallowed7)
-            {
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed7);
-            }
-        }
+            Infrastructure.PreviewAudioSync.DisposeOffUiThread(take.Player, take.Reader);
         _voiceOverPreviewTakes.Clear();
     }
 
@@ -2400,12 +2040,11 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         var btn = VoiceOverButtonCtl;
         var text = this.FindControl<TextBlock>("VoiceOverText");
 
-        _voiceOverPlayer?.Dispose();
+        Infrastructure.PreviewAudioSync.DisposeOffUiThread(_voiceOverPlayer);
         _voiceOverPlayer = null;
         _voiceOverReader?.Dispose();
         _voiceOverReader = null;
         DisposeVoiceOverPreviewTakes();
-
 
         if (_voiceOverResult != null)
         {
@@ -2469,11 +2108,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
     private Avalonia.Threading.DispatcherTimer? _recoveryDebounceTimer;
 
-    /// <summary>
-    /// Debounced recovery save for high-frequency UI changes (volume drags, typing).
-    /// Coalesces rapid changes into a single disk write ~600ms after the last change,
-    /// instead of a full serialize + fsync on every value tick (ISSUE_104).
-    /// </summary>
     private void ScheduleRecoveryStateSave()
     {
         if (_recoveryDebounceTimer == null)
@@ -2492,35 +2126,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         _recoveryDebounceTimer.Start();
     }
 
-    /// <summary>
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// SWITCHPROMPT_01 — ASKS BEFORE LEAVING FOR A COMPANION TOOL, BUT ONLY WHEN THERE IS SOMETHING
-    /// TO LOSE.
-    ///
-    /// THE BUG. <c>AppSettings.ConfirmMainAppSwitchTool</c> has existed, been surfaced in Settings,
-    /// and been loaded and saved for a long time — and NOTHING EVER READ IT. Both switch paths
-    /// (the VIDEO MERGER / CROP SETTINGS buttons and their Tools-menu twins) called
-    /// <see cref="SwitchToCompanionAppAsync"/> directly. Whatever prompt the user was seeing could
-    /// therefore not be turned off from Settings and could not tell an empty editor from a full
-    /// one: it fired with no video loaded at all, warning about losing work that did not exist.
-    /// A warning that appears when nothing is at stake is worse than no warning, because it teaches
-    /// the user to dismiss the one that matters.
-    ///
-    /// THE RULE. Two conditions, both required:
-    ///   1. the user has left the setting on, AND
-    ///   2. <see cref="HasUnsavedWork"/> is true.
-    ///
-    /// HasUnsavedWork is already exactly the right predicate and says so in its own summary:
-    /// "A LOADED VIDEO IS NOT WORK. Uploading a clip and touching nothing else must return false —
-    /// that is exactly the case the Video Merger / Crop Tools switch prompt must NOT interrupt."
-    /// It returns true only for a real edit: a start or end mark, a thumbnail, a cut, a speed
-    /// segment or changed base speed, a freeze, granular speed, music, a voice-over, a meme, a HUD
-    /// toggle, a changed export toggle, or typed caption text. Loading a clip and looking at it is
-    /// none of those, and neither is scrubbing, playing or changing the volume.
-    ///
-    /// Returns TRUE when the caller should go ahead.
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
     private async Task<bool> ConfirmToolSwitchAsync(string toolDisplayName)
     {
         if (!FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.ConfirmMainAppSwitchTool)
@@ -2641,46 +2246,8 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
     private Border? _companionHandoffOverlay;
 
-    /// <summary>
-    /// ISSUE_02 / RECOVERY_03 / RECOVERY_04 — "is there anything worth recovering?", in ONE place.
-    ///
-    /// <para>
-    /// RECOVERY_03: the speed test used to be <c>Math.Abs(_baseSpeed - 1.0) &gt; 0.01</c>, but the
-    /// app's default speed is 1.1 (<c>SpeedPresetButtons.NativeDefaultSpeed</c>). |1.1-1.0| = 0.1,
-    /// so the condition was TRUE from the instant the window opened, for every user on the
-    /// defaults — permanently. Two opposite failures came out of that one wrong constant: the
-    /// ClearState() branch in SaveRecoveryState was effectively dead, so a stale recovery file
-    /// lingered after the user removed their last edit; and the moment anyone chose exactly 1.0x —
-    /// an entirely normal choice — the test flipped to false and the file was DELETED, taking
-    /// everything in RECOVERY_04 with it. Compare against the real default, so this means what it
-    /// says.
-    /// </para>
-    /// <para>
-    /// RECOVERY_04: the meme choice and the HUD/portrait toggles are all written into the recovery
-    /// payload, yet none of them used to count as "work". If they were the user's only edits the
-    /// app decided there was nothing to keep and ERASED the file — and since the toggle handlers
-    /// call SaveRecoveryState() on every click, changing a HUD toggle actively destroyed the recovery
-    /// state instead of saving it. They are counted here.
-    /// ⚠️ These two fixes are a PAIR. RECOVERY_03 alone would have exposed RECOVERY_04 immediately;
-    /// RECOVERY_04 alone leaves the dead-branch half of RECOVERY_03 in place.
-    /// </para>
-    /// <para>
-    /// ⚠️ A LOADED VIDEO IS NOT WORK. Uploading a clip and touching nothing else must return false —
-    /// that is exactly the case the Video Merger / Crop Tools switch prompt must NOT interrupt.
-    /// Do not add "_videoPath != null" to this expression.
-    /// </para>
-    /// </summary>
-
     private bool HasUnsavedWork() => _recoveryService.HasUnsavedWork(_viewModel, _viewModel.Timeline, _viewModel.Export);
 
-    /// <summary>
-    /// NOMASK_01 — refuses the Crop Tools hand-off while the reserved "No Mask Profile" is active,
-    /// and tells the user how to get out of it. Returns true when the caller must abort.
-    ///
-    /// Why block rather than open read-only: Crop Tools is a SEPARATE PROCESS that closes the Main
-    /// App to start (see Section 2 of docs/README.md (formerly project_structure.txt)). Launching it only to disable every
-    /// control would cost the user their whole session for a window that can do nothing.
-    /// </summary>
     private bool BlockCropToolsForNoMaskProfile()
     {
         if (!FreeVideoStudio.App.Infrastructure.MaskOverlayManager.IsNoMask(
@@ -2698,17 +2265,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         return true;
     }
 
-    /// <summary>
-    /// NOMASK_01 — collapses the IN-GAME OVERLAYS block (and its separator) while the reserved
-    /// "No Mask Profile" is active, and forces both HUD toggles off so a stale ON state
-    /// cannot survive the profile switch into an export payload.
-    ///
-    /// Forcing the toggles off is belt-and-braces, not the mechanism: the profile carries zero-size
-    /// rects, so MobileFilterBuilder.RegisterLayer skips every layer regardless of these flags.
-    /// It matters for what gets SAVED — the toggles are persisted in the recovery state and read
-    /// back by BuildExportPayload — so leaving them ON would silently re-enable the HUD the moment
-    /// the user switches back to a masked profile.
-    /// </summary>
     private void ApplyMaskProfileToOverlayUi()
     {
         try
@@ -2736,26 +2292,8 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
-
-    /// <summary>
-    /// MEME_06 — memes spliced into the middle of the video, in CLIP-RELATIVE SOURCE seconds.
-    ///
-    /// Placed in the Speed Editor (see the note on its own `_memes` field for why there and not
-    /// here) and held on this window because this is what owns the export payload and the recovery
-    /// file. When this list is non-empty it is AUTHORITATIVE: ProcessWorker ignores the legacy
-    /// MemeFile + MemeAtStart pair entirely. When it is empty the legacy pair still drives a single
-    /// start-or-end meme, which is what keeps the main screen's dropdown working unchanged.
-    /// </summary>
-
-    /// <summary>
-    /// MEME_07 — plays each meme in this screen's preview at the exact moment it interrupts the
-    /// gameplay, instead of the preview running straight past a cutaway that the export will make.
-    /// See <see cref="Infrastructure.MemePreviewDirector"/> for the file-swap approach and, more
-    /// importantly, for the rule the playback tick below has to follow.
-    /// </summary>
     private Infrastructure.MemePreviewDirector? _memePreview;
 
-    /// <summary>MEME_07 — built lazily, because the video host does not exist until a file loads.</summary>
     private void EnsureMemePreviewDirector()
     {
         if (_memePreview != null) return;
@@ -2768,29 +2306,14 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             "MEME",
             () => (_trimEndMs > _trimStartMs ? _trimEndMs : _loadedVideoDurationMs) / 1000.0);
 
-        _memePreview.MemeStarted += StopMusicPreview;
+        _memePreview.MemeStarted += OnMainMemeCutawayStarted;
     }
 
-    /// <summary>MEME_07 — the black-screen notice shown across the two file swaps.</summary>
-    /// <summary>MEMESWAP_01 — was one of three byte-identical private copies; see
-    /// <see cref="Infrastructure.MemeSwapOverlay"/>.</summary>
     private void SetMemeSwapOverlay(bool visible, string message)
         => Infrastructure.MemeSwapOverlay.Set(this, visible, message);
 
-    /// <summary>
-    /// CUT_01 — at least this much footage must survive, in ms. A clip cut down to nothing has no
-    /// frames to encode and would fall through GranularSpeedBuilder's "no chunks" path, which
-    /// exports the WHOLE clip with the cuts ignored — a silent, total failure. Refusing the last
-    /// cut is far kinder than producing that.
-    /// </summary>
     private const double MinSurvivingMs = 500.0;
 
-    /// <summary>
-    /// CUT_01 — everything that must happen after the cut list changes, in one place so no caller
-    /// can forget one. The music wizard's Smart Fit aligned a beat drop to the OLD length, so a
-    /// length change has to invalidate it — that is objection #3 from the design doc, and it is
-    /// handled the same way a trim change already handles it.
-    /// </summary>
     private async Task AfterCutsChangedAsync()
     {
         NormalizeCutsInPlace();
@@ -2807,18 +2330,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         await SkipPlayheadOutOfCutAsync();
     }
 
-    /// <summary>
-    /// MEME_06 — a meme anchored to a moment that has just been deleted goes with it.
-    ///
-    /// The alternative — sliding it to the edge of the hole — keeps the user's work but moves their
-    /// meme somewhere they did not put it, and they would only find out at export. Deleting it is
-    /// the honest reading of "I deleted that scene", and it is announced rather than silent.
-    /// </summary>
-
-    /// <summary>
-    /// MEMETRIM_02 — after MARK START / MARK END moved: every meme stays on its gameplay frame
-    /// (TimelineViewModel.RebaseMemesToTrim); one now outside the kept part is removed and said so.
-    /// </summary>
     private void RebaseMemesAfterTrimChange()
     {
         var dropped = _viewModel.Timeline.RebaseMemesToTrim();
@@ -2871,13 +2382,8 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
     #region UX Innovations (IDEA 001, 004, 005, 006, 007, 008, 009, 010, 011)
 
-    /// <summary>
-    /// Initializes all UX innovation controls and wires them into the editing workflow.
-    /// Called once during construction after all standard controls are wired.
-    /// </summary>
     private void InitializeUxInnovations()
     {
-
         _kineticScrub = new KineticScrubController();
         _kineticScrub.SeekRequested += (ms) =>
         {
@@ -2906,10 +2412,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         }
     }
 
-    /// <summary>
-    /// Triggers a particle burst effect at the specified screen-relative point.
-    /// Converts to local control coordinates before emitting.
-    /// </summary>
     private void TriggerParticleBurst(Point windowRelativePoint,
         Controls.ParticleBurstCanvas.BurstPreset preset)
     {

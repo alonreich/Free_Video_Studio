@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
@@ -10,8 +9,6 @@ using Path = Avalonia.Controls.Shapes.Path;
 
 namespace FreeVideoStudio.App;
 
-
-/// <summary>VOREC_01 — every state the recording indicator can show.</summary>
 internal enum RecordingPhase
 {
     PreviewLoading,
@@ -33,10 +30,8 @@ internal enum RecordingPhase
     Closed,
 }
 
-/// <summary>VOREC_01 — the shape drawn on the REC lamp, so the state never rests on colour alone.</summary>
 internal enum RecordingGlyph { None, Dot, Ring, PauseBars, Alert, Check }
 
-/// <summary>VOREC_01 — the inputs of the indicator. All read on the UI thread.</summary>
 internal readonly record struct RecordingIndicatorInputs(
     bool IsClosed,
     bool IsApplying,
@@ -57,7 +52,6 @@ internal readonly record struct RecordingIndicatorInputs(
     double CapturedSeconds,
     bool LiveHasData);
 
-/// <summary>VOREC_01 — what the indicator shows. Text + glyph + colour, never colour alone.</summary>
 internal readonly record struct RecordingIndicator(
     RecordingPhase Phase,
     string Status,
@@ -69,13 +63,10 @@ internal readonly record struct RecordingIndicator(
 
 public partial class VoiceOverWindow
 {
-    /// <summary>VOREC_01 — a stop/start transition is never shown as live motion after this long.</summary>
     internal static TimeSpan RecordingPulseLimit { get; set; } = TimeSpan.FromSeconds(10);
 
-    /// <summary>VOREC_01 — how long "TAKE SAVED" stays up before the readiness word returns.</summary>
     internal static TimeSpan TakeSavedNoticeDuration { get; set; } = TimeSpan.FromSeconds(3);
 
-    /// <summary>VOREC_01 test seam: the preview clock when no mpv host exists (headless tests only).</summary>
     internal Func<(double Time, bool Paused, double Duration)>? PreviewClockSeam { get; set; }
 
     private bool _previewFailed;
@@ -90,7 +81,6 @@ public partial class VoiceOverWindow
     private string? _shownLampKey, _shownBadgeBgKey, _shownBadgeFgKey, _shownStatusKey;
     private bool _shownPulse;
 
-    /// <summary>VOREC_01 — segments whose drain is still in flight: drawn frozen until their verdict lands.</summary>
     private readonly List<(VoiceOverSession Session, LiveTakeSnapshot? Snapshot)> _finalizingTakes = new();
 
     private TextBlock? _recordingBadgeText;
@@ -133,10 +123,6 @@ public partial class VoiceOverWindow
     internal (double X1, double X2)? LiveRegionPixels { get; private set; }
     internal FreeVideoStudio.Core.Media.OutputTimeline? StudioTimeline => _timeline;
 
-    /// <summary>
-    /// VOREC_02 test seam: the edit the Main App would hand over (trim, speeds, freezes, cuts, memes),
-    /// applied to the same fields the production constructor fills, then the production timeline build.
-    /// </summary>
     internal void ConfigureEditForTesting(double trimStartSec, double trimEndSec,
         IEnumerable<FreeVideoStudio.Core.Media.SpeedSegment>? segments = null, double baseSpeed = 1.0,
         IEnumerable<FreeVideoStudio.Core.Media.CutRange>? cuts = null,
@@ -155,7 +141,6 @@ public partial class VoiceOverWindow
         BuildStudioTimeline(trimEndSec - trimStartSec);
     }
 
-    /// <summary>VOREC_01 — caches the controls this partial writes (one lookup each, at construction).</summary>
     private void CacheRecordingStateControls()
     {
         _recordingBadgeText = this.FindControl<TextBlock>("RecordingBadgeText");
@@ -216,7 +201,6 @@ public partial class VoiceOverWindow
         return new(RecordingPhase.MicUnavailable, "MIC UNAVAILABLE", "AppWarningBrush", "REC", RecordingGlyph.Alert, false, false);
     }
 
-    /// <summary>VOREC_01 — captured-audio time as m:ss.t (tenths, never wall or video time).</summary>
     internal static string FormatCaptureClock(double seconds)
     {
         if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0) seconds = 0;
@@ -245,11 +229,6 @@ public partial class VoiceOverWindow
         CapturedSeconds: RunCapturedSeconds,
         LiveHasData: _liveSnapshot?.HasData == true);
 
-    /// <summary>
-    /// VOREC_01 — THE ONLY WRITER of the status word, REC lamp, badge, glyph, mic-button icon and
-    /// classes. Writes only what changed, so calling it every 50 ms tick costs nothing at rest.
-    /// After close it does nothing: a late callback can never repaint a closed window.
-    /// </summary>
     private void RefreshRecordingIndicator()
     {
         if (_isClosing && _shownIndicator?.Phase == RecordingPhase.Closed) return;
@@ -359,12 +338,9 @@ public partial class VoiceOverWindow
         else if (!on && has) element.Classes.Remove(cls);
     }
 
-    /// <summary>UI-THEME — theme tokens stay live across a theme switch (DynamicResource, no literal colours).</summary>
     private static void BindDynamicBrush(AvaloniaObject target, AvaloniaProperty property, string key)
         => target[!property] = new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension(key);
 
-
-    /// <summary>VOREC_01 — a new recording run: elapsed starts at zero, stale verdicts are cleared.</summary>
     private void BeginRecordingRun()
     {
         _runCapturedSeconds = 0;
@@ -374,7 +350,6 @@ public partial class VoiceOverWindow
         _lastTakeSavedUtc = DateTime.MinValue;
     }
 
-    /// <summary>VOREC_01 / VOLIVE_01 — samples the live take once per tick (latest-value; no backlog).</summary>
     private void SampleLiveTake()
     {
         if (!_isRecording || _recordPaused || _currentSession == null) return;
@@ -382,12 +357,6 @@ public partial class VoiceOverWindow
         if (live != null) _liveSnapshot = live;
     }
 
-    /// <summary>
-    /// VOREC_01 — the segment is ending (pause, stop, fault). Its captured time is banked so the
-    /// elapsed clock FREEZES rather than jumps, and its envelope is kept on screen, frozen, until
-    /// the drain's verdict replaces it with the saved take (or removes it if it was not kept).
-    /// Must run BEFORE FinalizeRecordingAsync, which retires the live meter.
-    /// </summary>
     private void BankLiveSegment(VoiceOverSession session)
     {
         var last = _capture.LiveTake ?? _liveSnapshot;
@@ -397,7 +366,6 @@ public partial class VoiceOverWindow
         _frozenRenderedCount = -1;
     }
 
-    /// <summary>VOREC_01 — the drain's verdict landed (saved or not): the frozen placeholder goes.</summary>
     private void SettleFinalizingTake(VoiceOverSession session, bool saved, bool noAudio)
     {
         _finalizingTakes.RemoveAll(t => ReferenceEquals(t.Session, session));
@@ -407,14 +375,12 @@ public partial class VoiceOverWindow
         RefreshRecordingIndicator();
     }
 
-    /// <summary>VOREC_01 — a failure stays on screen until a new take starts or the microphone is re-opened and delivers.</summary>
     private void LatchRecordingFailure(string label)
     {
         _latchedFailure = label;
         _latchedFailureAwaitingReopen = false;
     }
 
-    /// <summary>VOREC_01 — health transitions that end a latched failure: a fresh open that then delivers buffers.</summary>
     private void ObserveHealthForLatchedFailure(MicrophoneHealth health)
     {
         if (_latchedFailure == null || _isRecording) return;
@@ -426,10 +392,6 @@ public partial class VoiceOverWindow
         }
     }
 
-    /// <summary>
-    /// The recording could not start or continue. Was "NO MIC" for every cause, including a video that
-    /// never rolled; the label now names the real cause.
-    /// </summary>
     private void ShowMicrophoneUnavailable(string message, string label = "NO MIC")
     {
         _isRecording = false;
@@ -451,10 +413,6 @@ public partial class VoiceOverWindow
         return Math.Max(startAbsSec, endAbs);
     }
 
-    /// <summary>
-    /// CUTS_02 / MEME_06 — the studio's OutputTimeline. Moved verbatim from the Loaded handler so the
-    /// timeline tests drive the production construction.
-    /// </summary>
     private void BuildStudioTimeline(double effectiveDuration)
     {
         _timeline = FreeVideoStudio.Core.Media.OutputTimeline.Create(
@@ -466,7 +424,6 @@ public partial class VoiceOverWindow
             FreeVideoStudio.Core.Media.CutRange.ToClipRelative(_cuts, _trimStartSec * 1000.0));
     }
 
-    /// <summary>VOREC_01 — the preview clock: mpv when it is up, the test seam otherwise.</summary>
     private bool TryReadPreviewClock(out double time, out bool paused, out double duration)
     {
         var ipc = _videoHost?.IpcClient;
@@ -512,7 +469,6 @@ public partial class VoiceOverWindow
         lane.Children.Add(_liveLabel);
     }
 
-    /// <summary>VOREC_03 — repositions the retained live visuals. Called from UpdatePlayheadUI.</summary>
     private void UpdateLiveRecordingVisuals(double effectiveDuration)
     {
         EnsureLiveRecordingVisuals();
@@ -620,7 +576,6 @@ public partial class VoiceOverWindow
         _frozenEnvelopePath.IsVisible = _finalizingTakes.Count > 0;
     }
 
-    /// <summary>VOLIVE_01 — one vertical line per pixel column (never per sample), mirrored about the centre.</summary>
     internal static StreamGeometry BuildEnvelopeGeometry(float[] peaks, double left, double blockWidth, double height)
     {
         var g = new StreamGeometry();
@@ -628,7 +583,6 @@ public partial class VoiceOverWindow
         return g;
     }
 
-    /// <summary>VOLIVE_01 — figures emitted for an envelope: ≤ one per pixel column, whatever the take length.</summary>
     internal static int EnvelopeColumnCount(int peakCount, double blockWidth)
         => peakCount <= 0 || blockWidth < 1 ? 0 : (int)Math.Min(peakCount, Math.Floor(blockWidth));
 

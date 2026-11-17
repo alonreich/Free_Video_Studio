@@ -1,6 +1,3 @@
-<!-- CAPTIONEDIT_01: same borderless chrome as ConfirmDialogWindow (04 UI-BORDERLESS); the height follows
-     the content so the Settings text size never clips the footer. CenterOwner is correct for this
-     transient, non-persisted modal (see ConfirmDialogWindow ISSUE_06). -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="FreeVideoStudio.App.Controls.EditCaptionDialogWindow"

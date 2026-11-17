@@ -3,11 +3,6 @@ using Xunit;
 
 namespace FreeVideoStudio.AvRegression.Tests;
 
-/// <summary>
-/// The suite checks itself: the marker media decodes exactly, every health check FAILS on a
-/// deliberately broken input (a check that cannot fail proves nothing), the rigs still mirror the
-/// app's code, and the "run this before declaring done" rule is in the docs.
-/// </summary>
 [Collection(AvCollection.Name)]
 public sealed class S01_S04_FoundationTests
 {
@@ -27,7 +22,6 @@ public sealed class S01_S04_FoundationTests
         Av.True("test music bed is continuous", musicScan.MusicBed.Count == 1, $"{musicScan.MusicBed.Count} pieces");
     }
 
-    /// <summary>Puts a black picture under an audio file so the scanner can read it like an export.</summary>
     private static async Task<string> WrapAudioAsync(string audio, string work)
     {
         string path = Path.Combine(work, "music-wrapped.mp4");
@@ -110,7 +104,12 @@ public sealed class S01_S04_FoundationTests
             Av.True("MainWindow export composition unchanged — update tests/FreeVideoStudio.AvRegression.Tests/Infrastructure/MainEdit.cs to match", export.Contains(must), "missing: " + must);
 
         string previewAudio = Src("FreeVideoStudio.App", "MainWindow.PreviewAudio.cs");
-        Av.True("preview music uses MusicBedPlan.Locate on the preview clock", previewAudio.Contains("MusicBedPlan.Locate(GetMusicPreviewPlan(), PreviewOutputSeconds("));
+        Av.True("main preview music is placed on the preview clock (TimelineViewModel.PreviewSourceToOutputSeconds)",
+            previewAudio.Contains("PreviewSourceMsToOutputSec(double sourceMs) => _viewModel.Timeline.PreviewSourceToOutputSeconds(sourceMs)")
+            && previewAudio.Contains("PreviewOutputSeconds(sourceTimeSec), !isPaused && !videoEnded"));
+        string bedPlayer = Src("FreeVideoStudio.App", "Controls", "MusicBedPreviewPlayer.cs");
+        Av.True("every screen's music preview builds its bed with MusicWizardResult.PreviewBed and follows it with BedPreviewFollower",
+            bedPlayer.Contains("result.PreviewBed(trimStartMs, videoEndMs, sourceMsToOutputSec, KeepMusicDuringMeme, inlineMemes)") && bedPlayer.Contains("_follower.Decide("));
 
         string view = Src("FreeVideoStudio.App", "MpvVideoView.cs");
         var options = Regex.Matches(view, "mpv_set_option_string\\(handle, \"([a-z-]+)\", \"([^\"]*)\"\\)").Select(m => (m.Groups[1].Value, m.Groups[2].Value)).ToHashSet();

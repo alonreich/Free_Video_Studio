@@ -1,5 +1,4 @@
-﻿
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Abstractions;
 using FreeVideoStudio.Core.Infrastructure;
@@ -7,59 +6,22 @@ using FreeVideoStudio.Core.Media.Native;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>Which metadata backend <see cref="MediaMetadataProbe"/> may use.</summary>
 public enum MediaProbeBackend
 {
-    /// <summary>Native libav first; ffprobe subprocess once if native cannot answer. The default.</summary>
     Auto,
-    /// <summary>Native libav only (tests, benchmarks). No subprocess.</summary>
     Native,
-    /// <summary>ffprobe subprocess only — the pre-LIBAVPROBE behaviour, kept as the explicit fallback.</summary>
     Ffprobe,
 }
 
-/// <summary>
-/// One metadata answer. <see cref="Data"/> is ffprobe <c>-show_format -show_streams</c> JSON (the
-/// native backend emits the same keys) or null when no backend could read the file.
-/// <see cref="ExitCode"/> is the ffprobe exit code when the subprocess ran, else 0 / -1.
-/// </summary>
 public sealed record MediaProbeResult(JsonObject? Data, string Backend, int ExitCode, string? Error)
 {
     public bool Ok => Data != null;
 }
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// LIBAVPROBE_03 — THE ONE ROUTER FOR MEDIA METADATA, AND ITS FALLBACK RULE.
-///
-/// <para>
-/// MediaProber and OutputSizeEstimator ask here instead of starting ffprobe themselves. The answer
-/// is the same JSON shape either way, so every accessor kept its existing selection rule
-/// unchanged (first video stream, any audio stream, format duration then video duration, …).
-/// </para>
-///
-/// <para>
-/// FALLBACK — explicit, bounded, logged, testable, one direction only:
-///   • native Unavailable (DLLs missing, version/layout guard) → ffprobe. Latched by the backend;
-///     logged once by LibAvLibrary.
-///   • native MediaError (libav rejected the file) → ffprobe ONCE, with the remaining time budget,
-///     reported as a Recoverable fault (log-only: the user's outcome is whatever ffprobe says, i.e.
-///     exactly the pre-native outcome). ffprobe uses the same libraries, so it normally fails too —
-///     that is fine and costs what every probe cost before.
-///   • cancellation → re-thrown, never a fault, never a fallback.
-///   • native timeout → OperationCanceledException (as AsyncProcessRunner's timeout always threw);
-///     no fallback, because the budget is spent.
-///   • ffprobe never falls back to native. There is no loop.
-/// <see cref="MediaProbeBackend.Ffprobe"/> (or env <c>FVS_MEDIA_PROBE=ffprobe</c>) forces the old path.
-/// </para>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public static class MediaMetadataProbe
 {
-    /// <summary>Environment override: <c>ffprobe</c> or <c>native</c>; anything else = Auto.</summary>
     public const string BackendEnvironmentVariable = "FVS_MEDIA_PROBE";
 
-    /// <summary>The backend Auto resolves to for this process (environment override honoured).</summary>
     public static MediaProbeBackend DefaultBackend
     {
         get
@@ -73,10 +35,6 @@ public static class MediaMetadataProbe
 
     private static readonly AsyncLocal<INativeMediaBackend?> NativeOverrideSlot = new();
 
-    /// <summary>
-    /// Test seam: replaces the native backend for the CURRENT async flow only (AsyncLocal), so a
-    /// fault-injection test cannot leak into a parallel test. Null = <see cref="LibAvMediaBackend.Instance"/>.
-    /// </summary>
     internal static INativeMediaBackend? NativeOverride
     {
         get => NativeOverrideSlot.Value;
@@ -84,7 +42,6 @@ public static class MediaMetadataProbe
     }
 
     private static long _fallbacks;
-    /// <summary>Probes answered by ffprobe after native could not (process lifetime). Diagnostics/tests.</summary>
     public static long FallbackCount => Interlocked.Read(ref _fallbacks);
 
     public static async Task<MediaProbeResult> ProbeAsync(
@@ -114,7 +71,6 @@ public static class MediaMetadataProbe
         return await RunFfprobeAsync(ffprobePath, mediaPath, remaining, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>The pre-LIBAVPROBE subprocess path, unchanged: ffprobe -v quiet -print_format json -show_format -show_streams.</summary>
     internal static async Task<MediaProbeResult> RunFfprobeAsync(string ffprobePath, string mediaPath, TimeSpan timeout, CancellationToken cancellationToken)
     {
         var probeArgs = new[]

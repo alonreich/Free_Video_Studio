@@ -10,25 +10,16 @@ public sealed class VoiceOverPreviewTake : IDisposable
 {
     public required VoiceOverTake Take { get; init; }
     public required FreeVideoStudio.Core.Media.WavAudioReader Reader { get; init; }
-    public required NAudio.Wave.WaveOut Player { get; init; }
+    public required NAudio.Wave.WaveOutEvent Player { get; init; }
     public double StartProjectSec { get; set; }
-    /// <summary>MUSICSYNC_02 — consecutive out-of-tolerance readings (PreviewAudioSync).</summary>
-    public int DriftStrikes;
+    public long DriftSinceMs;
 
     public void Dispose()
     {
-        try { Player.Dispose(); } catch (System.Exception swallowed)
-        {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);
-        }
-        try { Reader.Dispose(); } catch (System.Exception swallowed2)
-        {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);
-        }
+        Infrastructure.PreviewAudioSync.DisposeOffUiThread(Player, Reader);
     }
 }
 
-/// <summary>GRANULARPERF_01 — all file/device operations belong to one bounded background worker.</summary>
 public sealed class VoiceOverPreviewPlayer : IDisposable
 {
     private readonly List<VoiceOverPreviewTake> _takes = new();
@@ -103,7 +94,7 @@ public sealed class VoiceOverPreviewPlayer : IDisposable
                         if (_disposed) break;
                         if (string.IsNullOrWhiteSpace(take.Path) || !File.Exists(take.Path)) continue;
                         FreeVideoStudio.Core.Media.WavAudioReader? reader = null;
-                        NAudio.Wave.WaveOut? player = null;
+                        NAudio.Wave.WaveOutEvent? player = null;
                         try
                         {
                             reader = new(take.Path);
@@ -131,7 +122,7 @@ public sealed class VoiceOverPreviewPlayer : IDisposable
                         double voiceTime = request.Time - take.StartProjectSec;
                         bool play = (!request.Paused || request.Frozen) && !request.Ended &&
                             voiceTime >= 0 && voiceTime <= take.Reader.TotalTime.TotalSeconds;
-                        Infrastructure.PreviewAudioSync.SyncVoiceTake(take.Reader, take.Player, play, voiceTime, ref take.DriftStrikes);
+                        Infrastructure.PreviewAudioSync.SyncVoiceTake(take.Reader, take.Player, play, voiceTime, ref take.DriftSinceMs);
                     }
                     catch (Exception ex) { CoreLogger.Swallowed(ex); }
                 }

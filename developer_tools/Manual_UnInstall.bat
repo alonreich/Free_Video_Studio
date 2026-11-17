@@ -1,5 +1,4 @@
 @echo off
-:: Check for Administrator privileges
 net session >nul 2>&1
 if %errorLevel% == 0 (
     goto :admin_granted

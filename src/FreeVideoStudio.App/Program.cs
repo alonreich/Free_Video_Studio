@@ -34,12 +34,12 @@ try
         await UpgradeCoordinator.CompleteUserAsync();
         return 0;
     }
-    
+
     if (!DevelopmentEnvironment.IsActive && DeploymentLifecycle.ShouldHandle(args))
     {
         return await DeploymentLifecycle.RunAsync(args);
     }
-    
+
     if (!DevelopmentEnvironment.IsActive && DeploymentFootprint.IsRunningFromInstallPath() && !args.Contains("--upgrade-health"))
     {
         if (UpgradeCoordinator.HasPendingSession || UpgradeCoordinator.HasPendingMachine)
@@ -64,7 +64,6 @@ FreeVideoStudio.Core.Infrastructure.CoreLogger.WarnAction = RuntimeLog.WarnThrot
 FreeVideoStudio.Core.Infrastructure.CoreLogger.AppendAction = RuntimeLog.AppendRaw;
 RuntimeLog.InitializeAppName(args);
 RuntimeLog.ResetForProcess();
-
 
 AppDomain.CurrentDomain.UnhandledException += (s, e) =>
 {
@@ -104,7 +103,6 @@ if (!isSiblingProcess)
 
 string baseDir = System.IO.Path.GetDirectoryName(System.Environment.ProcessPath) ?? AppContext.BaseDirectory;
 NativeHelpers.SetDllDirectory(Path.Combine(baseDir, "frontend"));
-
 
 int exitCode = await RunAsync(args);
 SingleInstanceGuard.Release();
@@ -311,7 +309,7 @@ static async Task<int> RunUiAsync(string[] args)
 
     if (OperatingSystem.IsWindows() && !DevelopmentEnvironment.IsActive)
         ShellFileAssociation.EnsureRegistered();
-    
+
     RuntimeLog.Info("RUN UI", "Starting Avalonia App.");
     RuntimeLog.Info("BUILDTAG", "FVS-SWPREVIEW-BUILDCHECK-2026A :: CPU software-preview + frame-gate build ACTIVE");
 
@@ -400,20 +398,13 @@ internal static class NativeHelpers
 
     private const uint LoadLibrarySearchSystem32 = 0x00000800;
 
-    /// <summary>
-    /// WORKERSTAGE_01 — every later LoadLibrary in this process searches System32 only (no application
-    /// folder, no current directory, no PATH). Static imports are already restricted by the linker flag
-    /// /DEPENDENTLOADFLAG:0x800 (FreeVideoStudio.App.csproj). Used by the elevated update worker.
-    /// </summary>
     public static void RestrictDllSearchToSystem32()
     {
         if (!OperatingSystem.IsWindows()) return;
         if (!SetDefaultDllDirectories(LoadLibrarySearchSystem32))
             FreeVideoStudio.App.RuntimeLog.Info("Upgrade", "SetDefaultDllDirectories failed: " + System.Runtime.InteropServices.Marshal.GetLastWin32Error());
     }
-
 }
-
 
 public partial class Program
 {

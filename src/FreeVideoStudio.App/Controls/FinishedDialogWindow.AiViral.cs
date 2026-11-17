@@ -8,12 +8,6 @@ using FreeVideoStudio.App.ViewModels;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// AIVIRAL_HONEST_01 — the Viral Post card on the Finished screen. The badge always says what really
-/// happened (WRITING… / AI WRITTEN / NO AI KEY / AI FAILED); a stock template is never shown as an AI answer.
-/// NEW VERSION asks again for a different take (creative temperature, previous title passed as "avoid").
-/// VIRALVM_01: the work and the decisions live in <see cref="ViralPostViewModel"/>; this file draws its state.
-/// </summary>
 public partial class FinishedDialogWindow
 {
     private ViralPostViewModel? _viral;
@@ -81,7 +75,7 @@ public partial class FinishedDialogWindow
     {
         try
         {
-            if (_viral != null && await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, _viral.Vendor, AiUsage.ViralPost))
+            if (_viral != null && await AiAccountFix.FixAsync(this, _viral.Vendor, AiUsage.ViralPost))
                 await _viral.RetryAsync();
         }
         catch (Exception ex)
@@ -104,7 +98,6 @@ public partial class FinishedDialogWindow
         CopyViralText(text, "CopyViralAllBtn", "📋 COPY ALL (YT / TIKTOK)");
     }
 
-    /// <summary>Copies, shows "✅ COPIED!" for two seconds, then puts the label back so the next copy is visible too.</summary>
     private void CopyViralText(string? text, string buttonName, string idleLabel)
     {
         try

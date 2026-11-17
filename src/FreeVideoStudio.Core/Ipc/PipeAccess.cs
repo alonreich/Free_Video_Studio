@@ -8,28 +8,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Ipc;
 
-/// <summary>
-/// PIPEAUTH_01 — both ends of every local named pipe prove who the other end is.
-///
-/// <para>
-/// WHAT WAS WRONG: the servers (<c>NamedPipeStateServer</c>, <c>SingleInstanceGuard</c>) checked each
-/// CLIENT's identity, but they were created with the default DACL and without
-/// <see cref="PipeOptions.FirstPipeInstance"/>, and no client ever checked the SERVER. The pipe names
-/// carry the user's SID, which is not a secret, so another account on the same machine could create
-/// the pipe first and receive the paths and session state that this user's processes sent to it.
-/// </para>
-///
-/// <para>
-/// THE FIX, three layers:
-///   1. <see cref="CreateServer"/> — an explicit, protected DACL granting ONLY the current user and
-///      LocalSystem; no other account can connect to, or add an instance to, our pipe.
-///   2. <see cref="PipeOptions.FirstPipeInstance"/> wherever the caller knows no instance of its own
-///      is live, so a server never silently joins a pipe somebody else already created.
-///   3. <see cref="IsServerTrusted"/> — after connecting and BEFORE writing a byte, the client asks
-///      Windows which process owns the server end and refuses unless it runs as the same user.
-///      Any failure to establish that fails CLOSED.
-/// </para>
-/// </summary>
 public static partial class PipeAccess
 {
     private const uint ProcessQueryLimitedInformation = 0x1000;
@@ -50,7 +28,6 @@ public static partial class PipeAccess
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool CloseHandle(nint handle);
 
-    /// <summary>PIPEAUTH_01 — the DACL every server pipe is created with: current user + LocalSystem, nothing inherited.</summary>
     public static PipeSecurity CreateOwnerOnlySecurity()
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
@@ -65,7 +42,6 @@ public static partial class PipeAccess
         return security;
     }
 
-    /// <summary>PIPEAUTH_01 — creates a server pipe that only the current user (and LocalSystem) can reach.</summary>
     public static NamedPipeServerStream CreateServer(string name, PipeDirection direction, int maxInstances, PipeOptions options)
     {
         if (!OperatingSystem.IsWindows())
@@ -75,16 +51,6 @@ public static partial class PipeAccess
             inBufferSize: 0, outBufferSize: 0, CachedSecurity.Value);
     }
 
-    /// <summary>
-    /// NOLOCALPORT_01 — the installer's channel to its elevated worker and to the first launch of the
-    /// new version. It used to be a TCP port on 127.0.0.1, and third-party firewalls (ESET, Norton,
-    /// Comodo, ZoneAlarm…) ask about or silently block an unknown program that listens on a port —
-    /// the update then failed. A named pipe is not network traffic. The worker may run under ANOTHER
-    /// account (a standard user typing an administrator's password, UPGRADE_07), so besides the
-    /// current user and LocalSystem the DACL admits elevated administrators — who could reach any
-    /// local channel anyway. The 64-hex-digit token in the first message still decides who is the
-    /// worker. One instance, and it must be the first: nobody can pre-create the name.
-    /// </summary>
     public static NamedPipeServerStream CreateUpgradeServer(string name)
     {
         if (!OperatingSystem.IsWindows())
@@ -97,10 +63,8 @@ public static partial class PipeAccess
             inBufferSize: 256 * 1024, outBufferSize: 256 * 1024, security);
     }
 
-    /// <summary>NOLOCALPORT_01 — a fresh, unguessable name for <see cref="CreateUpgradeServer"/>.</summary>
     public static string NewUpgradePipeName() => UpgradePipePrefix + Guid.NewGuid().ToString("N");
 
-    /// <summary>NOLOCALPORT_01 — true only for names <see cref="NewUpgradePipeName"/> makes (checked before connecting).</summary>
     public static bool IsUpgradePipeName(string? name) =>
         name is { Length: 56 } && name.StartsWith(UpgradePipePrefix, StringComparison.Ordinal) &&
         name.AsSpan(UpgradePipePrefix.Length).IndexOfAnyExcept("0123456789abcdef") < 0;
@@ -109,10 +73,6 @@ public static partial class PipeAccess
 
     private static readonly Lazy<PipeSecurity> CachedSecurity = new(CreateOwnerOnlySecurity);
 
-    /// <summary>
-    /// PIPEAUTH_01 — true only when the process serving <paramref name="client"/> runs as the same
-    /// Windows user as this process. Call after <c>Connect</c> and before the first write.
-    /// </summary>
     public static bool IsServerTrusted(NamedPipeClientStream client)
     {
         if (!OperatingSystem.IsWindows()) return true;

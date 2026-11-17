@@ -21,52 +21,26 @@ namespace FreeVideoStudio.App;
 
 public partial class CropToolWindow
 {
-    /// <summary>
-    /// Candidates being shown/stepped, from the last successful run. Cleared by a new clip
-    /// (<see cref="ResetMagicWandForNewClip"/>). Freezing a different frame, committing an element
-    /// or resetting the working state only rewind <see cref="_wandPreviewIndex"/>; local candidates
-    /// describe the CLIP. AI ones describe a FRAME — see <see cref="_wandCandidatesFrame"/>.
-    /// </summary>
     private List<CandidateSpec>? _wandCandidates;
 
-    /// <summary>AIHUD_04 — the offline detector's answer for THIS clip, so a new frozen frame only
-    /// costs an AI round-trip, never another 20-second local scan.</summary>
     private List<HudCandidate>? _wandLocalCandidates;
 
-    /// <summary>
-    /// AIHUD_04 — the frozen frame <see cref="_wandCandidates"/> includes AI input for, or null if
-    /// the set is local-only. AI boxes are never reused for a different frame: when the frame
-    /// changes, the set is either rebuilt with a fresh AI answer or reduced back to local-only.
-    /// </summary>
     private string? _wandCandidatesFrame;
 
-    /// <summary>Where the "press again to step through them" cursor is. -1 means "showing all".</summary>
     private int _wandPreviewIndex = -1;
 
-    /// <summary>Guards against a second press while the analysis is still running.</summary>
     private bool _wandRunning;
 
-    /// <summary>Set by STOP so a cancelled run says "stopped" rather than nothing.</summary>
     private bool _wandStopRequested;
 
     private bool _wandSnapshotShown;
 
     private const string WandSetupTag = "WANDSETUP_01";
 
-    /// <summary>
-    /// WANDPROGRESSIVE_01 — the offline finds are already on screen and only the AI is still pending.
-    /// The progress overlay is gone, the user can review, and MAGIC WAND reads "STOP AI SUGGESTIONS".
-    /// </summary>
     private bool _wandAiPending;
 
-    /// <summary>AIHUD_05 — the user said "offline only" in this session; do not ask again until restart.</summary>
     private static bool s_wandCloudDeclinedThisSession;
 
-    /// <summary>
-    /// AIHUD_03 — owns run generations and cancellation. Built on first use; the window cannot take
-    /// constructor parameters (COMPOSITION_02), so the provider is constructed here directly and the
-    /// ambient diagnostic channel (FAULTTIER_02) is passed in — not AppServices.Current.
-    /// </summary>
     private HudDetectionCoordinator? _wandDetection;
 
     private HudDetectionCoordinator WandDetection => _wandDetection ??= new HudDetectionCoordinator(
@@ -77,7 +51,6 @@ public partial class CropToolWindow
             vendorProvider: () => SettingsManager.Instance.GetUsageConfig(AiUsage.MagicWand).Vendor),
         Faults.Sink);
 
-    /// <summary>STOP button, clip change: cancel and invalidate whatever is in flight.</summary>
     private void CancelMagicWand() => _wandDetection?.Cancel();
 
     private void DisposeMagicWand()
@@ -86,7 +59,6 @@ public partial class CropToolWindow
         _wandDetection = null;
     }
 
-    /// <summary>MAGICWAND_02 — a new clip invalidates everything the wand learned from the old one.</summary>
     private void ResetMagicWandForNewClip()
     {
         CancelMagicWand();
@@ -96,8 +68,6 @@ public partial class CropToolWindow
         _wandPreviewIndex = -1;
     }
 
-    /// <summary>Cheap identity of the frozen frame on screen (path + write time). The AI cache key
-    /// itself uses a content hash — see <see cref="AiHudFrameBuilder"/>.</summary>
     private string? CurrentWandFrameIdentity()
     {
         if (_snapshotPath == null) return null;
@@ -115,15 +85,11 @@ public partial class CropToolWindow
     private bool WandAiAvailable()
         => !s_wandCloudDeclinedThisSession && WandDetection.AiService is { IsConfigured: true };
 
-    /// <summary>
-    /// AIHUD_05 / SETNOCONSENTUI_01 — saving an API key already authorizes cloud calls for that vendor.
-    /// If no key is configured, Magic Wand runs silently offline without modal consent prompts.
-    /// </summary>
     private Task<bool> ConfirmWandCloudConsentAsync()
     {
         var wandSettings = SettingsManager.Instance;
         var cfg = wandSettings.GetUsageConfig(AiUsage.MagicWand);
-        if (string.IsNullOrWhiteSpace(wandSettings.GetApiKey(cfg.Vendor)))
+        if (!AiAccountFix.IsUsable(wandSettings, cfg.Vendor))
             return Task.FromResult(false);
 
         if (!AppSettings.ConsentCovers(wandSettings.AiMagicWandCloudConsent, wandSettings.AiMagicWandCloudConsentVendor, cfg.Vendor))
@@ -141,17 +107,29 @@ public partial class CropToolWindow
     {
         var s = SettingsManager.Instance;
         var cfg = s.GetUsageConfig(AiUsage.MagicWand);
-        bool hasKey = !string.IsNullOrWhiteSpace(s.GetApiKey(cfg.Vendor));
+        bool hasKey = AiAccountFix.IsUsable(s, cfg.Vendor);
+        bool broken = AiAccountFix.IsBroken(s, cfg.Vendor);
         string providerName = AiVisionProviders.DisplayName(cfg.Vendor);
-        SetVisible("WandAddAiButton", _wandSnapshotShown && !hasKey && s.AiMode != AiMode.LocalOnly);
+        SyncWandFixButton();
         if (!_wandRunning)
         {
             SetStatus(hasKey
                 ? $"Magic Wand ready, with extra suggestions from {providerName}. Press MAGIC WAND to find the HUD pieces."
+                : broken && s.AiMode != AiMode.LocalOnly
+                    ? $"Magic Wand ready (PC finds only): your {providerName} key does not work. Press Fix AI key… to connect it again."
                 : s.AiMode == AiMode.LocalOnly
                     ? "Magic Wand ready. Press MAGIC WAND to find the HUD pieces."
                     : "Magic Wand ready. Press MAGIC WAND to find the HUD pieces. (Press Add AI suggestions… for extra ideas from an AI.)");
         }
+    }
+
+    private void SyncWandFixButton()
+    {
+        var s = SettingsManager.Instance;
+        var cfg = s.GetUsageConfig(AiUsage.MagicWand);
+        bool broken = AiAccountFix.IsBroken(s, cfg.Vendor);
+        SetVisible("WandAddAiButton", _wandSnapshotShown && !AiAccountFix.IsUsable(s, cfg.Vendor) && s.AiMode != AiMode.LocalOnly);
+        SetContent("WandAddAiButton", broken ? "Fix AI key…" : "Add AI suggestions…");
     }
 
     private async Task RunMagicWandAsync()
@@ -299,6 +277,8 @@ public partial class CropToolWindow
                         ? "The Magic Wand could not read this clip. Drag a box yourself."
                         : "The Magic Wand could not find anything it was sure about. Drag a box round a HUD piece yourself.";
                 RuntimeLog.Info("CROP", $"Magic Wand found nothing (local ok={result.LocalSucceeded}, ai={result.AiOutcome?.ToString() ?? "off"}).");
+                if (result.AiOutcome is { } none && none != AiHudOutcome.Success && none != AiHudOutcome.NotConfigured)
+                    why += $" (AI suggestions failed. Reference: {usage.Id})";
                 SetWizardState(3, "Refine Box", why);
                 return;
             }
@@ -307,6 +287,11 @@ public partial class CropToolWindow
             _wandCandidatesFrame = frame != null ? frameIdentity : null;
             if (userIsReviewing)
             {
+                if (result.AiOutcome is { } reviewOutcome && reviewOutcome != AiHudOutcome.Success && reviewOutcome != AiHudOutcome.NotConfigured)
+                {
+                    SetStatus($"AI suggestions failed; the PC finds stay on screen. {usage.PlainSummary()} (Reference: {usage.Id})");
+                    return;
+                }
                 int added = candidates.Count(c => c.Source != HudCandidateSource.Local);
                 ClearMagicWandCandidates();
                 _wandPreviewIndex = -1;
@@ -327,7 +312,9 @@ public partial class CropToolWindow
             string aiNote = result.AiOutcome == AiHudOutcome.Success && (aiOnly + confirmed) > 0
                 ? $" {shortProv} agreed on {confirmed} (✓) and suggested {aiOnly} more (dashed)."
                 : string.Empty;
-            string usageNote = usage.Tally.TotalTokens > 0 ? " " + usage.PlainSummary() : string.Empty;
+            bool aiFailed = result.AiOutcome is { } outcome && outcome != AiHudOutcome.Success && outcome != AiHudOutcome.NotConfigured;
+            string usageNote = usage.Tally.Requests > 0 || aiFailed ? " " + usage.PlainSummary() : string.Empty;
+            if (aiFailed) usageNote += $" (AI suggestions failed. Reference: {usage.Id})";
             SetStatusSuccess($"Found {candidates.Count} HUD piece{(candidates.Count == 1 ? "" : "s")}.{aiNote}{usageNote} " +
                              "Click a box to select it, adjust it, then label it — nothing is added until you do.");
         }
@@ -346,16 +333,12 @@ public partial class CropToolWindow
             HideWandOverlay();
             _wandRunning = false;
             _wandAiPending = false;
+            SyncWandFixButton();
             SetEnabled("MagicWandButton", true);
             SetContent("MagicWandButton", "\U0001FA84 MAGIC WAND");
         }
     }
 
-    /// <summary>
-    /// WANDPROGRESSIVE_01 — the offline scan is done and the AI is still thinking: show the offline
-    /// finds NOW (suggestions only, AIHUD_01) and let the user start reviewing. The final fused answer
-    /// replaces them only if the user has not started working on one (see RunMagicWandAsync).
-    /// </summary>
     private void OnWandLocalReady(HudLocalPreview preview, string video)
     {
         if (!_wandRunning || _wandDetection == null || !_wandDetection.IsCurrent(preview.Generation)) return;
@@ -369,7 +352,10 @@ public partial class CropToolWindow
         _wandCandidatesFrame = null;
         _wandPreviewIndex = -1;
         _wandAiPending = true;
+        _wandLocalCount = local.Count;
+        _wandAiWaitStartedUtc ??= DateTime.UtcNow;
         HideWandOverlay();
+        _wandElapsedTimer?.Start();
         ClearSourceSelection();
         ShowMagicWandCandidates();
         SetEnabled("MagicWandButton", true);
@@ -382,11 +368,6 @@ public partial class CropToolWindow
     private string? _wandActiveAiLabel;
     private string? _wandActiveEstimateBanner;
 
-    /// <summary>
-    /// Source-pixel candidates -> drawable specs. Runs on the UI thread because role lookup reads
-    /// this window's custom-role list. Coordinates are already SOURCE pixels (AI ones were converted
-    /// exactly once in the coordinator); this only clamps to the frame and picks a role.
-    /// </summary>
     private List<CandidateSpec> ToCandidateSpecs(IEnumerable<HudCandidate> found)
     {
         var specs = new List<CandidateSpec>();
@@ -404,17 +385,22 @@ public partial class CropToolWindow
         return specs;
     }
 
-
     private DispatcherTimer? _wandElapsedTimer;
     private DateTime _wandStartedUtc;
+    private DateTime? _wandAiWaitStartedUtc;
+    private int _wandLocalCount;
+    internal const string AiWaitClockTag = "WANDAICLOCK_01";
 
-    /// <summary>Highest percentage reported so far; the bar never goes backwards.</summary>
+    internal static string AiWaitText(int seconds, int limitSeconds, string provider)
+        => $"{seconds}s of up to {limitSeconds}s for {provider}";
+
     private int _wandHighWaterPercent;
 
     private void ShowWandOverlay()
     {
         _wandHighWaterPercent = 0;
         _wandStartedUtc = DateTime.UtcNow;
+        _wandAiWaitStartedUtc = null;
 
         if (this.FindControl<ProgressBar>("WandProgressBar") is { } bar) bar.Value = 0;
         if (this.FindControl<TextBlock>("WandPercentText") is { } pct) pct.Text = "0%";
@@ -437,22 +423,32 @@ public partial class CropToolWindow
 
     private void WandElapsedTimer_Tick(object? sender, EventArgs e)
     {
+        string provider = _wandActiveAiLabel ?? WandDetection.AiService?.ProviderName ?? "the AI";
+        int aiLimit = (int)GeminiHudDetectionService.DefaultTimeout.TotalSeconds;
+        int aiSeconds = _wandAiWaitStartedUtc is { } aiStart ? (int)Math.Max(0, (DateTime.UtcNow - aiStart).TotalSeconds) : -1;
+        if (_wandAiPending)
+        {
+            if (aiSeconds >= 0 && _sourceSelection == null && _wandPreviewIndex < 0)
+            {
+                string estNote = string.IsNullOrEmpty(_wandActiveEstimateBanner) ? "" : $" ({_wandActiveEstimateBanner})";
+                SetStatus($"Found {_wandLocalCount} HUD piece{(_wandLocalCount == 1 ? "" : "s")} on this PC. Step 2: waiting for {provider}{estNote} · {AiWaitText(aiSeconds, aiLimit, provider)}. ⏹ STOP AI SUGGESTIONS keeps only the PC finds.");
+            }
+            return;
+        }
         if (this.FindControl<TextBlock>("WandElapsedText") is not { } elapsed) return;
-
         int seconds = (int)Math.Max(0, (DateTime.UtcNow - _wandStartedUtc).TotalSeconds);
-        int ceiling = HudAutoDetector.MaxSeconds;
-
-        elapsed.Text = seconds < 2 ? "" : $"{seconds}s of up to {ceiling}s";
+        elapsed.Text = aiSeconds >= 0
+            ? AiWaitText(aiSeconds, aiLimit, provider)
+            : seconds < 2 ? "" : $"{seconds}s of up to {HudAutoDetector.MaxSeconds}s";
     }
 
-    /// <summary>WANDPROGRESS_01 — one beat from the detector (or the coordinator's "waiting for the
-    /// AI" beat). Always on the UI thread; see where the Progress&lt;T&gt; is constructed.</summary>
     private void ReportWandProgress(HudAutoDetector.DetectionProgress beat)
     {
         if (!_wandRunning) return;
         _wandHighWaterPercent = Math.Clamp(Math.Max(_wandHighWaterPercent, beat.Percent), 0, 100);
 
         string stageText = beat.Stage;
+        if (stageText.StartsWith("Waiting for ", StringComparison.Ordinal)) _wandAiWaitStartedUtc ??= DateTime.UtcNow;
         if (stageText.StartsWith("Waiting for ", StringComparison.Ordinal) && !string.IsNullOrEmpty(_wandActiveAiLabel))
         {
             string est = string.IsNullOrEmpty(_wandActiveEstimateBanner) ? "" : $" ({_wandActiveEstimateBanner})";
@@ -466,11 +462,6 @@ public partial class CropToolWindow
         SetStatus(stageText);
     }
 
-    /// <summary>
-    /// MAGICWAND_02 — the "press again" behaviour. Cycles: all shown -> candidate 1 selected -> ...
-    /// -> all shown again. Selecting one only SELECTS it (normal move/resize applies); the user still
-    /// presses Enter / labels it to add it. AIHUD_01: this path never commits.
-    /// </summary>
     private void StepMagicWandPreview()
     {
         if (_wandCandidates is not { Count: > 0 } candidates) return;
@@ -495,7 +486,6 @@ public partial class CropToolWindow
             $"Piece {_wandPreviewIndex + 1} of {candidates.Count} ({CandidateCaption(candidate)}). Press Enter to label it, or MAGIC WAND again for the next one.");
     }
 
-    /// <summary>Concise on-canvas caption: what it is, and where the suggestion came from.</summary>
     private string CandidateCaption(CandidateSpec candidate)
     {
         string name = !string.IsNullOrWhiteSpace(candidate.Label)
@@ -509,12 +499,6 @@ public partial class CropToolWindow
         };
     }
 
-    /// <summary>
-    /// Draws the cached candidates onto the frozen frame, each with a concise label. Pure rendering.
-    /// Rectangles and labels carry their CandidateSpec in Tag, which SourceCanvas_PointerPressed's
-    /// branch 3 reads to turn a click into a SELECTION (never a commit).
-    /// AI-only suggestions are dashed so the user can tell them from detector finds at a glance.
-    /// </summary>
     private void ShowMagicWandCandidates()
     {
         if (_sourceCanvas == null || _wandCandidates == null) return;
@@ -567,7 +551,6 @@ public partial class CropToolWindow
         }
     }
 
-    /// <summary>Caption size in screen pixels; divided by the zoom wherever it is applied.</summary>
     private const double WandCaptionFontSize = 12.0;
 
     private void ClearMagicWandCandidates()

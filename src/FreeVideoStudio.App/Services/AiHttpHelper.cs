@@ -6,15 +6,10 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// Shared HTTP helpers for AI providers: unified Retry-After header parsing (Delta + Date)
-/// and live in-flight progress heartbeats so long cloud waits never appear frozen.
-/// </summary>
 internal static class AiHttpHelper
 {
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(5);
 
-    /// <summary>Parses Retry-After whether a vendor sends relative seconds (<see cref="System.Net.Http.Headers.RetryConditionHeaderValue.Delta"/>) or an HTTP date (<see cref="System.Net.Http.Headers.RetryConditionHeaderValue.Date"/>).</summary>
     public static TimeSpan? ParseRetryAfter(HttpResponseMessage response)
     {
         var ra = response?.Headers?.RetryAfter;
@@ -28,10 +23,6 @@ internal static class AiHttpHelper
         return null;
     }
 
-    /// <summary>
-    /// Executes one cloud HTTP call while emitting clear user-facing start, periodic heartbeat (every 5 s),
-    /// and completion timing lines through <paramref name="userLog"/>.
-    /// </summary>
     public static async Task<T> SendWithProgressAsync<T>(
         string vendorDisplay,
         string model,

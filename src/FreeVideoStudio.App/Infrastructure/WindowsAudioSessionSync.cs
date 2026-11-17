@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Avalonia.Threading;
@@ -7,27 +6,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// VOLSYNC_01 — the app's master volume and its entry in the Windows Volume Mixer are ONE control.
-///
-/// <para>Before: the app attenuated inside mpv and never touched its Windows audio session, so the
-/// two volumes simply multiplied and neither ever moved when the other did.</para>
-///
-/// <para>Now this process's audio session (every player, the voice-over takes and the UI sounds share
-/// it — one process, one default session) carries the master:</para>
-/// <list type="bullet">
-/// <item>app slider → session level = (position/100)³ (VOLCURVE_01's perceptual gain; the session
-///   volume is LINEAR amplitude per Microsoft's "Audio-Tapered Volume Controls"), shared mute →
-///   session mute;</item>
-/// <item>Volume Mixer → app slider = ∛level × 100, Mixer mute → shared mute. Polled every
-///   <see cref="PollMs"/> ms on one dedicated MTA thread that owns every COM call;</item>
-/// <item>while it works, <see cref="MpvIpcClient.MasterAppliedBySystem"/> is true and players carry
-///   only their balances, so the master is never applied twice. If Core Audio is unavailable (no
-///   device, not Windows, any COM failure) the flag goes false and players apply the master
-///   themselves — the old behaviour, with the new curve.</item>
-/// </list>
-/// <para>Raw vtable calls (the TaskbarProgress pattern): NativeAOT-safe, no ComWrappers.</para>
-/// </summary>
 internal static unsafe partial class WindowsAudioSessionSync
 {
     public const int PollMs = 300;
@@ -37,7 +15,6 @@ internal static unsafe partial class WindowsAudioSessionSync
     private static readonly Guid IID_IMMDeviceEnumerator = new("A95664D2-9614-4F35-A746-DE8DB63617E6");
     private static readonly Guid IID_IAudioSessionManager = new("BFA971F1-4D5E-40BB-935E-967039BFBEE4");
     private static readonly Guid IID_IAudioSessionControl2 = new("BFB7FF88-7239-4FC9-8FA2-07C950BE9C6D");
-    /// <summary>Our own event context, so a change we made is never mistaken for the user's.</summary>
     private static readonly Guid OurContext = new("6F1C2A3E-5B7D-4C21-9E0A-FVS000000001".Replace("FVS", "0A0"));
 
     private const uint CLSCTX_ALL = 0x17;
@@ -56,7 +33,6 @@ internal static unsafe partial class WindowsAudioSessionSync
     private static volatile bool _stop;
     private static volatile int _voiceCaptureActive;
 
-    /// <summary>Active during voiceover recording or mic monitoring to reject ducking-induced volume drops.</summary>
     public static bool IsVoiceCaptureActive
     {
         get => _voiceCaptureActive != 0;
@@ -149,7 +125,6 @@ internal static unsafe partial class WindowsAudioSessionSync
         MarkSystemApplied(false);
     }
 
-    /// <summary>Opts out of Windows default stream attenuation (ducking) when communications/mic streams open.</summary>
     private static void OptOutOfDucking(IntPtr manager)
     {
         if (manager == IntPtr.Zero) return;
@@ -174,7 +149,6 @@ internal static unsafe partial class WindowsAudioSessionSync
         }
     }
 
-    /// <summary>Default render endpoint → IAudioSessionManager → this process's default session ISimpleAudioVolume.</summary>
     private static IntPtr AcquireSimpleVolume()
     {
         IntPtr enumerator = IntPtr.Zero, device = IntPtr.Zero, manager = IntPtr.Zero, simple = IntPtr.Zero;

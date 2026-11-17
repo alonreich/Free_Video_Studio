@@ -6,37 +6,22 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.Core.Editing;
 
-/// <summary>The outcome of a logical edit command: success, or the plain-English reason it was refused.</summary>
 public readonly record struct EditOutcome(bool Ok, string? Error = null)
 {
     public static EditOutcome Success => new(true);
     public static EditOutcome Refused(string error) => new(false, error);
 }
 
-/// <summary>
-/// EDITSTATE_01 — speed blocks, MARK START / MARK END, zoom configuration, the freeze and DELETE PARTS
-/// as LOGICAL commands. Each one records history the way the editor always has (07 UNDO_26: the
-/// state BEFORE the change) and changes only data; the window translates gestures into these calls
-/// and re-renders afterwards.
-/// </summary>
 public sealed partial class GranularEditSession
 {
-    /// <summary>CUT_03 — a speed block left shorter than this by a cut is dropped rather than kept.</summary>
     public const double MinSegmentAfterCutMs = 200.0;
 
-    /// <summary>CUT_02 — minimum surviving footage, in ms. See MainWindow's identical guard.</summary>
     public const double MinSurvivingMs = 500.0;
 
-    /// <summary>IDEA_3 — the length of a zoom container auto-created at the playhead.</summary>
     public const int DefaultZoomBlockMs = 2000;
 
     private string OverlapText(SpeedSegment seg) => $"[{FormatMs(seg.StartMs)} – {FormatMs(seg.EndMs)}]";
 
-
-    /// <summary>
-    /// MARK START at a TRIM-RELATIVE ms. Refused inside an existing block (returns its index);
-    /// otherwise clears the block selection and arms the start.
-    /// </summary>
     public int? MarkStart(int currentMs)
     {
         if (FindSegmentAt(currentMs) is int overlap) return overlap;
@@ -45,12 +30,6 @@ public sealed partial class GranularEditSession
         return null;
     }
 
-    /// <summary>
-    /// MARK END at a TRIM-RELATIVE ms. Without a START, the start is inferred: the clip start when
-    /// no block ends before here, else one second after the previous block's end (or that end
-    /// itself when a second does not fit). Refused inside a block when no START is armed, and
-    /// before the START when one is.
-    /// </summary>
     public EditOutcome MarkEnd(int currentMs, out int? overlapIndex)
     {
         overlapIndex = null;
@@ -88,12 +67,6 @@ public sealed partial class GranularEditSession
         return EditOutcome.Success;
     }
 
-
-    /// <summary>
-    /// Turns the MARK START / MARK END pair into a block at the BASE speed. The overlap ban and the
-    /// minimum length (MINLEN_01) are export-correctness rules, not UI politeness: every creation
-    /// path goes through them. Clears the marks on success and resets the pending speed.
-    /// </summary>
     public EditOutcome AddPendingSegment(out SpeedSegment? added)
     {
         added = null;
@@ -121,12 +94,6 @@ public sealed partial class GranularEditSession
         return EditOutcome.Success;
     }
 
-    /// <summary>
-    /// ZOOM_05 — the block a zoom lives on, from the MARK START / MARK END span. The same three rules
-    /// as <see cref="AddPendingSegment"/>; clears the marks. <paramref name="newIndex"/> is the new
-    /// block, for the window to select (selection changes close an open zoom box — ZOOMLIVE_07 —
-    /// which only the window can do, so it is not pre-empted here).
-    /// </summary>
     public EditOutcome CreateZoomBlockFromPendingMarks(out int newIndex)
     {
         newIndex = -1;
@@ -149,12 +116,6 @@ public sealed partial class GranularEditSession
         return EditOutcome.Success;
     }
 
-    /// <summary>
-    /// IDEA_3 — a zoom needs a block to live on. Nothing under the playhead: create one at the BASE
-    /// speed (so the zoom is the only visible effect) from the playhead, up to
-    /// <see cref="DefaultZoomBlockMs"/>, kept clear of its neighbours. <paramref name="newIndex"/> is
-    /// the new block, for the window to select.
-    /// </summary>
     public EditOutcome CreateZoomContainerAt(int playheadMs, int timelineEndMs, out int newIndex)
     {
         newIndex = -1;
@@ -188,13 +149,6 @@ public sealed partial class GranularEditSession
 
     private void SortSegments() => Segments.Sort((a, b) => a.StartMs.CompareTo(b.StartMs));
 
-
-    /// <summary>
-    /// How far block <paramref name="index"/> (spanning <paramref name="startMs"/>–<paramref name="endMs"/>)
-    /// may travel before it touches a neighbour: the nearest earlier block's end and the nearest later
-    /// block's start (each kept <see cref="SegGapMs"/> clear), else the clip's own edges. The
-    /// neighbour indices are -1 when the wall is the clip edge. A drag clamps against these.
-    /// </summary>
     public (double Lower, double Upper, int LowerIndex, int UpperIndex) NeighbourBounds(int index, double startMs, double endMs, double totalMs)
     {
         double lower = 0, upper = totalMs;
@@ -216,10 +170,6 @@ public sealed partial class GranularEditSession
         return (lower, upper, lowerIdx, upperIdx);
     }
 
-    /// <summary>
-    /// The pending speed applied to the selected block. <paramref name="gestureKey"/> is the
-    /// window's: the wheel is a continuous gesture, a preset button a discrete click (UNDO_02).
-    /// </summary>
     public bool ApplyPendingSpeedToSelection(string? gestureKey)
     {
         if (SelectedSegment is not { } seg) return false;
@@ -228,7 +178,6 @@ public sealed partial class GranularEditSession
         return true;
     }
 
-    /// <summary>Deletes the selected block, speed and zoom together. Returns it, or null when nothing was selected.</summary>
     public SpeedSegment? DeleteSelectedSegment()
     {
         if (SelectedSegment is not { } seg) return null;
@@ -238,11 +187,6 @@ public sealed partial class GranularEditSession
         return seg;
     }
 
-    /// <summary>
-    /// FREEZE_CLEAR_01 — CLEAR ALL removes every block, the marks AND the frozen frame (the freeze
-    /// changes the finished length; "clear all" that left it behind would not put the clip back to
-    /// normal). Returns whether a freeze was cleared.
-    /// </summary>
     public bool ClearAll()
     {
         bool hadFreeze = HasFreeze;
@@ -254,8 +198,6 @@ public sealed partial class GranularEditSession
         return hadFreeze;
     }
 
-
-    /// <summary>ZOOM_04 — strips the zoom from the selected block and keeps its speed change.</summary>
     public EditOutcome RemoveZoomFromSelection()
     {
         if (SelectedSegment is not { } seg) return EditOutcome.Refused("Select a block first.");
@@ -271,7 +213,6 @@ public sealed partial class GranularEditSession
         return EditOutcome.Success;
     }
 
-    /// <summary>Commits a zoom rectangle, already in SOURCE pixels, to the selected block.</summary>
     public bool ApplyZoomToSelection(int x, int y, int w, int h, string originalResolution, bool slow)
     {
         if (SelectedSegment is not { } seg) return false;
@@ -283,21 +224,6 @@ public sealed partial class GranularEditSession
         return true;
     }
 
-    /// <summary>
-    /// ZOOMLIVE_05 — KEEP A ZOOM INSIDE THE BLOCK THAT OWNS IT.
-    ///
-    /// <para>
-    /// <c>ZoomStartMs</c> / <c>ZoomEndMs</c> are deliberately independent of the block's own edges —
-    /// that is what the two magnifiers exist to control. The consequence nobody asks for: shrink or
-    /// move the block afterwards and the zoom span can end up partly or wholly OUTSIDE it. The
-    /// exporter would then be handed a zoom phase covering source time this block never renders,
-    /// and the preview and the export would disagree about when the zoom happens.
-    /// </para>
-    /// <para>
-    /// Called on every block move/resize release. It only ever narrows, never widens, so a user who
-    /// deliberately zoomed a sub-range keeps their sub-range unless the block shrank past it.
-    /// </para>
-    /// </summary>
     public bool ClampZoomInsideItsBlock(int index)
     {
         if (index < 0 || index >= Segments.Count) return false;
@@ -319,30 +245,6 @@ public sealed partial class GranularEditSession
         return true;
     }
 
-    /// <summary>
-    /// OPTION C — stops the user parking two SLOW zooms close enough that the export has to take
-    /// a glide away from one of them.
-    ///
-    /// WHY: a Slow zoom borrows 0.5s of footage before it to glide in and 0.5s after it to glide
-    /// out. Two Slow zooms therefore need a full 1.0s between them
-    /// (<see cref="FreeVideoStudio.Core.Media.GranularSpeedBuilder.ZoomRampRequiredGapBetweenSlowZooms"/>)
-    /// or neither of them can have a ramp on the facing side — Option A makes both snap in that
-    /// case, which is correct but is not what someone who ticked "Slow" was going for.
-    /// This clamp means they never reach that state by dragging in the first place.
-    ///
-    /// PRECEDENT: the editor already enforces exactly this kind of rule for speed blocks — a hard
-    /// <see cref="GranularEditSession.SegGapMs"/> (1000ms) "social distance". This is the same idea for zooms, at the
-    /// same distance, so it should feel familiar rather than new.
-    ///
-    /// SCOPE, deliberately narrow:
-    ///   * only applies when the zoom being dragged is SLOW **and** the neighbour is SLOW. An
-    ///     Instant zoom borrows nothing, so there is nothing to protect and clamping against it
-    ///     would just remove freedom for no benefit.
-    ///   * only clamps against the nearest zoom on the side being dragged.
-    ///   * returns the value unchanged when it is already legal, so normal dragging is untouched.
-    /// Flipping a zoom to Slow AFTER placing it can still produce a tight pair — that path is
-    /// handled by Option A in the export maths (both simply snap), never by a broken half-zoom hop.
-    /// </summary>
     public double ClampZoomEdgeAgainstSlowNeighbours(int segIndex, double proposedMs, bool isStart)
     {
         if (segIndex < 0 || segIndex >= Segments.Count) return proposedMs;
@@ -364,13 +266,6 @@ public sealed partial class GranularEditSession
         return clamped;
     }
 
-    /// <summary>
-    /// ZOOMLIVE_05 — is there room for THIS zoom to become a gliding one?
-    ///
-    /// Mirrors <see cref="ClampZoomEdgeAgainstSlowNeighbours"/> exactly, but asks the yes/no
-    /// question instead of moving an edge. Both must agree; if the gap constant changes, it changes
-    /// for both because they read the same one.
-    /// </summary>
     public bool SlowZoomHasRoom(int segIndex, out double requiredGapSec)
     {
         requiredGapSec = GranularSpeedBuilder.ZoomRampRequiredGapBetweenSlowZooms;
@@ -395,9 +290,6 @@ public sealed partial class GranularEditSession
         return true;
     }
 
-    /// <summary>
-    /// SLOWZOOMGLIDE_01 — Evaluates per-side glide availability for segment <paramref name="segIndex"/>.
-    /// </summary>
     public GranularSpeedBuilder.SlowZoomGlideAvailability GetSlowZoomGlideAvailability(
         int segIndex,
         SpeedSegment? overrideSegment = null)
@@ -409,18 +301,12 @@ public sealed partial class GranularEditSession
             Segments, segIndex, totalDurationSec, trimStartSec: TrimStartMs / 1000.0, overrideSegment);
     }
 
-
-    /// <summary>FREEZE_CLEAR_01 — the logical half of UNFREEZE: no frame, no preset.</summary>
     public void ClearFreeze()
     {
         FreezeTimeMs = -1;
         SelectedFreezePresetS = -1.0;
     }
 
-    /// <summary>
-    /// FREEZE IMAGE — freezes the frame at an ABSOLUTE source ms, clamped into the editable window,
-    /// held for <paramref name="durationS"/>. One undo step ("set freeze").
-    /// </summary>
     public void SetFreezeAt(double absoluteMs, double durationS)
     {
         if (absoluteMs < TrimStartMs) absoluteMs = TrimStartMs;
@@ -430,14 +316,12 @@ public sealed partial class GranularEditSession
         FreezeDurationS = durationS;
     }
 
-    /// <summary>UNFREEZE IMAGE — one undo step ("remove freeze").</summary>
     public void RemoveFreeze()
     {
         Checkpoint("remove freeze");
         ClearFreeze();
     }
 
-    /// <summary>A freeze preset picked while a freeze exists: the hold's new length, inside the window's gesture.</summary>
     public bool SetFreezeDuration(double durationS, string? gestureKey)
     {
         if (FreezeTimeMs < 0) return false;
@@ -446,7 +330,6 @@ public sealed partial class GranularEditSession
         return true;
     }
 
-    /// <summary>FREEZE_DRAG — keeps the hold inside the clip (of <paramref name="clipDurationSec"/>) and inside its legal length.</summary>
     public void ClampFreezeIntoClip(double clipDurationSec)
     {
         if (FreezeTimeMs < 0 || clipDurationSec <= 0) return;
@@ -454,14 +337,12 @@ public sealed partial class GranularEditSession
         FreezeTimeMs = Math.Clamp(FreezeTimeMs, TrimStartMs, TrimStartMs + clipDurationSec * 1000.0);
     }
 
-    /// <summary>FREEZE_DRAG — moves the frozen frame to a TRIM-RELATIVE source second, as part of the window's gesture.</summary>
     public void MoveFreezeToSourceRelSec(double relSec, string gestureKey)
     {
         Checkpoint("move freeze", gestureKey);
         FreezeTimeMs = TrimStartMs + relSec * 1000.0;
     }
 
-    /// <summary>FOCUS_01 — nudges the frozen frame by 60fps frames, kept inside the clip.</summary>
     public bool MoveFreezeByFrames(int frameDelta, double clipDurationSec, string gestureKey)
     {
         if (FreezeTimeMs < 0 || clipDurationSec <= 0) return false;
@@ -471,7 +352,6 @@ public sealed partial class GranularEditSession
         return true;
     }
 
-    /// <summary>FOCUS_01 — trims or extends the hold a 60fps frame at a time; the start stays put.</summary>
     public bool NudgeFreezeDurationByFrames(int frameDelta)
     {
         if (FreezeTimeMs < 0) return false;
@@ -480,8 +360,6 @@ public sealed partial class GranularEditSession
         return true;
     }
 
-
-    /// <summary>CUT_02 — the cut list in the units OutputTimeline wants: clip-relative SECONDS.</summary>
     public List<OutputTimeline.Cut> CutsForTimeline()
         => Cuts.Select(c => new OutputTimeline.Cut(c.StartMs / 1000.0, c.EndMs / 1000.0)).ToList();
 
@@ -492,10 +370,6 @@ public sealed partial class GranularEditSession
         return t;
     }
 
-    /// <summary>
-    /// CUT_02 — footage that would survive if <paramref name="cuts"/> were applied to a clip of
-    /// <paramref name="durMs"/>, measured through the export's own <see cref="OutputTimeline.NormalizeCuts"/>.
-    /// </summary>
     public static double SurvivingMsAfterCuts(IReadOnlyList<CutRange> cuts, double durMs)
     {
         var rel = cuts.Select(c => new OutputTimeline.Cut(c.StartMs / 1000.0, c.EndMs / 1000.0)).ToList();
@@ -504,10 +378,6 @@ public sealed partial class GranularEditSession
         return Math.Max(0, durMs - removed);
     }
 
-    /// <summary>
-    /// CUT_02 — whether deleting [start, end] (already clamped to the clip) is allowed: at least
-    /// <see cref="MinSurvivingMs"/> must survive. Returns the surviving ms either way.
-    /// </summary>
     public bool CanDeleteRange(double startMs, double endMs, double clipDurMs, out double survivingMs)
     {
         var candidate = new List<CutRange>(Cuts) { new(startMs, endMs) };
@@ -515,11 +385,6 @@ public sealed partial class GranularEditSession
         return survivingMs >= MinSurvivingMs;
     }
 
-    /// <summary>
-    /// CUT_02 / CUT_03 — DELETE PARTS as one undoable step: the cut, its normalisation, and the
-    /// reconciliation of blocks and freeze that overlapped the hole. The marks are spent and the
-    /// selection cleared, so the same stretch cannot be deleted twice.
-    /// </summary>
     public void DeleteRange(double startMs, double endMs, double clipDurMs)
     {
         Checkpoint("delete parts");
@@ -531,10 +396,8 @@ public sealed partial class GranularEditSession
         SelectedSegmentIndex = -1;
     }
 
-    /// <summary>MEMECUT_02 — the memes the last DELETE PARTS took with it, for the window's notice.</summary>
     public List<string> LastCutDroppedMemes { get; private set; } = new();
 
-    /// <summary>Runs the export's own normalisation so the editor can never show a cut the export would not make.</summary>
     public void NormalizeCuts(double durMs)
     {
         var norm = OutputTimeline.NormalizeCuts(CutsForTimeline(), durMs / 1000.0);
@@ -542,17 +405,6 @@ public sealed partial class GranularEditSession
         foreach (var c in norm) Cuts.Add(new CutRange(c.StartSec * 1000.0, c.EndSec * 1000.0));
     }
 
-    /// <summary>
-    /// CUT_03 — removes deleted footage from the speed blocks and the freeze. Everything is SOURCE
-    /// time, so footage after a cut does not move (OutputTimeline maps it). Four cases:
-    ///   fully inside the cut          -> deleted outright
-    ///   starts before, ends inside    -> truncated to the cut's start
-    ///   starts inside, ends after     -> moved forward to the cut's end
-    ///   spans the whole cut           -> LEFT ALONE: OutputTimeline already splits it around the
-    ///                                    hole; shortening it here would double-count the removal.
-    /// A survivor trimmed below <see cref="MinSegmentAfterCutMs"/> is dropped. Every change is
-    /// logged, so the log alone explains why a block the user made is gone.
-    /// </summary>
     public void ApplyCutToSegmentsAndFreeze(double cutStartMs, double cutEndMs)
     {
         int removed = 0, trimmed = 0;

@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
@@ -11,34 +10,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// FILMPIXEL_01 (04 UI-MERGERQUEUE, 2026-10-11) — THE MERGER FILMSTRIP LANE, RECONCILED, NOT REBUILT.
-///
-/// <see cref="Sync"/> reconciles the lane with the new tile plan by the clip's width-independent cache key
-/// (LANECACHE_02) instead of clearing it:
-///   • a tile whose slice and slot count did not change keeps its <see cref="Image"/>s untouched;
-///   • a moved or resized tile is re-laid from the SAME source (cached strip or the strip still
-///     streaming) — the cache is not even consulted again, its lease is kept;
-///   • a tile off the lane is culled; a clip no longer planned has its images removed.
-/// Leases (CACHEBOUND_04): every tile showing a CACHED strip holds exactly one lease; when its images
-/// leave the lane the lease is closed one dispatcher turn later (Background), after the lane dropped its
-/// <c>CroppedBitmap</c>s — so an evicted strip is never disposed under an image on screen. A strip still
-/// streaming is shown without a lease and adopted (<see cref="Adopt"/>) when it lands in the cache.
-/// A stream or cache result for a clip not in the current plan never paints. UI thread only.
-///
-/// LANEINSTANCE_01 (2026-10-11) — tiles are OCCURRENCES, strips are SOURCES. Tiles, layout and leases are
-/// keyed by <see cref="LaneTile.Occurrence"/>, so a clip queued twice (same file, same trim → same
-/// <see cref="LaneTile.CacheKey"/>) is drawn twice; before, both were indexed by the cache key and the
-/// second occurrence silently overwrote the first. Everything that comes from the SOURCE — a streamed
-/// frame, a cached or adopted strip — is keyed by the cache key and FANS OUT to every planned occurrence
-/// of it, and each tile showing a cached strip holds ITS OWN lease (an eviction can never dispose a strip
-/// another occurrence still shows). <see cref="Sync"/> hands back at most ONE missing tile per cache key, so
-/// identical occurrences never start a second decode. Reconciliation matches occurrences exactly first,
-/// then lets an unmatched new occurrence ADOPT an unmatched old tile of the SAME source (a reorder that
-/// renumbers clips keeps its images and lease); an old tile is never reused for a different source.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 internal sealed class FilmLanePresenter
 {
     private sealed class Tile
@@ -52,7 +23,6 @@ internal sealed class FilmLanePresenter
 
     private readonly Canvas _lane;
     private readonly OwnedLruCache<Bitmap> _cache;
-    /// <summary>LANEINSTANCE_01 — keyed by <see cref="LaneTile.Occurrence"/>, never by the cache key.</summary>
     private readonly Dictionary<string, Tile> _tiles = new(StringComparer.Ordinal);
     private readonly Dictionary<string, LaneTile> _layout = new(StringComparer.Ordinal);
 
@@ -62,24 +32,14 @@ internal sealed class FilmLanePresenter
         _cache = cache;
     }
 
-    /// <summary>Images created since construction (a pure re-sync of an unchanged layout creates none).</summary>
     public int ImagesCreated { get; private set; }
-    /// <summary>Clip OCCURRENCES currently showing a strip (LANEINSTANCE_01: a clip queued twice counts twice).</summary>
     public int PlacedCount => _tiles.Count;
-    /// <summary>Leases currently held for tiles on the lane.</summary>
     public int LeaseCount { get { int n = 0; foreach (var t in _tiles.Values) if (t.Lease != null) n++; return n; } }
-    /// <summary>Clip occurrences in the lane's plan (visible, not culled).</summary>
     public int LayoutCount => _layout.Count;
 
     private double LaneHeight => _lane.Height > 0 ? _lane.Height : 34;
-    /// <summary>One frame slot: lane height × 16:9.</summary>
     public double SlotPx => LaneHeight * 16.0 / 9.0;
 
-    /// <summary>
-    /// Reconciles the lane with <paramref name="plan"/>. <paramref name="streaming"/> returns a clip's strip
-    /// still being filled (or null). Returns the tiles that have neither a cached nor a streaming strip.
-    /// A clip the cache knows has NO picture (negative entry) is not handed back: it is never retried.
-    /// </summary>
     public List<LaneTile> Sync(IReadOnlyList<LaneTile> plan, double laneWidth, Func<string, IImage?> streaming)
     {
         _layout.Clear();
@@ -139,7 +99,6 @@ internal sealed class FilmLanePresenter
         return missing;
     }
 
-    /// <summary>Moves a kept tile to its new slice; re-lays only when its slice or slot count changed.</summary>
     private void Relay(Tile tile, LaneTile t)
     {
         int slots = ThumbGrid.Slots(t.Width, SlotPx);
@@ -148,13 +107,11 @@ internal sealed class FilmLanePresenter
         if (!same) Lay(tile);
     }
 
-    /// <summary>Every planned occurrence of one source (LANEINSTANCE_01 fan-out).</summary>
     private IEnumerable<LaneTile> PlannedOccurrences(string cacheKey)
     {
         foreach (var t in _layout.Values) if (string.Equals(t.CacheKey, cacheKey, StringComparison.Ordinal)) yield return t;
     }
 
-    /// <summary>A stream's first frame landed: show it on EVERY planned occurrence of that source that shows nothing yet.</summary>
     public void ShowStreaming(string key, IImage strip)
     {
         foreach (var plan in PlannedOccurrences(key).ToArray())
@@ -164,7 +121,6 @@ internal sealed class FilmLanePresenter
         }
     }
 
-    /// <summary>Another frame of a streaming strip: repaint the images of every occurrence showing it.</summary>
     public void InvalidateFrames(string key, IImage strip)
     {
         foreach (var tile in _tiles.Values)
@@ -174,12 +130,6 @@ internal sealed class FilmLanePresenter
         }
     }
 
-    /// <summary>
-    /// A strip landed in the cache (finished stream or disk). It is shown on EVERY planned occurrence of
-    /// that source, replacing whatever each showed; <paramref name="lease"/> goes to the first occurrence that
-    /// needs one and every other occurrence acquires its OWN lease (CACHEBOUND_04: one lease per displayed
-    /// tile). Closed when no occurrence is planned. Returns true when it is on the lane.
-    /// </summary>
     public bool Adopt(string key, OwnedLruCache<Bitmap>.Lease lease)
     {
         var planned = PlannedOccurrences(key).ToArray();
@@ -220,14 +170,12 @@ internal sealed class FilmLanePresenter
         return true;
     }
 
-    /// <summary>Is <paramref name="strip"/> shown by any tile on the lane?</summary>
     public bool IsShowing(IImage strip)
     {
         foreach (var t in _tiles.Values) if (ReferenceEquals(t.Source, strip)) return true;
         return false;
     }
 
-    /// <summary>Empties the lane; every lease is closed one dispatcher turn later.</summary>
     public void Clear()
     {
         var released = new List<OwnedLruCache<Bitmap>.Lease>();
@@ -249,10 +197,6 @@ internal sealed class FilmLanePresenter
         Lay(tile);
     }
 
-    /// <summary>
-    /// Lays one clip's filmstrip into its slice: as many frame slots as fit (lane height × 16:9 each),
-    /// each a cropped view of the nearest grid frame of the clip's strip (no pixel work).
-    /// </summary>
     private void Lay(Tile tile)
     {
         RemoveImages(tile);
@@ -289,7 +233,6 @@ internal sealed class FilmLanePresenter
         tile.Images.Clear();
     }
 
-    /// <summary>CACHEBOUND_04 — the images are off the lane now; their leases close one turn later.</summary>
     private static void ReleaseLater(List<OwnedLruCache<Bitmap>.Lease> leases)
     {
         if (leases.Count == 0) return;

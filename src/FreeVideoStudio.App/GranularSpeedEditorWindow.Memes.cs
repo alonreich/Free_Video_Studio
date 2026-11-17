@@ -1,5 +1,4 @@
-﻿
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
@@ -20,28 +19,12 @@ using static FreeVideoStudio.App.Infrastructure.GranularEditorVisuals;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// MEMEMODE_01 — adding a meme, changing how a placed meme plays, and the corner overlays' own band
-/// and preview. In its own file because MVVM_02 says so (see GranularSpeedEditorWindow.History.cs).
-///
-/// <para><b>Two modes, two frames of reference.</b> A FULL SCREEN meme is an insertion: it occupies
-/// its whole length on the OUTPUT ruler and obeys D7/D8 (snapped off speed blocks and freezes, never
-/// two at one point, kept apart by <see cref="GranularEditSession.MemeMinSeparationOutSec"/>). A
-/// CORNER OVERLAY occupies ZERO output seconds: it is drawn as a thin strip over the gameplay it
-/// covers, sits exactly where the playhead was (only pushed out of deleted footage), may overlap
-/// anything, and never moves anything after it.</para>
-///
-/// <para><b>Undo.</b> Every change goes through <c>PushUndo</c> before the list changes; the snapshot
-/// holds the <see cref="MemePlacement"/> records, whose equality includes every presentation
-/// property, so each change is one undoable step (07 U1–U4).</para>
-/// </summary>
 public partial class GranularSpeedEditorWindow
 {
     private Infrastructure.CornerMemeOverlayPresenter? _cornerMemes;
     private string _cornerMemeKey = "";
     private readonly Services.EditorTimelineCache _gameplayTimelineCache = new();
 
-    /// <summary>The finished video WITHOUT full-screen memes — the clock corner overlays run on.</summary>
     private OutputTimeline GameplayTimeline()
         => _gameplayTimelineCache.Get(Math.Max(0.001, GetDuration()) * 1000, _edit.Segments, _edit.Cuts, Array.Empty<MemePlacement>(),
             speed: EditorBaseSpeed,
@@ -112,11 +95,6 @@ public partial class GranularSpeedEditorWindow
                 : $"Meme added — the video is {duration:0.0}s longer");
     }
 
-    /// <summary>
-    /// MEMEMODE_01 — reopens the same popup for a placed meme (double-click its band, Enter, or the
-    /// meme list): another file, part, mode, corner/position, size, sound, animation or transition.
-    /// One undo step. A switch to full screen may move it off a block (MEMESNAP_02) — that is said.
-    /// </summary>
     private async Task EditMemeAsync(string memeId)
     {
         try
@@ -168,11 +146,6 @@ public partial class GranularSpeedEditorWindow
         }
     }
 
-    /// <summary>
-    /// MERGEMEME_02 — in a merge, a full-screen meme inside a clip's fade-in/out is moved NOW to where
-    /// the merge will put it (MergeEditorSource.ResolveMemeAt), so the editor never shows a place the
-    /// export does not use. Part of the current undo step (no checkpoint). Returns the notice, or null.
-    /// </summary>
     private string? ApplyMergeMemeRules(string memeId)
     {
         var src = _mergeSource;
@@ -195,7 +168,6 @@ public partial class GranularSpeedEditorWindow
         return note;
     }
 
-    /// <summary>MEMESNAP_03 — runs before every timeline redraw; announces any meme a block pushed aside.</summary>
     private void ResnapMemesAfterBlockEdit()
     {
         var moved = _edit.ResnapMemesOffBlocks();
@@ -208,11 +180,6 @@ public partial class GranularSpeedEditorWindow
         _ = RefreshMemePreviewAsync("", stall: false);
     }
 
-    /// <summary>
-    /// MEMEMODE_01 / MEMESTRIP_02 — where a corner meme is visible on the GAMEPLAY clock (output
-    /// seconds without full-screen memes) — the clock the export overlays it on. In a merge it also
-    /// stops where its clip ends (effects stay inside one clip; MergeClipGraph clips it the same way).
-    /// </summary>
     private (double Start, double End, bool CutByClip)? CornerGameplaySpan(MemePlacement m, OutputTimeline game)
     {
         double total = game.TotalOutputSeconds;
@@ -229,11 +196,6 @@ public partial class GranularSpeedEditorWindow
         return (v.StartSec, v.EndSec, cut);
     }
 
-    /// <summary>
-    /// MEMESTRIP_02 — the pieces of the OUTPUT ruler a corner meme covers. A full-screen meme inside its
-    /// span pauses it (the export overlays BEFORE splicing), so the strip is split around every such
-    /// cutaway and the total visible length is the meme's real length.
-    /// </summary>
     private List<(double OutStart, double OutEnd)> CornerOutputPieces(double gameStart, double gameEnd, OutputTimeline game)
     {
         var cutaways = new List<(double At, double Dur)>();
@@ -261,11 +223,6 @@ public partial class GranularSpeedEditorWindow
         return pieces;
     }
 
-    /// <summary>
-    /// MEMEMODE_01 — corner overlays on the OUTPUT ruler: a thin dashed strip in the top of the lane
-    /// over the gameplay it covers (it adds no length, so it is never a band that pushes things).
-    /// Click selects it, drag moves it (MEMEDRAG_03), double-click changes it.
-    /// </summary>
     private void DrawCornerMemeBands(Canvas canvas, double w, double h)
     {
         var corners = MemePlacement.CornerOnly(_edit.Memes);
@@ -318,7 +275,6 @@ public partial class GranularSpeedEditorWindow
         }
     }
 
-    /// <summary>MEMEDRAG_03 — a corner strip: press selects and starts a drag, double-click edits.</summary>
     private void AttachCornerStripInteractions(Control strip, string id, Canvas timelineCanvas)
     {
         strip.DoubleTapped += (_, e) => { e.Handled = true; _ = EditMemeAsync(id); };
@@ -354,11 +310,6 @@ public partial class GranularSpeedEditorWindow
         };
     }
 
-    /// <summary>
-    /// MEMEDRAG_03 — one step of a corner drag. The ruler does not change while a corner meme moves (it
-    /// adds no length), so the pointer maps straight through the live ruler; the meme is only pushed
-    /// out of deleted footage.
-    /// </summary>
     private void PumpCornerMemeDrag(Avalonia.Input.PointerEventArgs e, Canvas canvas, double w)
     {
         double px = e.GetPosition(canvas).X;
@@ -380,18 +331,12 @@ public partial class GranularSpeedEditorWindow
 
     private readonly HashSet<Canvas> _memeCaptureHooked = new();
 
-    /// <summary>THUMB_02 — a meme drag also ends when the canvas loses pointer capture.</summary>
     private void EnsureMemeCaptureLostHook(Canvas canvas)
     {
         if (!_memeCaptureHooked.Add(canvas)) return;
         canvas.PointerCaptureLost += (_, e) => EndMemeDragCore(e.Pointer);
     }
 
-    /// <summary>
-    /// CORNERPARITY_02 — the GAMEPLAY second the editor preview is at. Through a freeze the player sits
-    /// on one frame, but the export's overlay keeps playing over the held frames, so the corner meme
-    /// runs on the hold's own clock here too (it used to stop, then jump the whole hold).
-    /// </summary>
     private double CornerGameplayClock(double playheadRelMs)
     {
         var game = GameplayTimeline();
@@ -404,7 +349,6 @@ public partial class GranularSpeedEditorWindow
         return game.SourceToOutput(playheadRelMs / 1000.0);
     }
 
-    /// <summary>MEMEMODE_01 — the editor preview's corner overlays, on the gameplay clock.</summary>
     private void UpdateEditorCornerMemes(double playheadRelMs)
     {
         var corners = MemePlacement.CornerOnly(_edit.Memes);
@@ -430,7 +374,6 @@ public partial class GranularSpeedEditorWindow
         _cornerMemes.Update(CornerGameplayClock(playheadRelMs));
     }
 
-    /// <summary>CACHEBOUND_05 — detaches and disposes editor corner memes on window close or reset.</summary>
     private void TeardownEditorCornerMemes()
     {
         _cornerMemes?.Dispose();
@@ -438,10 +381,6 @@ public partial class GranularSpeedEditorWindow
         _cornerMemeKey = "";
     }
 
-    /// <summary>
-    /// MEMELIST_01 — every meme in one list (time, name, mode). Picking one selects it and moves the
-    /// playhead to it; Edit / Remove act on it. Mounted on the MEMES button beside ADD MEME.
-    /// </summary>
     private void OpenMemeListMenu(Control anchor)
     {
         var menu = new ContextMenu();
@@ -476,10 +415,6 @@ public partial class GranularSpeedEditorWindow
         menu.Open(anchor);
     }
 
-    /// <summary>
-    /// MEMEMARK_02 — opened from a meme marker on the main screen: once the window is up and the
-    /// player has had a moment to load, that meme is selected and the playhead parked on it.
-    /// </summary>
     public void FocusMemeOnOpen(string memeId)
     {
         void Focus()
@@ -494,7 +429,6 @@ public partial class GranularSpeedEditorWindow
         };
     }
 
-    /// <summary>MEMELIST_01 — selects a meme and parks the playhead on it.</summary>
     private void SelectAndShowMeme(string id)
     {
         if (_edit.Memes.FindIndex(m => m.Id == id) < 0) return;

@@ -9,10 +9,8 @@ using FreeVideoStudio.App.Services;
 
 namespace FreeVideoStudio.App.ViewModels;
 
-/// <summary>SETTINGSDI_01 — how a status line should look (the window maps it to a theme brush).</summary>
 public enum StatusTone { Muted, Warning, Success, Danger }
 
-/// <summary>SETTINGSDI_01 — the "Not tested yet / Key works / …" line under one AI key.</summary>
 public sealed class KeyTestStatus : ViewModelBase
 {
     private string _text = "Not tested yet";
@@ -26,30 +24,16 @@ public sealed class KeyTestStatus : ViewModelBase
     internal void Show(string text, StatusTone tone) { Text = text; Tone = tone; }
 }
 
-/// <summary>
-/// SETTINGSDI_01 / UI-LOGIC separation — everything the Settings window used to do itself that is
-/// not presentation: testing keys and listing models with the AI companies, detecting video chips,
-/// reading and writing backup files, and committing SAVE. All of it goes through the injected
-/// <see cref="SettingsWindowServices"/>, so it is testable without a window, the internet, a GPU or
-/// real files. The window only shows the results.
-/// </summary>
 public sealed partial class SettingsViewModel : IDisposable
 {
     private SettingsWindowServices? _services;
 
-    /// <summary>The services this view-model talks to (production adapters unless injected).</summary>
     public SettingsWindowServices Services => _services ??= SettingsWindowServices.CreateDefault();
 
-    /// <summary>The music folder the state store held when the window opened; null = unknown (store not primed).</summary>
     private string? _initialMusicFolder;
 
-    /// <summary>The merger save folder when the window opened (ISSUE_04 state-store copy is only rewritten on change).</summary>
     private string _openMergerOutputDir = "";
 
-    /// <summary>
-    /// SETTINGSDI_01 — builds the pending state from the injected store and session state. This is
-    /// the constructor the window uses; the (source, musicFolder, …) one stays for tests.
-    /// </summary>
     public static SettingsViewModel Open(SettingsWindowServices services, IReadOnlyList<string> gameProfiles)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -84,11 +68,6 @@ public sealed partial class SettingsViewModel : IDisposable
         return vm;
     }
 
-
-    /// <summary>
-    /// SETTX_01 — ONE settings transaction writes every pending value. The state-store copies (music
-    /// folder, merger save folder) are written only after that commit succeeded. False = nothing saved.
-    /// </summary>
     public bool Commit()
     {
         bool committed = Services.Store.TryUpdate(s =>
@@ -113,7 +92,6 @@ public sealed partial class SettingsViewModel : IDisposable
         return true;
     }
 
-
     private readonly Dictionary<AiVendor, KeyTestStatus> _keyStatus = new()
     {
         [AiVendor.Google] = new KeyTestStatus(),
@@ -121,11 +99,6 @@ public sealed partial class SettingsViewModel : IDisposable
         [AiVendor.OpenAI] = new KeyTestStatus(),
     };
 
-    /// <summary>
-    /// AIKEYCANCEL_01 — ONE cancellation slot PER COMPANY. Testing the Anthropic key used to cancel a
-    /// Google test still in flight (one shared token), leaving Google stuck on "Contacting…". Now a new
-    /// test only replaces the earlier test of the SAME company.
-    /// </summary>
     private readonly Dictionary<AiVendor, CtsSlot> _keyTests = new()
     {
         [AiVendor.Google] = new CtsSlot(),
@@ -139,7 +112,6 @@ public sealed partial class SettingsViewModel : IDisposable
     public KeyTestStatus GeminiKeyStatus => _keyStatus[AiVendor.Google];
     public KeyTestStatus ClaudeKeyStatus => _keyStatus[AiVendor.Anthropic];
 
-    /// <summary>Clears one company's pending key (deleted on SAVE) and says so.</summary>
     public void RemoveKey(AiVendor vendor)
     {
         switch (vendor)
@@ -151,7 +123,6 @@ public sealed partial class SettingsViewModel : IDisposable
         _keyStatus[vendor].Show("Key removed.", StatusTone.Muted);
     }
 
-    /// <summary>Checks the pending key of <paramref name="vendor"/> with that company. Never throws.</summary>
     public async Task<KeyTestResult?> TestKeyAsync(AiVendor vendor)
     {
         var status = _keyStatus[vendor];
@@ -194,18 +165,13 @@ public sealed partial class SettingsViewModel : IDisposable
         finally { status.IsBusy = false; }
     }
 
-
-    /// <summary>Models listed live per company (Refresh), shared by the default row and every override row.</summary>
     private readonly Dictionary<AiVendor, IReadOnlyList<string>> _liveModels = new();
 
-    /// <summary>Last live-model refresh status message for Settings › AI UI feedback.</summary>
     public string LastModelRefreshMessage { get; private set; } = string.Empty;
 
-    /// <summary>The model list for a company: the live list after Refresh, else the built-in list.</summary>
     public IReadOnlyList<string> ModelsFor(AiVendor vendor)
         => _liveModels.TryGetValue(vendor, out var live) && live.Count > 0 ? live : AiVisionProviders.GetKnownModels(vendor);
 
-    /// <summary>Asks every company in use which models its key can use. True when the lists were refreshed.</summary>
     public async Task<bool> RefreshModelsAsync()
     {
         var token = _modelRefresh.Renew();
@@ -235,14 +201,10 @@ public sealed partial class SettingsViewModel : IDisposable
         return false;
     }
 
-
-    /// <summary>The ONE company + model every AI feature uses (SETAIONE_01; read-only view).</summary>
     public AiUsageConfig DefaultAi => _p.AiDefaultUsage ??= new AiUsageConfig(AiVendor.Google, GeminiClient.DefaultModel);
 
-    /// <summary>Raised after a company/model change, so the window can re-show the row and the key list.</summary>
     public event Action? AiRoutingChanged;
 
-    /// <summary>Sets the company/model every AI feature uses (a missing model = the company's default).</summary>
     public void SetDefaultAi(AiVendor vendor, string? model)
     {
         var def = DefaultAi;
@@ -258,15 +220,11 @@ public sealed partial class SettingsViewModel : IDisposable
         AiRoutingChanged?.Invoke();
     }
 
-    /// <summary>"Use recommended": Google Gemini with the recommended model.</summary>
     public void UseRecommendedAi() => SetDefaultAi(AiVisionProviders.RecommendedVendor, AiVisionProviders.RecommendedModel);
 
-    /// <summary>Fills a missing model with the company default (instead of the window doing it while drawing a list).</summary>
     public string EffectiveModel(AiUsageConfig cfg)
         => string.IsNullOrWhiteSpace(cfg.Model) ? AiVisionProviders.GetDefaultModel(cfg.Vendor) : cfg.Model;
 
-
-    /// <summary>Detects the video chips once (off the UI thread, cached per process) and applies the result.</summary>
     public async Task DetectEncodersAsync()
     {
         IReadOnlyCollection<string>? found = await Services.Encoders.DetectAsync();
@@ -274,8 +232,6 @@ public sealed partial class SettingsViewModel : IDisposable
         else SetDetectedEncoders(found);
     }
 
-
-    /// <summary>Writes the backup to <paramref name="path"/> asynchronously. Returns the line to show.</summary>
     public async Task<string> WriteBackupFileAsync(string path)
     {
         try
@@ -292,10 +248,6 @@ public sealed partial class SettingsViewModel : IDisposable
         }
     }
 
-    /// <summary>
-    /// SETBACKUPIO_01 — validates the file (size, then format) BEFORE anything changes, reads it
-    /// asynchronously and loads it as PENDING values. Returns (true, message) or (false, reason).
-    /// </summary>
     public async Task<(bool Ok, string Message)> ImportBackupFileAsync(string path)
     {
         try
@@ -316,7 +268,6 @@ public sealed partial class SettingsViewModel : IDisposable
 
     private readonly CtsSlot _backupIo = new();
 
-    /// <summary>Cancels every network and file operation still running (the window closed).</summary>
     public void Dispose()
     {
         foreach (var slot in _keyTests.Values) slot.Dispose();

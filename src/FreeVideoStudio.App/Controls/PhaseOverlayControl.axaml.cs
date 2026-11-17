@@ -1,5 +1,4 @@
-﻿
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
@@ -15,19 +14,11 @@ namespace FreeVideoStudio.App.Controls;
 
 public partial class PhaseOverlayControl : UserControl
 {
-
     private DispatcherTimer? _timer;
     private List<string> _logLines = new();
     private List<int> _cpuHist = new();
     private List<int> _gpuHist = new();
     private List<int> _memHist = new();
-    /// <summary>
-    /// TELEMETRY_01 — the CPU/memory/GPU sampling that used to be four loose fields and five
-    /// methods on this control. Extracted because sampling hardware has nothing to do with a
-    /// progress overlay, a log tail or a fighting-game easter egg, and because its state was
-    /// sharing this type's field bag with all three. Two real concurrency defects were fixed in
-    /// the move — see <see cref="HardwareTelemetrySampler"/>.
-    /// </summary>
     private readonly HardwareTelemetrySampler _telemetry = new();
     private Random _rand = new();
 
@@ -36,27 +27,14 @@ public partial class PhaseOverlayControl : UserControl
     private int _lastPercent = -1;
     private bool? _originalCanResize;
 
-    /// <summary>
-    /// How the last run ended ("SUCCESS" / "CANCEL" / "ERROR", or "" if it never reached a
-    /// terminal state). StopOverlay uses this to decide what the taskbar button should do on the
-    /// way out - a finished export gets a full green bar and five blinks, a failure gets a red
-    /// one. Set BEFORE the _easterEggActive guard in HandleTerminalState on purpose: the taskbar
-    /// is real feedback and must not depend on whether a cosmetic easter egg happens to be live.
-    /// </summary>
     private string _lastTerminalState = "";
 
-    /// <summary>
-    /// Bumped on every StartOverlay and StopOverlay. The delayed "hold the finished bar, then
-    /// clear it" task captures the value it was started with and does nothing if it no longer
-    /// matches - otherwise starting a second export within the hold window would have the
-    /// previous run's timer wipe the new run's progress bar a second later.
-    /// </summary>
     private int _taskbarGeneration;
 
     public PhaseOverlayControl()
     {
         InitializeComponent();
-        
+
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += OnTick;
 
@@ -79,13 +57,7 @@ public partial class PhaseOverlayControl : UserControl
             };
         }
     }
-    
 
-    /// <summary>
-    /// IDEA_3 — the host window's Win32 handle, or zero when there is none. Resolved fresh each
-    /// time because the overlay is reused across windows (Main App and Merger both host one) and
-    /// the handle does not exist until the window is shown.
-    /// </summary>
     private IntPtr HostWindowHandle
     {
         get
@@ -110,12 +82,12 @@ public partial class PhaseOverlayControl : UserControl
         _gpuHist.Clear();
         _memHist.Clear();
         _logLines.Clear();
-        
+
         _telemetry.Start();
-        
+
         var txt = LiveLogTextBoxCtl;
         if (txt != null) txt.Text = "Backend log stream attached.\n";
-        
+
         RuntimeLog.LogAppended -= AppendLog;
         RuntimeLog.LogAppended += AppendLog;
         _timer?.Start();
@@ -239,7 +211,7 @@ public partial class PhaseOverlayControl : UserControl
         if (fB != null)
             fB.Effect = new Avalonia.Media.DropShadowEffect { Color = TokenColor("AppDangerColor", Color.Parse("#dc2626")), BlurRadius = 14, OffsetX = 0, OffsetY = 0, Opacity = 0.8 };
     }
-    
+
     public void StopOverlay()
     {
         IsVisible = false;
@@ -259,7 +231,7 @@ public partial class PhaseOverlayControl : UserControl
 
         AmbientBubblesBackground.GloballySuspended = false;
         _timer?.Stop();
-        
+
         if (_vectorAnimTimer != null)
         {
             _vectorAnimTimer.Stop();
@@ -279,29 +251,9 @@ public partial class PhaseOverlayControl : UserControl
         }
 
         RuntimeLog.LogAppended -= AppendLog;
-        
+
         _telemetry.Stop();
     }
-    /// <summary>
-    /// What the Windows taskbar button does when the overlay closes.
-    ///
-    /// It used to be Clear() immediately followed by Flash(): the bar was wiped the same
-    /// instant the encode hit 100%, so the one moment the user actually wanted to see - a full
-    /// bar - was the one moment that never rendered. Now the terminal state decides:
-    ///
-    ///   SUCCESS - pin the bar to a full 100% and blink the button five times slowly, then
-    ///             clear once the blinking is over, so the full bar and the blinks read as one
-    ///             "done" signal rather than two unrelated ones.
-    ///   ERROR   - turn the bar red (TBPF_ERROR keeps whatever value it had) and hold, so a
-    ///             failure is visible from the taskbar without opening the window.
-    ///   CANCEL  - turn it yellow (TBPF_PAUSED) and hold briefly.
-    ///   nothing - the overlay was torn down without finishing (window closed mid-export);
-    ///             clear straight away, since there is no outcome to report.
-    ///
-    /// The hold is a fire-and-forget delay guarded by _taskbarGeneration, and every
-    /// TaskbarProgress call swallows its own failures, so nothing here can throw into the
-    /// teardown path or outlive its usefulness.
-    /// </summary>
     private void HandOverTaskbar()
     {
         IntPtr hwnd = HostWindowHandle;
@@ -346,7 +298,7 @@ public partial class PhaseOverlayControl : UserControl
             });
         });
     }
-    
+
     private double _barTarget;
     private double _barValue;
     private DispatcherTimer? _barTimer;
@@ -386,23 +338,8 @@ public partial class PhaseOverlayControl : UserControl
 
     private System.Collections.Concurrent.ConcurrentQueue<string> _pendingLogs = new();
 
-    /// <summary>
-    /// ISSUE_7 — ceiling on the hand-off queue.
-    ///
-    /// Only 100 lines are ever shown on screen (see the drain in the timer tick), so anything past
-    /// this is already unreachable. The cap matters because this method is invoked from
-    /// RuntimeLog.LogAppended, a STATIC event: if the overlay is torn down without StopOverlay
-    /// running — a window closed mid-export, say — the subscription outlives the timer that drains
-    /// this queue, and an unbounded queue would then grow for the rest of the session while also
-    /// keeping this control alive.
-    /// </summary>
     private const int MaxPendingLogs = 500;
 
-    /// <summary>
-    /// Called on RuntimeLog's writer/caller thread, never the UI thread. Must stay cheap and must
-    /// never log anything itself — RuntimeLog invokes LogAppended synchronously from inside Write,
-    /// so logging here would recurse.
-    /// </summary>
     public void AppendLog(string message)
     {
         _pendingLogs.Enqueue(message);
@@ -412,20 +349,6 @@ public partial class PhaseOverlayControl : UserControl
         }
     }
 
-    /// <summary>
-    /// ISSUE_7 — safety net. StopOverlay is the normal place the static RuntimeLog.LogAppended
-    /// subscription is released, but nothing guarantees StopOverlay runs if the host window is
-    /// closed while an export is still in flight. Detaching from the visual tree always happens,
-    /// so releasing here as well makes the subscription impossible to strand.
-    /// Unsubscribing twice is harmless.
-    ///
-    /// TELEMETRY_01 — the nvidia-smi child is released here for exactly the same reason, and it
-    /// was NOT before. It was stopped only in StopOverlay, so the very case ISSUE_7 exists to
-    /// cover — the host window closed mid-export — left an `nvidia-smi -l 1` polling once a second
-    /// for the rest of the session. The ChildProcessTracker job object would still have reaped it
-    /// at process exit, but that is the last-resort safeguard, not a teardown plan.
-    /// Stopping twice is harmless (StopSmiProcess claims the reference and nulls it).
-    /// </summary>
     protected override void OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
     {
         RuntimeLog.LogAppended -= AppendLog;
@@ -440,21 +363,6 @@ public partial class PhaseOverlayControl : UserControl
         return this.VisualRoot as Avalonia.Controls.Window;
     }
 
-    /// <summary>
-    /// ISSUE_02: this used to count three clicks and then call TriggerWobbleMicroAnimation(),
-    /// which looked up an Image named "EasterEggPlayer". That control does NOT exist in
-    /// PhaseOverlayControl.axaml (verified: the string appeared nowhere in the whole solution
-    /// except that one lookup) — it belonged to the sprite-based easter egg that the procedural
-    /// stick-fighter replaced. So the method hit a null control and returned every single time,
-    /// the click counter silently reset, and a DispatcherTimer field existed that could never be
-    /// created or started.
-    ///
-    /// The dead method, its timer field and the click counter are gone. The handler itself is
-    /// kept because PhaseOverlayControl.axaml binds it on the root Grid, and it now does the one
-    /// thing that is unambiguously safe here: nothing. It deliberately does NOT re-enter
-    /// PlaySequence — that would overwrite _vectorState mid-export and corrupt the running fight
-    /// animation's state machine.
-    /// </summary>
     public void OnOverlayPointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
     {
         AddHype(10);
@@ -467,32 +375,12 @@ public partial class PhaseOverlayControl : UserControl
         {
             _originalCanResize = window.CanResize;
             window.CanResize = false;
-            
+
             window.PropertyChanged -= OnWindowPropertyChanged;
             window.PropertyChanged += OnWindowPropertyChanged;
         }
     }
 
-    /// <summary>
-    /// Reacts to the host window changing size or window-state during an export.
-    ///
-    /// WHAT THIS USED TO DO, AND WHY IT WAS WRONG. On maximize - or on any window wider than
-    /// 2000px, which today is an ordinary 1440p monitor - it hid the fight canvas and set
-    /// _easterEggActive = false. That flag is not a "draw the fighters" switch: it also gates
-    /// HandleTerminalState, so tripping it meant the VICTORY finisher never played, the
-    /// keyboard handler was never released through the terminal path, and the taskbar never
-    /// learned how the export ended - permanently, for the rest of that export, with no way
-    /// back even after the window was restored. A cosmetic guard was silently disabling real
-    /// behaviour, and it fired on hardware most users have.
-    ///
-    /// The whole layout is derived from canvas.Bounds every single frame (FightAnchor,
-    /// LayoutHud, DrawGround), so a resize needs no special handling at all - the next tick
-    /// already draws at the new size, and the fighters' rest positions ease back to the new
-    /// centre on their own. The one thing that does NOT self-correct is a running log-tangle
-    /// skit: its strands were authored against the live log box's on-screen position at the
-    /// moment the skit started, so after a resize they would fly to where that box used to be.
-    /// That skit is ended cleanly instead.
-    /// </summary>
     private void OnWindowPropertyChanged(object? sender, Avalonia.AvaloniaPropertyChangedEventArgs e)
     {
         if (e.Property.Name != "WindowState" && e.Property.Name != "Bounds") return;
@@ -615,7 +503,6 @@ public partial class PhaseOverlayControl : UserControl
           "[scale] 2560x1440 -> 1920x1080", "[audio] aac 192k lufs -14.0", "[io] flush 32 MiB to disk",
           "[gpu] session 1/2 busy", "[probe] stream 0 ok", "[filter] fps=60 applied" };
 
-    /// <summary>Props that must be hidden between skits / at reset.</summary>
     private static readonly string[] s_skitProps =
         {
             "Door", "Ladder", "Bulb", "ZapBolt", "LogTangle", "BananaPeel", "FakeTunnel",
@@ -655,14 +542,6 @@ public partial class PhaseOverlayControl : UserControl
     private Canvas? _fighterACached;
     private Canvas? _fighterBCached;
 
-    /// <summary>
-    /// While an export is running the overlay owns the spacebar. Previously Space fell through
-    /// to MainWindow / VideoMergerWindow and toggled mpv playback behind the overlay, so the
-    /// meter's own label ("MASH SPACEBAR") was a lie and the user was blind-poking the player.
-    /// The handler is registered on the host window for BOTH routing strategies with
-    /// handledEventsToo:true, so it still lands even if a host handler marks the event first;
-    /// the hosts additionally early-out on FightInputActive so playback never toggles.
-    /// </summary>
     private void AttachFightKeyHandler()
     {
         DetachFightKeyHandler();
@@ -1711,11 +1590,6 @@ public partial class PhaseOverlayControl : UserControl
         _nextMoveTime = now + 0.5;
     }
 
-    /// <summary>
-    /// Where the green log box actually sits, expressed in FightCanvas coordinates, so the
-    /// strands leave from the real control rather than a guessed screen position. Falls back to
-    /// the lower-middle third of the canvas if the box has not been laid out yet.
-    /// </summary>
     private Rect LogBoxRectInCanvas(Canvas canvas)
     {
         try
@@ -1734,7 +1608,6 @@ public partial class PhaseOverlayControl : UserControl
         return new Rect(w * 0.10, h * 0.56, w * 0.80, h * 0.26);
     }
 
-    /// <summary>Prefers the newest real log lines; falls back to plausible encoder chatter.</summary>
     private string LogStrandText(int i)
     {
         string src;
@@ -1885,13 +1758,6 @@ public partial class PhaseOverlayControl : UserControl
         }
     }
 
-    /// <summary>
-    /// IDEA_3. One transform per fighter per frame, combining power-up scale, impact squash,
-    /// airborne stretch and knockout rotation. These used to be three separate writes to
-    /// RenderTransform that overwrote each other; whichever ran last was the only one you saw.
-    /// The origin is the point between the feet, so squashing pushes him down into the floor
-    /// instead of sinking him through it.
-    /// </summary>
     private void ApplyFighterTransform(Canvas fighter, bool isA, double now)
     {
         double baseScale = isA ? _scaleA : _scaleB;
@@ -2062,12 +1928,6 @@ public partial class PhaseOverlayControl : UserControl
         }
     }
 
-    /// <summary>
-    /// IDEA_2: <paramref name="facing"/> is +1 for "looking right" and -1 for "looking left".
-    /// Every limb that used to be hard-wired to the fighter's identity (A always punched right,
-    /// B always punched left, even after they had run past each other) now derives from it,
-    /// and the eye dot is moved to the side he is looking at, which is what actually sells it.
-    /// </summary>
     private void UpdateFighterPoses(string prefix, bool animate, bool striking, int facing, string stance)
     {
         var head = this.FindControl<Avalonia.Controls.Shapes.Ellipse>($"{prefix}_Head");
@@ -2170,10 +2030,6 @@ public partial class PhaseOverlayControl : UserControl
         Canvas.SetTop(t, y);
     }
 
-    /// <summary>
-    /// IDEA_5 made the taunts much longer ("GPU 91% - he's cooking!"), so the bubble is no
-    /// longer a fixed 130px box that the text spilled out of - it is sized to the string.
-    /// </summary>
     private void ShowTaunt(string text, double x, double y)
     {
         text ??= string.Empty;
@@ -2286,13 +2142,13 @@ public partial class PhaseOverlayControl : UserControl
             {
                 _cpuHist.Add(cpu);
                 if (_cpuHist.Count > 200) _cpuHist.RemoveAt(0);
-                
+
                 _memHist.Add(mem);
                 if (_memHist.Count > 200) _memHist.RemoveAt(0);
-                
+
                 _gpuHist.Add(gpu);
                 if (_gpuHist.Count > 200) _gpuHist.RemoveAt(0);
-                
+
                 var canvas = this.FindControl<HardwareGraphControl>("GraphCanvas");
                 if (canvas != null)
                 {
@@ -2321,7 +2177,6 @@ public partial class PhaseOverlayControl : UserControl
             });
         });
     }
-
 }
 
 public class HardwareGraphControl : Control
@@ -2359,15 +2214,15 @@ public class HardwareGraphControl : Control
 
         var fmtLabel = new FormattedText(label, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, MetricTypeface, 12, textBrush);
         var fmtVal = new FormattedText($"{curVal}%", System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, MetricTypeface, 12, barBrush);
-        
+
         ctx.DrawText(fmtLabel, new Point(5, yOffset + 10));
         ctx.DrawText(fmtVal, new Point(5, yOffset + 25));
-        
+
         double startX = 75;
         double stickW = 10;
         double gap = 2;
         double maxH = 45;
-        
+
         for (int i = 0; i < data.Count; i++)
         {
             double x = startX + i * (stickW + gap);
@@ -2375,14 +2230,14 @@ public class HardwareGraphControl : Control
             {
                 if (x < startX) continue;
             }
-            
+
             ctx.FillRectangle(bgBarBrush, new Rect(x, yOffset, stickW, maxH));
-            
+
             double val = data[i];
             double fillH = Math.Max(1, (val / 100.0) * maxH);
             ctx.FillRectangle(barBrush, new Rect(x, yOffset + maxH - fillH, stickW, fillH));
         }
-        
+
         ctx.DrawLine(SeparatorPen, new Point(0, yOffset + 55), new Point(width, yOffset + 55));
     }
 }

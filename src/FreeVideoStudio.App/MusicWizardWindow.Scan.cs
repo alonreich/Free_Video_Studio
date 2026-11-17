@@ -10,10 +10,6 @@ namespace FreeVideoStudio.App;
 
 public partial class MusicWizardWindow
 {
-    /// <summary>
-    /// ISSUE_10 — the folder the wizard is currently browsing: the user's saved custom music
-    /// folder if set and present, otherwise the shell Music folder.
-    /// </summary>
     private string ResolveCurrentMusicDirectory()
     {
         try
@@ -136,9 +132,6 @@ public partial class MusicWizardWindow
         }
     }
 
-    /// <summary>
-    /// Improvement #6: Probes duration and file size asynchronously for display in the list.
-    /// </summary>
     private async Task ProbeTrackInfoAsync(MusicTrackItem item, CancellationToken cancellationToken = default)
     {
         try

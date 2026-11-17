@@ -11,9 +11,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// OPENAIPROVIDER_01 — unit tests for OpenAiProvider Chat Completions API transport and structured outputs.
-/// </summary>
 public sealed class OpenAiProviderTests
 {
     private const string FakeOpenAiKey = "sk-" + "proj-dummy-test-openai-key-000000000";

@@ -4,11 +4,6 @@ using Microsoft.Win32.SafeHandles;
 
 namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>
-/// CLEANUPBOUND_01 — Windows cleanup through pinned, non-reparse handles. Every ancestor stays
-/// open without delete sharing until its descendants are gone. Delete disposition is set on the
-/// verified object itself, never by reopening its name. Locked/linked entries fail closed.
-/// </summary>
 public static class SafeDirectoryCleanup
 {
     public static void DeleteTree(string path) => Delete(path, directory: true, null);

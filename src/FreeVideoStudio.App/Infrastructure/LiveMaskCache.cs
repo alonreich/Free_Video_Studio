@@ -7,32 +7,6 @@ using FreeVideoStudio.Core.Project;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// EDITHOT_01 — THE LIVE HUD MASK, READ OFF THE UI THREAD.
-///
-/// PROJ_11 records the live mask in every <c>ProjectDocument</c>. It was captured by calling
-/// <see cref="MaskOverlayManager.ReadLiveMask"/> inside <c>ProjectSession.Capture()</c>, and Capture
-/// runs on EVERY edit tick (every notch of the speed and quality dials). Each tick therefore:
-///   • took the machine-wide named mutex <c>StateTransferStore.MutexName</c> (15 s timeout),
-///     which the IPC state server holds across a WriteThrough flush and File.Move retries;
-///   • read <c>crops_coordinations.conf</c> from disk;
-///   • deep-cloned it and SHA-256 fingerprinted it,
-/// all on the UI thread (North Star #6). A slow disk, an antivirus scan or a sibling process
-/// holding the mutex froze the dial.
-///
-/// The rule now:
-///   • Hot paths (edit capture, undo/redo, autosave) read <see cref="Current"/>. That is a memory
-///     read of the last snapshot and never blocks.
-///   • The snapshot is refreshed on a thread-pool thread: at startup, whenever the crop
-///     configuration file changes on disk (FileSystemWatcher, which covers the Crop Tool, profile
-///     switches and external edits), and whenever the active profile name differs from the one
-///     the snapshot was taken under.
-///   • A user-initiated Save calls <see cref="ReadNow"/>, which reads synchronously. The saved
-///     .fvsproj therefore always records the mask that is active at the moment of saving. That
-///     read is PROJ_11's actual guarantee, and a click is not a gesture.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public static class LiveMaskCache
 {
     private static ProjectMask? _mask;
@@ -42,10 +16,6 @@ public static class LiveMaskCache
     private static FileSystemWatcher? _watcher;
     private static readonly object StartGate = new();
 
-    /// <summary>
-    /// The last mask snapshot. Never touches the disk or a lock. It schedules a background refresh when
-    /// the snapshot is missing or was taken under a different active profile.
-    /// </summary>
     public static ProjectMask? Current
     {
         get
@@ -60,7 +30,6 @@ public static class LiveMaskCache
         }
     }
 
-    /// <summary>Synchronous read for user-initiated saves. Updates the snapshot as a side effect.</summary>
     public static ProjectMask? ReadNow()
     {
         EnsureStarted();
@@ -70,7 +39,6 @@ public static class LiveMaskCache
         return mask;
     }
 
-    /// <summary>Queues one background refresh. Coalesces: many requests during one read cost one extra read.</summary>
     public static void RequestRefresh()
     {
         if (Interlocked.Exchange(ref _refreshQueued, 1) != 0) return;

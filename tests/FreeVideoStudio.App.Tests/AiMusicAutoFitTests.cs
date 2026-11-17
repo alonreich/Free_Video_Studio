@@ -8,9 +8,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// AI_AUTOFIT_01 — Unit tests for AI Music Auto-Fit recommendation models and settings.
-/// </summary>
 public sealed class AiMusicAutoFitTests
 {
     [Fact]

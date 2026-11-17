@@ -9,23 +9,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// ANTS_01 — ONE SELECTION, ONE ORDER, TWO VIEWS (Video-Merger-Migration.md P5.3, D14).
-///
-/// The right-hand list and the merged timeline show the SAME queue. Selection lives in the list;
-/// the timeline draws the selected clip(s) with the list's yellow marching ants. A reorder from
-/// either view is a <c>VideoQueue.Move</c>, so the other view, the clip ids, the autosave and undo
-/// all follow.
-///
-/// MERGERUX_01 — P10 (user decisions D22–D24, 2026-09-27) — ONE JOB PER AREA:
-///   • the UPPER timeline (time scale + scrub row) only SEEKS; its clip labels are not handles;
-///   • the thumbnail BLOCKS only select and move clips: hover = glow + open hand, press = closed
-///     hand, a plain click SELECTS WITHOUT SEEKING, press + 6 px = drag (the block follows the
-///     pointer, the gold bar shows where it lands). After a move the playhead stays on the same
-///     frame of the same clip (D22, EnsureEdlLoaded remaps it).
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class VideoMergerWindow
 {
     private const double ChipDragThresholdPx = 6;
@@ -56,13 +39,8 @@ public partial class VideoMergerWindow
         return result;
     }
 
-    /// <summary>A press or drag on a queue row or a block is in progress: nothing may move the selection or rebuild the blocks under it.</summary>
     private bool QueueGestureActive => _chipPressed || _draggingClipChip || _videoDragStartPoint.HasValue || _isVideoDragging || _isRubberbanding;
 
-    /// <summary>
-    /// D23 / MERGERPLAYHEAD_01 — the upper timeline (time scale + scrub row) AND the waveform lane seek; only the
-    /// thumbnail blocks between them do not (they select and reorder clips, and handle their own presses first).
-    /// </summary>
     private bool IsOnSeekRows(PointerEventArgs e, Canvas seekRow)
     {
         double y = e.GetPosition(seekRow).Y;
@@ -110,10 +88,6 @@ public partial class VideoMergerWindow
         DrawClipBlocks(w, total);
     }
 
-    /// <summary>
-    /// D20 — the filmstrip lane as the clip strip: one outlined block per clip over its thumbnails.
-    /// Click selects, drag reorders, right-click opens the clip menu. Selected blocks get the ants.
-    /// </summary>
     private void DrawClipBlocks(double w, double total)
     {
         var lane = BlocksLaneCtl;
@@ -263,7 +237,6 @@ public partial class VideoMergerWindow
         Canvas.SetTop(_chipInsertBar, 0);
     }
 
-    /// <summary>Ends a chip gesture. <paramref name="commitX"/> null = abandoned (capture lost): no reorder.</summary>
     private void EndClipChip(Canvas markers, double? commitX)
     {
         bool wasDrag = _draggingClipChip;

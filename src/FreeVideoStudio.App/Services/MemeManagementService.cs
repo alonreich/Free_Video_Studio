@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -64,12 +63,6 @@ public static class MemeManagementService
         });
     }
 
-    /// <summary>
-    /// DOWNLOAD_01 — confirm, then fetch one category from the single `meme/` library folder
-    /// (MEMEFOLDER_01). Shared by the main-screen combo rows and the meme picker (MEMEPICK_01).
-    /// On a successful download every open meme list is told to re-scan through
-    /// <see cref="MemeDirectory.NotifyChanged"/>, so the main combo and the picker never disagree.
-    /// </summary>
     public static async Task<(int Count, string? Error)> DownloadCloudMemesAsync(Window parent, MemeCategory category)
     {
         string label = MemeCatalog.LabelFor(category);

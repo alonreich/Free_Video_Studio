@@ -18,11 +18,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// AICAPTION_LANE_01 — Captions timeline lane editor for <see cref="GranularSpeedEditorWindow"/>:
-/// renders caption cue blocks on Lane C, supports click-to-select, drag-to-adjust timing (left/right
-/// handles and center move), text editing, single-line AI regeneration, line deletion, and undo/redo.
-/// </summary>
 public partial class GranularSpeedEditorWindow
 {
     private Canvas? _captionsCanvas;
@@ -300,7 +295,6 @@ public partial class GranularSpeedEditorWindow
 
     private void OnCaptionsCanvasPointerReleased(object? sender, PointerReleasedEventArgs e) => CommitCaptionDrag(e.Pointer);
 
-    /// <summary>Ends a caption drag exactly once: on release, or when the pointer capture is lost.</summary>
     private void CommitCaptionDrag(IPointer? pointer)
     {
         if (_captionDragTarget == CaptionDragTarget.None) return;
@@ -437,10 +431,6 @@ public partial class GranularSpeedEditorWindow
         Notify($"Caption #{lineId} saved. Ctrl+Z to undo.");
     }
 
-    /// <summary>
-    /// REWRITELINE_01 — the right-click menu of one caption cue: "Rewrite this line" (AI, same moment, a different
-    /// line in the remembered style), "Edit…" and "Delete". Each entry is undoable like the edit dialog.
-    /// </summary>
     private ContextMenu BuildCaptionContextMenu(int lineId, CaptionLine line)
     {
         var rewrite = new MenuItem { Header = "✨ Rewrite this line" };
@@ -471,7 +461,7 @@ public partial class GranularSpeedEditorWindow
         string? oldText = track.Lines?.FirstOrDefault(l => l.Id == lineId)?.Text;
 
         string apiKey = settings.GetApiKey(config.Vendor);
-        if (string.IsNullOrWhiteSpace(apiKey))
+        if (!AiAccountFix.IsUsable(settings, config.Vendor))
         {
             RuntimeLog.Info("AiCommentary", $"{RewriteSetupTag}: no usable AI for the rewrite; opening the setup.");
             if (!await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, config.Vendor, AiUsage.Commentary)) return;
@@ -546,6 +536,7 @@ public partial class GranularSpeedEditorWindow
         };
         Notify($"Rewriting line #{lineId} via {AiVisionProviders.DisplayName(config.Vendor)} ({effectiveModel}) · {AiCostEstimator.FormatPreRunBanner(est, config.Vendor, effectiveModel)}");
 
+        bool retryAfterFix = false;
         try
         {
             var genTrack = await CommentaryService.GenerateCommentaryAsync(request, apiKey, statusProgress, stepLog, ct);
@@ -590,7 +581,10 @@ public partial class GranularSpeedEditorWindow
         catch (Exception ex)
         {
             RuntimeLog.Fail("AiCommentary", $"Regeneration failed: {ex.Message}");
-            await ErrorReporter.ShowAsync(this, "Regeneration Failed", $"The caption line could not be rewritten. {FreeVideoStudio.App.Infrastructure.UserFacingError.Describe(ex)}\n\n{usage.SummaryWithEstimate(est)}", ex.ToString());
+            if (AiAccountFix.Find(ex) is { } account)
+                retryAfterFix = await AiAccountFix.OfferAsync(this, account, AiUsage.Commentary);
+            else
+                await ErrorReporter.ShowAsync(this, "Regeneration Failed", $"The caption line could not be rewritten. {FreeVideoStudio.App.Infrastructure.UserFacingError.Describe(ex)}\n\n{usage.SummaryWithEstimate(est)}", ex.ToString());
         }
         finally
         {
@@ -598,5 +592,7 @@ public partial class GranularSpeedEditorWindow
             if (AiCommentaryProgressOverlayCtl is { } overlay) overlay.IsVisible = false;
             if (AiCommentaryBtnCtl is { } button) button.IsEnabled = true;
         }
+        if (retryAfterFix)
+            Dispatcher.UIThread.Post(() => _ = RegenerateCaptionLineAsync(lineId, startSec, endSec));
     }
 }

@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia;
@@ -7,41 +6,14 @@ using Avalonia.Controls;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// TOOLRETURN_01 — THE PREVIEW COMES BACK WHEN A TOOL CLOSES.
-///
-/// Opening the Video Merger or Crop Tools releases the editor's mpv and D3D device first
-/// (TOOLNAV_02, <see cref="ShutdownVideoPipeline"/>). An <see cref="MpvVideoView"/> is dead once
-/// (TOOLNAV_02, <see cref="ShutdownVideoPipelineAsync"/> — MPVSHUTDOWN_01: awaitable, so the UI
-/// thread never joins a render worker). An <see cref="MpvVideoView"/> is dead once
-/// disposed, and the editor passed <c>restoreVideoPipeline: null</c> ("rebuilt lazily") — but
-/// nothing rebuilt it. After returning, <c>IpcClient</c> stayed null forever: Upload Video logged
-/// the pick, showed "Video player is still starting." and never played anything.
-///
-/// Now the close path swaps a FRESH <see cref="MpvVideoView"/> into the old one's slot, starts it
-/// (off the UI thread, as at startup), and reloads the clip that was open, paused at MARK START.
-/// The named XAML reference (#VideoHost) would keep pointing at the dead control, so the software-
-/// fallback badge is bound in code to whichever host is current.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class MainWindow
 {
     private IDisposable? _fallbackBadgeBinding;
 
-    /// <summary>MPVSHUTDOWN_01 — the one in-flight (or completed) pipeline shutdown operation.</summary>
     private Task<PreviewShutdownResult>? _videoPipelineShutdownTask;
 
-    /// <summary>True only when the native preview stack was PROVEN released. Never set on failure.</summary>
     private bool _videoPipelineShutdownSucceeded;
 
-    /// <summary>
-    /// TOOLNAV_05 — the in-memory return leg (Architectural Fix #3). ToolNavigator hands back the
-    /// typed result the tool window published when it closed (SwitchToCompanionAppAsync passes
-    /// this as the <c>onToolReturned</c> callback). This replaces the
-    /// <c>returned_from_crop_tool</c> sentinel that the old flow wrote into the persistent session
-    /// state purely so this window could read it back on the next startup.
-    /// </summary>
     private void OnToolNavigationResult(Services.ToolNavigationResult result)
     {
         if (!result.ReturnedToOwner)
@@ -57,13 +29,6 @@ public partial class MainWindow
                 : $" Clip in the tool: {System.IO.Path.GetFileName(result.SelectedClipPath)}."));
     }
 
-    /// <summary>
-    /// MPVSHUTDOWN_01 — the interactive, awaitable preview teardown (tool navigation, anything that
-    /// is not a process exit). Re-entrant and idempotent: every caller awaits the SAME operation,
-    /// the state is not marked successful before completion, and the host reference is kept (the
-    /// dead control still owns its layout slot until <see cref="RestoreVideoPipelineAfterTool"/>
-    /// swaps a fresh one in). The process-exit paths use ShutdownVideoPipelineForProcessExit.
-    /// </summary>
     private Task<PreviewShutdownResult> ShutdownVideoPipelineAsync(System.Threading.CancellationToken cancellationToken = default)
     {
         var inFlight = _videoPipelineShutdownTask;
@@ -98,14 +63,12 @@ public partial class MainWindow
         }
 
         _videoPipelineShutdownSucceeded = true;
-        try { _musicPreviewIpcClient?.Dispose(); }
-        catch (Exception ex) { RuntimeLog.Fail("UI", $"Music preview teardown reported: {ex.Message}"); }
-        _musicPreviewIpcClient = null;
+        DisposeMusicPreview();
+        _previewSpeed.Follow(null);
         DisposePreviewMix();
         return result;
     }
 
-    /// <summary>Starts the current preview host (startup and after a tool closes).</summary>
     private async Task StartVideoHostAsync()
     {
         _videoHost ??= this.FindControl<MpvVideoView>("VideoHost");
@@ -143,7 +106,6 @@ public partial class MainWindow
         _fallbackBadgeBinding = badge?.Bind(IsVisibleProperty, host.GetObservable(MpvVideoView.IsSoftwareFallbackActiveProperty));
     }
 
-    /// <summary>ToolNavigator's restore hook: the tool closed and this window is visible again.</summary>
     private void RestoreVideoPipelineAfterTool()
     {
         if (!_videoPipelineShutDown) return;
@@ -169,7 +131,6 @@ public partial class MainWindow
         parent.Children.Insert(index, host);
 
         _videoHost = host;
-        _musicPreviewIpcClient = null;
         _liveGameFilter = null;
         _isSeeking = false;
         _nextSeekTarget = null;
@@ -197,7 +158,8 @@ public partial class MainWindow
             double startSec = _trimStartSet ? _trimStartMs / 1000.0 : 0;
             await ipc.LoadFileAsync(path, startSec);
             await ipc.SetPropertyAsync("pause", "yes");
-            await ipc.SetPropertyAsync("speed", _baseSpeed.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
+            var speedSent = _previewSpeed.Force(ipc, GetSpeedForPosition(startSec * 1000.0));
+            if (speedSent != null) await speedSent;
             RuntimeLog.Info("UI", $"Reloaded {Path.GetFileName(path)} into the preview, paused at {startSec:F3}s.");
         }
         catch (Exception ex)

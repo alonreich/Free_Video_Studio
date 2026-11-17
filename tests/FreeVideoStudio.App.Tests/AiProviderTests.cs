@@ -11,9 +11,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// AIPROVIDER_01 — tests for provider abstractions, GeminiProvider, and multi-vendor key handling.
-/// </summary>
 public sealed class AiProviderTests
 {
     private const string FakeGoogleKey = "AIzaSy-dummy-provider-key-0000000";

@@ -1,21 +1,10 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 
 namespace FreeVideoStudio.Core.Undo;
 
-/// <summary>
-/// UNDO_28 — everything in the Add Music wizard that reaches the export (<c>MusicWizardResult</c>):
-/// the song, the auto-fill queue in order, where the song starts, the two balance faders and the
-/// three mix switches. Plain data — no waveform, preview player, analysis or cache.
-///
-/// <para>
-/// Equality is tolerant where the controls are continuous (a slider that settles 1e-9 away is not
-/// an edit, U4) and case-insensitive on paths, matching every other path comparison in the wizard.
-/// </para>
-/// </summary>
 public sealed record MusicWizardSnapshot(
     string? TrackPath,
     ImmutableArray<string> QueuePaths,
@@ -27,16 +16,10 @@ public sealed record MusicWizardSnapshot(
     bool Loop,
     ImmutableArray<double> Trims = default)
 {
-    /// <summary>Song start resolution: 1ms. Below that the export cannot tell the difference.</summary>
     public const double SecondsTolerance = 0.0005;
 
-    /// <summary>Fader resolution: a twentieth of a percent.</summary>
     public const double PercentTolerance = 0.05;
 
-    /// <param name="trims">
-    /// MUSICWIN_01 — every song's chosen part, flattened as in/out pairs in song order
-    /// (<c>in0, out0, in1, out1, …</c>). Null for a wizard that has no trimmed songs.
-    /// </param>
     public static MusicWizardSnapshot Create(string? trackPath, IEnumerable<string>? queue, double songStart,
         double videoPercent, double musicPercent, bool ducking, bool carving, bool loop,
         IEnumerable<double>? trims = null) =>
@@ -83,16 +66,9 @@ public sealed record MusicWizardSnapshot(
                && Loop == other.Loop;
     }
 
-    /// <summary>Consistent with the tolerant equality: only the exact-compared fields.</summary>
     public override int GetHashCode() =>
         HashCode.Combine((TrackPath ?? string.Empty).ToUpperInvariant(), QueuePaths.IsDefault ? 0 : QueuePaths.Length, Ducking, Carving, Loop);
 
-    /// <summary>
-    /// UNDO_28 — names the step between two states and says whether it belongs to a continuous
-    /// gesture (U1). The ONE place the wizard's labels come from, so a new control cannot be
-    /// recorded as a bare "Undo". Priority follows causality: choosing a song resets the queue, and
-    /// moving the song start resets it too, so the cause wins over its side effect.
-    /// </summary>
     public static (string Label, string? GestureKey) DescribeChange(MusicWizardSnapshot before, MusicWizardSnapshot after)
     {
         ArgumentNullException.ThrowIfNull(before);
@@ -135,11 +111,6 @@ public sealed record MusicWizardSnapshot(
     }
 }
 
-/// <summary>
-/// UNDO_28 — which history command a key press asks for. Shared by the Crop Tool and the Music
-/// wizard so Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z mean the same thing in both, and so the "a focused
-/// text field keeps its own undo" rule is decided in exactly one place.
-/// </summary>
 public enum HistoryCommand
 {
     None,
@@ -149,10 +120,6 @@ public enum HistoryCommand
 
 public static class HistoryShortcut
 {
-    /// <param name="key">The key name (<c>Avalonia.Input.Key.ToString()</c>), e.g. "Z".</param>
-    /// <param name="control">Ctrl held.</param>
-    /// <param name="shift">Shift held.</param>
-    /// <param name="textInputFocused">A text-editing control owns focus: its own undo wins.</param>
     public static HistoryCommand Classify(string key, bool control, bool shift, bool textInputFocused)
     {
         if (textInputFocused || !control) return HistoryCommand.None;

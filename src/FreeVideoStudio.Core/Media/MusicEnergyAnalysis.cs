@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -9,20 +8,6 @@ using System.Threading.Tasks;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// PCMSTREAM_03 — THE ADD MUSIC WIZARD'S ENERGY / BEAT ANALYSIS, STREAMED (AUD-DIALOGS).
-///
-/// Moved out of <c>MusicWizardWindow.AnalyzeAudioEnergyAsync</c>, which read the song's entire decoded
-/// stdout into a <see cref="MemoryStream"/>, then <c>ToArray()</c>-copied it before looking at a single
-/// sample — memory grew with the song's length, twice. The maths is unchanged, bit for bit:
-/// 1,000 Hz mono PCM16; 50 ms buckets of 50 samples (the last bucket averages only the samples it has);
-/// bucket energy = mean of |s| / 32768; normalised by the max (when &gt; 1e-6); beat threshold
-/// <c>max(mean + 0.65·σ, 0.28)</c>; local maxima from index 2 to n-3; minimum spacing
-/// <c>round(0.28 / 0.05)</c> buckets where the louder of two close peaks wins; peak time = index × 0.05 s.
-/// Only the per-bucket energies (20 per second of audio) are retained.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public static class MusicEnergyAnalysis
 {
     public const int SampleRate = 1000;
@@ -32,7 +17,6 @@ public static class MusicEnergyAnalysis
 
     public sealed record Result(double BucketSeconds, double DurationSeconds, double[] Energy, List<double> PeakTimesSeconds);
 
-    /// <summary>Incremental bucket averager — keeps one running sum, never the samples.</summary>
     public sealed class EnergyAccumulator : IPcmSampleSink
     {
         private readonly int _bucketSize;
@@ -59,7 +43,6 @@ public static class MusicEnergyAnalysis
             SampleCount += samples.Length;
         }
 
-        /// <summary>The per-bucket mean energies, including a final partial bucket.</summary>
         public double[] Finish()
         {
             if (_inBucket > 0)
@@ -72,7 +55,6 @@ public static class MusicEnergyAnalysis
         }
     }
 
-    /// <summary>Normalisation and beat picking over raw bucket energies. Null when there were no samples.</summary>
     public static Result? Compute(double[] energy, long sampleCount)
     {
         if (sampleCount <= 0 || energy.Length == 0) return null;
@@ -116,7 +98,6 @@ public static class MusicEnergyAnalysis
             peakIndexes.Select(i => i * BucketSeconds).ToList());
     }
 
-    /// <summary>Streams a 1 kHz PCM16LE stream through the accumulator (bounded memory) and analyses it.</summary>
     public static async Task<Result?> AnalyzeStreamAsync(Stream pcm, CancellationToken ct)
     {
         var acc = new EnergyAccumulator(BucketSize);
@@ -124,7 +105,6 @@ public static class MusicEnergyAnalysis
         return Compute(acc.Finish(), n);
     }
 
-    /// <summary>The ffmpeg invocation: whole file, 1 kHz mono s16le on stdout.</summary>
     public static ProcessStartInfo BuildStartInfo(string ffmpegPath, string audioPath)
     {
         var psi = new ProcessStartInfo
@@ -144,10 +124,6 @@ public static class MusicEnergyAnalysis
         return psi;
     }
 
-    /// <summary>
-    /// Runs ffmpeg and analyses its stdout as it streams. Null when ffmpeg could not start, exited
-    /// non-zero, or produced no samples. Cancellation kills and reaps the child, then throws.
-    /// </summary>
     public static async Task<Result?> AnalyzeFileAsync(string ffmpegPath, string audioPath, CancellationToken ct)
     {
         Result? analysis = null;

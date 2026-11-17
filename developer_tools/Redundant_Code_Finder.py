@@ -23,15 +23,6 @@ Both reports are deleted and rewritten on every run, so whatever is on disk is a
 import sys
 import os
 
-# ══════════════════════════════════════════════════════════════════════════════════════════
-# NO CACHE. THESE TWO LINES COME BEFORE EVERY OTHER IMPORT, AND THAT ORDER IS THE POINT.
-# `dont_write_bytecode` only governs imports that happen AFTER it is set, so setting it below
-# the import block (where it used to be) protects nothing that was already imported. The env
-# var covers any child process this script might ever spawn.
-# This does NOT protect against someone IMPORTING this file from another script — Python then
-# obeys the IMPORTER's setting, not ours, and drops a __pycache__ next to this file. That case
-# is swept up by purge_bytecode_cache() at the end of the run.
-# ══════════════════════════════════════════════════════════════════════════════════════════
 sys.dont_write_bytecode = True
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 
@@ -54,9 +45,6 @@ except Exception as e:
 EXCLUDE_FOLDERS = ['.git', 'bin', 'obj', '.vs', 'packages', 'compile', 'compiled', 'old_code']
 EXCLUDE_FILES = ['AssemblyInfo.cs']
 
-# (8) EXCLUDE_EXTS was removed. It listed .txt/.json/.dll/... but could never do anything,
-# because the file walk below keeps ONLY the extensions in TARGET_EXTS anyway. Saying what we
-# DO scan is honest; a long deny-list that never runs implies the tool reads more than it does.
 TARGET_EXTS = {'.cs'}
 
 KEYWORDS = set([
@@ -71,23 +59,6 @@ KEYWORDS = set([
     "virtual", "void", "volatile", "while", "var", "Task", "get", "set", "yield", "partial", "record"
 ])
 
-# ══════════════════════════════════════════════════════════════════════════════════════════
-# (4) WHAT COUNTS AS "LOGIC" — AND WHY THE OLD TEST LET DATA THROUGH.
-#
-# The old test joined the whole normalised block into one string and asked `if token in text`.
-# Two things made that far too generous:
-#   * `<` and `>` were treated as comparisons. In C# they are almost always GENERICS —
-#     `IReadOnlyList<CoachStep>` scores as logic — so any block declaring a typed collection
-#     qualified.
-#   * a bare `=` was treated as logic, but `=` is how every field, property and array literal
-#     is written, so plain data qualified too.
-# Between them, matches #2, #3 and #4 of the last run were all CoachTours.cs — lists of
-# `new CoachStep("text", "text")`. That is duplicated DATA, which is not what this tool is for.
-#
-# The new rule, checked against exact TOKENS rather than substrings:
-#   a block is logic if it contains a control-flow WORD, or a real multi-character OPERATOR.
-# A lone `=`, and bare `<` / `>`, deliberately do NOT qualify.
-# ══════════════════════════════════════════════════════════════════════════════════════════
 LOGIC_WORDS = frozenset([
     "if", "else", "for", "foreach", "while", "do", "switch", "case",
     "return", "try", "catch", "finally", "throw", "goto", "lock", "yield",
@@ -95,48 +66,12 @@ LOGIC_WORDS = frozenset([
 
 LOGIC_OPERATORS = ("==", "!=", "<=", ">=", "&&", "||", "+=", "-=", "*=", "/=", "%=", "??", "++", "--")
 
-# (5) A later match is hidden only when THIS much of BOTH its sides was already reported.
 OVERLAP_SUPPRESS_RATIO = 0.60
 
-# ══════════════════════════════════════════════════════════════════════════════════════════
-# FUZZY MATCHING — "these two blocks are ~85% the same", not just "identical".
-#
-# THE PROBLEM WITH EXACT-ONLY. Growth used to stop dead at the first line whose shape differed.
-# Two 40-line blocks that are identical EXCEPT one line in the middle were therefore reported as
-# two short matches — or, if either half fell under the 6-line floor, as nothing at all. The tool
-# under-reported exactly the near-copies a human most wants to see.
-#
-# WHAT HAPPENS NOW. A match still has to START on a solid seed of SEED_LINES identical lines —
-# that seed is what makes the search fast, because identical seeds can be found with a hash
-# lookup instead of comparing everything to everything. From that seed the block grows in BOTH
-# directions, and a differing line no longer stops it: it is counted as a miss and growth
-# continues, as long as
-#     (a) the running score  matched / total  never falls below MIN_SIMILARITY, and
-#     (b) no more than MAX_CONSECUTIVE_GAP differing lines appear back to back.
-# Rule (b) is what stops two unrelated regions being welded together by a long shared tail.
-#
-# ⚠️ WHAT THIS STILL CANNOT SEE. Two blocks that are 85% alike but never share SEED_LINES
-# identical lines in a row are invisible, because nothing seeds them. Catching those needs
-# all-pairs alignment, which is orders of magnitude slower. This is a deliberate trade.
-#
-# ⚠️ SUBSTITUTIONS ONLY, NOT INSERTIONS. The two sides advance in lockstep, so a block with an
-# extra line inserted on ONE side scores badly from that point on. Reported similarity is
-# therefore a LOWER BOUND — the real resemblance can be higher, never lower.
-# ══════════════════════════════════════════════════════════════════════════════════════════
-MIN_SIMILARITY = 0.80          # a block is kept while at least this share of its lines match
-MAX_CONSECUTIVE_GAP = 3        # ...and while no more than this many differ back to back
-MIN_BLOCK_LINES = 6            # nothing shorter than this is worth a human's attention
+MIN_SIMILARITY = 0.80
+MAX_CONSECUTIVE_GAP = 3
+MIN_BLOCK_LINES = 6
 
-# ══════════════════════════════════════════════════════════════════════════════════════════
-# A BLOCK MUST SAY SOMETHING. C# is punctuation-heavy — `}`, `else`, `catch`, `{`, `});` — and a
-# run of those matches a run of those anywhere else in the codebase. An audit of one run found
-# SIX reported "duplicates" with no statement in them at all; the worst was nine lines of
-#     }  catch  {  return false;  }
-# which is not duplication, it is the shape of the language. A line counts as substantive when
-# it is long enough to carry a statement AND contains an identifier followed by a call, an
-# assignment or a member access. Raise this to 3 or 4 for a stricter report: measured on this
-# repository, 2 drops 31 findings, 3 drops 88, 4 drops 156.
-# ══════════════════════════════════════════════════════════════════════════════════════════
 MIN_SUBSTANTIVE_LINES = 2
 _STRUCTURAL_ONLY = frozenset(["{", "}", "});", "};", ")", ");", "else", "try", "catch", "finally", "break;", "continue;"])
 _SUBSTANTIVE_RE = re.compile(r'[A-Za-z_]\w*\s*[\(=\.]')
@@ -195,7 +130,6 @@ def remove_comments(source):
     while i < n:
         c = source[i]
 
-        # @"verbatim" — no backslash escapes; a doubled "" is a literal quote
         if c == '@' and i + 1 < n and source[i + 1] == '"':
             out.append('""')
             i += 2
@@ -221,7 +155,7 @@ def remove_comments(source):
                 if source[i] == '"':
                     i += 1
                     break
-                if source[i] == '\n':      # unterminated: do not swallow the line break
+                if source[i] == '\n':
                     out.append('\n')
                     i += 1
                     break
@@ -254,7 +188,7 @@ def remove_comments(source):
             i += 2
             while i + 1 < n and not (source[i] == '*' and source[i + 1] == '/'):
                 if source[i] == '\n':
-                    out.append('\n')       # (3) the fix: keep the line count intact
+                    out.append('\n')
                 i += 1
             i = min(i + 2, n)
             continue
@@ -283,7 +217,7 @@ def block_has_logic(token_lines):
     for toks in token_lines:
         for t in toks:
             if t in LOGIC_WORDS:
-                return True          # a control-flow word settles it outright
+                return True
         joined.extend(toks)
 
     text = "".join(joined)
@@ -307,7 +241,6 @@ def grow_fuzzy_block(lines_db, idx1, idx2, seed_len):
     def in_bounds(a, b):
         return 0 <= a < n and 0 <= b < n and lines_db[a][0] == file1 and lines_db[b][0] == file2
 
-    # ---- forward from the end of the seed -------------------------------------------------
     matched = total = seed_len
     best_fwd, best_fwd_matched = seed_len, seed_len
     misses = 0
@@ -316,7 +249,6 @@ def grow_fuzzy_block(lines_db, idx1, idx2, seed_len):
         a, b = idx1 + off, idx2 + off
         if not in_bounds(a, b):
             break
-        # Two regions of ONE file must never be allowed to overlap each other.
         if same_file and a >= idx2:
             break
         total += 1
@@ -331,7 +263,6 @@ def grow_fuzzy_block(lines_db, idx1, idx2, seed_len):
             best_fwd, best_fwd_matched = off + 1, matched
         off += 1
 
-    # ---- backward from the start of the seed ----------------------------------------------
     matched, total = best_fwd_matched, best_fwd
     best_back, best_back_matched = 0, best_fwd_matched
     misses = 0
@@ -340,8 +271,6 @@ def grow_fuzzy_block(lines_db, idx1, idx2, seed_len):
         a, b = idx1 - step, idx2 - step
         if not in_bounds(a, b):
             break
-        # Growing the LEFT block leftwards can only widen the gap to the right block, but the
-        # right block's own head must not reach back into the left block.
         if same_file and b <= idx1:
             break
         total += 1
@@ -359,15 +288,6 @@ def grow_fuzzy_block(lines_db, idx1, idx2, seed_len):
     length = best_back + best_fwd
     start1, start2 = idx1 - best_back, idx2 - best_back
 
-    # ⚠️ TRIM THE ENDS BACK TO MATCHING LINES.
-    # Growth is greedy: it keeps going while the running score holds up, so it habitually swallows
-    # a differing line or two at each end before it stops. Those lines carry no information — a
-    # block that ENDS on three lines that do not match is just noise stuck to the end of a real
-    # find. Worse, they made every result look approximate: an otherwise perfect 10-line match
-    # reported as "91%" because it had eaten one non-matching line on the way out, and the run
-    # came back "0 identical, 460 near-duplicates", which is plainly wrong.
-    # Trimming to matching lines at BOTH ends restores exact matches to 100% and leaves genuine
-    # near-duplicates with their differences where they belong: on the inside.
     while length > 0 and not _same_shape(lines_db, start1 + length - 1, start2 + length - 1):
         length -= 1
     while length > 0 and not _same_shape(lines_db, start1, start2):
@@ -382,7 +302,7 @@ def grow_fuzzy_block(lines_db, idx1, idx2, seed_len):
     if matched / length < MIN_SIMILARITY:
         return None
 
-    if same_file and start1 + length > start2:      # final belt-and-braces overlap check
+    if same_file and start1 + length > start2:
         return None
     return start1, start2, length, matched
 
@@ -461,16 +381,9 @@ def generate_html_report(matches, output_path):
         html_parts.append("<p style='text-align:center; color:#c586c0;'>No significant redundancies found!</p>")
 
     for idx, match in enumerate(matches):
-        # (1) ⚠️ EVERYTHING FROM THE SOURCE FILES GOES THROUGH html.escape.
-        # C# is full of angle brackets — List<double>, Func<double, double>, <summary> — and a
-        # browser reads those as HTML tags and DOES NOT DRAW THEM. The previous report was
-        # silently deleting generics and doc tags from the code it was asking you to review.
         e = html.escape
         same_file = match['file1'] == match['file2']
 
-        # (7) The old header said "130 Lines Duplicated" while the range read 4120-4260, which is
-        # 141. Both were true — one counts code lines, the other is the raw span including blanks
-        # and comments — but disagreeing numbers on one card look like a bug. Say both, plainly.
         span1 = match['line1_end'] - match['line1_start'] + 1
         span2 = match['line2_end'] - match['line2_start'] + 1
         span_note = (f"{match['len']} code lines"
@@ -643,9 +556,6 @@ def main():
     print("--- REDUNDANT CODE FINDER ---")
     purge_bytecode_cache()
 
-    # Both reports are removed BEFORE the scan, not overwritten after it. If this run dies
-    # half way, the previous run's files must not be left behind looking authoritative — a
-    # stale report that claims to describe the current tree is worse than no report.
     dev_tools = Path(WORKING_DIRECTORY) / "developer_tools"
     for stale in ("redundant_code_report.html", "redundant_code_report.jsonl"):
         target = dev_tools / stale
@@ -655,11 +565,6 @@ def main():
             target.unlink()
             print(f"[*] Removed previous {stale}")
         except Exception as exc:
-            # Deleting can be refused — a file open in a browser or an editor on Windows, a
-            # read-only mount, a locked share. TRUNCATING almost never is, and it achieves the
-            # thing that actually matters: after this point the old findings are gone. Without
-            # this fallback a failed delete plus a crash mid-scan would leave the previous run's
-            # report on disk, looking current and describing code that has since changed.
             try:
                 with open(target, 'w', encoding='utf-8'):
                     pass
@@ -672,8 +577,7 @@ def main():
     print(f"[*] Scanning {len(files)} files...")
 
     lines_db = []
-    
-    # 1. Parse all files and normalize lines
+
     for filepath in files:
         rel_path = display_path(filepath)
         try:
@@ -681,17 +585,6 @@ def main():
                 original = f.read()
             cleaned = remove_comments(original)
 
-            # ⚠️ TWO COPIES OF EVERY LINE, AND THE DIFFERENCE MATTERS.
-            #   `cleaned`  — comments gone, string/char literals blanked. This is what gets
-            #                fingerprinted and compared. It MUST be the blanked version, or a
-            #                block would stop matching the moment a message changed.
-            #   `original` — exactly what is in the file. This is what the human report SHOWS.
-            # They used to be the same thing, and the report displayed the blanked text: every
-            # string in it read as "" — `Text = "♪"` was rendered `Text = ""`. That hid the very
-            # detail a reviewer needs, because a differing string is often the ONLY difference
-            # between two otherwise identical blocks.
-            # This only works because remove_comments preserves line count exactly, so line N of
-            # `cleaned` is line N of `original`.
             original_lines = original.split('\n')
 
             for line_num, line_text in enumerate(cleaned.split('\n'), 1):
@@ -706,18 +599,16 @@ def main():
         except Exception as e:
             print(f"Error reading {rel_path}: {e}")
 
-    # 2. Build 6-gram hash map
     print("[*] Hashing code logic blocks...")
     N = 6
     ngram_map = defaultdict(list)
-    
+
     for i in range(len(lines_db) - N + 1):
         if lines_db[i][0] == lines_db[i + N - 1][0]:
             ngram = tuple(lines_db[i + j][3] for j in range(N))
             if block_has_logic([lines_db[i + j][4] for j in range(N)]):
                 ngram_map[ngram].append(i)
 
-    # 3. Find maximal continuous matches
     print("[*] Finding redundant matches...")
     visited_pairs = set()
     matches = []
@@ -727,21 +618,20 @@ def main():
         cnt+=1
         if cnt%100==0: print(f'Processing ngram {cnt}/{len(ngram_map)}')
         if len(indices) < 2 or len(indices) > 100: continue
-        
+
         for i in range(len(indices)):
             for j in range(i + 1, len(indices)):
                 idx1 = indices[i]
                 idx2 = indices[j]
-                
+
                 if (idx1, idx2) in visited_pairs:
                     continue
-                    
+
                 grown = grow_fuzzy_block(lines_db, idx1, idx2, N)
                 if grown is None:
                     continue
                 start1, start2, match_len, matched_lines = grown
 
-                # Check for structural complexity to avoid false positives on arrays/braces
                 if block_has_logic([lines_db[start1 + k][4] for k in range(match_len)]):
                     for k in range(match_len):
                         visited_pairs.add((start1 + k, start2 + k))
@@ -765,22 +655,9 @@ def main():
                         'code2': "\n".join(x[2] for x in block2)
                     })
 
-    # 4. Sort, de-overlap, output
     print(f'Sorting {len(matches)} matches...')
     matches.sort(key=lambda x: x['len'], reverse=True)
 
-    # ══════════════════════════════════════════════════════════════════════════════════
-    # (5) THE SAME PLACE WAS BEING REPORTED OVER AND OVER.
-    #
-    # `visited_pairs` only stops the identical index PAIR being re-reported. A match that
-    # starts one line later, or pairs the same region against a third copy, is a different
-    # pair and sailed through — the last run reported CoachTours.cs lines 68-138, 74-138 and
-    # 107-171 as three separate findings of one thing.
-    #
-    # Longest first, then a new match is dropped only when BOTH of its sides are already
-    # mostly inside something reported earlier. "Both" matters: a region that is a repeat of
-    # one place AND of a second, different place is genuinely worth seeing twice.
-    # ══════════════════════════════════════════════════════════════════════════════════
     covered = defaultdict(set)
 
     def fraction_already_reported(path, start, end):
@@ -792,9 +669,6 @@ def main():
 
     kept, suppressed, hollow = [], 0, 0
     for mt in matches:
-        # Structural noise is discarded BEFORE overlap suppression, not after: a hollow block
-        # that survived to here would mark its lines as "already reported" and could hide a real
-        # finding that overlaps it.
         if count_substantive(mt['code1']) < MIN_SUBSTANTIVE_LINES:
             hollow += 1
             continue
@@ -810,10 +684,8 @@ def main():
     print(f"[*] Discarded {hollow} hollow blocks (braces/keywords with no real statement).")
     print(f"[*] Suppressed {suppressed} near-duplicate reports of regions already listed.")
 
-    # OUTPUT 1 — for a human: styled, complete, both code bodies shown side by side.
     generate_html_report(kept, str(dev_tools / "redundant_code_report.html"))
 
-    # OUTPUT 2 — for an agent: same findings, coordinates only, one JSON object per line.
     generate_agent_report(kept, str(dev_tools / "redundant_code_report.jsonl"), {
         "seed": N,
         "files": len(files),
@@ -823,7 +695,7 @@ def main():
         "hollow": hollow,
     })
 
-    purge_bytecode_cache()   # nothing this tool leaves behind should outlive the run
+    purge_bytecode_cache()
 
     n_same = sum(1 for m in kept if m['file1'] == m['file2'])
     n_near = sum(1 for m in kept if m.get('similarity', 1.0) < 0.9999)

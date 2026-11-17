@@ -4,7 +4,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>VOCLOCK_01: a private, cancellable recording proxy. No user output is overwritten.</summary>
 internal static class VoiceOverPreviewRenderer
 {
     internal static int DecodeThreads(int processorCount) => Math.Clamp(processorCount * 2, 4, 64);

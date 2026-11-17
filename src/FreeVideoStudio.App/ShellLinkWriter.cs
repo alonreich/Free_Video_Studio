@@ -1,27 +1,9 @@
-﻿
-using System.Globalization;
+﻿using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// NOPOWERSHELL_01 — Windows shortcuts (.lnk) are written and read through the Shell's own
-/// <c>IShellLinkW</c> / <c>IPersistFile</c> COM objects, called directly through their vtables
-/// (the same NativeAOT-safe technique as <c>Interop\D3D11Interop.cs</c>).
-///
-/// <para>
-/// This used to start <c>powershell.exe</c> (one copy with <c>-EncodedCommand</c>) for every
-/// shortcut. A program that spawns hidden, scrambled PowerShell during installation is exactly
-/// what antivirus heuristics are trained to flag (MITRE T1059.001), and it was one of the reasons
-/// new releases were reported as a trojan. The result on disk is identical: WScript.Shell's
-/// CreateShortcut is itself a thin wrapper over this same ShellLink object.
-/// </para>
-///
-/// The COM objects run on a private STA thread (the ShellLink class is apartment-threaded), so
-/// callers on any thread or apartment are safe. Every failure surfaces as <see cref="IOException"/>,
-/// which is what the upgrade code already treats as "retry later".
-/// </summary>
 [SupportedOSPlatform("windows")]
 internal static partial class ShellLinkWriter
 {
@@ -83,7 +65,6 @@ internal static partial class ShellLinkWriter
         }
     }
 
-    /// <summary>The shortcut's target path, or an empty string when it has none.</summary>
     public static Task<string> ReadTargetAsync(string shortcutPath, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(shortcutPath))
@@ -253,7 +234,6 @@ internal static partial class ShellLinkWriter
         }
     }
 
-    /// <summary>"C:\app.exe,0" → ("C:\app.exe", 0); a location without an index means index 0.</summary>
     internal static (string Path, int Index) SplitIconLocation(string iconLocation)
     {
         int comma = iconLocation.LastIndexOf(',');

@@ -4,25 +4,10 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FvsBuild;
 
-/// <summary>
-/// Publishes what was just built as a GitHub release (old :PUBLISH_RELEASE). Only reached when the
-/// build succeeded AND <see cref="ReleaseGate"/> has pushed the release commit and its tag. Nothing
-/// is hardcoded: the repository is resolved from this folder's git remote via `gh repo view`, and
-/// the upload is verified BY HASH, not exit code - `gh release upload` once reported success while
-/// serving a two-day-old binary.
-/// </summary>
-/// <summary>Publish a complete verified draft before changing the latest release.
-/// RELTAG_01 — the release is created from the tag <see cref="ReleaseGate"/> pushed (`--verify-tag`),
-/// so the tag always points at the exact commit that was built. RELNOTES_01 — the notes come from
-/// docs/CHANGELOG.md's `## Upcoming` section, prepared and linted by <see cref="ReleaseGate"/>.
-/// BETA_01 — a beta build is published as a PRE-release, which /releases/latest never returns.
-/// RETAIN_01 / RETAIN_02 — old releases beyond the retention window lose their FILES; their pages, notes and tags are KEPT.</summary>
 internal static class GitHubReleasePublisher
 {
-    /// <summary>Stable releases kept on GitHub (the new one included).</summary>
     internal const int StableReleasesKept = 5;
 
-    /// <summary>Beta (pre-)releases kept on GitHub, newest first, and only while newer than the newest stable.</summary>
     internal const int BetaReleasesKept = 3;
 
     public static bool Publish(string exePath, ReleasePlan plan, BuildLog log)
@@ -45,7 +30,6 @@ internal static class GitHubReleasePublisher
         try
         {
             Directory.CreateDirectory(aliasDirectory);
-
 
             string notesFile = Path.Combine(aliasDirectory, "release-notes.md");
             File.WriteAllText(notesFile, plan.Notes);
@@ -112,13 +96,6 @@ internal static class GitHubReleasePublisher
     internal static string ReleaseTitle(ReleasePlan plan) =>
         plan.Beta ? $"Free Video Studio {plan.Tag} (Beta)" : $"Free Video Studio {plan.Tag}";
 
-    /// <summary>
-    /// RETAIN_01 / RETAIN_02 — keeps the INSTALLABLE FILES of the newest <see cref="StableReleasesKept"/> stable
-    /// releases and of the newest <see cref="BetaReleasesKept"/> betas that are still newer than the newest
-    /// stable. Older releases lose their files (oldest first, only after the new release is verified and
-    /// public), but the RELEASE ITSELF — its page, title and notes — and its TAG are kept forever: the old
-    /// <c>gh release delete</c> threw the notes away with the files. Runs only after a successful publish.
-    /// </summary>
     internal static void PruneOldReleases(string repo, BuildLog log)
     {
         try
@@ -155,7 +132,6 @@ internal static class GitHubReleasePublisher
         }
     }
 
-    /// <summary>RETAIN_01 — the pure decision behind <see cref="PruneOldReleases"/> (unit-tested).</summary>
     internal static IReadOnlyList<string> ReleasesToPrune(string releaseListJson)
     {
         var releases = (JsonNode.Parse(releaseListJson)?.AsArray() ?? [])
@@ -173,13 +149,11 @@ internal static class GitHubReleasePublisher
         return doomed;
     }
 
-    /// <summary>NODROPPER_01 — the full-installer name used by every release before the Inno Setup installer.</summary>
     internal const string PreSetupDownloadName = "FreeVideoStudio.exe";
 
     internal static string[] ReleaseAssets(string exePath) =>
     [
         exePath,
-
 
         Path.Combine("obj", "ReleaseAssets", RuntimePayloadManifest.FileName),
         .. SmartUpdateBuilder.ReleaseFiles()

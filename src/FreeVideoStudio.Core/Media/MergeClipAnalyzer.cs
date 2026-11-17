@@ -7,27 +7,11 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>What the merger needs to know about one queued file. <see cref="Ok"/> is false when the probe failed.</summary>
 public sealed record MergeClipInfo(string Path, double DurationSec, double IntroSec, bool HasAudio, int Width, int Height, bool Ok)
 {
-    /// <summary>TIMINGTAG_02 — frame-exact timing (intro + fades) when the file carries it; null otherwise.</summary>
     public ExportTiming? Timing { get; init; }
 }
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// SCRAPER_03 — CLIPS ARE ANALYSED THE MOMENT THEY ARE QUEUED, IN THE BACKGROUND, ONCE.
-///
-/// A user adds clips long before pressing MERGE. That time is used: each file gets ONE ffprobe
-/// (format + streams, which is where <see cref="IntroTag"/> lives) on the thread pool, a few at a
-/// time, the instant it enters the queue. The result is cached per file identity
-/// (path + size + last write), so reordering, removing and re-adding, reopening the merger, or
-/// toggling the scraper never probes again. The UI thread only ever awaits finished tasks.
-///
-/// Concurrency is bounded (half the cores, 2..4) so a drop of forty clips does not start forty
-/// ffprobe processes at once and stall the disk the preview is reading from.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public static class MergeClipAnalyzer
 {
     private sealed record Entry(long Size, DateTime WriteUtc, Task<MergeClipInfo> Task);
@@ -35,7 +19,6 @@ public static class MergeClipAnalyzer
     private static readonly ConcurrentDictionary<string, Entry> Cache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly SemaphoreSlim Gate = new(Math.Clamp(Environment.ProcessorCount / 2, 2, 4));
 
-    /// <summary>Starts (or joins) the analysis of <paramref name="path"/>. Never throws; never runs on the caller's thread.</summary>
     public static Task<MergeClipInfo> AnalyzeAsync(string ffprobePath, string path)
     {
         long size = 0;
@@ -65,7 +48,6 @@ public static class MergeClipAnalyzer
         }
     }
 
-    /// <summary>A finished, successful result for <paramref name="path"/>, without starting anything.</summary>
     public static bool TryGetCompleted(string path, out MergeClipInfo info)
     {
         if (Cache.TryGetValue(path, out var hit))

@@ -1,29 +1,19 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace FreeVideoStudio.Core.Media;
 
-
-/// <summary>Where a Magic Wand candidate came from.</summary>
 public enum HudCandidateSource
 {
-    /// <summary>The offline <see cref="HudAutoDetector"/> only.</summary>
     Local,
 
-    /// <summary>The AI provider only (validated, converted once to source pixels).</summary>
     Ai,
 
-    /// <summary>A local box the AI agreed with — ONE result, never two.</summary>
     Fused,
 }
 
-/// <summary>
-/// One Magic Wand suggestion in SOURCE-FRAME pixel space (the frozen frame's own pixels — never
-/// Canvas or display pixels). This is a suggestion only: nothing in this type can commit a crop.
-/// </summary>
 public sealed record HudCandidate(
     int X,
     int Y,
@@ -34,11 +24,6 @@ public sealed record HudCandidate(
     double Confidence,
     HudCandidateSource Source);
 
-/// <summary>
-/// One validated AI answer. Coordinates are NORMALIZED 0..1 SOURCE-FRAME coordinates, top-left
-/// origin; <see cref="AiHudResponseParser"/> is the only producer and guarantees every field is
-/// finite, inside the frame, and neither tiny nor near-whole-screen.
-/// </summary>
 public sealed record AiHudCandidate(
     string Label,
     double NormalizedX,
@@ -47,14 +32,6 @@ public sealed record AiHudCandidate(
     double NormalizedHeight,
     double Confidence);
 
-/// <summary>
-/// The ONE frozen frame an AI provider is allowed to see. Never a video, never a clip.
-/// </summary>
-/// <param name="JpegBytes">The encoded still. Scaling it does not change normalized coordinates.</param>
-/// <param name="SourceWidth">Width of the source frame the answer will be mapped back onto.</param>
-/// <param name="SourceHeight">Height of the source frame the answer will be mapped back onto.</param>
-/// <param name="SourceFingerprint">Identity of the clip (no path text, no secrets).</param>
-/// <param name="FrameKey">Identity of THIS frame (timestamp and/or content hash).</param>
 public sealed record AiHudFrame(
     byte[] JpegBytes,
     int SourceWidth,
@@ -62,7 +39,6 @@ public sealed record AiHudFrame(
     string SourceFingerprint,
     string FrameKey);
 
-/// <summary>How an AI request ended. Every value except <see cref="Success"/> means "use local only".</summary>
 public enum AiHudOutcome
 {
     Success,
@@ -72,49 +48,26 @@ public enum AiHudOutcome
     NetworkError,
     ModelError,
     MalformedResponse,
-    /// <summary>AIHUDERRORS_01 — key rejected, no permission, model gone or quota used up: only the user can fix it.</summary>
     AccountProblem,
 }
 
-/// <summary>
-/// The result of one AI request. <see cref="Detail"/> is technical text for the log; it is
-/// guaranteed by every implementation to contain no credential.
-/// </summary>
 public sealed record AiHudDetectionResult(AiHudOutcome Outcome, IReadOnlyList<AiHudCandidate> Candidates, string? Detail)
 {
-    /// <summary>AIHUDERRORS_01 — the provider's plain-English sentence for the user (no credential), or null.</summary>
     public string? UserMessage { get; init; }
 
     public static AiHudDetectionResult Failed(AiHudOutcome outcome, string? detail)
         => new(outcome, Array.Empty<AiHudCandidate>(), detail);
 }
 
-/// <summary>
-/// AIHUD_01 — an optional cloud HUD detector. Implementations hold NO UI types and perform their
-/// own validation through <see cref="AiHudResponseParser"/>.
-///
-/// <para><b>Contract.</b> <see cref="DetectAsync"/> never throws for provider trouble — a missing
-/// key, a timeout, a 429, a network failure or a malformed answer all come back as an
-/// <see cref="AiHudDetectionResult"/> with a non-success outcome. The ONLY exception it lets out is
-/// <see cref="OperationCanceledException"/> for the CALLER'S token, because a cancel is the user
-/// getting what they asked for.</para>
-/// </summary>
 public interface IAiHudDetectionService
 {
-    /// <summary>Human name of the provider, for the privacy notice ("Google Gemini").</summary>
     string ProviderName { get; }
 
-    /// <summary>True when a credential is present. Says nothing about whether it is valid.</summary>
     bool IsConfigured { get; }
 
     Task<AiHudDetectionResult> DetectAsync(AiHudFrame frame, CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// AIHUD_01 — maps a free-text AI label to one of this suite's HUD role keys, or null when the
-/// label names something real that simply has no built-in role (e.g. "ability cooldowns").
-/// Deterministic, ordinal, culture-invariant.
-/// </summary>
 public static class AiHudLabelMapper
 {
     public static string? ToRoleKey(string? label)
@@ -138,17 +91,6 @@ public static class AiHudLabelMapper
     }
 }
 
-/// <summary>
-/// AIHUD_01 — THE one conversion from normalized AI coordinates to source-frame pixels.
-///
-/// <para>Done exactly once, here, against the SOURCE frame's own width and height — never the
-/// Canvas, never the display, never the downscaled JPEG that was sent. The result feeds the
-/// existing crop geometry pipeline unchanged.</para>
-///
-/// <para>Edges are rounded independently (left/top and right/bottom) and clamped to the frame, so
-/// two adjacent boxes share an edge rather than overlapping or leaving a 1px gap, and a box that
-/// touches the right edge maps to exactly <c>sourceWidth</c>.</para>
-/// </summary>
 public static class AiHudGeometry
 {
     public static (int X, int Y, int Width, int Height) ToSourcePixels(AiHudCandidate candidate, int sourceWidth, int sourceHeight)

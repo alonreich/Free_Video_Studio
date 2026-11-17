@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Avalonia;
@@ -12,34 +11,8 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// WAVEPIXEL_01 (04 UI-MERGERQUEUE, 2026-10-11) — THE MERGER WAVEFORM LANE, RECONCILED, NOT REBUILT.
-///
-/// The lane used to be cleared and rebuilt on every layout change, each tile a <see cref="Path"/> of
-/// 2 × peaks points made on the UI thread. Now <see cref="Sync"/> RECONCILES the lane against the new
-/// tile plan, keyed by the clip's width-independent cache key (LANECACHE_02):
-///   • a tile still in the plan keeps its Path — a move or resize only sets Left/Width (Stretch.Fill);
-///   • its levels are re-reduced only when its pixel columns drift past
-///     <see cref="WaveformEnvelope.RebuildRatio"/>, and the reduction runs on the thread pool;
-///   • a tile off the lane (x ≥ lane width or x1 ≤ 0) is culled; a tile narrower than
-///     <see cref="DenseTilePx"/> gets NO Path of its own — all such slivers share ONE lane-wide path;
-///   • every completion is guarded: a reduction for an older request, a cleared lane (epoch) or a
-///     clip no longer in the plan is dropped, never painted.
-/// Total geometry is O(visible device pixels): ≤ <see cref="WaveformEnvelope.PointCount"/> per tile.
-/// UI thread only (except the pure reductions it schedules).
-///
-/// LANEINSTANCE_01 (2026-10-11) — tiles are keyed by the clip OCCURRENCE (<see cref="LaneTile.Occurrence"/>),
-/// peaks by the SOURCE (<see cref="LaneTile.CacheKey"/>). A clip queued twice with the same trim used to
-/// collapse into one tile because both occurrences shared the cache key. Now each occurrence owns its own
-/// Path (and its own pixel-column reduction), a delivered peak list fans out to EVERY planned occurrence of
-/// that source, <see cref="Sync"/> asks for at most one fetch per source, and an unmatched new occurrence may
-/// adopt an unmatched old tile of the SAME source only (renumbering reorder = no new work).
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 internal sealed class WaveformLanePresenter
 {
-    /// <summary>Tiles narrower than this share the lane's one dense path instead of owning a Path.</summary>
     public const double DenseTilePx = 6;
 
     private sealed class Tile
@@ -67,12 +40,10 @@ internal sealed class WaveformLanePresenter
 
     public WaveformLanePresenter(Canvas lane) => _lane = lane;
 
-    /// <summary>Tiles that own a Path on the lane now.</summary>
     public int TilePathCount
     {
         get { int n = 0; foreach (var t in _tiles.Values) if (t.Path != null) n++; return n; }
     }
-    /// <summary>Total geometry points on the lane (every tile Path + the dense path).</summary>
     public int PointCount
     {
         get
@@ -82,14 +53,10 @@ internal sealed class WaveformLanePresenter
             return points;
         }
     }
-    /// <summary>Geometries built since construction (a pure resize inside the hysteresis builds none).</summary>
     public int GeometryBuilds { get; private set; }
-    /// <summary>Reductions scheduled since construction.</summary>
     public int ReductionsScheduled { get; private set; }
-    /// <summary>Clip occurrences currently in the lane's plan (visible, not culled).</summary>
     public int LayoutCount => _layout.Count;
 
-    /// <summary>Test seam: completes when every scheduled reduction has handed its result to the dispatcher.</summary>
     internal Task WhenReductionsPostedAsync()
     {
         lock (_pending) return Task.WhenAll(_pending.ToArray());
@@ -97,11 +64,6 @@ internal sealed class WaveformLanePresenter
 
     private double LaneHeight => _lane.Height > 0 ? _lane.Height : 18;
 
-    /// <summary>
-    /// Reconciles the lane with <paramref name="plan"/>. <paramref name="cachedPeaks"/> returns a clip's
-    /// cached peaks or null; the tiles it cannot serve are returned — the caller fetches them and hands
-    /// them back through <see cref="Deliver"/>.
-    /// </summary>
     public List<LaneTile> Sync(IReadOnlyList<LaneTile> plan, Func<string, float[]?> cachedPeaks, double laneWidth, double renderScaling)
     {
         _scaling = renderScaling > 0 ? renderScaling : 1;
@@ -167,12 +129,6 @@ internal sealed class WaveformLanePresenter
         return missing;
     }
 
-    /// <summary>
-    /// A worker finished a SOURCE's peaks (and reduced them off the dispatcher to <paramref name="columns"/>).
-    /// LANEINSTANCE_01 — fanned out to every planned occurrence of that source; the pre-reduced levels are
-    /// reused where an occurrence needs the same column count, the others reduce their own. Dropped when no
-    /// occurrence of the source is in the plan — a stale completion never paints.
-    /// </summary>
     public void Deliver(string cacheKey, float[] peaks, float[]? levels, int columns)
     {
         if (peaks.Length == 0) return;
@@ -194,7 +150,6 @@ internal sealed class WaveformLanePresenter
         if (denseDirty) ScheduleDense();
     }
 
-    /// <summary>Empties the lane; every reduction still in flight is dropped (epoch).</summary>
     public void Clear()
     {
         _epoch++;
@@ -204,7 +159,6 @@ internal sealed class WaveformLanePresenter
         _dense = null;
     }
 
-    /// <summary>Puts a known tile where its plan says and makes sure its levels match its pixel width.</summary>
     private void Settle(Tile tile, ref bool denseDirty)
     {
         tile.WantColumns = WaveformEnvelope.Columns(tile.Plan.Width, _scaling, tile.Peaks.Length);
@@ -238,7 +192,6 @@ internal sealed class WaveformLanePresenter
         lock (_pending) _pending.Add(task);
     }
 
-    /// <summary>The O(peaks) work runs on the thread pool; only the O(columns) result comes back.</summary>
     private async Task ReduceAsync(Tile tile, int request, int want, int epoch)
     {
         var peaks = tile.Peaks;
@@ -269,7 +222,6 @@ internal sealed class WaveformLanePresenter
         else BuildPath(tile);
     }
 
-    /// <summary>One wide tile: its levels as a filled, mirrored envelope, Stretch.Fill to its slice (same shape as before).</summary>
     private void BuildPath(Tile tile)
     {
         var levels = tile.Levels!;
@@ -314,7 +266,6 @@ internal sealed class WaveformLanePresenter
         tile.Path = null;
     }
 
-    /// <summary>Many slivers finishing in one burst rebuild the shared path once, not once each.</summary>
     private void ScheduleDense()
     {
         if (_denseScheduled) return;
@@ -327,10 +278,6 @@ internal sealed class WaveformLanePresenter
         }, DispatcherPriority.Background);
     }
 
-    /// <summary>
-    /// Every sliver tile in ONE path, in lane pixels (no stretch). Each is scaled to its own loudest
-    /// column so it reads like a Stretch.Fill tile. O(sum of sliver columns) ≤ O(lane device pixels).
-    /// </summary>
     private void RebuildDense()
     {
         double h = LaneHeight, mid = h / 2;

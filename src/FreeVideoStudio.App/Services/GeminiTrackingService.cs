@@ -18,7 +18,6 @@ namespace FreeVideoStudio.App.Services;
 
 #region Gemini JSON Models for Native AOT
 
-/// <summary>One subject Gemini found in the discovery stills (0-1000 box on the frame named by <see cref="FrameIndex"/>).</summary>
 public class DiscoveredSubject
 {
     [JsonPropertyName("id")]
@@ -42,7 +41,6 @@ public class DiscoveredSubject
     [JsonPropertyName("frame_index")]
     public int FrameIndex { get; set; } = 2;
 
-    /// <summary>AIOWNBOX_01 — true for the box the user drew themselves (no AI discovery behind it).</summary>
     [JsonIgnore]
     public bool IsUserBox { get; set; }
 }
@@ -54,27 +52,22 @@ internal partial class GeminiApiJsonContext : JsonSerializerContext { }
 
 #endregion
 
-/// <summary>Discovery outcome: the subjects, the three stills they were found on, and where those stills sit.</summary>
-/// <param name="LookaheadOffsetSec">0 when the stills are inside the segment; otherwise how far past the
-/// segment START the forward probe that found them begins (AILOOKAHEAD_01).</param>
 public sealed record AiDiscoveryResult(
     List<DiscoveredSubject> Subjects,
     string F1, string F2, string F3,
     double T1, double T2, double T3,
-    double LookaheadOffsetSec);
+    double LookaheadOffsetSec)
+{
+    public int ProbesRun { get; init; }
+}
 
-/// <summary>AIPARTRETRY_01 — what to do when one part of a multi-part AI run failed twice.</summary>
 public enum AiPartFailureChoice
 {
-    /// <summary>Ask the AI about that part again.</summary>
     Retry,
-    /// <summary>Keep every other part; leave this one out (Smart Zoom: camera stays wide; Commentary: no lines).</summary>
     Skip,
-    /// <summary>Stop the run with the error.</summary>
     Stop,
 }
 
-/// <summary>Everything one AI SMART ZOOM tracking run needs. Times are SOURCE seconds of <see cref="VideoPath"/>.</summary>
 public sealed record AiTrackingRequest(
     string VideoPath,
     double SourceStartSec,
@@ -92,12 +85,6 @@ public sealed record AiTrackingRequest(
     bool PortraitMode,
     IReadOnlyList<AiNormalizedRect>? HudZones);
 
-/// <summary>
-/// GEMINICLIENT_01 — one AI SMART ZOOM run's connection to Gemini: the key, the model, and the
-/// AIMODELFALLBACK_01 rule — when the configured model is retired (HTTP 404) the newest available
-/// "flash" model is used for the rest of THIS run, the user is told, and their setting is not changed.
-/// AIPROVIDER_ROUTING_01 — routes U1 discovery and U2 dense tracking through configured IAiVisionProvider.
-/// </summary>
 public sealed class GeminiModelSession
 {
     private readonly string _apiKey;
@@ -138,33 +125,23 @@ public sealed class GeminiModelSession
 
     public bool HasKey => !string.IsNullOrWhiteSpace(_apiKey);
 
-    /// <summary>Sanitises text bound for a log with THIS session's key.</summary>
     public string Redact(string? text) => GeminiClient.Redact(text, _apiKey);
 }
 
-/// <summary>
-/// Universal AI Subject Tracking using Google Gemini vision (docs/01 TL-AITRACKING, docs/04 UI-AIZOOM):
-/// candidate still extraction, multi-angle subject discovery, chunked dense tracking and smoothing.
-/// All transport goes through <see cref="GeminiClient"/> (header-only key, per-attempt timeout,
-/// classified errors). Nothing here touches the UI.
-/// </summary>
 public static class GeminiTrackingService
 {
-    /// <summary>AICHUNK_01 — the longest video clip sent in ONE request.</summary>
     public const double MaxChunkSec = 8.0;
 
-    /// <summary>AICHUNK_01 — the longest segment AI SMART ZOOM tracks (5 requests). Longer ones are refused with a plain reason.</summary>
     public const double MaxTrackSec = 40.0;
 
-    /// <summary>Shortest clip sent; waypoints past the real segment end are dropped by the smoother (AITIME_01).</summary>
     public const double MinSliceSec = 1.0;
 
-    /// <summary>AIFPS_01 — requested sampling rate for the tracking clip (Gemini's default is 1 frame per second).</summary>
     public const double TrackingFps = 2.0;
 
-    /// <summary>
-    /// Extracts 3 candidate still frames from start, middle, and end of the segment for multi-angle discovery.
-    /// </summary>
+    public const double ClipFps = TrackingFps * 4;
+
+    internal const string ClipFpsTag = "AICLIPFPS_01";
+
     public static async Task<(string F1, string F2, string F3, double T1, double T2, double T3)> ExtractThreeCandidateFramesAsync(
         string videoPath,
         double sourceStartSec,
@@ -189,16 +166,8 @@ public static class GeminiTrackingService
         return (f1Path, f2Path, f3Path, t1, t2, t3);
     }
 
-    /// <summary>Maximum width or height of an AI candidate frame sent for subject discovery (bounds tokens and payload size).</summary>
     public const int CandidateMaxDimension = 1280;
 
-    /// <summary>
-    /// LIBAVFRAME_05 — one candidate still at <paramref name="sec"/>, written to <paramref name="outPath"/> as JPEG.
-    /// Native libav first (<see cref="VideoFrameGrabber"/>: the frame <c>ffmpeg -ss {sec:0.000} -i … -frames:v 1</c>
-    /// scaled to at most <see cref="CandidateMaxDimension"/> px on the longest side, encoded with SkiaSharp at <see cref="CandidateJpegQuality"/>),
-    /// the ORIGINAL ffmpeg subprocess below once if native cannot answer. Timestamps, file names, the 10 s budget,
-    /// cancellation and "no frame → no file" are unchanged; FVS_FRAME_DECODE=ffmpeg|native forces one path.
-    /// </summary>
     private static async Task ExtractStillAsync(string videoPath, double sec, string outPath, CancellationToken token)
     {
         string ffmpeg = BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries");
@@ -220,13 +189,8 @@ public static class GeminiTrackingService
 
     private static readonly TimeSpan StillTimeout = TimeSpan.FromSeconds(10);
 
-    /// <summary>
-    /// ffmpeg's mjpeg encoder at <c>-q:v 2</c> is close to the top of the JPEG quality scale; 95 is the
-    /// SkiaSharp setting that matches it within the parity tolerance (docs/03 FFM-LIBAVFRAME).
-    /// </summary>
     internal const int CandidateJpegQuality = 95;
 
-    /// <summary>Managed BGRA frame → JPEG bytes (SkiaSharp, the app's existing imaging library). Scales down to <see cref="CandidateMaxDimension"/> px.</summary>
     internal static byte[] EncodeCandidateJpeg(DecodedVideoFrame frame)
     {
         var info = new SKImageInfo(frame.Width, frame.Height, SKColorType.Bgra8888, SKAlphaType.Opaque);
@@ -275,7 +239,6 @@ public static class GeminiTrackingService
         }
     }
 
-    /// <summary>The pre-LIBAVFRAME subprocess path, scaled to at most <see cref="CandidateMaxDimension"/> px.</summary>
     private static async Task ExtractStillWithFfmpegAsync(string ffmpeg, string videoPath, string seek, string outPath, TimeSpan budget, CancellationToken token)
     {
         var psi = new ProcessStartInfo
@@ -301,7 +264,6 @@ public static class GeminiTrackingService
 
         await AsyncProcessRunner.RunAsync(psi, budget, token).ConfigureAwait(false);
     }
-
 
     private static void Typed(Utf8JsonWriter w, string name, string type, bool nullable = false)
     {
@@ -339,7 +301,6 @@ public static class GeminiTrackingService
 
     public const string DiscoveryJsonSchema = "{\"type\":\"ARRAY\",\"items\":{\"type\":\"OBJECT\",\"properties\":{\"id\":{\"type\":\"INTEGER\"},\"label\":{\"type\":\"STRING\"},\"frame_index\":{\"type\":\"INTEGER\"},\"ymin\":{\"type\":\"INTEGER\"},\"xmin\":{\"type\":\"INTEGER\"},\"ymax\":{\"type\":\"INTEGER\"},\"xmax\":{\"type\":\"INTEGER\"}},\"required\":[\"id\",\"label\",\"frame_index\",\"ymin\",\"xmin\",\"ymax\",\"xmax\"]}}";
 
-    /// <summary>Queries the configured AI provider with 3 stills to discover subjects worth following (profile-aware exclusions applied).</summary>
     public static async Task<List<DiscoveredSubject>> DiscoverSubjectsAsync(
         string frame1Path, string frame2Path, string frame3Path,
         GeminiModelSession session, AiGameProfile profile,
@@ -395,14 +356,13 @@ public static class GeminiTrackingService
         return valid;
     }
 
-    /// <summary>Parses and validates a discovery answer. Malformed JSON throws <see cref="GeminiException"/> (never silently "no targets").</summary>
     internal static List<DiscoveredSubject> ParseDiscovery(string? text, string vendorName = "AI")
     {
         string json = GeminiClient.StripCodeFence(text);
         List<DiscoveredSubject>? subjects;
         try
         {
-            subjects = JsonSerializer.Deserialize(json, GeminiApiJsonContext.Default.ListDiscoveredSubject);
+            subjects = JsonSerializer.Deserialize(RoundWholeNumberFields(json, DiscoveryIntegerFields), GeminiApiJsonContext.Default.ListDiscoveredSubject);
         }
         catch (JsonException ex)
         {
@@ -426,11 +386,6 @@ public static class GeminiTrackingService
         return result;
     }
 
-    /// <summary>
-    /// Discovery with AILOOKAHEAD_01 forward probes: when the segment's own stills show nobody, up to two
-    /// probes further into the video are tried. <paramref name="sourceEndLimitSec"/> is the last usable
-    /// SOURCE second of THIS file (trim end, or the merge clip's kept end) — never another clip's time.
-    /// </summary>
     public static async Task<AiDiscoveryResult> DiscoverSubjectsWithLookaheadAsync(
         string videoPath,
         double sourceStartSec,
@@ -454,6 +409,7 @@ public static class GeminiTrackingService
             Math.Max(2.5, sourceDurationSec * 1.0)
         };
 
+        int probesRun = 0;
         foreach (double delta in lookaheadDeltas)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -473,12 +429,13 @@ public static class GeminiTrackingService
                     videoPath, probeStart, probeDuration, cancellationToken).ConfigureAwait(false);
                 pf1 = n1; pf2 = n2; pf3 = n3;
 
+                probesRun++;
                 var probeSubjects = await DiscoverSubjectsAsync(pf1, pf2, pf3, session, profile, consoleLog, cancellationToken, targetDescription).ConfigureAwait(false);
                 if (probeSubjects.Count > 0)
                 {
                     consoleLog?.Invoke($"Found {probeSubjects.Count} target(s) {delta.ToString("0.0", CultureInfo.InvariantCulture)}s after the segment start.");
                     DeleteQuietly(f1); DeleteQuietly(f2); DeleteQuietly(f3);
-                    return new AiDiscoveryResult(probeSubjects, pf1, pf2, pf3, pt1, pt2, pt3, delta);
+                    return new AiDiscoveryResult(probeSubjects, pf1, pf2, pf3, pt1, pt2, pt3, delta) { ProbesRun = probesRun };
                 }
                 DeleteQuietly(pf1); DeleteQuietly(pf2); DeleteQuietly(pf3);
             }
@@ -499,7 +456,7 @@ public static class GeminiTrackingService
             }
         }
 
-        return new AiDiscoveryResult(new List<DiscoveredSubject>(), f1, f2, f3, t1, t2, t3, 0);
+        return new AiDiscoveryResult(new List<DiscoveredSubject>(), f1, f2, f3, t1, t2, t3, 0) { ProbesRun = probesRun };
     }
 
     private static void DeleteQuietly(string path)
@@ -514,8 +471,6 @@ public static class GeminiTrackingService
         }
     }
 
-
-    /// <summary>AICHUNK_01 — how a segment of <paramref name="durationSec"/> is split: even chunks of at most <see cref="MaxChunkSec"/>.</summary>
     public static IReadOnlyList<(double Start, double End)> PlanChunks(double durationSec)
     {
         var list = new List<(double, double)>();
@@ -527,11 +482,6 @@ public static class GeminiTrackingService
         return list;
     }
 
-    /// <summary>
-    /// Tracks <see cref="AiTrackingRequest.Target"/> through the WHOLE segment (AICHUNK_01: one request
-    /// per chunk of at most 8 s, the identity carried from chunk to chunk) and returns the smoothed
-    /// trajectory, raw waypoints included (AIRESMOOTH_01).
-    /// </summary>
     public static async Task<AiTrajectorySmoother.SmoothedTrajectory> TrackSubjectAsync(
         AiTrackingRequest req,
         GeminiModelSession session,
@@ -671,7 +621,6 @@ public static class GeminiTrackingService
         return trajectory;
     }
 
-    /// <summary>AIPARTRETRY_01 — failures that belong to ONE part (another try may work); account problems are not.</summary>
     internal static bool IsPartFailure(AiProviderException ex)
         => ex.Kind is AiProviderErrorKind.MalformedResponse or AiProviderErrorKind.Blocked or AiProviderErrorKind.Timeout
             or AiProviderErrorKind.Overloaded or AiProviderErrorKind.Network or AiProviderErrorKind.RateLimited
@@ -738,14 +687,63 @@ public static class GeminiTrackingService
         return ParseWaypoints(text, session.VendorName);
     }
 
-    /// <summary>Parses + validates a tracking answer: finite times, coordinates clamped to 0..1000.</summary>
+    internal const string DecimalBoxTag = "AIDECIMALBOX_01";
+
+    private static readonly HashSet<string> WaypointIntegerFields = new(StringComparer.Ordinal) { "cx", "cy", "w", "h" };
+
+    private static readonly HashSet<string> DiscoveryIntegerFields = new(StringComparer.Ordinal) { "id", "frame_index", "ymin", "xmin", "ymax", "xmax" };
+
+    internal static string RoundWholeNumberFields(string json, IReadOnlySet<string> fields)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return json;
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(json);
+            var buffer = new ArrayBufferWriter<byte>(json.Length + 16);
+            using (var w = new Utf8JsonWriter(buffer)) WriteRounded(w, doc.RootElement, fields, null);
+            return System.Text.Encoding.UTF8.GetString(buffer.WrittenSpan);
+        }
+        catch (JsonException ex)
+        {
+            CoreLogger.Swallowed(ex);
+            return json;
+        }
+    }
+
+    private static void WriteRounded(Utf8JsonWriter w, JsonElement e, IReadOnlySet<string> fields, string? property)
+    {
+        switch (e.ValueKind)
+        {
+            case JsonValueKind.Object:
+                w.WriteStartObject();
+                foreach (JsonProperty p in e.EnumerateObject())
+                {
+                    w.WritePropertyName(p.Name);
+                    WriteRounded(w, p.Value, fields, p.Name);
+                }
+                w.WriteEndObject();
+                break;
+            case JsonValueKind.Array:
+                w.WriteStartArray();
+                foreach (JsonElement item in e.EnumerateArray()) WriteRounded(w, item, fields, null);
+                w.WriteEndArray();
+                break;
+            case JsonValueKind.Number when property != null && fields.Contains(property) && !e.TryGetInt32(out _) && e.TryGetDouble(out double d) && double.IsFinite(d):
+                w.WriteNumberValue((int)Math.Clamp(Math.Round(d, MidpointRounding.AwayFromZero), int.MinValue, int.MaxValue));
+                break;
+            default:
+                e.WriteTo(w);
+                break;
+        }
+    }
+
     internal static List<RawSubjectWaypoint> ParseWaypoints(string? text, string vendorName = "AI")
     {
         string json = GeminiClient.StripCodeFence(text);
         List<RawSubjectWaypoint>? raw;
         try
         {
-            raw = JsonSerializer.Deserialize(json, GeminiApiJsonContext.Default.ListRawSubjectWaypoint);
+            raw = JsonSerializer.Deserialize(RoundWholeNumberFields(json, WaypointIntegerFields), GeminiApiJsonContext.Default.ListRawSubjectWaypoint);
         }
         catch (JsonException ex)
         {
@@ -773,7 +771,6 @@ public static class GeminiTrackingService
         return result;
     }
 
-    /// <summary>The 640-wide, audio-free, ultrafast H.264 slice sent to Gemini (unchanged encoding).</summary>
     private static async Task<byte[]> SliceAsync(string videoPath, double startSec, double durationSec, Action<string>? consoleLog, CancellationToken token)
     {
         string tempDir = ApplicationPaths.CreateDefault().TempDirectory;
@@ -793,7 +790,7 @@ public static class GeminiTrackingService
             foreach (string a in new[]
             {
                 "-y", "-ss", startSec.ToString("0.000", ci), "-t", durationSec.ToString("0.000", ci),
-                "-i", videoPath, "-vf", "scale=640:-2", "-c:v", "libx264", "-preset", "ultrafast",
+                "-i", videoPath, "-vf", "scale=640:-2", "-r", ClipFps.ToString("0.###", ci), "-c:v", "libx264", "-preset", "ultrafast",
                 "-crf", "28", "-an", tempMp4Path
             }) psi.ArgumentList.Add(a);
 
@@ -811,7 +808,6 @@ public static class GeminiTrackingService
         }
     }
 
-
     private static readonly Regex SelfLabel = new(
         @"\b(main player|local player|primary character|self|yourself|protagonist|user character|camera character|own character|my player|my character|player's own|own avatar|first[- ]person (hands|arms|weapon)|held weapon|player'?s (hands|arms|weapon))\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
@@ -824,16 +820,6 @@ public static class GeminiTrackingService
         @"^(the\s+)?(player|character|avatar|person|skin|player character|player avatar)$|foreground|closest|back view|from behind|seen from behind",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-    /// <summary>
-    /// AIEXCLUDE_02 (docs/01 TL-AITRACKING) — is this candidate the player's OWN character?
-    /// <list type="number">
-    /// <item>A self-describing label (word match, so "shelf" is not "self") — every profile.</item>
-    /// <item>The third-person position anchor (Ymax ≥ 750, 250 ≤ Cx ≤ 650, H ≥ 300) — ONLY for profiles that
-    /// exclude the avatar, ONLY when the label is generic ("player", "character", "foreground"…), and NEVER
-    /// when the label calls it an opponent. The old unconditional "large and bottom-centre ⇒ self" rule
-    /// threw away close-range enemies, which are the best highlights.</item>
-    /// </list>
-    /// </summary>
     internal static bool IsMainPlayerCharacter(DiscoveredSubject subject, AiGameProfile profile = AiGameProfiles.Default)
     {
         if (subject == null) return false;
@@ -848,10 +834,6 @@ public static class GeminiTrackingService
         return foregroundAnchor && GenericCharacterLabel.IsMatch(label);
     }
 
-    /// <summary>
-    /// Evaluates if a detected candidate is scenery, landscape, buildings, or inanimate geometry
-    /// rather than an active character, combatant, or player vehicle.
-    /// </summary>
     internal static bool IsInanimateScenery(DiscoveredSubject subject)
     {
         if (subject == null) return false;
@@ -903,10 +885,6 @@ public static class GeminiTrackingService
         return false;
     }
 
-    /// <summary>
-    /// Crops a candidate subject bounding box from a candidate frame using SkiaSharp with padding margin.
-    /// Returns a high-quality JPEG byte array.
-    /// </summary>
     public static byte[]? CropSubjectJpeg(string framePath, int ymin, int xmin, int ymax, int xmax, int paddingPercent = 15)
     {
         if (string.IsNullOrEmpty(framePath) || !File.Exists(framePath)) return null;
@@ -951,11 +929,6 @@ public static class GeminiTrackingService
         }
     }
 
-    /// <summary>
-    /// Defensive sanitiser (third-person profiles only): suppresses waypoints that jump onto the player's
-    /// own avatar position (Ymax ≥ 720, 240 ≤ Cx ≤ 660, H ≥ 260) when the confirmed target did not start
-    /// there. Suppressed points become invisible, so the smoother's inertial hold carries the camera.
-    /// </summary>
     internal static int SanitizeWaypointsAgainstLocalPlayer(
         List<RawSubjectWaypoint> waypoints,
         DiscoveredSubject? confirmedTarget,

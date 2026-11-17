@@ -7,7 +7,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.Core.LocalAi;
 
-/// <summary>What one local tracking run needs. Times are seconds; <see cref="SourceStartSec"/> is in the SOURCE file.</summary>
 public sealed record LocalTrackingRequest(
     string FfmpegPath,
     string VideoPath,
@@ -19,7 +18,6 @@ public sealed record LocalTrackingRequest(
     double InitialTimeSec,
     AiGameProfile Profile = AiGameProfile.Generic);
 
-/// <summary>The dense result and the waypoints made from it.</summary>
 public sealed record LocalTrackingResult(
     IReadOnlyList<TrackedFrame> Frames,
     List<RawSubjectWaypoint> Waypoints,
@@ -31,19 +29,12 @@ public sealed record LocalTrackingResult(
     int OwnBodyRefused = 0,
     bool OwnBodyRuleOn = false);
 
-/// <summary>
-/// LOCALTRACK_01 (docs/01 TL-LOCALTRACK) — follows one box through a block on the user's own computer. The target is
-/// tracked FORWARD from the moment it was picked to the end of the block and BACKWARD from that moment to the start
-/// (in 2 s chunks read newest-first, so memory stays at one chunk). Each direction stops at a hard cut
-/// (<see cref="SceneCutDetector"/>): the frames after it are "not visible" and the camera eases wide there.
-/// </summary>
 public static class LocalSubjectTracker
 {
     public const double GpuFps = 10.0;
     public const double CpuFps = 3.0;
     public const double BackwardChunkSec = 2.0;
 
-    /// <summary>Diagnostics only (tests): one line per frame with the prediction and every candidate.</summary>
     internal static Action<string>? Trace;
 
     public static async Task<LocalTrackingResult> TrackAsync(LocalTrackingRequest req, Sam2BoxTracker model,
@@ -115,14 +106,8 @@ public static class LocalSubjectTracker
 
     public const string MotionOnsetTag = "LOCALTRACK_02";
 
-    /// <summary>LOCALTRACK_02 — what the forward pass learned on the picked frame: the target's exact box, its look and its first motion per frame.</summary>
     private sealed record DirectionStart(PixelBox Box, float[] Look, double Vx, double Vy, bool HasVelocity);
 
-    /// <summary>
-    /// One direction's memory: the last good box, its motion per frame, how long it has been lost, the target's usual
-    /// size (reference area: the first accepted box, then 90 % old + 10 % new) and the cut. While lost the motion is
-    /// kept, so the prompt coasts with the target instead of waiting where it was last seen.
-    /// </summary>
     private sealed class DirectionState
     {
         private readonly SceneCutDetector _cuts = new();

@@ -6,11 +6,6 @@ using System.Text.RegularExpressions;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>A meme input already opened by the worker, for one clip's graph.</summary>
-/// <param name="InputIndex">FFmpeg input index of the meme file.</param>
-/// <param name="AtRelSec">Where it is inserted, seconds from the clip's kept-in point (see <see cref="CompositeTimeline.MemeAtRelSec"/>).</param>
-/// <param name="GainDb">MEMELEVEL_02 — gain that matches the meme to its host clip's gameplay loudness (<see cref="MemeLoudness.GainFor"/>); 0 = as recorded.</param>
-/// <param name="Mode">MEMEMODE_01 — full-screen cutaway (spliced, the clip grows) or corner overlay (over the body, zero added length).</param>
 public sealed record MergeMemeInput(int InputIndex, bool IsImage, bool HasAudio, double DurationSec, double AtRelSec, double GainDb = 0,
     MemePresentationMode Mode = MemePresentationMode.InlineFullScreen,
     MemeOverlayCorner Corner = MemeOverlayCorner.BottomRight,
@@ -24,30 +19,12 @@ public sealed record MergeMemeInput(int InputIndex, bool IsImage, bool HasAudio,
     public bool IsCornerOverlay => Mode == MemePresentationMode.CornerOverlay;
 }
 
-/// <summary>What one clip contributes to the merge graph.</summary>
 public sealed record MergeClipGraphResult(IReadOnlyList<string> Filters, string VideoLabel, string AudioLabel, double DurationSec, int MemeCount);
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// MERGEGRAPH_01 — ONE CLIP WITH GRANULAR EFFECTS, AS FFMPEG FILTERS (Video-Merger-Migration.md P7.1).
-///
-/// The Main App's export engine for speed/freeze/zoom/cuts (<see cref="GranularSpeedBuilder"/>) is
-/// reused as-is, per clip, so a ramp in the Merger renders exactly like the same ramp in the Main
-/// App. Order matters and is fixed:
-///   1. trim the clip's kept window (FRAMESNAP_01 epsilon) — timestamps start at 0;
-///   2. granular chain in SOURCE pixels (zoom rectangles are source px, so no scaling before it);
-///   3. the clip's canvas chain (colour + scale/pad|crop + setsar) and fps=60 — same as plain clips;
-///   4. memes spliced into the clip's own output (D4: effects stay inside their clip).
-/// <see cref="GranularSpeedBuilder.Build"/> names its pads with fixed labels, so every label of its
-/// graph is prefixed per clip; many clips then share one filter graph safely.
-/// Pure: no process, no disk. Clips without effects never come here (their chain is unchanged).
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public static class MergeClipGraph
 {
     private static readonly Regex LabelPattern = new(@"\[([A-Za-z_][A-Za-z0-9_]*)\]", RegexOptions.CultureInvariant);
 
-    /// <summary>A piece shorter than one output frame is not emitted.</summary>
     private const double MinPieceSec = 1.0 / CompositeTimeline.MergeFps;
 
     public static MergeClipGraphResult Build(
@@ -212,7 +189,6 @@ public static class MergeClipGraph
         return new MergeClipGraphResult(filters, $"[{p}fx_v]", $"[{p}fx_a]", total, placed.Count + cornerInputs.Count);
     }
 
-    /// <summary>The meme's cut point in this clip's BODY output (before any meme), in seconds.</summary>
     private static double BodyOutputSec(MergeMemeInput m, Func<double, double> mapper, double keepStartSec)
         => m.AtRelSec <= 0.0005 ? 0 : mapper(keepStartSec + m.AtRelSec);
 

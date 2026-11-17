@@ -3,10 +3,6 @@ using System.Text;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// UPGRADE_07 — a bounded local channel survives elevation under a different account.
-/// NOLOCALPORT_01 — it runs over a named pipe (<c>PipeAccess.CreateUpgradeServer</c>), never a TCP port.
-/// </summary>
 internal sealed class UpgradeChannel(Stream stream) : IDisposable
 {
     private readonly Stream _stream = stream;
@@ -39,11 +35,6 @@ internal sealed class UpgradeChannel(Stream stream) : IDisposable
         return (kind, detail);
     }
 
-    /// <summary>
-    /// UPGRADEUX_01 — called for every <c>progress</c> message the elevated worker sends while the
-    /// broker is waiting for its next real reply. Progress is display-only: it never satisfies an
-    /// <see cref="ExpectAsync"/> and never changes the protocol's order.
-    /// </summary>
     public Action<string>? Progress { get; set; }
 
     public async Task<string> ExpectAsync(string kind, TimeSpan? wait = null)
@@ -62,7 +53,6 @@ internal sealed class UpgradeChannel(Stream stream) : IDisposable
         }
     }
 
-    /// <summary>UPGRADEUX_01 — the message kind for "phase|fraction" status lines.</summary>
     public const string ProgressKind = "progress";
 
     public void Dispose() => _stream.Dispose();

@@ -1,14 +1,9 @@
-﻿
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using FreeVideoStudio.App.ViewModels;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// UPGRADEUX_01 — install/update progress. All state is in <see cref="UpgradeProgressViewModel"/>;
-/// this file only stops the window being closed while files are being replaced.
-/// </summary>
 public partial class UpgradeProgressWindow : Window
 {
     public UpgradeProgressWindow()
@@ -16,7 +11,6 @@ public partial class UpgradeProgressWindow : Window
         AvaloniaXamlLoader.Load(this);
     }
 
-    /// <summary>Set once the work has finished and the user may close the window.</summary>
     public bool AllowClose { get; set; }
 
     protected override void OnClosing(WindowClosingEventArgs e)

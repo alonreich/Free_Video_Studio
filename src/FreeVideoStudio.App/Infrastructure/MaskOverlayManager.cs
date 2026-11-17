@@ -14,21 +14,11 @@ public static class MaskOverlayManager
 {
     public static string ProfilesDirectory => Path.Combine(ApplicationPaths.CreateDefault().ProgramDataRoot, "MaskProfiles");
 
-    /// <summary>
-    /// NOMASK_01 — the reserved, HUD-free profile. Name lives in Core so the Main App, the
-    /// Settings window and the Crop Tools app all compare against the same literal.
-    /// </summary>
     public static string NoMaskProfileName => CropConfigDefaults.NoMaskProfileName;
 
-    /// <summary>NOMASK_01 — true when <paramref name="profileName"/> is the reserved HUD-free profile.</summary>
     public static bool IsNoMask(string? profileName)
         => string.Equals(profileName?.Trim(), CropConfigDefaults.NoMaskProfileName, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// ISSUE_3: all reads/writes of the shared crops_coordinations.conf must hold the
-    /// same named system mutex that CropConfigStore/StateTransferStore use, because
-    /// Main App and Crop Tools are both alive during process handoff.
-    /// </summary>
     private static IDisposable AcquireConfigLock()
     {
         return NamedSystemMutex.Acquire(
@@ -36,11 +26,6 @@ public static class MaskOverlayManager
             StateTransferStore.DefaultMutexTimeout);
     }
 
-    /// <summary>
-    /// ISSUE_6: profile names are user input that becomes a file name. Strips invalid
-    /// filename characters and rejects names that would resolve outside the profiles
-    /// directory. Returns null when no safe name can be produced.
-    /// </summary>
     public static string? SanitizeProfileName(string? rawName)
     {
         if (string.IsNullOrWhiteSpace(rawName)) return null;
@@ -143,10 +128,6 @@ public static class MaskOverlayManager
             new(false, profileName, null, errorMessage);
     }
 
-    /// <summary>
-    /// CROPPROFILE_01 — Explicitly loads and validates a mask profile without altering live state.
-    /// Returns a validated identity and configuration, or a detailed failure reason.
-    /// </summary>
     public static ProfileLoadResult LoadProfile(string? profileName)
     {
         if (string.IsNullOrWhiteSpace(profileName))
@@ -218,23 +199,6 @@ public static class MaskOverlayManager
         }
     }
 
-    /// <summary>
-    /// PROJ_11 — THE LIVE HUD MASK, AS A VALUE A PROJECT CAN STORE.
-    ///
-    /// <para>
-    /// The active profile name plus the crop configuration that name currently resolves to, with a
-    /// content fingerprint over the configuration. This is what <c>ProjectSession.Capture</c>
-    /// records so a <c>.fvsproj</c> knows which mask it was built with — see
-    /// <see cref="FreeVideoStudio.Core.Project.ProjectMask"/> for why the name alone is not
-    /// enough.
-    /// </para>
-    ///
-    /// <para>
-    /// Returns <see langword="null"/> when the live configuration cannot be read at all. The caller
-    /// treats that as "no mask recorded", never as "no mask applied" — the two are different and
-    /// conflating them would write a project claiming an unmasked export that was in fact masked.
-    /// </para>
-    /// </summary>
     public static ProjectMask? ReadLiveMask()
     {
         JsonObject? config;
@@ -255,10 +219,6 @@ public static class MaskOverlayManager
         return SyncProfileFromCurrentConfig(SettingsManager.Instance.ActiveMaskOverlay);
     }
 
-    /// <summary>
-    /// CROPPROFILE_01 — Writes live crop coordinates back to a specific named profile file,
-    /// avoiding blind fallback to global ActiveMaskOverlay.
-    /// </summary>
     public static bool SyncProfileFromCurrentConfig(string? profileName)
     {
         try
@@ -294,9 +254,6 @@ public static class MaskOverlayManager
         return false;
     }
 
-    /// <summary>
-    /// CROPPROFILE_01 — Atomically writes a validated configuration directly to a specific profile file.
-    /// </summary>
     public static bool SaveProfile(string? profileName, JsonObject config)
     {
         try

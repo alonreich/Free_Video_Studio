@@ -5,24 +5,14 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AICOMMENTARY_SERVICE_01 — system instructions and structured schemas for AI live commentary generation.
-/// </summary>
 public static class AiCommentaryPrompts
 {
     public const string CommentaryJsonSchema = "{\"type\":\"ARRAY\",\"items\":{\"type\":\"OBJECT\",\"properties\":{\"start\":{\"type\":\"NUMBER\"},\"end\":{\"type\":\"NUMBER\"},\"text\":{\"type\":\"STRING\"},\"emphasis\":{\"type\":\"ARRAY\",\"items\":{\"type\":\"STRING\"}},\"confidence\":{\"type\":\"NUMBER\"}},\"required\":[\"start\",\"end\",\"text\"]}}";
 
-    /// <summary>Older single-tone entry point: the tone is turned into its one-click style (COMMENTARYMIX_01).</summary>
     public static string BuildPrompt(CaptionTone tone, AiGameProfile profile, string language, string? customNotes = null, string? playbackNotes = null, bool canHearAudio = true)
         => BuildPrompt(CommentaryPersonality.FromPreset(CommentaryPersonality.PresetForTone(tone)), profile, language,
             customNotes, playbackNotes, canHearAudio);
 
-    /// <summary>
-    /// COMMENTARYMIX_01 — the commentary prompt for one part of the video.
-    /// <paramref name="killTimesInPart"/> (TACTICAL_03): confirmed eliminations from the kill tracker, in seconds
-    /// from the part's start; null = the tracker did not run (nothing is said about kills).
-    /// <paramref name="rewriteOf"/> (REWRITELINE_01): write exactly ONE new line that replaces this text.
-    /// </summary>
     public static string BuildPrompt(
         CommentaryPersonality personality,
         AiGameProfile profile,

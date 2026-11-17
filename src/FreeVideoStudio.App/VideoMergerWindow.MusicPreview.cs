@@ -1,27 +1,9 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// SCRAPER_02 / MUSICSYNC_02 — THE MERGER PREVIEW PLAYS THE MUSIC WHERE THE EXPORT PUTS IT.
-///
-/// Music time in the merger is OUTPUT time: the body output second of the preview schedule
-/// (MERGEPREVIEW_01, <see cref="MergerPreviewPlan.OutputSecAt"/>), the same mapping the export's
-/// MusicExportSec uses; merged seconds ÷ merge speed only while the edit list does not describe the
-/// queue. The bed is laid out by the shared <see cref="MusicBedPlan"/>. Because the merged timeline already excludes
-/// the removed intros, the preview and the file agree to the frame.
-///
-/// Same rules as the Main App (MainWindow.PreviewAudio.cs):
-///   • The music plays at its own normal speed, always. Speed is pinned to 1.0; only the video changes speed.
-///   • Drift is corrected by SEEKING only, after <see cref="Infrastructure.PreviewAudioSync.DriftStrikes"/>
-///     readings beyond <see cref="Infrastructure.PreviewAudioSync.DriftToleranceSec"/>.
-///   • Silent while the preview is in its muted browsing mode (AUTOPREVIEW_01).
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class VideoMergerWindow
 {
     private const int MergerMusicSettleMs = 350;
@@ -53,7 +35,6 @@ public partial class VideoMergerWindow
         return _mergerMusicPlan;
     }
 
-    /// <param name="outputSec">Body OUTPUT second on screen (<see cref="PreviewOutputSec"/>): runs on through a freeze.</param>
     private void UpdateMergerMusicPreview(double outputSec, bool videoPlaying)
     {
         double speed = _baseSpeed > 0.01 ? _baseSpeed : 1.0;

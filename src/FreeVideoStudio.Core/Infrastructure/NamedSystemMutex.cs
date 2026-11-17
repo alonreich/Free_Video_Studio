@@ -1,5 +1,4 @@
-﻿
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace FreeVideoStudio.Core.Infrastructure;
 
@@ -25,12 +24,6 @@ public sealed class NamedSystemMutex : IDisposable
         }
     }
 
-    /// <summary>
-    /// USERSCOPE_01 — a machine-wide ("Global\") name that is private to the current Windows user.
-    /// It stays Global so the same user's processes in different sessions (console + RDP) still
-    /// exclude each other over the per-user data root, while other accounts can never collide
-    /// with it or be denied by its DACL.
-    /// </summary>
     public static string UserScopedName(string baseName)
         => $@"Global\{baseName}_{FreeVideoStudio.Core.Ipc.IpcProtocol.UserScope}{DevelopmentEnvironment.ScopeSuffix}";
 

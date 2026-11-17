@@ -1,11 +1,9 @@
-﻿
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Media;
 using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>COLOR_01 — SDR BT.709 TV range, tagged, from any source.</summary>
 public class ExportColorPolicyTests
 {
     private static VideoColorInfo Probe(string json) => VideoColorInfo.FromStream(JsonNode.Parse(json));

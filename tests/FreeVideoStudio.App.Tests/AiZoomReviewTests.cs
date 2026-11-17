@@ -9,10 +9,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// GEMINICLIENT_01, AIGAME_01, AIEXCLUDE_02, AICHUNK_01, AIFPS_01, KEYPROTECT_01, AIUNDO_01 — the
-/// AI SMART ZOOM review fixes. Every network call is mocked; nothing here reaches the internet.
-/// </summary>
 public sealed class AiZoomReviewTests
 {
     private const string FakeKey = "AIzaSy-dummy-test-key-000000000000";
@@ -45,7 +41,6 @@ public sealed class AiZoomReviewTests
         => new(new HttpClient(h) { Timeout = Timeout.InfiniteTimeSpan }, _ => { }, (d, _) => { delays?.Add(d); return Task.CompletedTask; });
 
     private static readonly GeminiCallOptions Fast = new(TimeSpan.FromSeconds(5), 3, TimeSpan.FromSeconds(30)) { ExpectJson = false };
-
 
     [Fact]
     public void Classify_InvalidKeyArrivesAs400_AndIsReportedAsAKeyProblem()
@@ -85,7 +80,6 @@ public sealed class AiZoomReviewTests
         string red = GeminiClient.Redact($"url?key={FakeKey} header x-goog-api-key: {FakeKey} and AIzaSy-dummy-test-key-000000000000000000", null);
         Assert.DoesNotContain("AIza", red);
     }
-
 
     [Fact]
     public async Task Generate_SendsKeyOnlyInHeader_NeverInUrl()
@@ -158,7 +152,6 @@ public sealed class AiZoomReviewTests
         Assert.Equal("gemini-3.0-flash", GeminiClient.ResolveModel("models/gemini-3.0-flash"));
     }
 
-
     [Fact]
     public void CloseRangeOpponent_IsNoLongerThrownAwayAsTheLocalPlayer()
     {
@@ -198,7 +191,6 @@ public sealed class AiZoomReviewTests
         var b = Wps();
         Assert.Equal(0, GeminiTrackingService.SanitizeWaypointsAgainstLocalPlayer(b, distant, (0, 0, 0, 0), AiGameProfile.Generic));
     }
-
 
     [Theory]
     [InlineData(3.0, 1)]
@@ -246,7 +238,6 @@ public sealed class AiZoomReviewTests
         Assert.Throws<GeminiException>(() => GeminiTrackingService.ParseDiscovery("{oops"));
     }
 
-
     [Fact]
     public void ApiKey_IsNeverSerializedAsPlainText()
     {
@@ -278,7 +269,6 @@ public sealed class AiZoomReviewTests
         Assert.Equal("", s.GeminiApiKeyStored);
         Assert.Equal("", SecretProtector.Unprotect("dpapi1:not-base64!!"));
     }
-
 
     [Fact]
     public void AcceptingAnAiZoom_CheckpointsTheOriginalBlock()

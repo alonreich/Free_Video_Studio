@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -8,12 +7,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// SYS-AVCLEAN — production code must not use the techniques that made antivirus report new
-/// releases as a trojan: PowerShell or cmd.exe as a helper (NOPOWERSHELL_01/02), a "ping … del"
-/// self-delete chain (NOSELFDELETE_01), or a recurring SYSTEM scheduled task (NOSYSTEMTASK_01).
-/// Scans every .cs file under src/. Comments are stripped first so the spec tags may name them.
-/// </summary>
 public sealed class AvCleanRuleTests
 {
     private static readonly (string Name, Regex Pattern)[] Forbidden =
@@ -52,11 +45,6 @@ public sealed class AvCleanRuleTests
             string.Join("\n", offenders));
     }
 
-    /// <summary>
-    /// NODROPPER_01 — the program never carries the release inside its own resources again; the
-    /// Inno Setup script stays a non-elevated unpacker that installs nothing by itself and forwards
-    /// only the known updater switches.
-    /// </summary>
     [Fact]
     public void NoDropper01_TheReleaseIsAnInnoSetupPackageNotAnEmbeddedPayload()
     {
@@ -75,10 +63,6 @@ public sealed class AvCleanRuleTests
         Assert.DoesNotMatch(new Regex(@"^\s*\[(Registry|Icons|UninstallRun|UninstallDelete)\]", RegexOptions.Multiline), iss);
     }
 
-    /// <summary>
-    /// NOTEMPEXEC_01 — the uninstaller does not copy itself to %TEMP%, and nothing that is started
-    /// elevated by the updater is staged in %TEMP%.
-    /// </summary>
     [Fact]
     public void NoTempExec01_NothingElevatedIsStagedInTemp()
     {
@@ -109,7 +93,6 @@ public sealed class AvCleanRuleTests
         Assert.Equal((path, index), FreeVideoStudio.App.ShellLinkWriter.SplitIconLocation(location));
     }
 
-    /// <summary>Removes // and /* */ comments; keeps line breaks so line numbers stay right.</summary>
     private static string StripComments(string code)
     {
         code = Regex.Replace(code, @"/\*.*?\*/", m => new string('\n', m.Value.Count(c => c == '\n')), RegexOptions.Singleline);

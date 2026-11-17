@@ -8,29 +8,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// SCRAPER_01..05 — THE THUMBNAIL SCRAPER, AND THE MERGED TIMELINE IT PRODUCES.
-///
-/// THREADING. Nothing here blocks the UI thread:
-///   • Every queue change calls <see cref="ScheduleTimelineRebuild"/>. It asks
-///     <see cref="MergeClipAnalyzer"/> for every clip. Each clip is probed once, on the thread
-///     pool, a few in parallel, and cached per file identity, so a rebuild after a reorder or a
-///     toggle costs no process at all.
-///   • The rebuild awaits those tasks. The continuation runs back on the UI thread only to build
-///     the (pure, microsecond) <see cref="MergedTimeline"/> and apply it.
-///   • A version counter drops stale rebuilds: if the queue changed while a probe was running,
-///     only the newest rebuild is applied.
-///   • MERGE and ADD MUSIC await <see cref="EnsureTimelineReadyAsync"/>. In practice the analysis
-///     finished long before, because clips are queued minutes before either button is pressed.
-///
-/// ONE TRUTH. The same <see cref="MergedTimeline"/> drives the preview (VideoMergerWindow.Timeline.cs),
-/// the Music Wizard's clip lanes (<see cref="MusicClipWindows"/>), the music preview, and the export
-/// (<see cref="ApplyScraperToWorker"/>). When the layout changes (scraper toggled, custom thumbnail
-/// set or cleared), the music window is re-anchored through (clip, source second) by
-/// <see cref="MergedTimeline.Remap"/>, so the song still starts on the moment the user chose.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class VideoMergerWindow
 {
     private MergedTimeline _timeline = MergedTimeline.Empty;
@@ -42,11 +19,9 @@ public partial class VideoMergerWindow
     private bool _scraperEnabled = Infrastructure.SettingsManager.Instance.MergerThumbnailScraper;
     private bool _suppressScraperToggle;
 
-    /// <summary>SCRAPER_04 — the custom thumbnail, by file and SOURCE second (null = none, clip 1 keeps its intro).</summary>
     private string? _thumbPath;
     private double _thumbSourceSec;
 
-    /// <summary>The timeline the current music window was placed on (null = no music, or placed before analysis).</summary>
     private MergedTimeline? _musicTimeline;
 
     private bool HasCustomThumbnail => _thumbPath != null;
@@ -81,7 +56,6 @@ public partial class VideoMergerWindow
         ScheduleTimelineRebuild();
     }
 
-    /// <summary>Settings window closed: pick up a change made there.</summary>
     private void SyncScraperFromSettings()
     {
         bool v = Infrastructure.SettingsManager.Instance.MergerThumbnailScraper;
@@ -97,10 +71,6 @@ public partial class VideoMergerWindow
         ScheduleTimelineRebuild();
     }
 
-    /// <summary>
-    /// SCRAPER_05 — double-click a clip in the list: open THAT file alone in Windows' default video
-    /// app. The preview is paused so two players do not talk over each other.
-    /// </summary>
     private void VideoList_DoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)
     {
         if (e.Source is not Avalonia.Visual v) return;
@@ -216,7 +186,6 @@ public partial class VideoMergerWindow
         RedrawTimelineSelection();
     }
 
-    /// <summary>The timeline describes exactly the queue on screen, in order.</summary>
     private bool TimelineMatchesQueue()
     {
         if (!_timelineReady || _timeline.Clips.Count != VideoQueue.Count) return false;
@@ -225,7 +194,6 @@ public partial class VideoMergerWindow
         return true;
     }
 
-    /// <summary>Awaits the analysis for the CURRENT queue. Only MERGE and ADD MUSIC wait here.</summary>
     private async Task EnsureTimelineReadyAsync()
     {
         for (int attempt = 0; attempt < 3; attempt++)
@@ -236,7 +204,6 @@ public partial class VideoMergerWindow
         }
     }
 
-    /// <summary>TOTAL LENGTH from the merged timeline once it is known (overrides the estimator's raw sum).</summary>
     private void PaintMergedLength()
     {
         if (!TimelineMatchesQueue()) return;
@@ -245,14 +212,11 @@ public partial class VideoMergerWindow
         if (length != null) length.Text = FormatDuration(EdlOutputSec() ?? _timeline.TotalSec / speed + _timeline.SyntheticIntroSec);
     }
 
-    /// <summary>Merged (1.0x) length handed to the Music Wizard.</summary>
     private double MusicTimelineTotalSec() => TimelineMatchesQueue() ? _timeline.TotalSec : _cachedTotalDurationSec;
 
-    /// <summary>SCRAPER_02 — the kept window of every clip, for the Music Wizard's lanes.</summary>
     private List<(double StartSec, double EndSec)>? MusicClipWindows()
         => TimelineMatchesQueue() ? _timeline.Clips.Select(c => (c.ContentStartSec, c.ContentEndSec)).ToList() : null;
 
-    /// <summary>The wizard returned a music window: it was placed on the current timeline.</summary>
     private void OnMusicPlaced()
     {
         _musicTimeline = TimelineMatchesQueue() ? _timeline : null;
@@ -260,7 +224,6 @@ public partial class VideoMergerWindow
         NoteEdlChanged();
     }
 
-    /// <summary>SCRAPER_01..04 — hands the export the exact cut the preview shows.</summary>
     private void ApplyScraperToWorker(MergerWorker worker)
     {
         CaptureEdlNow(flush: false);
@@ -287,8 +250,6 @@ public partial class VideoMergerWindow
         RuntimeLog.Info("MERGER", $"Export uses the merged timeline: {worker.ClipIntroSkipSec.Count(x => x > 0)} intro(s) cut, custom thumbnail clip {worker.ThumbnailClipIndex + 1}.");
     }
 
-
-    /// <summary>The thumbnail's position in merged seconds, or null when none is set.</summary>
     private double? ThumbnailMergedSec()
     {
         if (_thumbPath == null || !TimelineMatchesQueue()) return null;
@@ -300,7 +261,6 @@ public partial class VideoMergerWindow
     private bool IsPlayheadOnThumbnail()
         => ThumbnailMergedSec() is double t && Math.Abs(PreviewPositionSec() - t) <= 0.5;
 
-    /// <summary>The Main App's three-way button: SET, MOVE HERE, or REMOVE when parked on it.</summary>
     private void ToggleThumbnailAtPlayhead()
     {
         if (!TimelineMatchesQueue()) return;
@@ -316,7 +276,6 @@ public partial class VideoMergerWindow
         SetThumbnailAtMerged(PreviewPositionSec(), announce: true);
     }
 
-    /// <summary>Points the thumbnail at the frame under <paramref name="mergedSec"/>.</summary>
     private void SetThumbnailAtMerged(double mergedSec, bool announce)
     {
         var (idx, src) = _timeline.Locate(mergedSec);

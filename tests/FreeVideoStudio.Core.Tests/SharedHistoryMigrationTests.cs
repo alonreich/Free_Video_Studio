@@ -10,13 +10,8 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// Mission 8 — UNDO_26 / UNDO_27 / UNDO_28. The Granular editor, the Crop Tool and the Music wizard
-/// all on the shared <see cref="UndoStack{T}"/>. Numbers in the test names follow the mission's list.
-/// </summary>
 public class SharedHistoryMigrationTests
 {
-
     private static GranularEditorSnapshot Gran(double baseSpeed = 1.0, int selected = -1,
         IEnumerable<SpeedSegment>? segs = null, IEnumerable<CutRange>? cuts = null, IEnumerable<MemePlacement>? memes = null,
         double freezeMs = -1, double freezeS = 1.0) =>
@@ -36,7 +31,6 @@ public class SharedHistoryMigrationTests
     private static MusicWizardSnapshot Music(string? track = "a.mp3", double start = 0, double video = 100, double music = 100,
         bool duck = true, bool carve = true, bool loop = false, params string[] queue) =>
         MusicWizardSnapshot.Create(track, queue, start, video, music, duck, carve, loop);
-
 
     [Fact]
     public void T01_NoOpIsRejected_ForEverySnapshotType()
@@ -127,7 +121,6 @@ public class SharedHistoryMigrationTests
         Assert.Equal(Music(), music.Current);
     }
 
-
     [Fact]
     public void UndoStack_DefaultGestureWindowIsStill900ms_AndPerInstanceOverrideDoesNotLeak()
     {
@@ -162,7 +155,6 @@ public class SharedHistoryMigrationTests
         s.Apply(Music(music: 70), "m", "k");
         Assert.Equal(2, s.UndoCount);
     }
-
 
     [Fact]
     public void T06_Music_TrackChangeUndoRedo()
@@ -236,8 +228,6 @@ public class SharedHistoryMigrationTests
         Assert.Equal(HistoryCommand.None, HistoryShortcut.Classify(key, control: true, shift, textInputFocused: true));
     }
 
-
-    /// <summary>Mirrors Item_PointerPressed/Moved/Released: snapshot at press, nothing while moving, one Apply on release.</summary>
     private static void SimulatePointerGesture(UndoStack<CropLayoutSnapshot> s, bool resize, IEnumerable<CropLayoutSnapshot> moves)
     {
         CropLayoutSnapshot start = s.Current;
@@ -310,7 +300,6 @@ public class SharedHistoryMigrationTests
         Assert.False(s.CanRedo);
         Assert.Null(s.Redo());
     }
-
 
     [Fact]
     public void T15_Granular_SpeedMemeCutSemanticsPreserved()
@@ -470,7 +459,6 @@ public class SharedHistoryMigrationTests
         Assert.True(h.TryAdopt(parked, ClipA, Gran(9)));
         Assert.Equal(GranularEditHistory.MaxDepth, h.UndoCount);
     }
-
 
     [Fact]
     public void Snapshots_ArePlainImmutableData_WithNoUiOrNativeTypes()

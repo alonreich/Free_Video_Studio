@@ -7,9 +7,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// Unit tests for AiViralPostService: result modeling, JSON parsing, settings defaults, and error cases.
-/// </summary>
 public sealed class AiViralPostTests
 {
     [Fact]
@@ -101,7 +98,6 @@ public sealed class AiViralPostTests
     }
 }
 
-/// <summary>AIVIRAL_HONEST_01 — no key and unreadable answers are reported honestly, never as an AI answer.</summary>
 public sealed class AiViralPostHonestyTests
 {
     [Fact]

@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -19,79 +18,17 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AUTO-UPDATE SUGGESTOR — the whole feature behind the "Automatically check for updates"
-/// checkbox in Settings.
-///
-/// HOW IT PROBES (and how it avoids false positives):
-/// * FvsBuild publishes exactly ONE GitHub release, always named "latest", always carrying a
-///   single FreeVideoStudio.exe whose SHA-256 digest GitHub serves in the release JSON
-///   (GitHubReleasePublisher verifies the upload with that same digest). The probe therefore
-///   reads the releases/latest API endpoint — the "static location" that always describes the
-///   newest build — and never guesses from file dates or sizes.
-/// * Drafts and prereleases are excluded by the /latest endpoint itself and re-checked here as
-///   defense in depth.
-/// * Versions are compared as parsed Version objects, STRICTLY greater. An equal tag ("same
-///   version already installed") and an older tag (user runs a newer build than is published)
-///   both stay perfectly silent.
-/// * Any surprise — unparsable tag, missing asset, HTTP error, timeout, offline machine — logs
-///   one line and stays silent. The suggestor must never interrupt a user over its own problems.
-///
-/// HOW IT NAGS (and how it stops):
-/// * At most ONE startup probe per 15 minutes (UiStateStore timestamp inside the preserved
-///   ProgramData root). The result of every check is recorded for Settings › About (UPDATEUX_06).
-/// * RECHECK_01 — while the app stays open the automatic check repeats every
-///   <see cref="RecheckInterval"/> (same consent, settings, throttle and "skipped" rules), so a user who
-///   never closes the app still hears about a new version the same day.
-/// * SETNOBETA_01 — one release line: /releases/latest, which never returns a pre-release (the Beta
-///   channel, BETA_01, was removed).
-/// * "Remind me later" (UPDATEUX_01) = not now; the same release is offered again on a later
-///   start (the user said not-now, not never).
-/// * "Skip this version" remembers THE TAG in UiStateStore; that exact release is never offered
-///   again, any strictly newer one is.
-/// * "Never tell me about updates again" writes AutoUpdateChecks=false into settings.json, so
-///   the Settings checkbox always tells the truth about the feature's state.
-///
-/// HOW IT INSTALLS:
-/// * Downloads to %LOCALAPPDATA%\FreeVideoStudioUpdates\Downloads\&lt;tag&gt;\ (NOTEMPEXEC_01), verifies the SHA-256 against GitHub's
-///   published digest and REFUSES to run anything that does not match.
-/// * Launches the downloaded installer, which waits for this app to close (--wait-pid), then the
-///   user chooses "Restart &amp; update now" or "Update when I close the app" (UPDATEUX_04). The
-///   installer shows its own progress window from the moment the app closes (UPGRADEUX_01).
-/// </summary>
 internal static partial class UpdateService
 {
     private const string DevelopmentUpdateMessage = "Development copy: close the app and run dev.cmd to rebuild the current source.";
     private const string LatestReleaseApiUrl = "https://api.github.com/repos/alonreich/Free_Video_Studio/releases/latest";
 
-    /// <summary>WHATSNEW_01 — the human-readable list of releases (each one keeps its notes forever, RETAIN_02).</summary>
     internal const string ReleasesPageUrl = "https://github.com/alonreich/Free_Video_Studio/releases";
 
-    /// <summary>
-    /// NODROPPER_01 — the full installer is an Inno Setup package. Releases also carry the same bytes
-    /// as <see cref="LegacyFullAssetName"/> so copies released before the change still find an installer;
-    /// this build prefers the setup name and accepts the old one.
-    /// </summary>
     internal const string SetupAssetName = "FreeVideoStudio.exe";
     private const string LegacyFullAssetName = "FreeVideoStudio.exe";
     private const string ExpectedAssetName = SetupAssetName;
 
-
-    /// <summary>
-    /// UPDATETRUST_01 — the ONLY hosts an update asset may be fetched from.
-    ///
-    /// <para>The asset URL used to be taken from the release JSON verbatim and handed straight to
-    /// <c>HttpClient</c>. A response body that named any other host would have been fetched without
-    /// comment, and since the SHA-256 that "verifies" the download comes out of that SAME document,
-    /// nothing downstream would have objected either. Pinning the host removes the easiest half of
-    /// that pairing: an attacker now has to be GitHub, not merely be believed by us.</para>
-    ///
-    /// <para>⚠️ This gates the URL AS PUBLISHED IN THE JSON. HttpClient still follows GitHub's
-    /// redirect to its asset CDN without re-checking the hop, which is why the CDN hosts are listed
-    /// too and why this is a defence-in-depth control rather than the primary one — the re-hash and
-    /// the Authenticode check before <c>Process.Start</c> (UPDATETRUST_02, <c>UpdatePreparer.RequirePublisher</c>)
-    /// are what actually decide.</para>
-    /// </summary>
     private static readonly string[] AllowedAssetHosts =
     {
         "github.com",
@@ -103,24 +40,14 @@ internal static partial class UpdateService
     private const string LastCheckFile = "update_last_check_utc.txt";
     private const string SkippedTagFile = "update_skipped_tag.txt";
 
-    /// <summary>UPDATEUX_06 — "when was the last check, and what did it find?" for Settings › About.</summary>
     private const string LastResultFile = "update_last_result.txt";
 
-    /// <summary>UPDATEUX_02 — the "typical home connection" behind the time estimate (~20 Mbit/s).</summary>
     private const double TypicalBytesPerSecond = 2.5 * 1024 * 1024;
 
-
-    /// <summary>
-    /// UPDATECONSENT_01 — nothing touches the network at startup. The first automatic check waits five
-    /// minutes after the window opens (and only after the user agreed to automatic checks): an unknown
-    /// program that phones home and downloads executables the moment it starts is what downloader malware
-    /// does, and antivirus behaviour engines score it that way.
-    /// </summary>
     internal static readonly TimeSpan StartupGracePeriod = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan MinimumIntervalBetweenChecks = TimeSpan.FromMinutes(15);
 
-    /// <summary>RECHECK_01 — how often a long-running session checks again.</summary>
     internal static readonly TimeSpan RecheckInterval = TimeSpan.FromHours(6);
     private static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(30);
 
@@ -136,17 +63,14 @@ internal static partial class UpdateService
         string? PageUrl = null,
         IReadOnlyDictionary<string, string>? Assets = null)
     {
-        /// <summary>DIST-SMART — the URL of a named release asset, when the release published it.</summary>
         public bool TryGetAsset(string name, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? url)
         {
             url = null;
             return Assets is not null && Assets.TryGetValue(name, out url) && !string.IsNullOrWhiteSpace(url);
         }
 
-        /// <summary>DIST-SMART — the URL of a named asset; a missing one means the release is incomplete.</summary>
         public string AssetUrl(string name) => TryGetAsset(name, out string? url) ? url
             : throw new IOException($"The release is missing the file {name}.");
-
     }
 
     private static HttpClient CreateHttpClient()
@@ -157,12 +81,6 @@ internal static partial class UpdateService
         return client;
     }
 
-    /// <summary>
-    /// Entry point, hooked from MainWindow.Opened. Fire-and-forget by design; every failure is
-    /// swallowed into RuntimeLog so a broken suggestor can never break the app itself. It never
-    /// interrupts the user over its own problems — but every outcome is recorded and shown in
-    /// Settings › About (UPDATEUX_06), so a silent check is no longer an invisible one.
-    /// </summary>
     public static async Task RunStartupCheckAsync(Window owner)
     {
         if (FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.IsActive) return;
@@ -213,11 +131,6 @@ internal static partial class UpdateService
         }
     }
 
-    /// <summary>
-    /// One automatic check (startup or RECHECK_01): skipped while the window is hidden, throttled to one
-    /// per 15 minutes, silent on its own problems, and it downloads in the background only when the
-    /// settings and the connection allow it.
-    /// </summary>
     private static async Task RunAutomaticCheckAsync(Window owner)
     {
         bool ownerStillVisible = await Dispatcher.UIThread.InvokeAsync(() => owner.IsVisible);
@@ -294,14 +207,6 @@ internal static partial class UpdateService
         }
     }
 
-    /// <summary>
-    /// UPDATECONSENT_01 — asks ONCE, on a launch after installation, whether Free Video Studio may check
-    /// GitHub for updates by itself. Until it is answered nothing is sent. The answer is stored in
-    /// settings (UpdateConsentAsked + AutoUpdateChecks) and can be changed in Settings › About; Help ›
-    /// Check for Updates always works. Returns true when automatic checks are allowed now. Closing the
-    /// question without answering counts as "not now" and it is asked again on the next start.
-    /// </summary>
-    /// <summary>SIGNPATH_01 — the privacy policy shown on the first start after installing (code-signing condition).</summary>
     internal const string PrivacyPolicyUrl = "https://github.com/alonreich/Free_Video_Studio/blob/main/PRIVACY.md";
 
     private static async Task<bool> AskUpdateConsentAsync(Window owner)
@@ -335,10 +240,6 @@ internal static partial class UpdateService
         }
     }
 
-    /// <summary>
-    /// Explicit manual check triggered on user demand (e.g. from the About tab or Help menu).
-    /// Bypasses the startup throttle and auto-update toggle since the user explicitly requested it.
-    /// </summary>
     public static async Task CheckManualAsync(Window owner, Action<string>? statusCallback = null)
     {
         if (FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.IsActive)
@@ -409,7 +310,6 @@ internal static partial class UpdateService
         }
     }
 
-    // ⚠️ Both variables are required, and a file:// URL is accepted ONLY while they are. A release
     internal const string DevUpdateSourceVariable = "FVS_DEV_UPDATE_SOURCE";
 
     private static readonly string[] DevOnlyEnvironment =
@@ -417,7 +317,6 @@ internal static partial class UpdateService
         "FVS_DEV_LOG_DIR", DevUpdateSourceVariable, "FVS_ALLOW_UNSIGNED_UPDATE"
     ];
 
-    /// <summary>The repository root to read .\compiled from, or null outside dev.cmd.</summary>
     internal static string? DevReleaseFolder
     {
         get
@@ -428,7 +327,6 @@ internal static partial class UpdateService
         }
     }
 
-    /// <summary>The local file behind a dev download URL, or null for a normal (GitHub) URL.</summary>
     internal static string? LocalDevSourcePath(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) || !uri.IsFile) return null;
@@ -437,11 +335,6 @@ internal static partial class UpdateService
         return uri.LocalPath;
     }
 
-    /// <summary>
-    /// DEVUPDATE_01 — reads .\compiled\FreeVideoStudio.exe as if it were the GitHub release. The
-    /// SHA-256 is taken now, like GitHub's published digest; if the file is rebuilt before the
-    /// download finishes, the check fails exactly as a tampered download would.
-    /// </summary>
     internal static async Task<(UpdateRelease? Release, string Problem)> QueryLocalDevReleaseAsync(string repoRoot)
     {
         string exe = Path.Combine(repoRoot, "compiled", SetupAssetName);
@@ -485,7 +378,6 @@ internal static partial class UpdateService
         }
     }
 
-    /// <summary>UPDATEUX_02 — "Download size: 322 MB — about 2 minutes on a typical home connection."</summary>
     internal static string? DescribeDownload(long bytes)
     {
         if (bytes <= 0) return null;
@@ -494,7 +386,6 @@ internal static partial class UpdateService
         return $"Download size: {RuntimePayloadManifest.FormatBytes(bytes)} — {time} on a typical home connection.";
     }
 
-    /// <summary>UPDATEUX_06 — remembers when the last check ran and what it found.</summary>
     private static void RecordResult(string message)
     {
         try
@@ -508,10 +399,6 @@ internal static partial class UpdateService
         }
     }
 
-    /// <summary>
-    /// UPDATEUX_06 — "Last checked 5 minutes ago: You have the latest version (2026.10.9.2104)."
-    /// Shown in Settings › About so the user can always see that checks run and what they found.
-    /// </summary>
     public static string DescribeLastCheck()
     {
         if (FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.IsActive) return DevelopmentUpdateMessage;
@@ -563,7 +450,6 @@ internal static partial class UpdateService
         }
     }
 
-    /// <summary>At most one probe per 15m, so rapid restarts do not hammer GitHub rate limits.</summary>
     private static bool ThrottlePermitsCheck()
     {
         string last = UiStateStore.ReadText(LastCheckFile);
@@ -578,7 +464,6 @@ internal static partial class UpdateService
         return true;
     }
 
-    /// <summary>UPDATEUX_06 — the release, or null plus one plain-English sentence saying why not.</summary>
     private static async Task<(UpdateRelease? Release, string Problem)> QueryLatestReleaseAsync()
     {
         if (DevReleaseFolder is { } devFolder) return await QueryLocalDevReleaseAsync(devFolder).ConfigureAwait(false);
@@ -677,12 +562,6 @@ internal static partial class UpdateService
         }
     }
 
-    /// <summary>
-    /// UPDATEUX_04 — "Restart &amp; update now". Closes the app through its NORMAL close path, so a
-    /// project with unsaved work still asks first (05 SYS-UPGRADE: no editing process is killed).
-    /// The waiting installer starts the moment the process exits. If the user chooses to keep
-    /// working instead, they are told the update is still waiting.
-    /// </summary>
     private static void RestartToUpdate(Window owner)
     {
         Window main = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow ?? owner;
@@ -710,7 +589,6 @@ internal static partial class UpdateService
         poll.Start();
     }
 
-    /// <summary>UPDATEUX_03 — "43%  ·  140 of 322 MB  ·  1.0 MB/s  ·  about 4 min left".</summary>
     internal static string DescribeDownloadProgress(long copied, long total, double bytesPerSecond)
     {
         const double Mb = 1024 * 1024;
@@ -742,14 +620,6 @@ internal static partial class UpdateService
         return string.Join("  ·  ", parts);
     }
 
-    /// <summary>
-    /// Removes download leftovers from previous updates. Best-effort: a folder still locked by a
-    /// running installer is left for the next attempt.
-    /// </summary>
-    /// <summary>
-    /// UPDATETRUST_01 — true only for an HTTPS URL whose host is one of
-    /// <see cref="AllowedAssetHosts"/> (exact match or a subdomain of one).
-    /// </summary>
     private static bool IsAllowedAssetUrl(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)) return false;
@@ -765,19 +635,6 @@ internal static partial class UpdateService
         return false;
     }
 
-    /// <summary>
-    /// UPDATETRUST_01 — projects an untrusted release tag onto a filesystem-safe folder name, or
-    /// REFUSES.
-    ///
-    /// <para><b>It rejects; it does not strip.</b> Silently removing the offending characters would
-    /// map two different tags onto one folder, which is its own (quieter) correctness bug — and it
-    /// is exactly the "validate a prefix, discard the rest" mistake in
-    /// <c>DeploymentLifecycle.TryParseVersion</c> that let a traversal through in the first place.</para>
-    ///
-    /// <para>⚠️ The RAW tag stays authoritative everywhere else. <c>SkippedTagFile</c> persists and
-    /// compares the raw string, so a sanitised value must never be written there or a release the
-    /// user skipped would be offered again on the next start.</para>
-    /// </summary>
     private static bool TrySanitizeTagForPath(string? tag, out string folderName)
     {
         folderName = string.Empty;
@@ -816,5 +673,4 @@ internal static partial class UpdateService
         "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
         "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
     };
-
 }

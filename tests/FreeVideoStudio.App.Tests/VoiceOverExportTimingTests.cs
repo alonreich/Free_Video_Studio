@@ -10,7 +10,6 @@ using Xunit.Abstractions;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>Actual decoded picture/audio parity; requires repository bundled FFmpeg. Artifacts are retained.</summary>
 public class VoiceOverExportTimingTests(ITestOutputHelper log)
 {
     [Theory]
@@ -115,6 +114,17 @@ public class VoiceOverExportTimingTests(ITestOutputHelper log)
         await Run("-i", exported, "-vn", "-af", "highpass=f=500:p=2,highpass=f=500:p=2", "-ac", "1", "-ar", "48000", "-f", "f32le", rawAudio);
         byte[] bytes = await File.ReadAllBytesAsync(rawAudio);
         float[] samples = new float[bytes.Length / 4]; Buffer.BlockCopy(bytes, 0, samples, 0, bytes.Length);
+        double insertedAtSec = plan.OutputAt(5);
+        var freezeWindows = plan.Timeline.FreezeOutputRanges()
+            .Select(w => meme && w.StartOutputSec >= insertedAtSec - 0.001 ? (w.StartOutputSec + 1, w.EndOutputSec + 1) : (w.StartOutputSec, w.EndOutputSec)).ToList();
+        double freezeTail = FreeVideoStudio.Core.Media.FreezeSoundEffect.TailSec(FreeVideoStudio.Core.Media.FreezeSoundEffect.Selected);
+        foreach (var (fs, fe) in freezeWindows)
+        {
+            int a = (int)((fs + 0.05) * 48000), z = Math.Min(samples.Length, (int)((fe - 0.05) * 48000));
+            double sum = 0; for (int i = a; i < z; i++) sum += samples[i] * samples[i];
+            Assert.True(z > a && Math.Sqrt(sum / (z - a)) > 0.02, $"the freeze sound is not heard above 500 Hz in {fs:0.00}-{fe:0.00}s");
+            for (int i = Math.Max(0, (int)(fs * 48000)); i < Math.Min(samples.Length, (int)((fe + freezeTail) * 48000)); i++) samples[i] = 0;
+        }
         var audioEvents = new List<double>(); bool wasLoud = false;
         for (int i = 0; i + 48 <= samples.Length; i += 48)
         {
@@ -125,7 +135,12 @@ public class VoiceOverExportTimingTests(ITestOutputHelper log)
         }
         log.WriteLine("Artifacts: " + work);
         Assert.Equal(spokenEvents.Length, pictureEvents.Length);
-        Assert.Equal(pictureEvents.Length, audioEvents.Count);
+        bool InFreeze(double t) => freezeWindows.Any(w => t > w.Item1 - 0.02 && t < w.Item2 + freezeTail + 0.02);
+        var outside = Enumerable.Range(0, pictureEvents.Length).Where(i => !InFreeze(pictureEvents[i])).ToArray();
+        spokenEvents = outside.Select(i => spokenEvents[i]).ToArray();
+        pictureEvents = outside.Select(i => pictureEvents[i]).ToArray();
+        Assert.True(pictureEvents.Length == audioEvents.Count,
+            $"picture {string.Join(" ", pictureEvents.Select(x => x.ToString("0.000", CultureInfo.InvariantCulture)))} | voice {string.Join(" ", audioEvents.Select(x => x.ToString("0.000", CultureInfo.InvariantCulture)))} | freezes {string.Join(" ", freezeWindows.Select(w => $"{w.Item1:0.000}-{w.Item2:0.000}"))}");
         double insertedAt = plan.OutputAt(5);
         for (int i = 0; i < pictureEvents.Length; i++)
         {

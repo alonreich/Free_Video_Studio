@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,10 +12,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// MICHEALTH_01 / VOMON_02 — Verifies truthful microphone readiness, distinct health failure categories,
-/// clear zero-buffer failure reporting vs short takes, and proper preservation of valid silent takes.
-/// </summary>
 public sealed class VoiceOverMicrophoneHealthTests : IDisposable
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
@@ -362,7 +357,6 @@ public sealed class VoiceOverMicrophoneHealthTests : IDisposable
         Assert.NotNull(status);
         Assert.Equal("MIC ERROR", status!.Text);
     }
-
 
     private sealed class TestHealthDevices : IVoiceCaptureDeviceFactory
     {

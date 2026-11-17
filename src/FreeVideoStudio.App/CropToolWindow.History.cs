@@ -1,38 +1,12 @@
-﻿
-
-using System.Linq;
+﻿using System.Linq;
 using Avalonia.Input;
 using FreeVideoStudio.Core.Editing;
 using FreeVideoStudio.Core.Undo;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// UNDO_27 — THE CROP TOOL ON THE SHARED UndoStack<CropLayoutSnapshot> (docs/07 §5).
-///
-/// The Crop Tool used to keep a raw <c>Stack&lt;EditorSnapshot&gt;</c> pair: no ceiling, no labels,
-/// and a snapshot record whose list made equality reference-based. It now holds ONE
-/// <see cref="UndoStack{T}"/> of <see cref="CropLayoutSnapshot"/> — committed crops and their
-/// layout only — and inherits U1–U4 from it (owned by <see cref="CropEditSession"/> since EDITSTATE_01):
-/// <list type="bullet">
-///   <item><description>one drag / one resize = ONE step: the pointer gesture is recorded once, on
-///   release, and only if it changed something (the gesture-start snapshot comparison);</description></item>
-///   <item><description>a new edit after Undo burns the redo branch (U3);</description></item>
-///   <item><description>an identical layout adds nothing (U4);</description></item>
-///   <item><description>40 steps at most (U2) — the old stacks had no ceiling at all.</description></item>
-/// </list>
-///
-/// ⚠️ MAGIC WAND. Scanning, AI/local candidate publication and browsing candidates never touch
-/// this history: they live in <c>_wandCandidates</c> / <c>_candidateControls</c>, which the snapshot
-/// does not contain. A candidate becomes history only when it is COMMITTED as an element
-/// (<c>AddCurrentSelection</c> → one <see cref="PushHistory(string)"/>).
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class CropToolWindow
 {
-
-    /// <summary>A new starting point (window opened, RESET): the history before it describes nothing on screen.</summary>
     private void InitializeHistory()
     {
         _edit.ResetHistory();
@@ -65,7 +39,6 @@ public partial class CropToolWindow
 
     private CropLayoutSnapshot CaptureSnapshot() => _edit.Capture();
 
-    /// <summary>Replaces every element's visuals with ones built from the session's restored layers.</summary>
     private void RebuildLayerVisuals()
     {
         foreach (CropEditorItem item in _items.ToList())
@@ -83,7 +56,6 @@ public partial class CropToolWindow
         RefreshActionButtons();
     }
 
-    /// <summary>UNDO_27 / E — the buttons name what they would do, from NextUndoLabel / NextRedoLabel.</summary>
     private void RefreshUndoRedoButtons()
     {
         string? undo = _edit.History.NextUndoLabel;
@@ -92,10 +64,6 @@ public partial class CropToolWindow
         SetEnabled("RedoButton", redo != null, redo != null ? $"Redo “{redo}”  (Ctrl+Y)" : "Nothing to redo (Ctrl+Y)");
     }
 
-    /// <summary>
-    /// UNDO_27 — the shared shortcut table. <c>OnKeyDown</c> has already returned for a focused text
-    /// input (KEYFOCUS_01), so a text box keeps its own Ctrl+Z.
-    /// </summary>
     private static HistoryCommand HistoryShortcutFor(KeyEventArgs e) =>
         HistoryShortcut.Classify(
             e.Key.ToString(),

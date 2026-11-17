@@ -3,14 +3,8 @@ using System.Diagnostics;
 
 namespace FvsBuild;
 
-/// <summary>
-/// Process plumbing shared by every stage of the pipeline. Everything goes through
-/// ProcessStartInfo.ArgumentList, so no shell quoting, no cmd.exe parsing and no
-/// locale-dependent for-loops are involved anywhere in the build.
-/// </summary>
 internal static class Cli
 {
-    /// <summary>Runs a child process, streaming stdout+stderr to console+log live. Returns its exit code.</summary>
     public static int RunStreaming(string fileName, IEnumerable<string> args, BuildLog log, Action<string>? onLine = null)
     {
         using Process process = Start(fileName, args, redirect: true);
@@ -74,7 +68,6 @@ internal static class Cli
         return process.ExitCode;
     }
 
-    /// <summary>Runs a child process with output captured (never shown). Returns its exit code.</summary>
     public static int RunQuiet(string fileName, IEnumerable<string> args)
     {
         try
@@ -94,7 +87,6 @@ internal static class Cli
         }
     }
 
-    /// <summary>Captures stdout as lines for for/f-style single-token probes (gh, vswhere).</summary>
     public static bool TryCapture(string fileName, IEnumerable<string> args, out List<string> lines)
     {
         try
@@ -138,7 +130,6 @@ internal static class Cli
         return new Process { StartInfo = info };
     }
 
-    /// <summary>Finds an executable on PATH (entries may be quoted on Windows).</summary>
     public static string? FindOnPath(string fileName)
     {
         string? path = Environment.GetEnvironmentVariable("PATH");
@@ -168,11 +159,6 @@ internal static class Cli
         return null;
     }
 
-    /// <summary>
-    /// Ensures the MSVC linker (link.exe) is reachable for NativeAOT. When it is not on
-    /// PATH, sources VsDevCmd.bat inside a child cmd.exe, captures the resulting `set`
-    /// block and applies it to THIS process so every later dotnet publish inherits it.
-    /// </summary>
     public static bool EnsureMsvcToolchain(BuildLog log)
     {
         if (FindOnPath("link.exe") is not null)

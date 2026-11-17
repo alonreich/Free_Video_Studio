@@ -4,7 +4,6 @@ using System.Threading;
 
 namespace FreeVideoStudio.App.Interop.D3D;
 
-
 internal enum DriverType : int { Hardware = 1 }
 
 [Flags]
@@ -25,7 +24,6 @@ internal enum CpuAccessFlags : uint { None = 0 }
 [Flags]
 internal enum ResourceOptionFlags : uint { None = 0, SharedKeyedMutex = 0x100 }
 
-/// <summary>D3D11_TEXTURE2D_DESC, field for field.</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal readonly struct Texture2DDescription
 {
@@ -59,14 +57,12 @@ internal readonly struct Texture2DDescription
     }
 }
 
-/// <summary>A COM interface this file knows how to QueryInterface for.</summary>
 internal interface IComInterface<TSelf> where TSelf : ComObject, IComInterface<TSelf>
 {
     static abstract Guid Iid { get; }
     static abstract TSelf Wrap(nint pointer);
 }
 
-/// <summary>Owns ONE reference to a COM object. Dispose releases it exactly once.</summary>
 internal abstract unsafe class ComObject : IDisposable
 {
     private nint _pointer;
@@ -113,7 +109,6 @@ internal static unsafe partial class D3D11
         FeatureLevel* featureLevels, uint featureLevelCount, uint sdkVersion,
         nint* device, FeatureLevel* featureLevel, nint* immediateContext);
 
-    /// <summary>Creates a device and returns it with its immediate context.</summary>
     public static ID3D11Device D3D11CreateDevice(DriverType driverType, DeviceCreationFlags flags, params FeatureLevel[] featureLevels)
     {
         nint device, context;
@@ -133,7 +128,6 @@ internal sealed unsafe class ID3D11Device : ComObject, IComInterface<ID3D11Devic
     public static Guid Iid { get; } = new("db6f6ddb-ac77-4e88-8253-819df9bbf140");
     public static ID3D11Device Wrap(nint pointer) => new(pointer, null);
 
-    /// <summary>The immediate context returned by device creation (its own reference).</summary>
     public ID3D11DeviceContext? ImmediateContext { get; }
 
     internal ID3D11Device(nint pointer, ID3D11DeviceContext? context) : base(pointer)
@@ -141,7 +135,6 @@ internal sealed unsafe class ID3D11Device : ComObject, IComInterface<ID3D11Devic
         ImmediateContext = context;
     }
 
-    /// <summary>ID3D11Device::CreateTexture2D (slot 5).</summary>
     public ID3D11Texture2D CreateTexture2D(in Texture2DDescription description)
     {
         nint texture;
@@ -158,7 +151,6 @@ internal sealed unsafe class ID3D11DeviceContext : ComObject
 {
     internal ID3D11DeviceContext(nint pointer) : base(pointer) { }
 
-    /// <summary>ID3D11DeviceContext::Flush (slot 111).</summary>
     public void Flush() => ((delegate* unmanaged[Stdcall]<nint, void>)Vtbl[111])(NativePointer);
 }
 
@@ -175,7 +167,6 @@ internal sealed unsafe class IDXGIKeyedMutex : ComObject, IComInterface<IDXGIKey
     public static IDXGIKeyedMutex Wrap(nint pointer) => new(pointer);
     private IDXGIKeyedMutex(nint pointer) : base(pointer) { }
 
-    /// <summary>IDXGIKeyedMutex::ReleaseSync (slot 9). Returns the HRESULT.</summary>
     public int ReleaseSync(ulong key) => ((delegate* unmanaged[Stdcall]<nint, ulong, int>)Vtbl[9])(NativePointer, key);
 }
 
@@ -185,7 +176,6 @@ internal sealed unsafe class IDXGIResource : ComObject, IComInterface<IDXGIResou
     public static IDXGIResource Wrap(nint pointer) => new(pointer);
     private IDXGIResource(nint pointer) : base(pointer) { }
 
-    /// <summary>IDXGIResource::GetSharedHandle (slot 8). Zero when the call fails.</summary>
     public nint SharedHandle
     {
         get

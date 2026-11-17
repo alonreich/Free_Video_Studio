@@ -5,24 +5,6 @@ using FreeVideoStudio.App.Controls;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// MERGERMUSIC_01 — THE VIDEO MERGER'S MUSIC BUTTON NOW EDITS THE MUSIC IT ADDED.
-///
-/// The Main App has always asked EDIT / CANCEL / REMOVE (02 AUD-DIALOGS) and reopened the wizard
-/// with the song, its start, the volumes and the switches still in place (EDIT3_01). The merger did
-/// neither: clicking "MUSIC ADDED" threw everything away and started the wizard from an empty song
-/// list, and there was no way to take the music off at all. It also overwrote the button's whole
-/// content with a plain string, deleting the label the queue-state refresh writes to.
-///
-/// Now:
-///   • music on the video → the same three-way question as the Main App;
-///   • EDIT (or a STALE setup after the clip list changed) → the wizard reopens on Fit &amp; Mix with
-///     every song, every song's chosen part, the volumes and the switches;
-///   • REMOVE → the music is taken off, the timeline and the size estimate follow at once;
-///   • the button says what is on the video: "🎵 Song name · EDIT" or "🎵 3 songs · EDIT".
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class VideoMergerWindow
 {
     private async Task OnAddMusicClickedAsync()
@@ -80,7 +62,6 @@ public partial class VideoMergerWindow
         RuntimeLog.Info("MERGER", $"Music set: {DescribeMusicForButton(_musicResult)}.");
     }
 
-    /// <summary>MERGERMUSIC_01 — REMOVE: the music leaves the video, the preview, the timeline and the size estimate together.</summary>
     private void RemoveMergerMusic()
     {
         _musicResult = null;
@@ -113,16 +94,6 @@ public partial class VideoMergerWindow
 
 public partial class VideoMergerWindow
 {
-    /// <summary>
-    /// MERGERMUSIC_02 — the music on the merger's timeline is drawn SONG BY SONG, each with its
-    /// name, instead of one thin 3px line. A stretch of the video with no music is drawn as a red
-    /// striped band labelled "no music", so a song list that does not cover the clips is visible
-    /// at a glance, before anyone presses MERGE.
-    ///
-    /// The plan is in finished-video seconds and this row is the merged clock; the songs are
-    /// placed proportionally across the music window (exact without speed edits, and only a
-    /// drawing — the export and the preview both use the plan itself).
-    /// </summary>
     private void DrawMergedMusicSongs(Avalonia.Controls.Canvas markers, double w, double h, double total, MusicWizardResult music)
     {
         double speed = _baseSpeed > 0.01 ? _baseSpeed : 1.0;

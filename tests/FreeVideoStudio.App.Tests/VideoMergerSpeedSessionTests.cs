@@ -10,11 +10,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// SPEEDRESTORE_01 / MERGESESSION_01 — verifies that VideoMergerWindow initializes at 1.0x (detent 10),
-/// that speed presets synchronize the UI slider and properties, and that session restore repairs
-/// corrupted legacy 0.1x base speed to 1.0x instead of executing 10x slow motion preview/export.
-/// </summary>
 public sealed class VideoMergerSpeedSessionTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "FvsMergerSpeedTests_" + Guid.NewGuid().ToString("N"));

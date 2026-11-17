@@ -8,9 +8,6 @@ using FreeVideoStudio.Core.Ipc;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>UPGRADE_10 — the original user's broker owns settings and first-launch confirmation.
-/// Only the worker writes Program Files. A protected machine journal is the commit decision
-/// for all participating user-data journals, including recovery after loss of the broker.</summary>
 internal static class UpgradeCoordinator
 {
     private static string Store => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FreeVideoStudioMigration");
@@ -26,27 +23,10 @@ internal static class UpgradeCoordinator
             AtomicJsonFile.ReadObject(Path.Combine(p, "journal.json"))?["Phase"]?.GetValue<string>() is
                 "Switching" or "AwaitingConfirmation" or "RollingBack");
 
-    /// <summary>
-    /// UPGRADEUX_06 — "the broker's window libraries are in this clean staging folder". The launcher
-    /// passes it when the broker was started straight from the downloaded installer instead of from a
-    /// staged copy. (Since WORKERSTAGE_01 the ELEVATED worker never runs from this per-user folder: it
-    /// runs from a protected copy, <see cref="ProtectedWorkerStage"/>.)
-    /// </summary>
     internal const string StageArgument = "--upgrade-stage";
 
-    /// <summary>
-    /// DIST-SMART — "build the new version from this folder": the signed update.json and the files
-    /// whose content changed. Set by the in-app updater, never by a double-clicked installer.
-    /// </summary>
     internal const string SmartArgument = "--smart-update";
 
-    /// <summary>
-    /// The smart-update folder, or null. Accepted only when it holds update.json AND it is inside the
-    /// update downloads folder (<see cref="DeploymentFootprint.UpdateDownloadsRoot"/>; the old
-    /// <c>%TEMP%\FVS_AutoUpdate</c> for updaters released before NOTEMPEXEC_01), or it is the folder
-    /// this program itself runs from — the Inno Setup installer unpacks the program, its files and the
-    /// signed list together (NODROPPER_01). This is a convenience check; the worker's signature check decides.
-    /// </summary>
     internal static string? SmartFromArgs(string[] args)
     {
         int index = Array.FindIndex(args, a => a.Equals(SmartArgument, StringComparison.OrdinalIgnoreCase));
@@ -71,8 +51,6 @@ internal static class UpgradeCoordinator
         }
     }
 
-    /// <summary>NOTEMPEXEC_01 — the broker's staging folder lives under the per-user updates folder, not %TEMP%.
-    /// It is user-writable, so nothing elevated runs from it (WORKERSTAGE_01).</summary>
     internal static string StageRoot => DeploymentFootprint.UpdateStageRoot;
 
     public static async Task<int> LaunchAsync(string[] args, bool recovery = false)
@@ -111,10 +89,6 @@ internal static class UpgradeCoordinator
         return process.ExitCode;
     }
 
-    /// <summary>
-    /// NOTEMPEXEC_01 — staging folders a version before this change left in <c>%TEMP%\FVS_Upgrade</c>.
-    /// Best effort: a folder still in use is left for the uninstaller or the next run.
-    /// </summary>
     private static void SweepLegacyTempStages()
     {
         try
@@ -125,17 +99,6 @@ internal static class UpgradeCoordinator
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { RuntimeLog.Swallowed(ex); }
     }
 
-    /// <summary>
-    /// UPGRADEUX_01 — the broker draws a window, so it needs the two native UI libraries beside its
-    /// staged copy. Sources, in order: beside this executable (the installed app, or the Inno Setup
-    /// installer's unpacked release — NODROPPER_01), then the installed program folder. There is no
-    /// embedded payload to take them from any more.
-    /// A miss is not an error: the broker then runs without a window and uses message boxes.
-    /// </summary>
-    /// <summary>
-    /// UPGRADEUX_06 — true when this executable sits inside a folder the update will move or replace.
-    /// Any doubt answers true: staging costs a copy, not staging could block the folder switch.
-    /// </summary>
     private static bool RunsFromAnInstallRoot()
     {
         string exe = Environment.ProcessPath ?? string.Empty;
@@ -152,10 +115,6 @@ internal static class UpgradeCoordinator
         }
     }
 
-    /// <summary>
-    /// UPGRADEUX_06 — the staging folder the launcher created, or null. Accepted only as a direct child
-    /// of <see cref="StageRoot"/>, so an argument can never point the worker somewhere else.
-    /// </summary>
     internal static string? StageFromArgs(string[] args)
     {
         int index = Array.FindIndex(args, a => a.Equals(StageArgument, StringComparison.OrdinalIgnoreCase));
@@ -175,12 +134,6 @@ internal static class UpgradeCoordinator
         }
     }
 
-    /// <summary>
-    /// UPGRADEUX_06 — prepares the copy the elevated worker runs from. Runs in the background while the
-    /// window is already showing (or while the user is still working). WORKERSTAGE_01 — the copy goes to
-    /// a protected folder the user cannot change (<see cref="ProtectedWorkerStage"/>), never to the
-    /// user-writable staging folder, which now only holds the broker's window libraries.
-    /// </summary>
     private static ProtectedWorkerStage PrepareWorkerCopy() => ProtectedWorkerStage.Create(Environment.ProcessPath!);
 
     private static void StageWindowLibraries(string stage)
@@ -201,8 +154,6 @@ internal static class UpgradeCoordinator
             RuntimeLog.Info("Upgrade", "Window libraries not found; the update will run with message boxes only.");
     }
 
-    /// <param name="progress">UPGRADEUX_01 — what the user sees. Display only: it never changes the
-    /// protocol, the order of steps, or whether a failure rolls back. Null means headless.</param>
     public static async Task<int> RunAsync(string[] args, IUpgradeProgress? progress = null)
     {
         progress ??= HeadlessUpgradeProgress.Instance;
@@ -439,10 +390,8 @@ internal static class UpgradeCoordinator
         }
     }
 
-    /// <summary>ERROR_CANCELLED — what <c>Process.Start</c> reports when the user clicks "No" on UAC.</summary>
     private const int ErrorCancelled = 1223;
 
-    /// <summary>UPGRADEUX_01 — fresh install or update, for the window's wording only.</summary>
     private static UpgradeKind DetectKind()
     {
         try
@@ -456,7 +405,6 @@ internal static class UpgradeCoordinator
         }
     }
 
-    /// <summary>UPGRADEUX_05 — the version being replaced, so the new app can say "updated from X".</summary>
     private static string? ReadInstalledVersion(IEnumerable<string> roots)
     {
         foreach (string root in roots)
@@ -492,12 +440,6 @@ internal static class UpgradeCoordinator
                 : $"Free Video Studio {now} is installed. Your settings were kept, and it is opening now.";
     }
 
-    /// <summary>
-    /// UPGRADEUX_03 — before Windows is asked for permission, make sure no copy of the app is open.
-    /// "Close it" asks each window to close normally, so its own "save your work?" question still
-    /// appears; nothing is killed (05 SYS-UPGRADE: "No pre-existing editing process is killed").
-    /// Returns false if the user cancels.
-    /// </summary>
     private static async Task<bool> EnsureAppsClosedAsync(string[] roots, IUpgradeProgress progress)
     {
         while (true)
@@ -534,11 +476,6 @@ internal static class UpgradeCoordinator
         catch (InvalidOperationException ex) { RuntimeLog.Swallowed(ex); return true; }
     }
 
-    /// <summary>
-    /// UPGRADEUX_04 — after a failure that changed nothing, reopen the version the user was using.
-    /// Never when a rollback is still pending: opening the app then would start recovery (and a
-    /// second Windows prompt) immediately, which is the opposite of calm.
-    /// </summary>
     private static bool TryReopenPreviousVersion(Process? worker)
     {
         try
@@ -555,7 +492,6 @@ internal static class UpgradeCoordinator
         }
     }
 
-    /// <summary>UPGRADEUX_01 — "phase|fraction" from the elevated worker, shown as a step and a bar.</summary>
     private static void ReportWorkerProgress(IUpgradeProgress progress, string detail)
     {
         int bar = detail.IndexOf('|');
@@ -572,19 +508,6 @@ internal static class UpgradeCoordinator
         }
     }
 
-    /// <summary>
-    /// NOSPACE_01 — repoints THIS user's own shortcuts after a LATER machine install moved the
-    /// program (Program Files\Free Video Studio → Program Files\FreeVideoStudio).
-    ///
-    /// The installing user's shortcuts are handled by the broker, and the machine-wide Start menu
-    /// and Public Desktop by the elevated worker. Every OTHER account on the PC already completed
-    /// its own migration earlier (session "Committed"), so <see cref="CompleteUserAsync"/> never
-    /// looked again — their personal Desktop icon kept pointing at a folder that no longer exists.
-    ///
-    /// Only links that already exist and point into a moved folder are rewritten; nothing is
-    /// created, so a deliberately deleted icon stays deleted. Runs once per machine transaction
-    /// (recorded as "retargetedMachine"). Never throws: a failure is logged and retried next start.
-    /// </summary>
     private static async Task RetargetAfterLaterMachineMoveAsync(JsonObject session)
     {
         try
@@ -773,13 +696,6 @@ internal static class UpgradeCoordinator
         return Process.Start(start) ?? throw new IOException("Could not start the installed app.");
     }
 
-    /// <summary>
-    /// NOLOCALPORT_01 — the pipe <paramref name="pipeName"/> is created NOW (synchronously, before the
-    /// caller starts the other process), as the only instance, and only same-user / administrator /
-    /// SYSTEM callers may connect (<c>PipeAccess.CreateUpgradeServer</c>). Exactly one connection is
-    /// accepted and its first message must be <paramref name="token"/>; anything else ends the upgrade.
-    /// It is never re-created, so no other program can ever own the name while the worker looks for it.
-    /// </summary>
     private static Task<UpgradeChannel> AcceptAsync(string pipeName, string token, CancellationToken cancel = default)
     {
         NamedPipeServerStream server = PipeAccess.CreateUpgradeServer(pipeName);

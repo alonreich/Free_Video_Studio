@@ -8,7 +8,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>MEMEAUDIT_01 — the App-side rules of the meme audit (2026-10-17).</summary>
 public sealed class MemeAuditAppTests
 {
     private static TimelineViewModel Timeline()

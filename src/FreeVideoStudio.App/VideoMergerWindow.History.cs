@@ -8,21 +8,6 @@ using FreeVideoStudio.Core.Undo;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// MERGEUNDO_01 — UNDO/REDO FOR THE VIDEO MERGER (Video-Merger-Migration.md P3.3, D7).
-///
-/// One <see cref="UndoStack{T}"/> of edit lists (the app-wide U1–U4 rules). What is stored is
-/// <see cref="MergerSession.UserEdit"/>: the edit list WITHOUT analysis results, so a clip finishing
-/// its background probe is never an undo step. Every capture (<see cref="CaptureEdlNow"/>) offers
-/// its edit list here; <see cref="MergerSession.DescribeChange"/> names it and groups continuous
-/// gestures (speed wheel, thumbnail drag) into one step.
-///
-/// Undo/redo apply the target through <see cref="ApplyEdlStateAsync"/> — the SAME path a restored
-/// session takes — which reorders the queue in place (<see cref="MergerSession.SyncQueue"/>), so the
-/// clip being previewed survives an undone reorder.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class VideoMergerWindow
 {
     private readonly UndoStack<MergeEdl> _history = new(MergerSession.UserEdit(MergeEdl.Empty));
@@ -37,7 +22,6 @@ public partial class VideoMergerWindow
         AddHandler(InputElement.KeyDownEvent, HistoryKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
     }
 
-    /// <summary>Offers a freshly captured edit list to the history.</summary>
     private void RecordHistory(MergeEdl edl)
     {
         var user = MergerSession.UserEdit(edl);
@@ -53,10 +37,8 @@ public partial class VideoMergerWindow
             RuntimeLog.Info("MERGER", $"Undo step recorded: {label}.");
     }
 
-    /// <summary>A new starting point (restored merge): no history before it.</summary>
     private void ResetHistory() => _history.Reset(MergerSession.UserEdit(CurrentEdl));
 
-    /// <summary>A continuous gesture ended (thumbnail marker released): the next drag is its own step.</summary>
     private void EndHistoryGesture() => _history.EndGesture();
 
     private void HistoryKeyDown(object? sender, KeyEventArgs e)
@@ -102,11 +84,6 @@ public partial class VideoMergerWindow
         }
     }
 
-    /// <summary>
-    /// Makes the window show <paramref name="target"/>: scraper (session only), speed, thumbnail,
-    /// queue (reordered in place) and music. <paramref name="from"/> is the state being left
-    /// (null = unknown, e.g. a restore); it is logged only.
-    /// </summary>
     private async Task ApplyEdlStateAsync(MergeEdl target, MergeEdl? from)
     {
         RuntimeLog.Info("MERGER", $"Applying merge state: {target.Clips.Count} clip(s) (was {from?.Clips.Count.ToString() ?? "unknown"}).");

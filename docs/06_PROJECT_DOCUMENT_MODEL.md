@@ -197,8 +197,8 @@ The model and its persistence exist and are unit-tested
 
 **Closed since this list was written:**
 
-1. ~~`MainWindow` command wiring~~ — done (`PROJSESSION_04`: Ctrl+S / Ctrl+Shift+S / Ctrl+O /
-   Ctrl+Z / Ctrl+Y, with the dirty flag and the unsaved-changes prompt).
+1. Done: `PROJSESSION_04` — Ctrl+S / Ctrl+Shift+S / Ctrl+O / Ctrl+Z / Ctrl+Y with the dirty flag and the
+   unsaved-changes prompt.
 2. **`PROJ_10` — the reader was losing the source fingerprint on every load.** `SizeBytes` and
    `ModifiedUtcSeconds` are `long`; the writer stored long-backed `JsonValue`s and the reader asked
    for `double`. `JsonValue.TryGetValue<double>` is an EXACT-TYPE accessor — it returns false on a
@@ -250,24 +250,14 @@ The model and its persistence exist and are unit-tested
    longer, full-screen video and drop the keys on save. The recovery document (RECOVERYDOC_01) and the editor's
    session JSON use the same mapping; the Merger EDL carries the same four fields on `EdlMeme` (`FromJson` fills
    them on older files, EDLNULL_01). Equality (UNDOEQ_01) covers them, so each change is an undo step.
-7. ~~Title-bar dirty indicator~~ — done (`PROJSESSION_05`: `MainWindow.RefreshProjectTitle` appends
-   " •" to the project name while `ProjectSession.IsDirty`).
+7. Done: `PROJSESSION_05` — `MainWindow.RefreshProjectTitle` appends " •" while `ProjectSession.IsDirty`.
+8. Done: `RECOVERYDOC_01..12` — the crash-recovery file holds exactly ONE `ProjectDocument` (05 SYS-RECOVERY).
+   Limitation kept: legacy `schemaVersion:1` payloads never carried the mask or the merger queue.
 
 **Still not done:**
 
-1. ~~`RecoveryManager` demoted to autosave OF THIS DOCUMENT rather than a parallel state format.~~
-   **Done (RECOVERYDOC_01..12).** The crash-recovery file now holds exactly ONE `ProjectDocument`
-   — captured by `ProjectSession.Capture(forExplicitSave: false)`, serialised by the canonical
-   `ProjectSerializer` inside `Core/Project/RecoveryEnvelope.cs` (`fvsrecovery` envelope: one
-   `project` + crash-only `transient` metadata) — and is applied back through
-   `ProjectSession.OpenDocument`, the same document-application path Open Project uses. The old
-   hand-rolled 60-field recovery payload (`SerializeState`) and the field-by-field restore in
-   `MainWindow.Restore.cs` are gone; legacy `schemaVersion:1` payloads are migrated one-way by
-   `App/Services/LegacyRecoveryMigrator.cs` (limitation: the legacy schema never carried the mask
-   or the merger queue). Atomic writes, the WRITEORDER_01 ordering, the granular-session
-   preservation merge and the 750 ms write-behind debounce are unchanged.
-2. `.fvsproj` shell association and icon (`ShellFileAssociation.cs`), plus open-with launch.
-3. Publishing and applying the app-only update (`09` §3 DIST-SPLIT). ~~`Staging.CreatePayloadZip` now produces `obj/ReleaseAssets/FreeVideoStudio.App.update.zip` and embeds the runtime manifest in the full payload.~~ Superseded by NODROPPER_01 (`09` DIST-INSTALLER): no compact package, no embedded payload; `Staging.WriteManifests` writes the manifests into the staged release. Uploading the sidecars, applying the app-only archive and excluding the app from the runtime fingerprint remain unfinished.
+1. `.fvsproj` shell association and icon (`ShellFileAssociation.cs`), plus open-with launch.
+2. Publishing and applying the app-only update (`09` §3 DIST-SPLIT). Superseded by NODROPPER_01 (`09` DIST-INSTALLER): no compact package, no embedded payload; `Staging.WriteManifests` writes the manifests into the staged release. Uploading the sidecars, applying the app-only archive and excluding the app from the runtime fingerprint remain unfinished.
 
 ---
 
@@ -300,6 +290,8 @@ The model and its persistence exist and are unit-tested
   The old two-way prompt mapped Escape/X to "discard". Without an owner window the fallback is a
   native Yes/No where No keeps editing. Tests: `AutosaveBackgroundTests.UnsavedClosePrompt_BackToEditingKeepsWork`,
   `CropWorkflowTests.ProjectUnsavedPromptTooltipsMatchTheirButtons`.
+* **`NEWVIDEOGUARD_01` — loading another video never silently wipes edits.** Upload, drag-and-drop and an Explorer hand-off all go through `LoadVideoIntoEditorAsync`, which first calls `MainWindow.ConfirmReplaceLoadedVideoAsync`: no prompt when nothing is loaded, when no edit was made yet (`HasUnsavedWork` false: no mark start/end, cut, speed, music, voice, meme, thumbnail…) or right after a successful PROCESS (DONECLEAN_01); otherwise the UNSAVEDPROJ_01 three-way question ("…before you open another video?"), where only Save changes or Discard changes loads the new video. A second request while the question is open is ignored.
+* **`DONECLEAN_01` — a finished export closes without questions.** See 05 SYS-RECOVERY: after a successful PROCESS (or MERGE in the Merger) with no edit since, closing skips the save question and leaves an empty state for the next start.
 * **`PROJECTLABEL_01`** — the Save/Open project picker's file type is named "Free Video Studio project".
 
 ---

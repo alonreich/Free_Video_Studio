@@ -2,20 +2,6 @@
 
 namespace FvsBuild;
 
-/// <summary>
-/// PEIDENTITY_01 — the shipped program must introduce itself under its OWN file name.
-///
-/// <para>NativeAOT copies the Win32 version resource from the managed assembly, so
-/// <c>FreeVideoStudio.exe</c> said <c>OriginalFilename = FreeVideoStudio.dll</c> and
-/// <c>InternalName = FreeVideoStudio.dll</c>. A program whose version resource names a different file
-/// than the one on disk is the "renamed binary" masquerading pattern (MITRE T1036.003) that antivirus
-/// engines score. The SDK has no property for these two strings, so the build rewrites them in the
-/// version resource itself, BEFORE signing (the signature covers the result).</para>
-///
-/// <para>The change is in place and length-preserving: ".dll" and ".exe" have the same length, so no
-/// resource offset, size or checksum moves. Only the VS_VERSION_INFO block inside the .rsrc section is
-/// touched; nothing outside it can be changed by this code. Idempotent: a correct file is left alone.</para>
-/// </summary>
 internal static class PeIdentity
 {
     public static bool FixOriginalFilename(string exePath, BuildLog log)
@@ -42,12 +28,6 @@ internal static class PeIdentity
         }
     }
 
-    /// <summary>
-    /// Rewrites "&lt;name&gt;.dll" to "&lt;name&gt;.exe" inside the VS_VERSION_INFO block of
-    /// <paramref name="image"/>. Returns how many values changed; <paramref name="problem"/> is set
-    /// when the file is not a PE image with a version resource, or the result does not name
-    /// <paramref name="fileName"/>.
-    /// </summary>
     internal static int Patch(byte[] image, string fileName, out string? problem)
     {
         problem = null;

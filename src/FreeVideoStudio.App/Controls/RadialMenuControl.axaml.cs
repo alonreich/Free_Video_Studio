@@ -1,5 +1,4 @@
-﻿
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
@@ -42,10 +41,10 @@ public partial class RadialMenuControl : UserControl
         if (_items.Count == 0 || _canvas == null || _container == null) return;
         _canvas.Children.Clear();
         _center = new Point(150, 150);
-        
+
         double angleStep = Math.PI * 2 / _items.Count;
         double radius = 100;
-        
+
         for (int i = 0; i < _items.Count; i++)
         {
             var textBlock = new TextBlock { Text = _items[i].Text, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, FontWeight = Avalonia.Media.FontWeight.Bold };
@@ -59,14 +58,14 @@ public partial class RadialMenuControl : UserControl
                 Child = textBlock
             };
             border[!Border.BorderBrushProperty] = new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("AppBorderBrush");
-            
+
             double angle = i * angleStep - Math.PI / 2;
             double x = _center.X + Math.Cos(angle) * radius - 40;
             double y = _center.Y + Math.Sin(angle) * radius - 20;
-            
+
             Canvas.SetLeft(border, x);
             Canvas.SetTop(border, y);
-            
+
             _items[i].UiElement = border;
             _canvas.Children.Add(border);
         }
@@ -86,17 +85,17 @@ public partial class RadialMenuControl : UserControl
         double dx = pointerPosRelativeToMenu.X - _center.X;
         double dy = pointerPosRelativeToMenu.Y - _center.Y;
         double distance = Math.Sqrt(dx * dx + dy * dy);
-        
+
         _selectedIndex = -1;
         if (distance > 30)
         {
             double angle = Math.Atan2(dy, dx) + Math.PI / 2;
             if (angle < 0) angle += Math.PI * 2;
-            
+
             double angleStep = Math.PI * 2 / _items.Count;
             _selectedIndex = (int)Math.Round(angle / angleStep) % _items.Count;
         }
-        
+
         for (int i = 0; i < _items.Count; i++)
         {
             if (_items[i].UiElement is Border b)

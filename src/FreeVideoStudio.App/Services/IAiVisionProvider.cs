@@ -5,9 +5,6 @@ using System.Threading.Tasks;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AIPROVIDER_01 (docs/05 SYS-AISETTINGS) — supported cloud AI vendors for vision/reasoning.
-/// </summary>
 public enum AiVendor
 {
     Google,
@@ -15,10 +12,6 @@ public enum AiVendor
     OpenAI,
 }
 
-/// <summary>
-/// AIPROVIDER_01 — classified failure reasons unified across all AI providers.
-/// Mirrors GeminiErrorKind 1:1 for seamless transition.
-/// </summary>
 public enum AiProviderErrorKind
 {
     InvalidKey,
@@ -32,13 +25,17 @@ public enum AiProviderErrorKind
     BadRequest,
     Blocked,
     MalformedResponse,
-    /// <summary>AIANSWER_01 — the vendor stopped at its output length limit; retrying the same request cannot help.</summary>
     Truncated,
 }
 
-/// <summary>
-/// AIPROVIDER_01 — base exception for all AI provider interactions.
-/// </summary>
+public enum AiAccountProblem
+{
+    None,
+    DailyFreeLimit,
+    RegionNotSupported,
+    ModelNotAllowed,
+}
+
 public class AiProviderException : Exception
 {
     public AiProviderException(
@@ -62,22 +59,18 @@ public class AiProviderException : Exception
     public string Detail { get; }
     public int? StatusCode { get; }
     public TimeSpan? RetryAfter { get; }
+    public AiAccountProblem Problem { get; init; }
 
-    /// <summary>True for transient failures where a retry or brief pause may succeed.</summary>
     public bool IsTransient => Kind is AiProviderErrorKind.RateLimited
         or AiProviderErrorKind.Overloaded
         or AiProviderErrorKind.Timeout
         or AiProviderErrorKind.Network;
 }
 
-/// <summary>A single image input for AI analysis.</summary>
-/// <remarks>AIREASONING_02 — <paramref name="Detail"/> is OpenAI's picture detail ("low" / "high"); null = auto. Other vendors ignore it.</remarks>
 public sealed record AiImageInput(byte[] Data, string MimeType = "image/jpeg", string? Label = null, string? Detail = null);
 
-/// <summary>A video input for AI analysis.</summary>
 public sealed record AiVideoInput(byte[] Data, string MimeType = "video/mp4", double Fps = 2.0, string? MediaResolution = null, bool AllowFpsFallback = true);
 
-/// <summary>Unified reasoning level across models that support thinking / reasoning tokens.</summary>
 public enum AiReasoningLevel
 {
     Default,
@@ -87,39 +80,21 @@ public enum AiReasoningLevel
     High,
 }
 
-/// <summary>Reasoning configuration options.</summary>
 public sealed record AiReasoningConfig(AiReasoningLevel Level = AiReasoningLevel.Default, int? BudgetTokens = null);
 
-/// <summary>
-/// AIPROVIDER_01 / AISETTINGS_01 — studio AI usages / tasks in scope.
-/// </summary>
 public enum AiUsage
 {
-    /// <summary>U1 — Zoom subject discovery (3 stills -> candidate boxes).</summary>
     SubjectDiscovery,
-    /// <summary>U2 — Zoom dense tracking (clip -> trajectory boxes over time).</summary>
     DenseTracking,
-    /// <summary>U3 — Magic Wand HUD detection (1 still -> HUD boxes).</summary>
     MagicWand,
-    /// <summary>U4 — Live commentary captions (clip -> timed first-person lines).</summary>
     Commentary,
-    /// <summary>U5 — Background music auto-fit (video keyframes -> best song recommendation & timing).</summary>
     MusicAutoFit,
-    /// <summary>U6 — Modern viral post helper (export finish -> viral clickbait title, caption & hashtags).</summary>
     ViralPost,
-    /// <summary>U7 — AI elimination tracker (gameplay clip -> kill / knockdown timestamp markers).</summary>
     EliminationTracker,
 }
 
-/// <summary>
-/// AIPROVIDER_01 / AISETTINGS_01 — per-usage AI execution settings: {Vendor, Model}.
-/// AIREASONING_01 (2026-10-16): the old <c>ReasoningLevel</c> field was saved but never used by any feature and
-/// never shown in Settings; it is gone. An old settings file that still carries it loads fine (unknown JSON
-/// members are ignored) and the field disappears on the next save.
-/// </summary>
 public sealed class AiUsageConfig : Infrastructure.FreezableSettings
 {
-    /// <summary>SETTINGSFREEZE_01 — read-only once part of the published settings snapshot.</summary>
     public AiVendor Vendor { get => _vendor; set => Set(ref _vendor, value); }
     private AiVendor _vendor = AiVendor.Google;
 
@@ -137,9 +112,6 @@ public sealed class AiUsageConfig : Infrastructure.FreezableSettings
     public AiUsageConfig Clone() => new(Vendor, Model);
 }
 
-/// <summary>
-/// AIPROVIDER_01 — vendor-neutral abstraction for multimodal AI vision services.
-/// </summary>
 public interface IAiVisionProvider
 {
     AiVendor Vendor { get; }

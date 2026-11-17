@@ -4,10 +4,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// PEIDENTITY_01 — the shipped program's version resource must name the program's own file, and the
-/// rewrite must touch nothing but the VS_VERSION_INFO block.
-/// </summary>
 public sealed class PeIdentityTests
 {
     private const int RsrcRaw = 0x200;

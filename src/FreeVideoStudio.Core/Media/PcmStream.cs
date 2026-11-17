@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
@@ -14,34 +13,15 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>Receives decoded signed 16-bit mono samples, one bounded chunk at a time.</summary>
 public interface IPcmSampleSink
 {
     void Accept(ReadOnlySpan<short> samples);
 }
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// PCMSTREAM_01 — DECODED AUDIO IS STREAMED THROUGH ONE FIXED BUFFER, NEVER ACCUMULATED.
-///
-/// The waveform lane and the Music Wizard used to read ffmpeg's whole s16le stdout into an unbounded
-/// <see cref="MemoryStream"/> and then copy it AGAIN into a <c>short[]</c> / <c>byte[]</c>, so memory grew
-/// with the decoded duration (two or three copies alive at once). Here stdout is read in
-/// <see cref="BufferBytes"/> chunks from <see cref="ArrayPool{T}"/>, a split sample (odd byte at the end of
-/// one read) is carried into the next read, and each chunk is handed to an incremental
-/// <see cref="IPcmSampleSink"/>. A trailing odd byte at EOF is dropped — exactly what the old
-/// <c>length / 2</c> did. Memory = the buffer + whatever compact result the sink keeps.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public static class PcmStream
 {
-    /// <summary>PCMSTREAM_01 — the one read buffer (bytes).</summary>
     public const int BufferBytes = 64 * 1024;
 
-    /// <summary>
-    /// Reads Int16LE samples from <paramref name="source"/> until EOF and feeds <paramref name="sink"/>.
-    /// Returns the number of whole samples delivered.
-    /// </summary>
     public static async Task<long> PumpAsync(Stream source, IPcmSampleSink sink, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -93,13 +73,6 @@ public static class PcmStream
     }
 }
 
-/// <summary>
-/// PCMSTREAM_01 — bounded scratch for the waveform's SECOND pass. The exact bucket mapping of
-/// <see cref="WaveformPeaks.Reduce"/> (<c>bucket = i * count / N</c>) needs the FINAL sample count N,
-/// which is only known at EOF (a short source ends early). Samples are kept in memory up to
-/// <see cref="MemoryCapBytes"/> and spill to a delete-on-close temp file beyond that, so memory stays
-/// constant however long the decoded audio is, and the result is bit-identical to the one-shot reduce.
-/// </summary>
 internal sealed class PcmScratch : IPcmSampleSink, IDisposable
 {
     public const int MemoryCapBytes = 256 * 1024;
@@ -134,7 +107,6 @@ internal sealed class PcmScratch : IPcmSampleSink, IDisposable
         _spill.Write(raw);
     }
 
-    /// <summary>Second pass: replays every stored sample, in order, through <paramref name="sink"/>.</summary>
     public async Task ReplayAsync(IPcmSampleSink sink, CancellationToken ct)
     {
         if (_spill == null)
@@ -176,7 +148,6 @@ internal sealed class PcmScratch : IPcmSampleSink, IDisposable
     }
 }
 
-/// <summary>PCMSTREAM_01 — the incremental twin of <see cref="WaveformPeaks.Reduce"/> (N known up front).</summary>
 internal sealed class PeakBucketReducer : IPcmSampleSink
 {
     private readonly long _total;
@@ -204,31 +175,14 @@ internal sealed class PeakBucketReducer : IPcmSampleSink
     }
 }
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// PCMSTREAM_02 — ONE FFMPEG-TO-PCM CHILD, ALWAYS REAPED.
-///
-/// stdout is handed to a streaming consumer; stderr is drained CONCURRENTLY (a child that fills its
-/// stderr pipe blocks, and then stdout never reaches EOF) into a bounded tail kept for diagnostics.
-/// Cancellation, a consumer failure or a malformed stream kill the whole process tree, and the child is
-/// waited for (bounded) before the method returns, so no ffmpeg outlives the request that started it.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public static class FfmpegPcmPipe
 {
-    /// <summary>How much of stderr is kept (the tail) for logs.</summary>
     public const int StderrTailBytes = 8 * 1024;
 
-    /// <summary>How long the reap may wait for the killed child to exit.</summary>
     public static readonly TimeSpan ReapTimeout = TimeSpan.FromSeconds(5);
 
     public readonly record struct Result(bool Started, int? ExitCode, string StderrTail);
 
-    /// <summary>
-    /// Starts <paramref name="psi"/>, runs <paramref name="consumeStdout"/> on its stdout and waits for exit.
-    /// Throws <see cref="OperationCanceledException"/> on cancellation and rethrows a consumer failure —
-    /// in every case only AFTER the child was killed and reaped.
-    /// </summary>
     public static async Task<Result> RunAsync(
         ProcessStartInfo psi,
         Func<Stream, CancellationToken, Task> consumeStdout,

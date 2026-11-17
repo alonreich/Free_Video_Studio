@@ -16,22 +16,14 @@ using System.Threading.Tasks;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// Settings window (docs/04 UI-SETTINGS-ABOUT). SETTINGSVM_01: every value is bound to
-/// <see cref="Vm"/> and stays pending until SAVE; this code-behind only owns window behaviour —
-/// closing (SETUNSAVED_01), keys (Esc / Enter / shortcut capture), live theme preview and its revert
-/// (SETPREVIEW_01), the last tab (SETLASTTAB_01) and the folder pickers.
-/// </summary>
 public partial class SettingsWindow : Window
 {
     private const string LastTabStateKey = "SettingsLastTab";
 
-    /// <summary>SETTINGSDI_01 — everything this window talks to, injected (see SettingsWindowServices).</summary>
     private readonly Services.SettingsWindowServices _services;
     private bool _isSafeToClose;
     private bool _closePromptOpen;
 
-    /// <summary>SETPREVIEW_01 — the look the app had when Settings opened, restored by CANCEL / Discard.</summary>
     private readonly ThemeMode _openTheme;
     private readonly FontScale _openFontScale;
     private readonly string _openMaskOverlay;
@@ -40,13 +32,10 @@ public partial class SettingsWindow : Window
 
     private KeyBindRowViewModel? _waitingRow;
 
-    /// <summary>All pending values (SETTINGSVM_01).</summary>
     public SettingsViewModel Vm { get; }
 
-    /// <summary>XAML previewer / places without the composition root: the production services.</summary>
     public SettingsWindow() : this(Services.SettingsWindowServices.CreateDefault()) { }
 
-    /// <summary>Tests: production services on <paramref name="paths"/>, optionally with a fake session-state writer.</summary>
     public SettingsWindow(ApplicationPaths? paths, SessionStateWriter? writer = null) : this(ServicesFor(paths, writer)) { }
 
     public SettingsWindow(Services.SettingsWindowServices services)
@@ -61,6 +50,7 @@ public partial class SettingsWindow : Window
 
         Vm = SettingsViewModel.Open(services, SafeGameProfiles());
         Closed += (_, _) => Vm.Dispose();
+        Closed += (_, _) => _freezeSoundPreview.Dispose();
 
         InitializeComponent();
         FreeVideoStudio.App.WindowBoundsHelper.Track(this, "SettingsBounds");
@@ -90,10 +80,6 @@ public partial class SettingsWindow : Window
         catch (Exception ex) { RuntimeLog.Swallowed(ex); return Array.Empty<string>(); }
     }
 
-    /// <summary>
-    /// The music folder the Add Music wizard scans ("" = Windows Music). Kept for callers and tests:
-    /// setting a folder that does not exist throws and keeps the previous value.
-    /// </summary>
     public string DefaultMusicFolder
     {
         get => Vm.MusicFolder;
@@ -105,7 +91,6 @@ public partial class SettingsWindow : Window
         }
     }
 
-
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         string n = e.PropertyName ?? "";
@@ -113,21 +98,30 @@ public partial class SettingsWindow : Window
             ThemeManager.ApplyTheme(Vm.P.ThemeMode);
         if (n.Length == 0 || n == nameof(SettingsViewModel.FontScaleIndex))
             ThemeManager.ApplyFontScale(Vm.P.FontScale);
+        if (n == nameof(SettingsViewModel.FreezeSoundIndex))
+            PlayFreezeSoundPreview();
     }
 
-    /// <summary>SETPREVIEW_01 — CANCEL / Discard puts back the look the app had when Settings opened.</summary>
+    private readonly Services.FreezeSoundPreview _freezeSoundPreview = new();
+
+    public const double FreezeSoundPreviewHoldSec = 1.5;
+
+    private void PlayFreezeSoundPreview() =>
+        _freezeSoundPreview.Play(FreezeSoundPreviewHoldSec, Services.FreezeSoundPreview.OutputVolume(1.0), Vm.SelectedFreezeSound,
+            FreeVideoStudio.Core.Media.FreezeSoundEffect.GainDbFor(FreeVideoStudio.Core.Media.VideoLoudnessCache.Latest, Vm.SelectedFreezeSound));
+
+    private void OnFreezeSoundPreviewClicked(object? sender, RoutedEventArgs e) => PlayFreezeSoundPreview();
+
     private void RevertLivePreview()
     {
         if (Vm.P.ThemeMode != _openTheme) ThemeManager.ApplyTheme(_openTheme);
         if (Vm.P.FontScale != _openFontScale) ThemeManager.ApplyFontScale(_openFontScale);
     }
 
-
     private void OnSaveClicked(object? sender, RoutedEventArgs e) => SaveAndClose();
 
     private void OnCancelClicked(object? sender, RoutedEventArgs e) => _ = RequestCloseAsync();
 
-    /// <summary>CANCEL, Esc and the window's ✕ all come here: unsaved changes are never dropped silently.</summary>
     internal async Task RequestCloseAsync()
     {
         if (_closePromptOpen) return;
@@ -191,7 +185,6 @@ public partial class SettingsWindow : Window
         base.OnClosing(e);
     }
 
-
     private void OnKeyBindButtonClick(object? sender, RoutedEventArgs e)
     {
         if ((sender as Control)?.DataContext is not KeyBindRowViewModel row) return;
@@ -202,7 +195,6 @@ public partial class SettingsWindow : Window
         e.Handled = true;
     }
 
-    /// <summary>SETKEYS_01 — tunnel handler: while a shortcut button waits, the next key is the new shortcut.</summary>
     private void OnCaptureKeyDown(object? sender, KeyEventArgs e)
     {
         var row = _waitingRow;
@@ -215,10 +207,6 @@ public partial class SettingsWindow : Window
         Vm.KeyBindStatus = Vm.TryAssignKey(row, e.Key) ?? "";
     }
 
-    /// <summary>
-    /// SETKEYS_02 — Esc = Cancel, Enter = Save, unless a control already used the key.
-    /// SETENTER_01 — plain Enter while typing in a text box only finishes typing; Ctrl+Enter always saves.
-    /// </summary>
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Handled) return;
@@ -237,7 +225,6 @@ public partial class SettingsWindow : Window
         else if (e.Key == Key.F1) e.Handled = ShowHelpForFocused();
     }
 
-
     private TabControl? Tabs => this.FindNameScope()?.Find("SettingsTabControl") as TabControl;
 
     private SettingsSection CurrentSection => (Tabs?.SelectedItem as TabItem)?.Name switch
@@ -251,7 +238,6 @@ public partial class SettingsWindow : Window
         _ => SettingsSection.General,
     };
 
-    /// <summary>SETLASTTAB_01 — Settings reopens on the tab you used last.</summary>
     private void RestoreLastTab()
     {
         try
@@ -291,14 +277,12 @@ public partial class SettingsWindow : Window
     public static async Task<bool> ShowAboutAsync(Window owner, Services.SettingsWindowServices? services = null)
         => await ShowSectionAsync(owner, SettingsSection.About, services);
 
-    /// <summary>One line in the footer: what just happened, or why a save failed (SETSAVEFAIL_01).</summary>
     private void SetFooterStatus(string text, bool isError = false)
     {
         if (this.FindNameScope()?.Find("FooterStatusText") is not TextBlock t) return;
         t.Text = text;
         t.Foreground = ThemeResources.Brush(this, isError ? "AppDangerBrush" : "AppTextMutedBrush", t.Foreground ?? Avalonia.Media.Brushes.Gray);
     }
-
 
     private void AttachTitleBarDrag()
     {

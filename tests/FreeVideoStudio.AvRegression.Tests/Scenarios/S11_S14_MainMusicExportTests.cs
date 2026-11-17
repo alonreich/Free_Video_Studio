@@ -3,11 +3,6 @@ using Xunit;
 
 namespace FreeVideoStudio.AvRegression.Tests;
 
-/// <summary>
-/// Main window — music placed with the pink music notes, then a REAL export. The music must start on
-/// the START note, stop on the END note and stay on the beat the preview showed, whatever the
-/// speed, speed blocks, freeze, cuts, fades and memes do.
-/// </summary>
 [Collection(AvCollection.Name)]
 public sealed class S11_S14_MainMusicExportTests
 {
@@ -22,7 +17,6 @@ public sealed class S11_S14_MainMusicExportTests
         };
     }
 
-    /// <summary>The reported bug: only the music notes are moved, and the exported music ends somewhere else.</summary>
     [Theory, Trait("Tier", "Quick")]
     [InlineData(5.0, 12.0, true)]
     [InlineData(5.0, 12.0, false)]
@@ -68,7 +62,6 @@ public sealed class S11_S14_MainMusicExportTests
         Verify.Music(edit, scan, c);
     }
 
-    /// <summary>Undo/redo returns the exact edit, so the export after undo+redo is the export before.</summary>
     [Fact, Trait("Tier", "Quick")]
     public async Task S14_UndoRedo_ThenExport_SameTimingAsBefore()
     {

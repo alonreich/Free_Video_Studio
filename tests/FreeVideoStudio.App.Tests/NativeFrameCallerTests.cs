@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -13,11 +12,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// LIBAVFRAME_04/05 — the two migrated callers keep their observable contracts on BOTH backends:
-/// MemeThumbnailCache (0.5 s → 0 retry, 160 px wide, even height, null on failure) and the Gemini
-/// candidate JPEG (decodable, full size).
-/// </summary>
 public sealed class NativeFrameCallerTests : IDisposable
 {
     private readonly string _work = Path.Combine(Path.GetTempPath(), $"fvs-framecallers-{Guid.NewGuid():N}");
@@ -97,7 +91,6 @@ public sealed class NativeFrameCallerTests : IDisposable
         Assert.InRange(c.Blue, 20, 40);
     }
 
-    /// <summary>The timestamps Gemini receives are a pure function of the segment and did not change.</summary>
     [Fact]
     public void GeminiCandidateTimestampRuleIsUnchanged()
     {

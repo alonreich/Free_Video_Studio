@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,57 +8,14 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// SYS-DIAGREPORT — COLLECTS THE DIAGNOSTIC BUNDLE AND PUTS IT SOMEWHERE THE USER CAN FIND IT.
-///
-/// <para>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// <b>THE GAP THIS FILLS.</b> <c>FAULTTIER_01</c> classifies every failure and routes it to a log.
-/// The Fatal tier even shows the user the log's path. But the path is to a rotating file under
-/// <c>%ProgramData%\Free Video Studio\logs</c>, and the number of users who will navigate
-/// there, identify the right file among the rotation, and attach it to a report is approximately
-/// zero. So the fault tiers made failures VISIBLE to the user and left them invisible to whoever
-/// has to fix them.
-/// </para>
-///
-/// <para>
-/// ⚠️ THE PRODUCT'S CENTRAL RISK IS HARDWARE IT HAS NEVER RUN ON. <c>HardwareScanner</c> chooses
-/// between NVENC, AMF, QSV and d3d11va at runtime against a matrix tested on one machine. Without
-/// this, a GPU-specific export failure arrives as "it doesn't work on my PC" and stays there.
-/// </para>
-///
-/// <para>
-/// <b>NOTHING HERE UPLOADS ANYTHING.</b> It writes a plain-text file and hands back the path. The
-/// user reads it, decides, and sends it — or does not. Silent telemetry from a video editor would
-/// be an unpleasant surprise in a product whose users are recording their own screens, and a
-/// consent dialog nobody understands is not better. A readable file is the honest version.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </para>
-/// </summary>
 public static class DiagnosticBundle
 {
-    /// <summary>Where bundles are written. One folder so the user is told one place to look.</summary>
     public static string FolderFor(ApplicationPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
         return Path.Combine(paths.ProgramDataRoot, "Diagnostics");
     }
 
-    /// <summary>
-    /// SYS-DIAGREPORT — builds the bundle and writes it.
-    ///
-    /// <para>
-    /// Runs entirely on a worker: it reads log files that can be megabytes and probes the encoder,
-    /// and Invariant #6 forbids the UI dispatcher blocking on either. The caller awaits and then
-    /// shows the path.
-    /// </para>
-    /// </summary>
-    /// <param name="detectedEncoder">
-    /// What <c>HardwareScanner</c> settled on, when it has run. Passed in rather than probed here:
-    /// re-probing would report what the hardware can do NOW, and the useful answer is what the
-    /// failing session actually chose.
-    /// </param>
-    /// <returns>The path written, or <see langword="null"/> when nothing could be written.</returns>
     public static async Task<string?> WriteAsync(
         ApplicationPaths paths,
         IFaultSink faults,

@@ -5,9 +5,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// REBRAND_02 / REBRAND_03 / OUTNAME_01 — docs/REBRAND_MIGRATION.md.
-/// </summary>
 public sealed class RebrandTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "FvsRebrandTests_" + Guid.NewGuid().ToString("N"));
@@ -154,11 +151,6 @@ public sealed class RebrandTests : IDisposable
         Assert.True(Directory.Exists(legacyTemp));
     }
 
-    /// <summary>
-    /// REBRAND_03 — the previous product name may appear ONLY in the two allow-listed files: the
-    /// embedded migration identity resource and the rebrand record. Build output, logs and the
-    /// user's own media are not scanned.
-    /// </summary>
     [Fact]
     public void PreviousBrandNameAppearsOnlyInTheMigrationAllowList()
     {

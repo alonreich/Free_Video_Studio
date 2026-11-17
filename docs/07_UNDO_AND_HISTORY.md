@@ -131,7 +131,7 @@ covering U1–U4, re-entrancy, reset and restore).
    (U1). Ten minutes of speed ramps died whenever someone closed the editor to glance at the main
    timeline. The history is now parked, keyed by clip path — restoring it into a DIFFERENT clip
    would apply segment boundaries measured against another video's duration.
-4. ~~Ctrl+Z / Ctrl+Y in the main window~~ — done (`PROJSESSION_04`).
+4. Done: `PROJSESSION_04` — Ctrl+Z / Ctrl+Y in the main window.
 5. **`MEMEMODE_01` — every meme property change is undoable.** Mode, corner, size and sound are fields of the
    `MemePlacement` / `EdlMeme` records, so the Speed Editor snapshot, `ProjectDocument` and `MergeEdl` equality
    all see them (U4 stays real). The editor pushes `"change meme"` once per popup confirmation, after which the

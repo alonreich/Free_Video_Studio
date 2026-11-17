@@ -13,14 +13,8 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// AICOMMENTARY_UI_01 — AI Live Commentary Captions UI workflow for <see cref="GranularSpeedEditorWindow"/>:
-/// toolbar trigger, consent prompt, options modal, progress overlay, live libmpv ASS preview, and
-/// ACCEPT / DISCARD strictly conforming to AIUNDO_01 ordering.
-/// </summary>
 public partial class GranularSpeedEditorWindow
 {
-    /// <summary>CTSSLOT_01 — the running commentary; cancelling or renewing also disposes the old source.</summary>
     private readonly Infrastructure.CtsSlot _aiCommentaryCts = new();
     private bool _isAiCommentaryPreviewing;
     private CaptionTrack? _aiCommentaryCandidateTrack;
@@ -28,13 +22,10 @@ public partial class GranularSpeedEditorWindow
     private string? _aiCommentaryTempAssPath;
     private string? _liveCaptionsAssPath;
 
-    /// <summary>AICOMMENTARY_CLOSE_01 — true while the AI is still writing the commentary.</summary>
     private bool _aiCommentaryRunning;
 
-    /// <summary>AICOMMENTARY_CLOSE_01 — set once the user agreed to close and lose a running commentary.</summary>
     private bool _closeDuringCommentaryConfirmed;
 
-    /// <summary>AICOMMENTARY_CLOSE_01 — the editor's APPLY button, cached where it is wired (no extra lookup).</summary>
     private Button? _applyGranularBtn;
 
     private void WireAiCommentaryControls()
@@ -62,11 +53,6 @@ public partial class GranularSpeedEditorWindow
         UpdateAiCommentaryBtnVisualState();
     }
 
-    /// <summary>
-    /// AICOMMENTARY_CLOSE_01 — called by the editor's APPLY before it closes. A commentary preview that was
-    /// never ACCEPTED is kept (APPLY means "keep everything I see"; it used to be thrown away silently). While
-    /// the AI is still writing, the user chooses: keep waiting (returns false) or apply without it.
-    /// </summary>
     internal async Task<bool> PrepareApplyWithCommentaryAsync()
     {
         if (_aiCommentaryRunning)
@@ -98,7 +84,6 @@ public partial class GranularSpeedEditorWindow
         return true;
     }
 
-    /// <summary>AICOMMENTARY_CLOSE_01 — CANCEL / ✕ while the AI is still writing.</summary>
     private async Task ConfirmCloseDuringCommentaryAsync()
     {
         bool closeAnyway = await ConfirmDialogWindow.AskAsync(
@@ -119,10 +104,6 @@ public partial class GranularSpeedEditorWindow
         Close();
     }
 
-    /// <summary>
-    /// AICOMMENTARY_CLOSE_01 — while a commentary preview waits for ACCEPT &amp; APPLY, the editor's APPLY says
-    /// it will keep it, so the two buttons can no longer be mistaken for each other.
-    /// </summary>
     private void UpdateApplyButtonForCommentary()
     {
         if (_applyGranularBtn == null) return;
@@ -168,10 +149,6 @@ public partial class GranularSpeedEditorWindow
         if (AiCommentaryStatusLabelCtl is { } status) status.Text = "Stopping…";
     }
 
-    /// <summary>
-    /// AICOMMENTARY_CONSENT_01 (docs/04 UI-AICOMMENTARY) — asks consent before uploading video clips
-    /// and gameplay audio to the configured AI provider.
-    /// </summary>
     private string LastCommentaryKey(string videoPath, double startSec, double durationSec, AiVendor vendor, string model,
         Controls.AiCommentaryDialogResult options, IReadOnlyList<double>? killTimes)
     {
@@ -199,9 +176,6 @@ public partial class GranularSpeedEditorWindow
         return Task.FromResult(true);
     }
 
-    /// <summary>
-    /// Main trigger handler for AI COMMENTARY button.
-    /// </summary>
     private async Task OnAiCommentaryClickedAsync()
     {
         if (_aiCommentaryRunning) return;
@@ -230,13 +204,22 @@ public partial class GranularSpeedEditorWindow
         MergeEditorClip? mergeClip = null;
         if (_edit.IsMergeMode)
         {
+            if (!_edit.HasSelectedSegment && _edit.FindSegmentAt((int)Math.Round(GetCurrentTime() * 1000.0)) is int underPlayhead)
+            {
+                SelectSegment(underPlayhead, jumpPlayhead: false);
+                SetStatus($"AI Commentary uses block #{underPlayhead + 1}, the one under the playhead.");
+            }
             if (_edit.SelectedSegment is { } mSeg && _mergeSource != null)
             {
-                var clip = _mergeSource.Clips.FirstOrDefault(c => mSeg.StartMs >= c.StartMs && mSeg.EndMs <= c.EndMs + MergeEditorSource.FrameMs);
+                MergeEditorClip? FindClip(SpeedSegment s) => _mergeSource.Clips.FirstOrDefault(c => s.StartMs >= c.StartMs && s.EndMs <= c.EndMs + MergeEditorSource.FrameMs);
+                var clip = FindClip(mSeg);
+                if (clip == null && await OfferSplitAtClipEdgesAsync(_edit.SelectedSegmentIndex, "AI COMMENTARY") && _edit.SelectedSegment is { } splitSeg)
+                    clip = FindClip(splitSeg);
                 if (clip == null)
                 {
-                    await ErrorReporter.ShowAsync(this, "Cross-Clip Block",
-                        "This speed block spans across two merged clips. Shorten or split the block so it lies within one clip to generate commentary.");
+                    if (ClipEdgesInside(mSeg.StartMs, mSeg.EndMs, _mergeSource.Clips.Select(c => c.EndMs), MergeEditorSource.FrameMs).Count == 0)
+                        await ErrorReporter.ShowAsync(this, "Block Outside the Clips",
+                            "This speed block is not inside one merged clip, so AI Commentary cannot tell which video to send. Move or shorten the block, then try again.");
                     return;
                 }
                 effectiveVideoPath = clip.Path;
@@ -244,8 +227,8 @@ public partial class GranularSpeedEditorWindow
             }
             else if (!_edit.HasSelectedSegment)
             {
-                await ErrorReporter.ShowAsync(this, "Select a Speed Block",
-                    "In Video Merger mode, select a specific speed block to generate live commentary captions for that clip.");
+                await ErrorReporter.ShowAsync(this, "Pick a Speed Block",
+                    "In the Video Merger, AI Commentary writes captions for one block at a time. Click a speed block on the timeline (or put the playhead inside one), then press AI COMMENTARY again.");
                 return;
             }
         }
@@ -410,6 +393,7 @@ public partial class GranularSpeedEditorWindow
         usage.SetEstimate(estimatedUsage);
         if (AiCommentaryPreviewBarCtl is { } usageBar) SetAiUsageLines(usageBar, "AiCommentary", null);
 
+        bool retryAfterFix = false;
         try
         {
             CommentaryResult result;
@@ -500,11 +484,14 @@ public partial class GranularSpeedEditorWindow
             if (AiCommentaryBtnCtl is { } btnAfter) btnAfter.IsEnabled = true;
             RuntimeLog.Fail("AiCommentary", $"AI Commentary generation error: {ex.Message}");
             var (u, a) = ReportAiUsage(usage, consoleLog, estimatedUsage);
-            await ErrorReporter.ShowAsync(
-                this,
-                "AI Commentary Stopped",
-                $"AI Commentary could not finish:\n\n{ex.Message}\n\n{usage.PlainSummary()}" + usage.ReferenceSuffix,
-                $"{u}\n{a}");
+            if (AiAccountFix.Find(ex) is { } account)
+                retryAfterFix = await AiAccountFix.OfferAsync(this, account, AiUsage.Commentary);
+            else
+                await ErrorReporter.ShowAsync(
+                    this,
+                    "AI Commentary Stopped",
+                    $"AI Commentary could not finish:\n\n{ex.Message}\n\n{usage.PlainSummary()}" + usage.ReferenceSuffix,
+                    $"{u}\n{a}");
         }
         finally
         {
@@ -513,14 +500,13 @@ public partial class GranularSpeedEditorWindow
             if (overlay != null) overlay.IsVisible = false;
             if (AiCommentaryBtnCtl is { } finishedButton) finishedButton.IsEnabled = true;
         }
+        if (retryAfterFix)
+        {
+            RuntimeLog.Info("AiCommentary", $"{AiAccountFix.Tag}: the AI account was fixed; starting AI Commentary again.");
+            Dispatcher.UIThread.Post(() => _ = OnAiCommentaryClickedAsync());
+        }
     }
 
-    /// <summary>
-    /// Mounts generated candidate track as an un-checkpointed preview in libmpv.
-    /// AICOMMENTARY_PREVIEWCLOCK_01 — libmpv plays the SOURCE file (its clock is absolute source seconds,
-    /// speed changes and freezes are applied live), so the preview script is written in source time with no
-    /// output-timeline projection; the export burns the same track through the output timeline.
-    /// </summary>
     private void BeginAiCommentaryPreview(CaptionTrack candidate, double playbackStartSec)
     {
         _aiCommentaryOriginalTrack = _edit.CaptionTrack;
@@ -542,13 +528,6 @@ public partial class GranularSpeedEditorWindow
         Notify("AI Commentary ready — review captions in preview, then ACCEPT & APPLY or DISCARD.");
     }
 
-    /// <summary>
-    /// AIUNDO_01 (docs/07) — Finalizes or discards the live commentary preview.
-    ///
-    /// <para>The candidate preview is placed in the active session WITHOUT a checkpoint so it can
-    /// be discarded cleanly. On ACCEPT, the original state is restored first, <see cref="PushUndo"/>
-    /// is called, and only then is the candidate committed.</para>
-    /// </summary>
     private void EndAiCommentaryPreview(bool accept)
     {
         if (!_isAiCommentaryPreviewing) return;
@@ -586,13 +565,6 @@ public partial class GranularSpeedEditorWindow
 
     internal void SyncCaptionsPreviewSubtitles() => MountPreviewCaptions(_edit.CaptionTrack);
 
-    /// <summary>
-    /// AICAPTION_PREVIEWSUB_01 — the ONE way captions reach the preview. libmpv's <c>sub-remove</c> (no id) removes
-    /// only the SELECTED track and every <c>sub-add … select</c> adds a new one, so the old code stacked a track per
-    /// edit, preview and discard; deleting every caption could leave an old track on screen that the export would
-    /// never show. Now the track this window loaded (always the selected one) is removed BEFORE the next is
-    /// added, so at most one caption track is ever loaded, and its temp file is deleted when it is replaced.
-    /// </summary>
     private System.Collections.Generic.IReadOnlyList<(double X, double Y, double W, double H)>? _previewHudRects;
     private bool _previewHudRectsLoading;
 

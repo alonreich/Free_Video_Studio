@@ -1,15 +1,10 @@
-﻿
-using System;
+﻿using System;
 using System.IO;
 using FreeVideoStudio.Core.Infrastructure;
 using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// SYS-PAYLOADSPLIT — the fingerprint that decides whether an update has to reship 322 MB of codec
-/// binaries or just the application.
-/// </summary>
 public sealed class RuntimePayloadManifestTests : IDisposable
 {
     private readonly string _root =
@@ -20,7 +15,7 @@ public sealed class RuntimePayloadManifestTests : IDisposable
     public void Dispose()
     {
         try { if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true); }
-        catch (IOException) { /* temp folder still held by the OS; harmless. */ }
+        catch (IOException) {  }
     }
 
     private string Folder(string name)
@@ -45,11 +40,6 @@ public sealed class RuntimePayloadManifestTests : IDisposable
             RuntimePayloadManifest.FromFolder(b).Fingerprint);
     }
 
-    /// <summary>
-    /// The case the whole mechanism turns on. A changed FFmpeg build must NOT look like the
-    /// installed one, or the updater ships an app against codecs it was not built for and the
-    /// failure lands on the user at export time, after they have done the work.
-    /// </summary>
     [Fact]
     public void AChangedBinaryChangesTheFingerprint()
     {
@@ -74,11 +64,6 @@ public sealed class RuntimePayloadManifestTests : IDisposable
             RuntimePayloadManifest.FromFolder(b).Fingerprint);
     }
 
-    /// <summary>
-    /// ⚠️ The application's own files are not the runtime. If they counted, every patch would
-    /// change the fingerprint and the small-download path would never once be taken — the feature
-    /// would be present, tested, and dead.
-    /// </summary>
     [Fact]
     public void ReusedStarterAssetsAffectTheFingerprint()
     {
@@ -122,10 +107,6 @@ public sealed class RuntimePayloadManifestTests : IDisposable
         Assert.Equal(written.TotalBytes, read.TotalBytes);
     }
 
-    /// <summary>
-    /// No manifest means "I cannot prove the runtime matches", which the updater resolves to the
-    /// full installer. A bigger download is always safe; a smaller one is not.
-    /// </summary>
     [Fact]
     public void AMissingManifestReadsAsNull()
         => Assert.Null(RuntimePayloadManifest.Read(Folder("empty")));

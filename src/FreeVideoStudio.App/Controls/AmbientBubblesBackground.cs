@@ -1,5 +1,4 @@
-﻿
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
@@ -8,33 +7,15 @@ using System.Diagnostics;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// Ambient "underwater" anomaly background layer.
-/// Extremely randomized bubbles mimicking the 3D hollow refractive style 
-/// of the FluidVolumeSlider, creating a deep-sea atmosphere.
-/// </summary>
 public sealed class AmbientBubblesBackground : Control
 {
     private const int BubbleCount = 35;
     private const double PhysicsHz = 60.0;
     private const double FixedDeltaSeconds = 1.0 / PhysicsHz;
 
-    /// <summary>
-    /// Repaint ceiling. Physics still steps at a fixed 60Hz (motion stays smooth and
-    /// frame-rate independent), but there is no reason to REDRAW a near-subliminal decoration
-    /// more often than this. Previously `InvalidateVisual()` ran on every animation frame with
-    /// no throttle at all, so on a 144Hz display this layer repainted 144 times a second —
-    /// while the documentation claimed it was throttled to ~30fps.
-    /// </summary>
     private const double RenderHz = 30.0;
     private const double MinRenderIntervalSeconds = 1.0 / RenderHz;
 
-    /// <summary>
-    /// Set while a render/export overlay owns the screen. The ambient layer is decoration and
-    /// must not compete for the GPU during an encode — and it genuinely was competing, because
-    /// being COVERED does not make a control stop rendering (`IsEffectivelyVisible` stays true,
-    /// and the Phase overlay's backdrop is only 67% opaque anyway).
-    /// </summary>
     public static bool GloballySuspended { get; set; }
 
     private readonly Bubble[] _bubbles = new Bubble[BubbleCount];
@@ -124,15 +105,6 @@ public sealed class AmbientBubblesBackground : Control
         foreach (var b in _bubbles) b.FadeStep = -1;
     }
 
-    /// <summary>
-    /// Pulls the bubble colour and opacity multiplier for the CURRENT ThemeVariant.
-    ///
-    /// This layer used to hardcode pure white, which meant it was invisible on the Light
-    /// theme's near-white surface (#f8fafc at 5-10% white is nothing) — the whole feature
-    /// silently did not exist for half the users. Light now gets a saturated blue with a
-    /// higher multiplier so it reads; Dark keeps the original white at the original strength,
-    /// so nothing about the existing look changes.
-    /// </summary>
     private void ResolveThemeAppearance()
     {
         if (this.TryFindResource("AppAmbientBubbleColor", ActualThemeVariant, out object? colorObj)
@@ -227,7 +199,7 @@ public sealed class AmbientBubblesBackground : Control
 
             b.Y -= b.BaseSpeed - (_gravityShearY * b.BaseSpeed * 50.0);
             b.X += Math.Sin(b.Y * 7.0 + now * b.WobbleSpeed + b.Seed) * b.WobbleAmount + (_gravityShearX * b.BaseSpeed * 50.0);
-            
+
             if (b.X < -0.2) b.X = 1.2;
             if (b.X > 1.2) b.X = -0.2;
 
@@ -249,7 +221,7 @@ public sealed class AmbientBubblesBackground : Control
         else b.Size = 3.0 + _rng.NextDouble() * 10.0;
 
         b.BaseSpeed = (0.1 + _rng.NextDouble() * (b.Size / 15.0)) / 1000.0; 
-        
+
         b.WobbleSpeed = 0.2 + _rng.NextDouble() * 0.8;
         b.WobbleAmount = (0.2 + _rng.NextDouble() * 1.0) / 400.0;
         b.Seed = _rng.NextDouble() * Math.PI * 2;

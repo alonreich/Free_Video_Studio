@@ -4,10 +4,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// RELNOTES_01/02/03, RETAIN_01, ASSETHASH_01 — the release-notes pipeline and the release-side
-/// hardening (09 DIST-RELEASENOTES, DIST-RETENTION, DIST-SMART).
-/// </summary>
 public sealed class ReleaseChangelogTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "fvs-relnotes-tests-" + Guid.NewGuid().ToString("N"));

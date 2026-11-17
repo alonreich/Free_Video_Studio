@@ -1,6 +1,5 @@
 ﻿namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>UPGRADE_01 — the single compatibility boundary for supported older releases.</summary>
 public static class LegacyProductIdentity
 {
     public static string CompactName => AppDataPaths.LegacyDirectoryNames[0];

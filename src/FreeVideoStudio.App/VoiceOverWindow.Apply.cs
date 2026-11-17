@@ -11,28 +11,18 @@ using FreeVideoStudio.Core.Media;
 using static FreeVideoStudio.App.Infrastructure.VoiceOverAudioTools;
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// VOAPPLY_01 / VOCAPTURE_02 / SYS-WINSTATE — VoiceOverWindow Apply &amp; Finish transaction.
-/// Coordinates single-flight apply, capture settlement, FFmpeg trimming, transactional persistence
-/// with rollback on failure, file preservation, and safe closing.
-/// </summary>
 public partial class VoiceOverWindow
 {
     internal static Func<System.Diagnostics.ProcessStartInfo, CancellationToken, Task>? TrimRunnerSeam { get; set; }
     internal static TimeSpan CaptureDrainTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
-    /// <summary>VORECOVERY_01 test seams: isolated recovery storage BEFORE a window is constructed.</summary>
     internal static FreeVideoStudio.App.Services.IVoiceOverRecoveryStore? RecoveryStoreSeam { get; set; }
     internal static Func<string>? RecoveryDirectorySeam { get; set; }
 
-    /// <summary>VORECOVERY_03 test seam: allows testing deliberate deletion confirmation without blocking UI.</summary>
     internal static Func<VoiceOverWindow, string, string, Task<bool>>? ConfirmDeleteSeam { get; set; }
 
-    /// <summary>VORECOVERY_03 — true while the delete confirmation dialog is open.</summary>
     private bool _isConfirmingDelete;
 
-    /// <summary>VORECOVERY_01 — a close requested while a recovery operation owns the take list is
-    /// deferred, then re-issued when that operation completes (ownership is never abandoned).</summary>
     private bool _closeRequestedDuringRecovery;
 
     private FreeVideoStudio.App.Services.VoiceOverRecoveryManager CreateRecoveryManager()
@@ -257,7 +247,7 @@ public partial class VoiceOverWindow
                             TryDeleteFile(path);
                         }
                         Result = null;
-                        UpdateApplyState($"Voiceover take {i + 1} could not be saved ({ex.Message}). Recordings preserved; you can retry.");
+                        UpdateApplyState($"Voiceover take {i + 1} could not be saved: {Infrastructure.UserFacingError.Describe(ex)} Your recordings are kept; try again.");
                         return;
                     }
                 }
@@ -350,7 +340,7 @@ public partial class VoiceOverWindow
                 }
             }
         }
-        
+
         if (InitialState?.VoiceOverTakes != null)
         {
             foreach (var take in InitialState.VoiceOverTakes)
@@ -472,14 +462,6 @@ public partial class VoiceOverWindow
         UpdateFailedTakesUi();
     }
 
-    /// <summary>
-    /// SESSIONOWNER_01 — ONE policy for who owns the voiceover session. Recording (arming, live,
-    /// opening, draining), a recovery operation (discovery, validation, discard), Apply and closing
-    /// are mutually exclusive transactions. The owner is DERIVED from the live state each time, so it
-    /// is released exactly when the owning operation's own state clears (stop, failure, late drain
-    /// verdict, recovery completion) — there is no separate flag to forget to reset.
-    /// Stop / pause / cancel of the current owner are never gated.
-    /// </summary>
     internal enum VoiceOverSessionOwner { None, Capture, Recovery, Apply, Closing }
 
     internal VoiceOverSessionOwner CurrentSessionOwner
@@ -495,8 +477,6 @@ public partial class VoiceOverWindow
         }
     }
 
-    /// <summary>Admission matrix. Apply may take over a capture (it stops and drains it itself);
-    /// nothing may take over a recovery operation; a new capture or recovery needs an idle session.</summary>
     internal bool CanAdmit(VoiceOverSessionOwner operation)
     {
         var owner = CurrentSessionOwner;
@@ -525,8 +505,6 @@ public partial class VoiceOverWindow
     internal Button? RecordButtonControl => _micRecordButton;
     internal void TriggerStopRecording() => StopRecordingAndPlayback();
 
-    /// <summary>The drain verdict is published BEFORE the finalization settles (VOCAPTURE_02), so the
-    /// controls are refreshed again once capture ownership has actually ended.</summary>
     private async Task RefreshWhenCaptureSettledAsync(Task drain)
     {
         try { await drain; await _capture.WhenFinalizationsSettled(); }
@@ -544,7 +522,6 @@ public partial class VoiceOverWindow
         UpdateApplyState();
     }
 
-    /// <summary>Restores usable controls and re-issues a close that arrived mid-operation.</summary>
     private void EndRecoveryOperationUi()
     {
         if (_discardFailedTakesButton != null) _discardFailedTakesButton.IsEnabled = true;
@@ -559,9 +536,6 @@ public partial class VoiceOverWindow
         }
     }
 
-    /// <summary>VORECOVERY_01 / VORECOVERY_03 — DELETE unsaved voice recordings with deliberate confirmation.
-    /// Snapshots intended recovery identities before asynchronous confirmation and revalidates
-    /// ownership and take existence before deletion. Deletes only confirmed items.</summary>
     internal async Task<bool> DiscardFailedTakesAction()
     {
         if (_isConfirmingDelete || !CanStartRecoveryOperation()) return false;
@@ -664,8 +638,6 @@ public partial class VoiceOverWindow
         return true;
     }
 
-    /// <summary>VORECOVERY_01 / VORECOVERY_03 — RESTORE unsaved audio into session.
-    /// WAV validation runs off the dispatcher; publication into _sessions happens here, on UI thread.</summary>
     internal async Task<bool> RecoverFailedTakesAction()
     {
         if (_isConfirmingDelete || !CanStartRecoveryOperation()) return false;
@@ -714,7 +686,6 @@ public partial class VoiceOverWindow
 
     internal Task<bool> DiscardAllPendingTakes() => DiscardFailedTakesAction();
 
-    /// <summary>VORECOVERY_01 — an index write that fails is surfaced with the audio still on disk.</summary>
     private async Task ObserveRecoveryStoreAsync(Task<FreeVideoStudio.App.Services.RecoveryStoreResult> store)
     {
         FreeVideoStudio.App.Services.RecoveryStoreResult result;
@@ -791,15 +762,12 @@ public partial class VoiceOverWindow
         }
     }
 
-    /// <summary>Synchronous discovery (tests). Production opens with <see cref="CheckAndOfferReopenRecoveryAsync"/>.</summary>
     internal void CheckAndOfferReopenRecovery()
     {
         _recovery.CheckAndOfferReopenRecovery();
         PublishDiscoveredRecovery();
     }
 
-    /// <summary>VORECOVERY_01 — reopen discovery reads the index off the dispatcher and blocks Apply
-    /// (IsOperationInFlight) until every durable take of this video is on screen.</summary>
     internal async Task CheckAndOfferReopenRecoveryAsync()
     {
         if (!CanStartRecoveryOperation()) return;

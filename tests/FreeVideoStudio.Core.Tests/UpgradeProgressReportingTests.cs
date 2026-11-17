@@ -4,10 +4,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// UPGRADEUX_01 — the install/update window shows real progress for unpacking, copying and
-/// hashing. The callbacks must be monotonic, end at 1, and never change what is installed.
-/// </summary>
 public sealed class UpgradeProgressReportingTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "fvs-progress-tests-" + Guid.NewGuid().ToString("N"));

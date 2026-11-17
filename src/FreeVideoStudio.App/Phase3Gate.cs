@@ -1,5 +1,4 @@
-﻿
-using FreeVideoStudio.Core.Media;
+﻿using FreeVideoStudio.Core.Media;
 using System.Diagnostics;
 
 namespace FreeVideoStudio.App;
@@ -9,7 +8,7 @@ public static class Phase3Gate
     public static async Task<int> RunAsync()
     {
         Console.WriteLine("Testing MPVSafetyManager rapid scrubbing...");
-        
+
         nint mpv = MpvWrapper.mpv_create();
         if (mpv == nint.Zero)
         {
@@ -18,7 +17,7 @@ public static class Phase3Gate
         }
 
         MpvWrapper.mpv_initialize(mpv);
-        
+
         using MPVSafetyManager safetyManager = new MPVSafetyManager(mpv);
 
         Stopwatch sw = Stopwatch.StartNew();
@@ -33,7 +32,7 @@ public static class Phase3Gate
         }
 
         Console.WriteLine($"Sent {scrubs} seeks in {sw.ElapsedMilliseconds}ms. Testing if watchdog is still responsive...");
-        
+
         await Task.Delay(500);
 
         Console.WriteLine("Scrubbing did not freeze the main thread.");

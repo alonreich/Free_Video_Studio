@@ -3,46 +3,14 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media.Native;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// LIBAVPROBE_02 — DETERMINISTIC LIBAV LOADING. NEVER THE USER'S PATH.
-///
-/// <para>
-/// The libraries are loaded ONCE per process, by ABSOLUTE PATH, from the first directory that
-/// holds all four of avutil-60, swresample-6, avcodec-62 and avformat-62:
-///   1. the directory of the ffprobe.exe the caller resolved (FFM-BINPATH already chose it, so the
-///      native probe reads media with exactly the libraries ffprobe would have used);
-///   2. <c>backend\</c>, <c>..\..\..\..\..\backend\</c>, <c>binaries\</c>, <c>..\..\..\..\..\binaries\</c>
-///      relative to the exe (the FFM-BINPATH order: installed layout first, dev tree second).
-/// </para>
-///
-/// <para>
-/// ⚠️ DEPENDENTS. Windows resolves avformat's imports (avcodec-62.dll, avutil-60.dll) by MODULE NAME,
-/// and a name that is already loaded in the process wins over any search path. Loading in strict
-/// dependency order — avutil → swresample → avcodec → avformat — therefore makes every dependent
-/// bind to the copy we chose, regardless of PATH, the current directory or SetDllDirectory.
-/// </para>
-///
-/// <para>
-/// The entry points in <see cref="LibAv"/> are bound with NativeLibrary.GetExport against THOSE
-/// handles (no DllImportResolver — see LibAv for why). No libav entry point is called before
-/// <see cref="TryEnsureLoaded"/> succeeded. A failure is LATCHED: the process does
-/// not retry a broken install on every probe; MediaMetadataProbe uses ffprobe instead.
-/// The libraries are never unloaded (process lifetime), which also means a running app holds
-/// backend\*.dll open — the installer/upgrader already requires the app to be closed.
-/// </para>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 internal static class LibAvLibrary
 {
     internal const string AvFormat = "avformat-62";
     internal const string AvCodec = "avcodec-62";
     internal const string AvUtil = "avutil-60";
     internal const string SwResample = "swresample-6";
-    /// <summary>LIBAVFRAME_01 — frame tier only. Imports avutil-60 alone (PE import table), so it binds to the copy already loaded.</summary>
     internal const string SwScale = "swscale-9";
 
-    /// <summary>Strict dependency order (verified from each DLL's PE import table).</summary>
     internal static readonly string[] LoadOrder = { AvUtil, SwResample, AvCodec, AvFormat };
 
     private sealed record LoadState(bool Ok, string Detail, string? Directory, IReadOnlyDictionary<string, nint>? Modules = null);
@@ -50,7 +18,6 @@ internal static class LibAvLibrary
     private static readonly object Gate = new();
     private static LoadState? _state;
 
-    /// <summary>Loads (once) and verifies the libraries. Never throws.</summary>
     public static bool TryEnsureLoaded(string? ffprobePath, out string detail)
     {
         var state = Volatile.Read(ref _state);
@@ -140,10 +107,8 @@ internal static class LibAvLibrary
         return new LoadState(true, $"native media backend loaded from {dir} ({versions}).", dir, handles);
     }
 
-
     private static LoadState? _frameState;
 
-    /// <summary>Loads (once) the metadata tier and then the frame tier. Never throws.</summary>
     public static bool TryEnsureFrameTierLoaded(string? ffprobeOrFfmpegPath, out string detail)
     {
         if (!TryEnsureLoaded(ffprobeOrFfmpegPath, out detail)) return false;

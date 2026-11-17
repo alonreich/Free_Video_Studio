@@ -12,12 +12,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AIFFMPEG_01 (docs/05 SYS-AISETTINGS) — the small FFmpeg jobs the AI helpers need (one still, a duration
-/// probe, a mono PCM dump), all through <see cref="AsyncProcessRunner"/>: both output pipes are drained (an
-/// unread stderr pipe can fill and freeze FFmpeg forever), every job has a time limit, and cancelling kills the
-/// process. Arguments go through <see cref="ProcessStartInfo.ArgumentList"/>, so no path is ever re-quoted.
-/// </summary>
 public static class AiFfmpeg
 {
     public static readonly TimeSpan StillTimeout = TimeSpan.FromSeconds(20);
@@ -37,7 +31,6 @@ public static class AiFfmpeg
         return psi;
     }
 
-    /// <summary>One 640-px-wide JPEG at <paramref name="timeSec"/>. False (never throws) when no frame came out; cancellation propagates.</summary>
     public static async Task<bool> ExtractFrameJpegAsync(string ffmpegPath, string videoPath, double timeSec, string destinationJpeg, CancellationToken ct, int width = 640)
     {
         try
@@ -101,7 +94,6 @@ public static class AiFfmpeg
         return ok;
     }
 
-    /// <summary>Container duration in seconds from FFmpeg's banner, or 0 when it cannot be read.</summary>
     public static async Task<double> ProbeDurationSecAsync(string ffmpegPath, string videoPath, CancellationToken ct)
     {
         try
@@ -121,7 +113,6 @@ public static class AiFfmpeg
         }
     }
 
-    /// <summary>AIELIM_03 — true when FFmpeg's banner lists an audio stream (false also when it cannot be read).</summary>
     public static async Task<bool> HasAudioStreamAsync(string ffmpegPath, string videoPath, CancellationToken ct)
     {
         try
@@ -153,10 +144,6 @@ public static class AiFfmpeg
              + double.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture);
     }
 
-    /// <summary>
-    /// Mono 16-bit PCM at <paramref name="sampleRate"/> Hz into <paramref name="destinationRaw"/>. The time limit
-    /// grows with the video (a minute of budget per hour of footage, at least 60 s). False when it fails.
-    /// </summary>
     public static async Task<bool> DumpMonoPcmAsync(string ffmpegPath, string videoPath, double durationSec, int sampleRate, string destinationRaw, CancellationToken ct)
     {
         try

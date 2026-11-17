@@ -6,16 +6,10 @@ using System.Threading.Tasks;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>A moment where something appeared in a normally still part of the screen (a kill feed line, a banner).</summary>
-public readonly record struct OverlayEvent(double TimeSec, double Score);
+public readonly record struct PopupRegion(double X, double Y, double W, double H);
 
-/// <summary>
-/// KILLGATE_01 (docs/01 TL-AITRACKING, AIELIM_06) — game-agnostic "something popped up on the HUD" signal. The video
-/// is read once as small grey frames. Pixels that barely change over the whole video are the STILL part of the screen
-/// (HUD, kill-feed area, letterbox); the live picture is not. An event is a step where at least
-/// <see cref="MinEventFraction"/> of the still pixels change at once, but not more than <see cref="MaxEventFraction"/>
-/// (that is a menu, a cut or a death screen, not an overlay). Events closer than <see cref="MergeSec"/> keep the strongest.
-/// </summary>
+public readonly record struct OverlayEvent(double TimeSec, double Score, PopupRegion? Region = null);
+
 public static class HudOverlayEventDetector
 {
     public const int Width = 256;
@@ -30,11 +24,26 @@ public static class HudOverlayEventDetector
     public const double MaxEventFraction = 0.35;
     public const double MergeSec = 1.5;
     public const double MinStillFraction = 0.03;
+    public const string RegionTag = "AIKILLCROP_01";
+    public const double RegionTrim = 0.10;
+
+    public static PopupRegion? RegionOf(IReadOnlyList<int> changedPixels, int width, int height)
+    {
+        if (changedPixels.Count == 0 || width <= 0 || height <= 0) return null;
+        var xs = new List<int>(changedPixels.Count);
+        var ys = new List<int>(changedPixels.Count);
+        foreach (int p in changedPixels) { xs.Add(p % width); ys.Add(p / width); }
+        xs.Sort();
+        ys.Sort();
+        int lo = (int)Math.Floor((xs.Count - 1) * RegionTrim);
+        int hi = (int)Math.Ceiling((xs.Count - 1) * (1 - RegionTrim));
+        double x0 = xs[lo], x1 = xs[hi] + 1, y0 = ys[lo], y1 = ys[hi] + 1;
+        return new PopupRegion(x0 / width, y0 / height, (x1 - x0) / width, (y1 - y0) / height);
+    }
 
     public static double SampleFps(double durationSec) =>
         durationSec <= 0 ? MaxFps : Math.Min(MaxFps, MaxFrames / durationSec);
 
-    /// <summary>Reads the video at <see cref="SampleFps"/> as grey frames and returns its overlay events.</summary>
     public static async Task<IReadOnlyList<OverlayEvent>> ScanAsync(string ffmpegPath, string videoPath, double durationSec, CancellationToken ct)
     {
         double fps = SampleFps(durationSec);
@@ -63,7 +72,6 @@ public static class HudOverlayEventDetector
         return Detect(frames, fps);
     }
 
-    /// <summary>The pure part: grey frames (all the same size) sampled at <paramref name="fps"/> → events.</summary>
     public static IReadOnlyList<OverlayEvent> Detect(IReadOnlyList<byte[]> frames, double fps)
     {
         if (frames.Count < 3 || fps <= 0) return Array.Empty<OverlayEvent>();
@@ -87,12 +95,13 @@ public static class HudOverlayEventDetector
         for (int i = 1; i < frames.Count; i++)
         {
             byte[] a = frames[i - 1], b = frames[i];
-            int changed = 0;
+            var changedAt = new List<int>();
             foreach (int p in still)
-                if (Math.Abs(a[p] - b[p]) >= ChangeDiff) changed++;
-            double fraction = changed / (double)still.Count;
+                if (Math.Abs(a[p] - b[p]) >= ChangeDiff) changedAt.Add(p);
+            double fraction = changedAt.Count / (double)still.Count;
             if (fraction >= MinEventFraction && fraction <= MaxEventFraction)
-                raw.Add(new OverlayEvent(Math.Round(i / fps, 3), fraction));
+                raw.Add(new OverlayEvent(Math.Round(i / fps, 3), fraction,
+                    pixels == Width * Height ? RegionOf(changedAt, Width, Height) : null));
         }
 
         var merged = new List<OverlayEvent>();
@@ -109,13 +118,6 @@ public static class HudOverlayEventDetector
     }
 }
 
-/// <summary>
-/// KILLGATE_01 — which moments the Kill Tracker asks the AI about, from the loud audio peaks (loudest first) and the
-/// on-screen overlay events. Without overlay events (still screen not found, scan failed) the plan is the old one:
-/// the loudest peaks up to the budget. With them, a loud moment is kept only when an overlay appeared within
-/// <see cref="ConfirmBeforeSec"/>..<see cref="ConfirmAfterSec"/> of it; overlay events with no loud moment near them
-/// are added after (a silent kill), placed <see cref="SilentLeadSec"/> before the overlay appeared.
-/// </summary>
 public static class KillMomentPlanner
 {
     public const double ConfirmBeforeSec = 0.5;
@@ -123,6 +125,21 @@ public static class KillMomentPlanner
     public const double SilentLeadSec = 0.5;
 
     public sealed record Plan(IReadOnlyList<double> Moments, int AudioConfirmed, int AudioDropped, int SilentAdded, bool GateUsed);
+
+    public static PopupRegion? RegionFor(double momentSec, IReadOnlyList<OverlayEvent>? events)
+    {
+        if (events == null) return null;
+        OverlayEvent? best = null;
+        double bestGap = double.MaxValue;
+        foreach (var e in events)
+        {
+            if (e.Region == null) continue;
+            double d = e.TimeSec - momentSec;
+            if (d < -ConfirmBeforeSec || d > ConfirmAfterSec + SilentLeadSec) continue;
+            if (Math.Abs(d) < bestGap) { bestGap = Math.Abs(d); best = e; }
+        }
+        return best?.Region;
+    }
 
     public static Plan Build(IReadOnlyList<double> peaksLoudestFirst, IReadOnlyList<OverlayEvent>? events, int budget)
     {

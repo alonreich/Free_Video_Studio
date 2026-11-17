@@ -3,7 +3,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>VOTIMING_01: one AOT-safe format for projects and crash recovery.</summary>
 public static class VoiceOverTakeJson
 {
     public static JsonArray Write(IEnumerable<VoiceOverTake> takes)

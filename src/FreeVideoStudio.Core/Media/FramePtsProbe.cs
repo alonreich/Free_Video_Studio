@@ -9,29 +9,10 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// FRAMESNAP_01 — CUTS LAND ON REAL FRAME TIMESTAMPS (Video-Merger-Migration.md P2.2).
-///
-/// "Skip the first 6 frames" is only exact when the cut is the presentation time of frame #6 as
-/// the file actually stores it. Seconds computed from a nominal rate drift on 59.94 fps and are
-/// simply wrong on variable-frame-rate captures. So the analyzer reads the first frames' pts once,
-/// in the background, and the cut is that pts.
-///
-/// CLOCK: pts are returned in µs relative to the container's <c>format.start_time</c>. That is the
-/// clock ffmpeg's filters see by default (it offsets every input to start at 0), so a trim at this
-/// value hits exactly that frame.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public static class FramePtsProbe
 {
-    /// <summary>Extra packets read beyond the frames wanted: decoder delay (B-frames) can hold some back.</summary>
     private const int PacketMargin = 16;
 
-    /// <summary>
-    /// Presentation timestamps (µs, sorted, relative to the container start) of at least the first
-    /// <paramref name="frames"/> video frames. Empty on any failure. Never throws.
-    /// </summary>
     public static async Task<IReadOnlyList<long>> ProbeAsync(string ffprobePath, string videoPath, int frames)
     {
         if (frames <= 0) return Array.Empty<long>();
@@ -71,7 +52,6 @@ public static class FramePtsProbe
         }
     }
 
-    /// <summary>Parses ffprobe's JSON (see <see cref="ProbeAsync"/>). Empty on garbage. Never throws.</summary>
     public static IReadOnlyList<long> Parse(string? json)
     {
         if (string.IsNullOrWhiteSpace(json)) return Array.Empty<long>();
@@ -94,10 +74,6 @@ public static class FramePtsProbe
         catch (JsonException) { return Array.Empty<long>(); }
     }
 
-    /// <summary>
-    /// The cut that removes exactly <paramref name="introFrames"/> frames: the pts of the first kept
-    /// frame (index <paramref name="introFrames"/>). Null when there are not enough frames.
-    /// </summary>
     public static long? IntroCutUs(IReadOnlyList<long> pts, int introFrames)
     {
         if (introFrames <= 0) return 0;

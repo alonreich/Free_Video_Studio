@@ -1,4 +1,3 @@
-
 using System;
 using System.ComponentModel;
 using System.IO;
@@ -12,11 +11,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// VOAPPLY_01 / VOCAPTURE_02 / SYS-WINSTATE — VoiceOverWindow Apply &amp; Finish transaction tests.
-/// Verifies single-flight apply, capture settlement, rollback on persistence failure/timeout,
-/// preservation of original takes, and close-guarding while saving is in-flight.
-/// </summary>
 public sealed class VoiceOverApplyTests : IDisposable
 {
     [AvaloniaFact]
@@ -485,7 +479,7 @@ public sealed class VoiceOverApplyTests : IDisposable
 
             var hint = window.HintTextControl;
             Assert.NotNull(hint);
-            Assert.Contains("audit-disk-failure", hint!.Text);
+            Assert.DoesNotContain("audit-disk-failure", hint!.Text);
             Assert.Contains("could not be saved", hint.Text);
         }
         finally

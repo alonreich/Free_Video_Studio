@@ -8,12 +8,6 @@ public partial class MainWindow
     private Infrastructure.CornerMemeOverlayPresenter? _cornerMemes;
     private string _cornerMemeKey = "";
 
-    /// <summary>
-    /// MEMEMODE_01 — corner memes in the main preview. Runs on the playback tick AFTER the cutaway
-    /// director, on the GAMEPLAY clock (<see cref="ViewModels.TimelineViewModel.PreviewSourceToOutputSeconds"/>,
-    /// which never counts memes — 01 TL-OUTPUTTIMELINE double-counting guard). It never pauses,
-    /// seeks or swaps the player.
-    /// </summary>
     private void UpdateCornerMemeOverlay()
     {
         var corners = MemePlacement.CornerOnly(_memePlacements);
@@ -55,7 +49,6 @@ public partial class MainWindow
         _cornerMemes.Update(PreviewOutputSeconds(host.IpcClient.CurrentTime));
     }
 
-    /// <summary>CACHEBOUND_05 — detaches and disposes the corner meme presenter on window close or source change.</summary>
     private void TeardownCornerMemes()
     {
         _cornerMemes?.Dispose();

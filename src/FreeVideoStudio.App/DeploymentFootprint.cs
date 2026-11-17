@@ -13,20 +13,12 @@ internal static class DeploymentFootprint
     public const string UninstallKeyPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\" + UninstallKeyName;
     public const string AppRegistryKeyPath = @"SOFTWARE\Free Video Studio";
 
-    /// <summary>
-    /// NOSPACE_01 — folder and file names on disk never contain spaces. <see cref="DisplayName"/>
-    /// ("Free Video Studio") is what the user READS — title bars, shortcuts, Apps &amp; features.
-    /// Every folder uses <see cref="FreeVideoStudio.Core.Infrastructure.ApplicationPaths.AppDirectoryName"/>.
-    /// Builds before this change installed to the spaced name; <see cref="LegacyInstallFolderName"/>
-    /// is how the installer finds and moves them (InstallDiscovery.FindRoots).
-    /// </summary>
     public const string LegacyInstallFolderName = DisplayName;
 
     public static readonly string InstallFolder = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
         FreeVideoStudio.Core.Infrastructure.ApplicationPaths.AppDirectoryName);
 
-    /// <summary>NOSPACE_01 — where builds before this change were installed.</summary>
     public static readonly string LegacyInstallFolder = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
         LegacyInstallFolderName);
@@ -38,7 +30,6 @@ internal static class DeploymentFootprint
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         FreeVideoStudio.Core.Infrastructure.ApplicationPaths.AppDirectoryName);
 
-    /// <summary>NOSPACE_01 — the spaced machine folder older builds may have left behind.</summary>
     public static readonly string LegacyProgramDataFolder = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         DisplayName);
@@ -51,37 +42,20 @@ internal static class DeploymentFootprint
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         FreeVideoStudio.Core.Infrastructure.ApplicationPaths.AppDirectoryName);
 
-    /// <summary>
-    /// NOSPACE_01 — installer/uninstaller scratch. A SUBFOLDER of <see cref="TempRoot"/> on purpose:
-    /// TempRoot itself is the app's temp directory and holds rescued renders, and this folder is
-    /// deleted wholesale after every install and uninstall.
-    /// </summary>
     public static readonly string TempAppFolder = Path.Combine(TempRoot,
         FreeVideoStudio.Core.Infrastructure.ApplicationPaths.AppDirectoryName);
 
-    /// <summary>
-    /// NOTEMPEXEC_01 — where update downloads (<see cref="UpdateDownloadsRoot"/>) and the staged copy of
-    /// the elevated update worker (<see cref="UpdateStageRoot"/>) live. Antivirus behaviour engines weigh
-    /// "a program in %TEMP% starts an elevated program from %TEMP%" as a dropper pattern; this per-user
-    /// folder is not %TEMP%. It is SEPARATE from <see cref="LocalAppDataFolder"/> on purpose: that folder
-    /// is user data the update transaction itself moves (UserDataUpgrade), and the worker must never run
-    /// from inside a folder the update renames. Scratch only — the uninstaller always removes it.
-    /// </summary>
     public static string UpdatesRoot => FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.DirectoryFor("updates") ?? Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         FreeVideoStudio.Core.Infrastructure.ApplicationPaths.AppDirectoryName + "Updates");
 
-    /// <summary>NOTEMPEXEC_01 — one sub-folder per release tag (DLRESUME_01 resumes inside it).</summary>
     public static string UpdateDownloadsRoot => Path.Combine(UpdatesRoot, "Downloads");
 
-    /// <summary>NOTEMPEXEC_01 / UPGRADEUX_06 — one sub-folder per install run, holding the worker copy.</summary>
     public static string UpdateStageRoot => Path.Combine(UpdatesRoot, "Stage");
 
-    /// <summary>NOTEMPEXEC_01 — the %TEMP% folders used before; still accepted (old updaters) and swept.</summary>
     public static readonly string LegacyUpdateDownloadsRoot = Path.Combine(FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.SystemTempRoot, "FVS_AutoUpdate");
     public static readonly string LegacyUpdateStageRoot = Path.Combine(FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.SystemTempRoot, "FVS_Upgrade");
 
-    /// <summary>NOSPACE_01 — the spaced scratch folder used before this change.</summary>
     public static readonly string LegacyTempAppFolder = Path.Combine(TempRoot, DisplayName);
     public static readonly string InstallReportPath = Path.Combine(TempRoot, "FreeVideoStudio.log");
 
@@ -124,22 +98,6 @@ internal static class DeploymentFootprint
         return args.Length == 0 && !IsRunningFromInstallPath();
     }
 
-    /// <summary>
-    /// ISSUE_02 — directories wiped during an install/upgrade/uninstall.
-    ///
-    /// <paramref name="includeUserData"/> is THE "preserve my settings" switch. It must gate
-    /// EVERY location that holds user state, not just ProgramData.
-    ///
-    /// HISTORY (the bug this parameter fixes): the old signature only gated ProgramData, while
-    /// RoamingAppData, LocalAppData and %APPDATA%\FreeVideoStudio were purged
-    /// unconditionally. So a user who answered "Yes, preserve my settings" during an upgrade
-    /// still silently lost everything stored in those roots (butler-ribbon dismissals, the
-    /// zoom-tutorial counter, and anything else that lands there). If you add a new user-state
-    /// directory, it belongs INSIDE the includeUserData block — nowhere else.
-    ///
-    /// TempAppFolder is deliberately outside the switch: it is scratch space, never user state,
-    /// and stale staging files must always go.
-    /// </summary>
     public static IEnumerable<string> GetDirectoryPurgeTargets(bool includeInstallFolder, bool includeUserData)
     {
         if (includeInstallFolder)
@@ -181,27 +139,6 @@ internal static class DeploymentFootprint
         yield return LocalAppDataFolder;
     }
 
-    /// <summary>
-    /// Folders the uninstaller sweeps for our .lnk files.
-    ///
-    /// ⚠️ THE DESKTOP ENTRIES MATTER MORE THAN THEY LOOK. ⚠️
-    /// <c>Environment.GetFolderPath(SpecialFolder.DesktopDirectory)</c> reads a CACHED value that
-    /// goes stale in exactly the case the installer now handles: OneDrive "Backup / Manage folders"
-    /// redirecting Desktop into <c>%USERPROFILE%\OneDrive\Desktop</c> (or a business variant such
-    /// as <c>OneDrive - Contoso\Desktop</c>), and Group Policy redirection to a UNC share. On those
-    /// machines the install writes the icon to the REDIRECTED desktop while an
-    /// <c>Environment.GetFolderPath</c>-only sweep looks at the OLD one — so uninstalling left a
-    /// dead shortcut behind, pointing at a deleted executable.
-    ///
-    /// The shell-resolved paths from <see cref="KnownFolders"/> are therefore probed FIRST, with
-    /// the Environment values kept afterwards as a belt-and-braces fallback (they are also what a
-    /// pre-redirection install would have used, so both must be cleaned). Duplicates are filtered.
-    ///
-    /// NOTE ON ELEVATION: the cleanup worker runs elevated and may be a different account, so its
-    /// per-user probe can resolve to the ADMINISTRATOR's desktop. That is why the Public desktop is
-    /// always included, and why the uninstaller cannot be relied upon as the only cleanup path for
-    /// a redirected per-user icon. It is best-effort by nature.
-    /// </summary>
     public static IEnumerable<string> GetShortcutSearchFolders()
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

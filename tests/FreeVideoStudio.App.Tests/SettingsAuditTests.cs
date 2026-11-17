@@ -15,10 +15,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// Settings audit (SETDEFAULTS_01, SETTINGSVM_01, SETKEYS_01, SETLOUD_01, SETZOOM_01, SETGAME_01,
-/// SETBACKUP_01, SETUNSAVED_01, SETRESTORE_01, SETSAFEONE_01, SETDECLUTTER_01).
-/// </summary>
 public sealed class SettingsAuditTests
 {
     private static SettingsViewModel NewVm(AppSettings? s = null) =>
@@ -26,7 +22,6 @@ public sealed class SettingsAuditTests
         {
             MusicRootProvider = () => "M", MemeDefaultProvider = () => "D", DownloadsProvider = () => "DL",
         };
-
 
     [Theory]
     [InlineData(CheckboxDefaultBehavior.AlwaysOn, false, true)]
@@ -61,7 +56,6 @@ public sealed class SettingsAuditTests
         Assert.Equal(1.1, d.StartSpeed);
     }
 
-    /// <summary>SETSTARTONE_01 — one choice for how new videos start; "With my defaults" fixes every value.</summary>
     [Fact]
     public void StartChoice_LikeLast_Or_WithMyDefaults()
     {
@@ -87,17 +81,15 @@ public sealed class SettingsAuditTests
         Assert.Equal(CheckboxDefaultBehavior.AlwaysOff, saved.Defaults.PortraitBehavior);
     }
 
-    /// <summary>FREEZESFX_02 — the Speed Editor plays the freeze sound when its preview holds a frame, and stops it.</summary>
     [Fact]
     public void SpeedEditor_PlaysTheFreezeSound_DuringAHold()
     {
         string editor = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "GranularSpeedEditorWindow.axaml.cs"));
-        Assert.Contains("_freezeSound.Play(_edit.FreezeDurationS", editor);
+        Assert.Contains("_freezeSound.PlayHold(_edit.FreezeDurationS", editor);
         Assert.True(System.Text.RegularExpressions.Regex.Matches(editor, @"_freezeSound\.Stop\(\);").Count >= 2);
         Assert.Contains("_freezeSound.Dispose();", editor);
     }
 
-    /// <summary>SETABOUTSAVE_01 — a SAVE from Settings opened via About refreshes the main window and the merger.</summary>
     [Fact]
     public void AboutMenus_RefreshAfterSave_LikeTheSettingsMenu()
     {
@@ -108,7 +100,6 @@ public sealed class SettingsAuditTests
         Assert.Contains("ShowAboutAsync(this)) SyncFromSavedSettings();", merger);
     }
 
-    /// <summary>SETNAMEWARN_01 — the file-name boxes say what SAVE will do to the typed name.</summary>
     [Fact]
     public void NameWarning_ExplainsEmptyInvalidAndReplacedNames()
     {
@@ -118,7 +109,6 @@ public sealed class SettingsAuditTests
         Assert.Contains("replaced", SettingsViewModel.NameWarning("my:clip", "FreeVideoStudio"));
     }
 
-    /// <summary>SETLASTALWAYS_01 — exports made while a row was fixed still count when it is switched to "Same as last time".</summary>
     [Fact]
     public void RememberChoices_RecordsEvenWhileRowsAreFixed()
     {
@@ -158,7 +148,6 @@ public sealed class SettingsAuditTests
         Assert.Contains("RememberChoices", export);
     }
 
-
     [Fact]
     public void ConfirmGranularDeleteSegment_IsReadByTheSpeedEditor()
     {
@@ -167,7 +156,6 @@ public sealed class SettingsAuditTests
         string xaml = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "GranularSpeedEditorWindow.axaml"));
         Assert.DoesNotContain("This cannot be undone", xaml);
     }
-
 
     [Fact]
     public void WriteTo_CopiesPendingValues_AndLeavesForeignFieldsAlone()
@@ -235,7 +223,6 @@ public sealed class SettingsAuditTests
         Assert.Equal("", vm.GeminiApiKey);
     }
 
-
     [Fact]
     public void Backup_NeverContainsKeys_AndImportRestoresPendingValues()
     {
@@ -258,7 +245,6 @@ public sealed class SettingsAuditTests
         Assert.NotNull(other.ImportBackupJson("not json"));
     }
 
-
     [Fact]
     public void KeyBinds_PlainAndCtrlKeysDoNotClash_ButSameGroupDoes()
     {
@@ -276,7 +262,6 @@ public sealed class SettingsAuditTests
         Assert.Equal(Key.D, vm.P.KeyBinds.FineSeekForward);
     }
 
-
     [Fact]
     public void LoudMoments_OneChoice_KeepsMasterSwitchConsistent()
     {
@@ -289,8 +274,6 @@ public sealed class SettingsAuditTests
         Assert.False(vm.P.Defaults.AutoSpikeFlattening);
     }
 
-
-    /// <summary>SETZOOMONE_01 — the fast-move zoom follows the zoom strength and never exceeds it or 2.0x.</summary>
     [Fact]
     public void FastMoveZoom_FollowsTheZoomStrength()
     {
@@ -324,7 +307,6 @@ public sealed class SettingsAuditTests
         Assert.Equal("gemini-test-model", vm.GeminiTestModel);
     }
 
-
     [AvaloniaFact]
     public void RestoreTab_UpdatesBoundControls()
     {
@@ -338,8 +320,6 @@ public sealed class SettingsAuditTests
         win.Close();
     }
 
-
-    /// <summary>SETKEYONE_01 — one key box: the company comes from the key, and a keyless company in use switches to it.</summary>
     [Fact]
     public void AddKey_RecognisesTheCompany_AndSwitchesAKeylessDefault()
     {
@@ -359,7 +339,6 @@ public sealed class SettingsAuditTests
         Assert.Equal(AiVendor.Anthropic, vm.DefaultAi.Vendor);
     }
 
-    /// <summary>SETAIONE_01 — one company serves every feature: saved overrides are dropped.</summary>
     [Fact]
     public void OneAiCompany_ServesEveryFeature()
     {
@@ -376,7 +355,6 @@ public sealed class SettingsAuditTests
         Assert.Equal(AiVendor.OpenAI, vm.P.GetUsageConfig(AiUsage.Commentary).Vendor);
     }
 
-    /// <summary>SETNOCONSENTUI_01 — Settings no longer touches the AI permission flags.</summary>
     [Fact]
     public void Save_LeavesAiPermissionsAlone()
     {
@@ -434,7 +412,6 @@ public sealed class SettingsAuditTests
         Assert.All(unknown.EncoderItems, i => Assert.True(i.IsAvailable));
     }
 
-    /// <summary>SETSAFEONE_01 — one safety switch: ON asks only before what Ctrl+Z cannot undo.</summary>
     [Fact]
     public void SafetySwitch_AsksOnlyBeforeWhatCannotBeUndone()
     {
@@ -450,7 +427,6 @@ public sealed class SettingsAuditTests
         Assert.False(SettingsViewModel.AsksWhenOn(nameof(AppSettings.ConfirmCropToolDelete)));
     }
 
-    /// <summary>SETUPDATEONE_01 / SETCLICKONE_01 / SETSOUNDONE_01 / SETFOLDERONE_01 — each one control drives its stored fields.</summary>
     [Fact]
     public void OneControlEach_DrivesTheStoredFields()
     {

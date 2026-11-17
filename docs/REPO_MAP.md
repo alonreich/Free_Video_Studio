@@ -1,7 +1,13 @@
-﻿# REPOSITORY MAP  {#GOV-REPOMAP-FILE}
+# REPOSITORY MAP  {#GOV-REPOMAP-FILE}
 
 Where things live. Paths are relative to the repository root. Rules and reading order: [`README.md`](README.md) §0.
 File → spec routing: [`INDEX.md`](INDEX.md) §1. Keep this map in step with the code (README §0.3 rule 3).
+
+Session lifecycle:    new video over unsaved edits -> three-way question (NEWVIDEOGUARD_01, MainWindow.Project.cs);
+                      after PROCESS / MERGE with no edit since -> close without asking, next start empty
+                      (DONECLEAN_01: MainWindow.Project.cs, VideoMergerWindow.Session.cs); crash restore keeps playhead,
+                      kill marks and audio choices (RECOVERYFULL_01: MainWindow.Recovery.cs / MainWindow.Restore.cs).
+                      Spec: docs/05 SYS-RECOVERY, docs/06 NEWVIDEOGUARD_01.
 
 ```text
 Solution:             .\FreeVideoStudio.sln
@@ -12,11 +18,11 @@ Core tests:           .\tests\FreeVideoStudio.Core.Tests\FreeVideoStudio.Core.Te
 FvsVerify tests:      .\tests\FvsVerify.Tests\FvsVerify.Tests.csproj (sentinel checker; CI)
 Media checks:         .\tests\MediaPipelineChecks (console: real FFmpeg/GPU export checks; README.md inside)
 Voice-over smoke:     .\tests\VoiceOverNativeSmoke (console: native voice capture smoke)
-AI bake-off tool:     .\tools\AiBakeOff\AiBakeOff.csproj (AIBAKEOFF_01: developer-only console comparing AI vendors on subject
+AI bake-off tool:     .\developer_tools\AiBakeOff\AiBakeOff.csproj (AIBAKEOFF_01: developer-only console comparing AI vendors on subject
                       discovery, dense tracking and HUD detection; keys from environment variables only;
                       not in the solution, not shipped)
 A/V regression gate:  .\tests\run-av-tests.cmd -> .\tests\FreeVideoStudio.AvRegression.Tests (AVREG_01, section 0.3a):
-                      38 scenarios S01-S38 on the real player (PlayerRig/PlaybackProbe) and real exports
+                      45 scenarios S01-S45 on the real player (PlayerRig/PlaybackProbe) and real exports
                       (ExportRig/Verify/MergerRig) of generated marker media; output in logs\AV_Results (git-ignored).
                       TestHarness.ps1 validates nonempty, complete TRX results and required scenarios; skipped tests fail the gate.
                       TestHarness.Tests.ps1 guards parsing, exclusive runs and allowlisted output cleanup.
@@ -41,13 +47,27 @@ Local packaging:      .\dev_build.cmd
 CI:                   .\.github\workflows\ci.yml (COMP-CI, Release records), lfs-guard.yml (DIST-REPOWEIGHT),
                       upgrade-smoke.yml (UPGRADESMOKE_01). Specs: docs/08 COMP-CI, docs/09 DIST-CIWATCH.
 Root config:          .\version.txt, .\Directory.Build.props, .\.agignore
-Developer helpers:    .\developer_tools\ BuildLog.ps1, Find_and_Remove_Comments.py, Manual_UnInstall.bat,
-                      Redundant_Code_Finder.py, SetConsoleFont.ps1 (developer-only; not shipped; no spec)
+Comment removal:      .\developer_tools\CommentRemover\CommentRemover.csproj (folder name differs from the launcher
+                      so tab completion of Fin... finds the .cmd)
+                      (NOCOMMENTS_02/03; run: .\developer_tools\Find_and_Remove_Comments.cmd from anywhere or double-click it
+                      (launcher: cd to the repo root, dotnet run -c Release, pauses only when opened from Explorer,
+                      returns the tool's exit code); no arguments; lists every comment (full path, line, text) and asks Y/N
+                      before writing; exits 0 done or nothing to do / 1 refused / 2 answered N;
+                      all code languages + extra blank lines; Program.cs, Runner.cs, TextRewriter.cs, Languages.cs,
+                      CommentScanner.cs (C#), YamlLanguage.cs, ExternalTokenizers.cs (PowerShell/Python);
+                      not in the solution, not shipped; removed text in .\docs\CODE_NOTES_App.md, CODE_NOTES_Core.md,
+                      CODE_NOTES_Tests.md, CODE_NOTES_Tools.md; tests ArchitectureRuleTests.NoCSharpFileContainsAComment,
+                      .\tests\FreeVideoStudio.App.Tests\FvsCommentsToolTests.cs)
+Developer helpers:    .\developer_tools\ holds EVERY developer-only tool (DEVTOOLS_01; there is no tools\ folder):
+                      BuildLog.ps1, Manual_UnInstall.bat, Redundant_Code_Finder.py, SetConsoleFont.ps1,
+                      Pull_Code_files.py, AiBakeOff\, Find_and_Remove_Comments.cmd -> CommentRemover\, local_ai_pack\
+                      (developer-only; not shipped; no spec)
 Verification tool:    .\build\FvsVerify\FvsVerify.csproj; .\dev.cmd verify checks without launch cleanup (DEVVERIFY_01)
 Sentinel registry:     .\build\sentinels.txt
 AI source exporter:   .\developer_tools\Pull_Code_files.py (CODEEXPORT_01; docs/05 SYS-CODEEXPORT).
                       At most ten attachments in a new dated Downloads\free_video_studio subfolder;
-                      full text/index, installer and tests, explicit omissions and secret filtering.
+                      full text/index, installer and tests, explicit omissions and secret filtering;
+                      binary placeholder blocks, git-ignored paths skipped, CODE_NOTES opt-in (CODEEXPORT_02).
                       Known legacy song attribution decoded with its declared encoding; other errors reported.
                       Tests: .\tests\DeveloperTools.Tests\test_pull_code_files.py (Python unittest; CI).
 Codec binaries:       .\binaries\ (ffmpeg/ffprobe/mpv, libmpv-2 + av* DLLs; LFS; search order 03 FFM-BINPATH;
@@ -131,6 +151,7 @@ Add Music wizard:     .\src\FreeVideoStudio.App\MusicWizardWindow.axaml(.cs) + .
                       + .AiAutoFit.cs (cloud AI song auto-fit: AI picks a song by NUMBER, start point measured
                       locally from the song's loudness, visible steps + seconds counter + cancel, 45 s / 120 s
                       limits — AIMUSIC_HONEST_01 / AIMUSIC_START_01 / AIMUSIC_PROGRESS_01) + .Scan.cs (folder scan & probes) +
+                      .Controls.cs + .Merger.cs (Merger-launched wizard) +
                       ViewModels\MusicWizardViewModel.cs (bound state). Two steps: Choose music -> Fit & mix
                       (WIZ2STEP_01). One song list, every song with its chosen part (PLAYLIST_01, MUSICWIN_01),
                       laid out by Core\Media\MusicBedPlan.cs with the export's crossfade from
@@ -142,22 +163,33 @@ Add Music wizard:     .\src\FreeVideoStudio.App\MusicWizardWindow.axaml(.cs) + .
 Meme picker:          .\src\FreeVideoStudio.App\Controls\MemePickerWindow.axaml(.cs) (MEMEPICK_01..05)
                       + Controls\MemePlacementPreview.cs (live preview, drag position) + ViewModels\MemeChoiceViewModel.cs
                       + Infrastructure\MemePickerPrefsStore.cs (favourites, recent, last choice); docs/04 UI-MEMESELECT.
-Meme audit (2026-10-17, MEMEAUDIT_01): Core\Media\MemeTransitions.cs (full-screen cut/fade/zoom, corner fade/slide),
+Memes (MEMEAUDIT_01): Core\Media\MemeTransitions.cs (full-screen cut/fade/zoom, corner fade/slide),
                       GranularSpeedEditorWindow.Memes.cs / .MemeBands.cs (editor memes, corner drag, list, keys),
                       MainWindow.Memes.cs (main-screen meme as a placement, markers, music question);
                       MainWindow.QuickStart.cs (start screen: drop-card click, AI Kill Tracker switch, AI setup tip; docs/04 UI-AIEASE);
                       tests: Core MemeAuditTests.cs, App MemeAuditAppTests.cs. Specs: docs/01 TL-MEME, docs/03 FFM-MEMECONCAT /
                       FFM-MEMECORNER / FFM-MEMEPREVIEW, docs/04 UI-MEMESELECT, docs/06 PROJ-SCHEMA (schema 7).
-Freeze sound:         Core/Media/FreezeSoundEffect.cs (slow-motion boom + music dip, FREEZESFX_01, docs/02 AUD-FREEZESFX);
-                      Services/FreezeSoundPreview.cs plays it in the Speed Editor preview (FREEZESFX_02).
+Speed Editor desktop: tests/DesktopPreviewSmoke/SpeedEditorSmokeApp.cs (--speed-editor; real GPU preview of the Speed Editor: plays, closes, main plays after; PREVIEWSPEED_02).
+Freeze sound:         Core/Media/FreezeSoundEffect.cs + Core/Assets/FreezeSounds/*.wav (Church_Bell with ring-out, default; Cinematic_Dramatic_Slow-Down
+                      spliced to the hold; picked in Settings › Sound & Music; one render for export and preview; music duck/carve/underwater,
+                      FREEZESFX_05 / FREEZEMUSIC_01, docs/02 AUD-FREEZESFX; gate AV S44-S45);
+                      Services/FreezeSoundPreview.cs plays it in the Speed Editor preview and the Settings Play button (FREEZESFX_02/05);
+                      Core/Media/VideoLoudnessCache.cs keeps the uploaded video's loudness so the sound sits at 83 % of it (FREEZELEVEL_01);
+                      MainWindow.FreezeSound.cs plays it in the Main App's live preview (FREEZEPARITY_01);
+                      MusicWizardWindow.FreezeSound.cs and VideoMergerWindow.EdlPreview.cs play it in Add Music and the Video Merger (FREEZEPARITY_02).
+UI stall watchdog:    App/Infrastructure/UiStallWatchdog.cs + Core/Infrastructure/BlockingCallTracker.cs → <Logs>\ui_stalls.log (UIWATCHDOG_01, docs/05).
 Voiceover gain:       Core/Media/VoiceOverLevel.cs; Controls/VoiceOverGainSlider.cs + VoiceOverWindow.Volume.cs.
+Preview layers:       Controls/MusicBedPreviewPlayer.cs (music in Main/Speed Editor/Voice-Over previews), Models/EditorPreviewLayers.cs,
+                      Core/Media/BedPreviewFollower.cs, AudioPlayerClock.cs, PreviewSpeedGovernor.cs, PreviewTimeMap.cs
+                      (PREVIEWLAYERS_01 / PREVIEWSPEED_01 / MUSICSYNC_03, docs/02 AUD-PREVIEWSYNC); gate AV S39-S43
+                      (tests/FreeVideoStudio.AvRegression.Tests/Scenarios/S39_S43_*.cs, Infrastructure/Screens.cs).
                       0–150% across previews/export; schema 8 take gain (VOLEVEL_01, docs/02 AUD-VOICEOVER, docs/06 PROJ-SCHEMA).
 AI features:          Services\Ai*.cs (AiVisionProviders.cs, AiHttpHelper.cs, AiCostEstimator.cs, AiMusicAutoFitService.cs,
                       AiViralPostService.cs, AiEliminationTrackerService.cs, AiUsageMeter.cs, AiJsonSchema.cs, AiFfmpeg.cs,
                       AiAnswerGuard.cs, AiReasoningPolicy.cs, AiRunApproval.cs, AiPreflight.cs, AiResultCache.cs,
-                      AiAnswerDiskStore.cs, AiDiagnostics.cs, AiKeyHealth.cs (AIKEYHEALTH_01), ChatGptAuth.cs + ChatGptPlanTransport.cs (Sign in with ChatGPT, CHATGPTSIGNIN_01) — audit 2026-11-13, AIAUDIT_04, docs/05 SYS-AISETTINGS §7.7;
-                      audit 2026-11-14, AIAUDIT_05, docs/05 SYS-AIAUDIT5, tests AiAudit5Tests.cs),
-                      Core\Diagnostics\SecretRedactor.cs, IAiVisionProvider.cs, CommentaryPersonality.cs, SecretProtector.cs (DPAPI, KEYPROTECT_01);
+                      AiAnswerDiskStore.cs, AiDiagnostics.cs, AiKeyHealth.cs (AIKEYHEALTH_01), AiAccountFix.cs (AIFIXFLOW_01), AiStatusLine.cs (AISTATUSLINE_01), AiKeyStartupCheck.cs (AIKEYSTARTUP_01), AiThinkingCalibration.cs (AITHINKCAL_01), ChatGptAuth.cs + ChatGptPlanTransport.cs (Sign in with ChatGPT, CHATGPTSIGNIN_01); AIAUDIT_04 docs/05 SYS-AISETTINGS §7.7;
+                      AIAUDIT_05 docs/05 SYS-AIAUDIT5, tests AiAudit5Tests.cs; AIAUDIT_06 docs/05 SYS-AIAUDIT6: AiFrameCrop.cs (pop-up close-ups, off unless FVS_AI_KILLCROP=1), AiUsageReport.cs (estimate vs used; developer_tools\AiBakeOff --usage-report), tests AiAudit6Tests.cs + Core PopupRegionTests.cs; AIQA_07 docs/05 SYS-AIQA7: tests AiQaAudit7Tests.cs: refusals, ChatGPT stream end, decimal boxes, song tags, Local AI processor fallback); AIQA_08 docs/05 SYS-AIQA8: tests AiQaAudit8Tests.cs: ChatGPT-plan refusals and in-stream failures, unrecognised commentary answers (open defects, tests fail until fixed),
+                      Core\Diagnostics\SecretRedactor.cs; Services\IAiVisionProvider.cs, Services\CommentaryPersonality.cs, Infrastructure\SecretProtector.cs (DPAPI, KEYPROTECT_01);
                       Core\Media\Caption*.cs. Vendors Gemini / Claude / OpenAI; default models: AIMODELS_02.
                       Canonical feature map + tags: docs/05 SYS-AISETTINGS §7 (AIAUDIT_01).
                       Specs: 01 TL-AITRACKING / TL-AIHUD / TL-CAPTIONS, 02 AUD-MUSICWIN, 03 FFM-CAPTIONS,
@@ -168,8 +200,8 @@ Local AI (optional):  Core\LocalAi\ (OrtRuntime.cs ONNX Runtime C API, LocalAiPa
                       Sam2BoxTracker.cs, LocalSubjectTracker.cs, LocalTrackingMath.cs), Core\Media\SceneCutDetector.cs,
                       RawVideoFrameReader.cs, HudOverlayEventDetector.cs (Kill Tracker on-screen check);
                       Services\LocalAiPackService.cs, LocalTrackingService.cs; Controls\SettingsWindow.LocalAi.cs,
-                      pack builder developer_tools\local_ai_pack\ (export_sam2_onnx.py,
-                      build_pack.py). Installed pack: %LocalAppData%\FreeVideoStudio\LocalAi\v1.
+                      pack builder developer_tools\local_ai_pack\ (Make_Local_AI_Pack.cmd -> make_pack.ps1,
+                      export_sam2_onnx.py, build_pack.py; output in out\, git-ignored, used by the A/V gate). Installed pack: %LocalAppData%\FreeVideoStudio\LocalAi\v1.
                       Specs: 01 TL-LOCALTRACK, 05 SYS-LOCALAI, 09 DIST-LOCALAIPACK.
 AI ease of use:       Controls\AiZoomStartWindow.cs (the one AI Smart Zoom start question), Controls\DialogChrome.cs (title bar for
                       code-built dialogs). Spec: 04 UI-AIEASE.

@@ -6,11 +6,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// Regression tests covering Core AI audit fixes: portrait trajectory panning range,
-/// trajectory JSON caching and trimStartSec offset in ZoomPreviewSimulator, inline-meme
-/// caption clipping in MergerWorker, and centralized secret redaction.
-/// </summary>
 public sealed class AiAuditCoreRegressionTests
 {
     [Fact]

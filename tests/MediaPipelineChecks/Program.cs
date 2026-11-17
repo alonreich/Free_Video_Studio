@@ -856,7 +856,7 @@ await Check("Export errors: missing encoder classification", async () =>
     collector.AddStderrLine("Error initializing output stream 0:0 -- Error while opening encoder for output stream #0:0 - maybe incorrect parameters such as bit_rate, rate, width or height");
     var attempt = new ExportAttemptIdentity { AttemptIndex = 1, Operation = "SinglePassEncode", Encoder = "h264_nvenc_test" };
     var failure = FfmpegErrorClassifier.Classify(ExportStage.Encoding, attempt, processExitCode: 1, processStartException: null, isTimeout: false, isCancellation: false, collector: collector);
-    
+
     Require(failure.Category == ExportFailureCategory.MissingEncoder, $"Expected MissingEncoder, got {failure.Category}");
     Require(failure.Summary.Contains("encoder", StringComparison.OrdinalIgnoreCase), $"Unexpected summary: {failure.Summary}");
     Require(failure.SpecificCause != null && failure.SpecificCause.Contains("Unknown encoder", StringComparison.OrdinalIgnoreCase), $"SpecificCause was {failure.SpecificCause}");

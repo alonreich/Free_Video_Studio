@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -7,22 +6,6 @@ using Avalonia.Controls;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// Legacy WM_DROPFILES fallback so Explorer drag &amp; drop always reaches the app.
-///
-/// WHY THIS EXISTS: Avalonia registers an OLE drop target per window (that is what
-/// the DragDrop.AllowDrop / DragDrop.DropEvent XAML plumbing uses). OLE drag &amp; drop
-/// from Explorer is silently blocked by Windows UIPI whenever this process runs at a
-/// higher integrity level than Explorer (e.g. the user launched the exe or a dev
-/// script "as administrator"). The result is "drag &amp; drop does nothing".
-///
-/// This helper attaches a Win32 subclass to the window, opts the window in to the
-/// legacy shell drop messages (ChangeWindowMessageFilterEx for WM_DROPFILES,
-/// WM_COPYDATA and WM_COPYGLOBALDATA) and calls DragAcceptFiles. When OLE works,
-/// Explorer uses the OLE path and WM_DROPFILES never fires — so the two mechanisms
-/// never double-handle a drop. When OLE is blocked, Explorer falls back to the
-/// legacy path and the drop still arrives here.
-/// </summary>
 public static class Win32FileDropInterop
 {
     private const uint WM_DROPFILES = 0x0233;
@@ -55,10 +38,6 @@ public static class Win32FileDropInterop
 
     private static readonly List<SubclassProc> _keepAlive = new();
 
-    /// <summary>
-    /// Attaches the WM_DROPFILES fallback to <paramref name="window"/>. The callback
-    /// is invoked on the UI thread with the full list of dropped file paths.
-    /// </summary>
     public static void Attach(Window window, Action<string[]> onFilesDropped)
     {
         if (!OperatingSystem.IsWindows()) return;

@@ -1,5 +1,4 @@
-﻿
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -31,20 +30,14 @@ namespace FreeVideoStudio.App.Controls
         public event EventHandler<int>? ValueChanged;
         public event EventHandler<int>? ValueChangeCompleted;
 
-
         private enum WheelPhase { Idle, Dragging, Momentum, Settling }
         private WheelPhase _phase = WheelPhase.Idle;
 
-        /// <summary>Dial speed in INDEX UNITS PER SECOND — never pixels. One unit = one detent.</summary>
         private double _velocity;
         private double _settleTarget;
 
-        /// <summary>While the spring runs, the reported value is pinned to the detent being
-        /// approached, so an overshoot cannot flicker the readout to the neighbouring tick.</summary>
         private bool _valueLocked;
 
-        /// <summary>An interaction is in flight; <see cref="ValueChangeCompleted"/> fires once,
-        /// when the dial actually stops moving.</summary>
         private bool _interactionPending;
 
         private double _lastMouseX;
@@ -67,9 +60,6 @@ namespace FreeVideoStudio.App.Controls
         private const double SettleRestPosition = 0.004;
         private const double SettleRestVelocity = 0.12;
 
-        /// <summary>The spring is integrated semi-implicitly at a fixed sub-step. A dropped UI
-        /// frame would otherwise hand the integrator a dt large enough to go unstable and fling
-        /// the dial off its range.</summary>
         private const double MaxIntegrationStep = 1.0 / 240.0;
 
         private const double EdgeOverscroll = 0.28;
@@ -86,14 +76,6 @@ namespace FreeVideoStudio.App.Controls
         private static double SecondsSince(long stamp)
             => (Stamp() - stamp) / (double)System.Diagnostics.Stopwatch.Frequency;
 
-        /// <summary>
-        /// Issue #3: Temporarily suppresses the tooltip to prevent it from popping up
-        /// destructively over the spinner while the user is dragging/scrolling.
-        /// The tooltip is restored after the user stops interacting (with a short delay).
-        /// WHEEL_01: this timer no longer raises ValueChangeCompleted. "The user stopped touching
-        /// it" and "the dial stopped moving" are different moments, and the second one is the one
-        /// callers act on; it is raised from the spring instead.
-        /// </summary>
         private void SuppressTooltipTemporarily()
         {
             if (!_isTooltipSuppressed)
@@ -159,13 +141,6 @@ namespace FreeVideoStudio.App.Controls
             }
         }
 
-        /// <summary>
-        /// WHEEL_01 — the ONE writer of <see cref="_rotation"/>. Derives the reported value from
-        /// the angle unless the spring has pinned it, and pushes every change through
-        /// <see cref="SetAndRaise"/> so the property system (and therefore the TwoWay binding) sees
-        /// it. The old code assigned the `_value` field directly here, which is precisely why the
-        /// bindings were dead and why the release guard mis-fired.
-        /// </summary>
         private void SetRotationInternal(double value)
         {
             double clamped = ClampRotation(value);
@@ -217,13 +192,8 @@ namespace FreeVideoStudio.App.Controls
         private int NearestDetent()
             => (int)Math.Round(Math.Max(_range.min, Math.Min(_range.max, _rotation)));
 
-        /// <summary>The detent the dial is currently headed for — the spring's target while it is
-        /// settling, otherwise whatever is nearest. Wheel and arrow-key steps accumulate from HERE,
-        /// so a quick burst of clicks advances by the number of clicks rather than collapsing into
-        /// one because the dial had not arrived yet.</summary>
         private int PendingDetent()
             => _phase == WheelPhase.Settling ? (int)Math.Round(_settleTarget) : NearestDetent();
-
 
         private void EnsureAnimationTimer()
         {
@@ -325,7 +295,6 @@ namespace FreeVideoStudio.App.Controls
             }
         }
 
-
         protected override void OnPointerPressed(PointerPressedEventArgs e)
         {
             if (!IsEnabled) return;
@@ -375,12 +344,6 @@ namespace FreeVideoStudio.App.Controls
             base.OnPointerMoved(e);
         }
 
-        /// <summary>
-        /// WHEEL_01 — pointer-acceleration curve, units of dial travel per pixel of pointer travel.
-        /// Saturating rather than linear: a linear map either makes precise selection impossible at
-        /// the top end or makes long travel exhausting at the bottom. Exponent &lt; 1 makes the
-        /// response bite early so the dial does not feel inert during ordinary movement.
-        /// </summary>
         private static double DragGainFor(double pointerSpeedPxPerSec)
         {
             double t = pointerSpeedPxPerSec / GainRefSpeedPxPerSec;
@@ -397,9 +360,6 @@ namespace FreeVideoStudio.App.Controls
             base.OnPointerReleased(e);
         }
 
-        /// <summary>Capture can be taken away (another control grabs it, the window deactivates).
-        /// Treat it exactly like a release, or the dial is stranded mid-drag with a live timer and
-        /// a value that never commits.</summary>
         protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
         {
             if (_phase == WheelPhase.Dragging) EndDrag();
@@ -441,8 +401,6 @@ namespace FreeVideoStudio.App.Controls
             base.OnPointerWheelChanged(e);
         }
 
-        /// <summary>Every discrete step (wheel, arrow key, Home/End) lands through the same spring
-        /// as a drag, so the dial behaves identically however it was moved.</summary>
         private void StepToDetent(int detent)
         {
             _velocity = 0;
@@ -497,9 +455,6 @@ namespace FreeVideoStudio.App.Controls
             base.OnKeyDown(e);
         }
 
-        /// <summary>WHEEL_01 — leaving the control no longer cancels the drag; the pointer is
-        /// captured, so the gesture legitimately continues outside the bounds. Only the cursor is
-        /// restored when the pointer leaves while idle.</summary>
         protected override void OnPointerExited(PointerEventArgs e)
         {
             if (_phase != WheelPhase.Dragging)
@@ -514,7 +469,7 @@ namespace FreeVideoStudio.App.Controls
             if (IsEnabled) Cursor = new Cursor(StandardCursorType.Hand);
             base.OnPointerEntered(e);
         }
-        
+
         private static readonly System.Collections.Generic.Dictionary<(string, Color, Color), (FormattedText normal, FormattedText shadow)> _textCache = new();
         private static readonly Typeface _labelTypeface = new Typeface("Segoe UI", FontStyle.Normal, FontWeight.Bold);
         private LinearGradientBrush _rimGrad = BuildRimGrad(Color.Parse("#15202b"), Color.Parse("#3e5871"));
@@ -553,11 +508,6 @@ namespace FreeVideoStudio.App.Controls
             }
         };
 
-        /// <summary>
-        /// ISSUE_10 — pulls every chrome colour for the CURRENT ThemeVariant. Any token that is
-        /// missing simply leaves the existing (Dark) value in place, so a broken resource
-        /// dictionary degrades to the old look rather than to an invisible control.
-        /// </summary>
         private void RefreshThemeBrushes()
         {
             Color Tok(string key, Color fallback)
@@ -636,15 +586,15 @@ namespace FreeVideoStudio.App.Controls
             double h = Bounds.Height;
             double cx = w / 2;
             double cy = h / 2;
-            
+
             var rect = new Rect(0, 0, w, h);
-            
+
             context.DrawRectangle(_rimGrad, _rimPen, rect, 6, 6);
-            
+
             var innerRect = rect.Deflate(3);
-            
+
             context.DrawRectangle(_faceGrad, _innerPen, innerRect, 4, 4);
-            
+
             using (context.PushClip(innerRect))
             {
                 for (int i = _range.min - 5; i <= _range.max + 5; i++)
@@ -654,7 +604,7 @@ namespace FreeVideoStudio.App.Controls
                     double ribOpacity = Math.Pow(Math.Cos(ribAngle), 2.0);
                     double ribX = cx + Math.Sin(ribAngle) * (w * 0.85);
                     double ribW = Math.Max(1.0, 5.0 * Math.Pow(ribOpacity, 2.5));
-                    
+
                     var ribGrad = new LinearGradientBrush
                     {
                         StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
@@ -666,34 +616,34 @@ namespace FreeVideoStudio.App.Controls
                             new GradientStop(Color.FromArgb((byte)(130 * ribOpacity), 0, 20, 10), 1.0)
                         }
                     };
-                    
+
                     var ribRect = new Rect(ribX - ribW / 2, innerRect.Top, ribW, innerRect.Height);
                     context.DrawRectangle(ribGrad, null, ribRect);
                 }
-                
+
                 var shadowRect = innerRect.Deflate(1);
                 context.DrawRectangle(_shadowGrad, null, shadowRect, 4, 4);
-                
+
                 for (int i = _range.min; i <= _range.max; i++)
                 {
                     double angle = (i - _rotation) * (Math.PI / 5);
                     if (Math.Abs(angle) > Math.PI / 1.4) continue;
                     double opacity = Math.Cos(angle);
                     if (opacity < 0) continue;
-                    
+
                     double xPos = cx + Math.Sin(angle) * (w * 0.82);
                     double scale = 0.50 + (0.60 * Math.Pow(opacity, 0.6));
                     double yBulge = (1.0 - Math.Pow(opacity, 0.3)) * 12;
-                    
+
                     int labelIndex = i - _range.min;
                     string txt = (labelIndex >= 0 && labelIndex < _labels.Count) ? _labels[labelIndex] : i.ToString();
-                    
+
                     Color baseColor = i == _value
                         ? (IsEnabled ? _tickActive : _tickActiveDisabled)
                         : (IsEnabled ? _tickIdle : _tickIdleDisabled);
-                    
+
                     byte alpha = (byte)(255 * Math.Pow(opacity, 5.0));
-                    
+
                     var typeface = _labelTypeface;
                     var key = (txt, baseColor, _tickShadow);
                     if (!_textCache.TryGetValue(key, out var texts))
@@ -704,10 +654,10 @@ namespace FreeVideoStudio.App.Controls
                         texts.shadow = new FormattedText(txt, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface, 9, shadowBrush);
                         _textCache[key] = texts;
                     }
-                    
+
                     double tw = texts.normal.Width * scale;
                     double th = texts.normal.Height * scale;
-                    
+
                     using (context.PushOpacity(alpha / 255.0))
                     {
                         var mat = Avalonia.Matrix.CreateScale(scale, scale);
@@ -719,12 +669,12 @@ namespace FreeVideoStudio.App.Controls
                     }
                 }
             }
-            
+
             if (IsEnabled)
             {
                 context.DrawLine(_redPen, new Point(cx, 3), new Point(cx, 11));
                 context.DrawLine(_redPen, new Point(cx, h - 11), new Point(cx, h - 3));
-                
+
                 context.DrawRectangle(_centerGlow, null, innerRect);
             }
 
@@ -734,5 +684,4 @@ namespace FreeVideoStudio.App.Controls
             }
         }
     }
-    
 }

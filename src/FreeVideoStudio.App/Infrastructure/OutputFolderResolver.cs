@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -8,22 +7,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// ISSUE_04 — resolves WHERE a finished video is written, for each sub-application separately.
-///
-/// Resolution order (do not reorder):
-///   1. The folder saved in settings for THIS app, if it still exists and is writable.
-///   2. The user's REAL Downloads folder via <see cref="KnownFolders.GetDownloads"/> — this is
-///      shell-resolved, so a moved Downloads folder, a OneDrive-redirected one, or a Group
-///      Policy redirected one all resolve correctly. (The old code hardcoded
-///      %USERPROFILE%\Downloads and was simply wrong on those machines.)
-///   3. Only if neither is usable: ask the user to pick a folder ("Save As"). Whatever they
-///      pick is SAVED as the new default for that app, so they are asked exactly once.
-///
-/// Hard rule: this never throws and never crashes the app when Downloads is missing. If the
-/// user cancels the picker it returns null and the caller aborts the export cleanly with the
-/// standard error dialog — it must not fall through into the pipeline with a null path.
-/// </summary>
 public static class OutputFolderResolver
 {
     public enum AppScope
@@ -53,10 +36,6 @@ public static class OutputFolderResolver
         RuntimeLog.Debug("Output", $"{scope} output folder path: {path}");
     }
 
-    /// <summary>
-    /// Full interactive resolution. Call this once, before starting a render.
-    /// Returns the directory to write into, or null if the user cancelled the picker.
-    /// </summary>
     public static async Task<string?> ResolveAsync(Window owner, AppScope scope)
     {
         string configured = GetConfigured(scope);

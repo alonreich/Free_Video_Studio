@@ -4,7 +4,6 @@ using System.Globalization;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>Approximate pre-run or post-run token + USD cost estimate (clearly labeled as an estimate).</summary>
 public sealed record AiEstimatedUsage(
     long EstimatedInputTokens,
     long EstimatedOutputTokens,
@@ -13,19 +12,20 @@ public sealed record AiEstimatedUsage(
     public long EstimatedTotalTokens => Math.Max(0, EstimatedInputTokens) + Math.Max(0, EstimatedOutputTokens);
 }
 
-/// <summary>
-/// AOT-safe approximate token &amp; USD cost estimator across Google Gemini, Anthropic Claude, and OpenAI.
-/// All USD numbers are public reference-tier approximations clearly marked as estimates.
-/// </summary>
 public static class AiCostEstimator
 {
-    /// <summary>
-    /// AIUSAGE_04 — published list prices (USD per million tokens, standard tier) for the models the app lists,
-    /// checked on <see cref="PricesAsOf"/>. Only a model in this table gets a dollar figure; any other model says
-    /// "price unavailable" instead of a guess (AIUSAGE_03). Thinking tokens are billed as output by every vendor.
-    /// Sources: Anthropic and OpenAI pricing pages; Google's Gemini 3.8 Flash introductory rate runs until 2027-01-01.
-    /// </summary>
     public const string PricesAsOf = "2026-11-14";
+
+    internal const string PriceAgeTag = "AIPRICEAGE_01";
+
+    internal static readonly TimeSpan PricesGoStaleAfter = TimeSpan.FromDays(90);
+
+    internal static bool PricesMayBeStale(DateTime utcNow)
+        => DateTime.TryParseExact(PricesAsOf, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTime asOf)
+           && utcNow - asOf > PricesGoStaleAfter;
+
+    internal static string PriceAgeNote(DateTime utcNow)
+        => PricesMayBeStale(utcNow) ? $" Prices were last checked on {PricesAsOf}, so this may be out of date." : string.Empty;
 
     private static readonly System.Collections.Generic.Dictionary<string, (decimal In, decimal Out)> ListPrices =
         new(StringComparer.OrdinalIgnoreCase)
@@ -135,6 +135,7 @@ public static class AiCostEstimator
     public static long ThinkingAllowancePerRequest(AiVendor vendor, AiReasoningConfig? reasoning)
     {
         bool low = reasoning is { Level: AiReasoningLevel.Low or AiReasoningLevel.Off };
+        if (vendor != AiVendor.Anthropic && AiThinkingCalibration.Measured(vendor, low) is { } measured) return measured;
         return vendor switch
         {
             AiVendor.Anthropic => 0,
@@ -206,7 +207,7 @@ public static class AiCostEstimator
 
     public static AiEstimatedUsage EstimateMusicAutoFit(AiVendor vendor, string? model, int frameCount, int songCount)
         => BuildEstimate(vendor, model,
-            Math.Max(1, frameCount) * (Still(vendor, 640, AiUsage.MusicAutoFit) + 20) + Math.Max(0, songCount) * 24L + 500L,
+            Math.Max(1, frameCount) * (Still(vendor, 640, AiUsage.MusicAutoFit) + 20) + Math.Max(0, songCount) * 34L + 500L,
             220L + Thinking(vendor, AiUsage.MusicAutoFit, 1));
 
     public static AiEstimatedUsage EstimateViralPost(AiVendor vendor, string? model)
@@ -232,7 +233,7 @@ public static class AiCostEstimator
         if (est.EstimatedTotalTokens <= 0) return "Free. Nothing is sent online.";
         if (ChatGptAuth.PlanActive(vendor)) return PlanCostText;
         return HasReferenceRate(vendor, model)
-            ? $"Costs {PlainUsd(est.EstimatedUsd)} on your {company} account (estimate)."
+            ? $"Costs {PlainUsd(est.EstimatedUsd)} on your {company} account (estimate)." + PriceAgeNote(DateTime.UtcNow)
             : $"Uses your {company} account. The cost is not known for this AI model.";
     }
 

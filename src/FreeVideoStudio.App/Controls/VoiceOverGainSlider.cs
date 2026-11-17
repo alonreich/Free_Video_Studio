@@ -5,7 +5,6 @@ using Avalonia.Layout;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>VOLEVEL_01: a normal accessible slider with a pointer-only, escapable unity detent.</summary>
 public sealed class VoiceOverGainSlider : Slider
 {
     internal const double TrackInset = 22;

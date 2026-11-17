@@ -4,7 +4,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.AvRegression.Tests;
 
-/// <summary>Bundled FFmpeg/FFprobe, plus the decoders that turn a rendered file back into marker times.</summary>
 internal static class Ff
 {
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
@@ -29,7 +28,6 @@ internal static class Ff
         return double.Parse(s.Trim(), Inv);
     }
 
-    /// <summary>Mean luma (0..255) of every frame at a fixed 60 fps, optionally of one region (x,y,w,h as fractions).</summary>
     public static async Task<byte[]> LumaAsync(string path, string work, string tag, (double X, double Y, double W, double H)? region = null)
     {
         string raw = System.IO.Path.Combine(work, tag + ".gray");
@@ -38,7 +36,6 @@ internal static class Ff
         return await File.ReadAllBytesAsync(raw);
     }
 
-    /// <summary>The source frame number shown in each 60 fps frame of a file (-1 where no barcode is readable).</summary>
     public static async Task<int[]> FrameCodesAsync(string path, string work, string tag)
     {
         string raw = System.IO.Path.Combine(work, tag + ".code");
@@ -59,7 +56,6 @@ internal static class Ff
         return codes;
     }
 
-    /// <summary>Frame times (s) where the luma crosses up into [lo, hi].</summary>
     public static double[] RisingEdges(byte[] luma, int lo, int hi = 255)
     {
         var events = new List<double>();
@@ -73,7 +69,6 @@ internal static class Ff
         return events.ToArray();
     }
 
-    /// <summary>Contiguous spans (s) where the luma stays inside [lo, hi] for at least minFrames.</summary>
     public static List<(double Start, double End)> Spans(byte[] luma, int lo, int hi, int minFrames = 6)
     {
         var spans = new List<(double, double)>();
@@ -91,7 +86,6 @@ internal static class Ff
         return spans;
     }
 
-    /// <summary>Mono 48 kHz samples of one narrow frequency band (separates gameplay / music / meme / voice tones).</summary>
     public static async Task<float[]> BandAsync(string path, string work, string tag, double hz)
     {
         string raw = System.IO.Path.Combine(work, tag + ".f32");
@@ -103,7 +97,6 @@ internal static class Ff
         return samples;
     }
 
-    /// <summary>1 ms RMS envelope.</summary>
     public static double[] Envelope(float[] samples)
     {
         var env = new double[samples.Length / 48];
@@ -116,7 +109,6 @@ internal static class Ff
         return env;
     }
 
-    /// <summary>Onset times (s) of pulses: rises above a fraction of the loudest pulse, with a refractory gap.</summary>
     public static double[] Onsets(double[] env, double fraction = 0.3, double minGapSec = 0.15, double floor = 0.004)
     {
         double peak = env.Length == 0 ? 0 : env.Max();
@@ -136,7 +128,6 @@ internal static class Ff
         return result.ToArray();
     }
 
-    /// <summary>Spans (s) where a band is continuously audible (a meme's tone, a voice take).</summary>
     public static List<(double Start, double End)> AudibleSpans(double[] env, double level, double minSec = 0.1)
     {
         var spans = new List<(double, double)>();

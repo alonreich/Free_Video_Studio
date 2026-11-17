@@ -38,7 +38,6 @@ public class IpcTests : IDisposable
         catch { }
     }
 
-
     [Fact]
     public void IpcProtocol_RoundtripFrame_EncodesAndDecodesFaithfully()
     {
@@ -140,7 +139,6 @@ public class IpcTests : IDisposable
         Assert.Throws<EndOfStreamException>(() => IpcProtocol.ReadFrame(stream));
     }
 
-
     [Fact]
     public async Task IpcServerAndClient_HandoffRoundtrip_CompletesUnder5Milliseconds()
     {
@@ -193,7 +191,6 @@ public class IpcTests : IDisposable
         Assert.True(sw.ElapsedMilliseconds < 10, $"50 in-memory operations took {sw.ElapsedMilliseconds} ms.");
     }
 
-
     [Fact]
     public async Task IpcStressTest_RapidConcurrentUpdates_ZeroLockExceptions()
     {
@@ -229,7 +226,6 @@ public class IpcTests : IDisposable
         Assert.NotNull(finalState);
         Assert.True(finalState.ContainsKey("UploadVideoDirectory"));
     }
-
 
     [Fact]
     public async Task StateTransferStore_WhenNoServerRunning_FallsBackToDisk()
@@ -376,7 +372,6 @@ public class IpcTests : IDisposable
         Assert.NotNull(onDisk);
         Assert.Equal(expected, onDisk!["MainVolume"]!.GetValue<double>());
     }
-
 
     private static readonly string[] ChildKeys =
         ["UploadVideoDirectory", "MergerUploadDirectory", "MergerOutputDirectory", "CropToolUploadDirectory"];
@@ -571,8 +566,6 @@ public class IpcTests : IDisposable
         }
     }
 
-
-    /// <summary>A peer that owns the state pipe, accepts every connection and never answers.</summary>
     private sealed class SilentPeer : IDisposable
     {
         private readonly CancellationTokenSource _cts = new();
@@ -665,7 +658,6 @@ public class IpcTests : IDisposable
         Assert.Equal("hung-peer", AtomicJsonFile.ReadObject(_paths.SessionStateFile)!["MergerOutputDirectory"]?.GetValue<string>());
     }
 
-    /// <summary>A commit function that records batches, can be held open, and can be told to fail.</summary>
     private sealed class RecordingCommit
     {
         public readonly List<JsonObject> Batches = new();

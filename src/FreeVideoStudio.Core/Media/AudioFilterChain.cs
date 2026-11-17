@@ -6,71 +6,12 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// Builds the FFmpeg audio filter chain for the rendering pipeline (Main App and Video Merger —
-/// one implementation, so a mix sounds the same in both).
-///
-/// Pipeline:
-/// 1. Game audio: optional caller filters, the VIDEO fader.
-/// 2. For each music track: atrim, fade in/out, the MUSIC fader, delay to align; several tracks are summed.
-/// 3. VOPROT_01: across voice-over takes only, the music is ducked 85% and speech-carved (gated).
-/// 4. DUCKMB_01: multiband sidechain against the gameplay (+voice) — see <see cref="Build"/>.
-/// 5. Game and music are summed with weights '1 1', normalize=0.
-///
-/// PRIORITY (VOPRIO_01): voice-over first, gameplay second, music last. The voice is protected from
-/// both other buses by the take pulse (step 3 here, the game side in ProcessWorker); the gameplay is
-/// protected from the music by the sidechain (step 4), whose trigger is the game bus WITH the voice
-/// mixed in, so a take also pushes the music down.
-///
-/// LEVEL CONTRACT (LOUDSTD_REMOVED_01): there is no loudness normalisation anywhere. Each bus
-/// arrives at its recorded level and is scaled by its own fader only. Peak protection
-/// (<see cref="PeakSafety"/>) is applied by the callers: the tamer on the game bus before it gets
-/// here, the always-on safety limiter on the final mix after.
-/// </summary>
 public class AudioFilterChain
 {
-
-    /// <summary>Song-to-song: the OUTGOING song starts fading out this long before its end.
-    /// XFADEPLAN_01 — the number lives in <see cref="MusicCrossfade"/> so the music plan and the
-    /// previews lay songs out exactly the way this chain plays them.</summary>
     private const double CrossfadeOutSec = MusicCrossfade.OutgoingFadeSec;
 
-    /// <summary>Fade applied at the very start and the very end of the whole music bed.</summary>
     private const double EdgeFadeSec = 1.5;
 
-    /// <summary>
-    /// Builds the complete audio filter chain.
-    /// Returns (filterChains, finalLabel).
-    /// Exact port of build_audio_chain().
-    /// </summary>
-    /// <param name="musicLeadFadeIn">
-    /// ISSUE_04 — false when the user dragged the music-start note marker to the RIGHT of
-    /// MARK START. The music then begins partway into the video, which is a deliberate entrance,
-    /// so it hits at full level instead of fading up. True (music starts with the video) gives
-    /// the normal <see cref="EdgeFadeSec"/> lead-in.
-    /// </param>
-    /// <param name="musicTailFadeOut">
-    /// ISSUE_04 — false when the user dragged the music-end note marker to the RIGHT of
-    /// MARK END. The music is asking to outlast the video, so there is nothing left to fade
-    /// over: it is cut dead at MARK END. True gives the normal <see cref="EdgeFadeSec"/> tail.
-    /// </param>
-    /// <param name="freezeMusicDipPulse">
-    /// FREEZESFX_01 — <see cref="FreezeSoundEffect.MusicDipPulse"/> on the music's clock: 1 while a freeze
-    /// plays. Non-null means the music bed dips under every freeze and comes back after it.
-    /// </param>
-    /// <param name="voiceProtectMusicPulse">
-    /// VOPROT_01 — "Protect VoiceOver Recording from Music". An ffmpeg expression that evaluates to
-    /// 1.0 wherever a voice-over take is playing and 0 elsewhere, built by ProcessWorker from the
-    /// take times. Non-null means the MUSIC bed is ducked and carved across those windows.
-    ///
-    /// This is NOT the wizard's own ducking. That one is triggered by the GAME and protects the
-    /// game from the music. This one is triggered by the VOICE and protects the voice from the
-    /// music, so the two are orthogonal and can be on or off in any combination.
-    ///
-    /// It is applied to the music bed BEFORE the wizard's crossover/sidechain apparatus, so the
-    /// music that reaches the sidechain is already out of the voice's way and the two stages do
-    /// not fight over the same band.
-    /// </param>
     public static (List<string> chains, string finalLabel) Build(
         JsonObject? musicConfig,
         double videoStartTime,
@@ -283,9 +224,9 @@ public class AudioFilterChain
 
         if (!string.IsNullOrEmpty(freezeMusicDipPulse))
         {
-            chain.Add($"{bgMusicLabel}{FreezeSoundEffect.MusicDipFilter(freezeMusicDipPulse)}[a_bg_freeze_dip]");
+            chain.AddRange(FreezeSoundEffect.MusicDipChains(bgMusicLabel, freezeMusicDipPulse, "fzd", "[a_bg_freeze_dip]"));
             bgMusicLabel = "[a_bg_freeze_dip]";
-            CoreLogger.Info("Audio", $"Freeze effect: music dipped {FreezeSoundEffect.DipDepth:P0} under each freeze.");
+            CoreLogger.Info("Audio", "Freeze effect: music keeps playing, ducked 6 dB, carved at 500 Hz and muffled under each freeze.");
         }
 
         if (!string.IsNullOrEmpty(voiceProtectMusicPulse))
@@ -369,22 +310,13 @@ public class AudioFilterChain
         return (chain, "[a_music_prepared]");
     }
 
-    /// <summary>DUCKMB_01 — the music bed's band edges, Hz.</summary>
     public const int CrossoverLowHz = 250;
     public const int CrossoverHighHz = 2900;
 
-    /// <summary>VOPROT_01 — the voice protection's level dip (85%) and speech-band carve.</summary>
     public const double VoiceDuckDepth = 0.85;
 
-    /// <summary>VOPROT_01 — the pulse's ramp either side of every take, seconds (the export's <c>0.3</c>).</summary>
     public const double VoiceRampSec = 0.3;
 
-    /// <summary>
-    /// VOPREVIEW_02 — the export's voice-protection pulse evaluated at output second <paramref name="t"/>:
-    /// <c>clip(Σ clip((t-(s-0.3))/0.3,0,1)·clip(((e+0.3)-t)/0.3,0,1), 0, 1)</c> over the takes (ProcessWorker).
-    /// The SUM matters: two takes closer than 0.6 s overlap their ramps and the export adds them; the live
-    /// preview used to take the MAXIMUM and dipped less there. Every live preview uses this.
-    /// </summary>
     public static double VoiceProtectionPulseAt(double t, IEnumerable<(double StartSec, double EndSec)> takes)
     {
         double sum = 0;
@@ -398,15 +330,6 @@ public class AudioFilterChain
     }
     public const string VoiceCarveEq = "equalizer=f=2500:width_type=h:width=2200:g=-3";
 
-    /// <summary>
-    /// VOGATE_01 — voice protection that exists ONLY across the takes.
-    ///
-    /// The level dip was always time-varying (<c>volume=...:eval=frame</c>), but the speech carve was a
-    /// plain <c>equalizer</c>, which has no time-varying gain — so it scooped 2.5 kHz out of the whole
-    /// bus for the whole video, takes or no takes. Now the bus is split: a carved copy is faded in by
-    /// the take pulse and the dry copy faded out by its complement (the pulse already ramps over
-    /// 0.3 s), then the two are summed. Outside the takes the output is the dry signal exactly.
-    /// </summary>
     public static IEnumerable<string> GatedVoiceProtection(string inLabel, string pulseExpr, string prefix, string outLabel)
     {
         var ci = System.Globalization.CultureInfo.InvariantCulture;
@@ -418,9 +341,6 @@ public class AudioFilterChain
                      $"volume='1.0-{depth}*({pulseExpr})':eval=frame{outLabel}";
     }
 
-    /// <summary>
-    /// AUDIOCHK_01 — type-agnostic, non-throwing bool read. See the comment at the call site.
-    /// </summary>
     private static bool ReadBool(JsonObject? obj, string key, bool defaultValue)
     {
         var node = obj?[key];
@@ -445,8 +365,4 @@ public class AudioFilterChain
     }
 }
 
-/// <summary>
-/// Represents a single music track for the audio chain.
-/// Path, offset (in seconds from file start), duration, timeline delay (in seconds from video start), and whether to fade out.
-/// </summary>
 public record MusicTrack(string Path, double Offset, double Duration, double TimelineStartDelay = 0.0, bool ApplyFadeOut = true);

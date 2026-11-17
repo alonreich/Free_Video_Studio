@@ -3,22 +3,6 @@ using Avalonia.Media;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// COLORMATH_01 — HSV/RGB conversion, relative luminance and contrast-pair selection.
-///
-/// These four methods were private statics on <c>CropToolWindow</c>, a 6,710-line class that also
-/// owns a HUD role taxonomy, an ffmpeg snapshot service, a resize-handle drag state machine, a
-/// zoom viewport and cross-process config persistence. They touch none of that state — they are
-/// arithmetic on three doubles — so they belong where they can be read and unit-tested without a
-/// window.
-///
-/// ⚠️ BODIES MOVED VERBATIM. <c>RelativeLuminance</c> implements the sRGB transfer function used
-/// by the WCAG contrast formula; the 0.03928 threshold, the 1/12.92 linear segment and the
-/// 2.4 exponent are the specification's constants, not tunables. <c>OppositeOf</c>'s choice of
-/// pairing is a design decision about legibility of role labels over arbitrary video frames.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 internal static class ColorMath
 {
     internal static (double h, double s, double v) RgbToHsv(double r, double g, double b)
@@ -59,7 +43,6 @@ internal static class ColorMath
             (byte)Math.Clamp(Math.Round((b + m) * 255), 0, 255));
     }
 
-    /// <summary>BANDCONTRAST_01 — WCAG relative luminance, 0 (black) to 1 (white).</summary>
     internal static double RelativeLuminance(double r, double g, double b)
     {
         static double Channel(double v)
@@ -71,7 +54,6 @@ internal static class ColorMath
         return 0.2126 * Channel(r) + 0.7152 * Channel(g) + 0.0722 * Channel(b);
     }
 
-    /// <summary>BANDCONTRAST_01 — complementary hue, inverted value, guaranteed to separate.</summary>
     internal static Color OppositeOf(double r, double g, double b)
     {
         var (h, sat, _) = RgbToHsv(r, g, b);

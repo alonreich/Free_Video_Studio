@@ -1,5 +1,4 @@
-﻿
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.IO;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
@@ -9,11 +8,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// VOCAPTURE_01 / VOASYNC_02 — the capture-device owner, exercised with fake devices. No test here
-/// touches a real microphone. The one rule every test also checks: the monitor and the recorder
-/// never hold the device at the same time (<see cref="FakeMicrophone.Violations"/>).
-/// </summary>
 public sealed class VoiceCaptureSessionTests
 {
     [Fact]
@@ -334,7 +328,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.Equal(0, devices.Mic.Violations);
     }
 
-
     [Fact]
     public async Task DeviceOpenFailure_ImmediateDispatch_CallbackAlwaysPrecedesCompletion()
     {
@@ -528,7 +521,6 @@ public sealed class VoiceCaptureSessionTests
         await session.DisposeAsync().AsTask().WaitAsync(Timeout);
         Assert.Equal(VoiceCaptureState.Disposed, session.State);
     }
-
 
     [Fact]
     public async Task ImmediateStopped_DuringRecorderOpen_CannotBeOverwrittenByLaterSuccess()
@@ -1091,7 +1083,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.False(session.HasUnreleasedDevice);
     }
 
-    /// <summary>A UI-thread stand-in: runs posted work later, in order, on one dedicated thread.</summary>
     private sealed class AsyncPoster : IDisposable
     {
         private readonly System.Collections.Concurrent.BlockingCollection<Action> _queue = new();
@@ -1115,13 +1106,12 @@ public sealed class VoiceCaptureSessionTests
             {
                 if (_delay > TimeSpan.Zero) Thread.Sleep(_delay);
                 try { work(); }
-                catch (Exception) { /* a throwing callback must not kill the fake UI thread */ }
+                catch (Exception) {  }
             }
         }
 
         public void Dispose() => _queue.CompleteAdding();
     }
-
 
     private static byte[] TonePcm(double hz, double amp = 0.4, int frames = 8192)
     {
@@ -1259,8 +1249,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.Same(recorderAdapter, sender);
     }
 
-
-    /// <summary>Holds the FIRST admitted buffer in flight (after admission, before analysis) until released.</summary>
     private sealed class InFlightGate : IDisposable
     {
         private int _calls;
@@ -1384,8 +1372,6 @@ public sealed class VoiceCaptureSessionTests
         Assert.True(Math.Abs(s!.PeakBandIndex - BandOf(s, 2000)) <= 1);
     }
 
-
-    /// <summary>One physical capture endpoint. Records every open/close and every double-hold.</summary>
     private sealed class FakeMicrophone
     {
         private readonly object _gate = new();

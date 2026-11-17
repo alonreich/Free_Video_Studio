@@ -1,12 +1,5 @@
-# SIGNLOCAL_01 - (re)creates the FVS local development code-signing certificate on Windows.
-# Output (next to this script): fvs-dev-root-ca.cer, fvs-codesign.pfx, fvs-codesign.password.txt
-# Normally never needed: the build renews the leaf from the kept root key (UPDATEPIN_02).
-# Run:  powershell -ExecutionPolicy Bypass -File .\ssl-certificate\create-dev-codesign-cert.ps1
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-# UPDATEPIN_02 - the app pins THIS root (PublisherRoot.cs). A new root cuts every installed copy off
-# from automatic updates. The build renews the signing leaf from the existing root by itself, so this
-# script refuses to run while the root exists. Only -IReallyWantANewRoot overrides it.
 if ((Test-Path (Join-Path $here 'fvs-dev-root-ca.cer')) -and ($args -notcontains '-IReallyWantANewRoot')) {
     Write-Host 'REFUSED: the publisher root already exists and is pinned in the app. Nothing to do: the build renews the signing certificate by itself (UPDATEPIN_02).'
     exit 1
@@ -28,7 +21,6 @@ Export-Certificate -Cert $root -FilePath (Join-Path $here 'fvs-dev-root-ca.cer')
 Export-PfxCertificate -Cert $leaf -FilePath (Join-Path $here 'fvs-codesign.pfx') -Password $secure -ChainOption BuildChain | Out-Null
 Set-Content -Path (Join-Path $here 'fvs-codesign.password.txt') -Value $password -NoNewline -Encoding ascii
 
-# Keep nothing behind in the personal store; the PFX is the only copy of the signing key.
 Remove-Item "Cert:\CurrentUser\My\$($leaf.Thumbprint)" -DeleteKey
 Remove-Item "Cert:\CurrentUser\My\$($root.Thumbprint)" -DeleteKey
 Remove-Item (Join-Path $here 'fvs-dev-root-ca.pem'), (Join-Path $here 'fvs-dev-root-ca.key.pem'), (Join-Path $here 'fvs-codesign.pem') -ErrorAction SilentlyContinue

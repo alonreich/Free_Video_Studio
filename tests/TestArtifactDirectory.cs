@@ -13,7 +13,6 @@ internal static class TestArtifactDirectory
     private static readonly Regex OwnedRelative =
         new(@"^logs/[A-Za-z]+_Results(/work)?$", RegexOptions.CultureInvariant);
 
-    /// <summary>True while tests\run-av-tests.ps1 owns the run; it already replaced the suite folder.</summary>
     internal static bool Managed => Environment.GetEnvironmentVariable(ManagedEnvironment) == "1";
 
     internal static string SuiteRelative(string suite)
@@ -22,10 +21,6 @@ internal static class TestArtifactDirectory
         return LogsFolder + "/" + suite + "_Results";
     }
 
-    /// <summary>
-    /// Standalone programs (desktop smoke, media checks): takes the shared run lock when the gate is not
-    /// running, replaces this suite's output and returns its work folder.
-    /// </summary>
     internal static IDisposable Begin(string repository, string suite, out string work)
     {
         FileStream? lease = null;
@@ -35,10 +30,6 @@ internal static class TestArtifactDirectory
         catch { lease?.Dispose(); throw; }
     }
 
-    /// <summary>
-    /// Test assemblies: replaces this suite's output once per process and returns its work folder.
-    /// No run lock: dotnet test runs test projects side by side, and each owns a different folder.
-    /// </summary>
     internal static string SuiteWork(string suite) =>
         LazyInitializer.EnsureInitialized(ref suiteWork, ref suiteWorkLock, () =>
         {
@@ -54,10 +45,6 @@ internal static class TestArtifactDirectory
     private static string? suiteWork;
     private static object? suiteWorkLock;
 
-    /// <summary>
-    /// Gate run: the gate already emptied the suite folder and is writing console.log into it, so only
-    /// work\ is replaced. Standalone run: the whole suite folder is replaced (old TRX/console included).
-    /// </summary>
     internal static string PrepareSuite(string repository, string suite)
     {
         string relative = SuiteRelative(suite);

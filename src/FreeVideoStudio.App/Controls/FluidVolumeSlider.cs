@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Globalization;
 using Avalonia;
@@ -10,32 +9,6 @@ using Avalonia.Media.Immutable;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// Custom-rendered vertical fluid volume slider — a 3D laboratory test tube filled
-/// with animated liquid, bubbles and an elastic "gooey" playhead stick.
-///
-/// Implemented per .\Vertical_Volume_Slider.txt:
-///  - Fixed 60Hz timestep accumulator: physics speed is identical on 60/144/240Hz/VRR.
-///  - Strict geometry clipping of fluid + bubbles to the inner tube capsule.
-///  - Fluid surface from 5 desynchronized sine/cosine waves with irrational multipliers.
-///  - High-entropy bubble particle system, agitation scales with drag velocity.
-///  - Elastic stick bends toward the pointer (quadratic bezier) and relaxes with a
-///    damped harmonic oscillator (~1.0–1.5s), no artificial vibration.
-///  - Percentage text inside the tube: above fluid when &lt;= 80, inside fluid when &gt; 80.
-///  - 25/50/75 markers painted on the glass.
-///
-/// Derives from <see cref="Slider"/> ON PURPOSE: every existing call site keeps
-/// working unchanged (FindControl&lt;Slider&gt;("VolumeSlider"), Slider.ValueProperty
-/// PropertyChanged, PointerReleased persistence, mute toggle setting Value).
-/// Because the style key is this concrete type, the Fluent Slider template does NOT
-/// apply — the control is fully custom-drawn in <see cref="Render"/>.
-///
-/// AOT-safe: no reflection, no dynamic XAML.
-///
-/// ROLLBACK: the old_code\volume_slider_rollback folder no longer exists. To restore the
-/// previous behavior, replace this control in XAML with a standard vertical Slider that
-/// keeps the same Name and bindings — all code-behind works unchanged (it derives from Slider).
-/// </summary>
 public class FluidVolumeSlider : Slider
 {
     private const double TubeWidth = 20.0;
@@ -83,7 +56,6 @@ public class FluidVolumeSlider : Slider
     }
 
     private static readonly ImmutableSolidColorBrush s_white = new(Colors.White);
-    
 
     private IBrush _innerShadowBrush = BuildInnerShadow(Color.Parse("#a6000000"));
     private Color _glassBaseColor = Color.Parse("#0d0d12");
@@ -100,11 +72,6 @@ public class FluidVolumeSlider : Slider
         startPoint: new RelativePoint(0.5, 0, RelativeUnit.Relative),
         endPoint: new RelativePoint(0.5, 1, RelativeUnit.Relative));
 
-    /// <summary>
-    /// ISSUE_10 — resolves the glass chrome for the CURRENT ThemeVariant. A missing token leaves
-    /// the Dark value in place, so a broken resource dictionary degrades to the old look rather
-    /// than to an invisible control.
-    /// </summary>
     private void RefreshGlassTheme()
     {
         Color Tok(string key, Color fallback)
@@ -125,16 +92,6 @@ public class FluidVolumeSlider : Slider
 
     protected override Type StyleKeyOverride => typeof(FluidVolumeSlider);
 
-    /// <summary>
-    /// True while the user is hovering the tube OR dragging it.
-    ///
-    /// Exists so the numeric "72%" readout can appear exactly when it is useful and stay out of
-    /// the way otherwise. The fluid level communicates the rough amount beautifully, but it
-    /// cannot answer "is that 70 or 80?" — and the badge that was supposed to answer it shipped
-    /// `IsVisible="False"` and was never turned on, so the app was updating the text of an
-    /// invisible control. Windows bind their badge to this rather than duplicating hover
-    /// bookkeeping in two code-behinds.
-    /// </summary>
     public static readonly StyledProperty<bool> IsInteractingProperty =
         AvaloniaProperty.Register<FluidVolumeSlider, bool>(nameof(IsInteracting));
 
@@ -144,9 +101,6 @@ public class FluidVolumeSlider : Slider
         private set => SetValue(IsInteractingProperty, value);
     }
 
-    /// <summary>Hover OR drag. Drag is included separately because a pointer captured during a
-    /// drag can travel outside the control, which clears IsPointerOver while the user is very
-    /// much still adjusting the volume.</summary>
     private void RefreshInteracting() => IsInteracting = _isDragging || IsPointerOver;
 
     public FluidVolumeSlider()
@@ -250,9 +204,9 @@ public class FluidVolumeSlider : Slider
             var curPos = win.Position;
             double dx = curPos.X - _lastWindowPos.X;
             _lastWindowPos = curPos;
-            
+
             _sloshTilt += (-dx * 2.5 - _sloshTilt) * 0.12;
-            
+
             _sloshWave += (dx * 1.5 - _sloshWave) * 0.10;
         }
         _sloshTilt *= 0.90;
@@ -357,7 +311,6 @@ public class FluidVolumeSlider : Slider
         RefreshInteracting();
     }
 
-    /// <summary>VOLWHEEL_01 — the mouse wheel steps the volume (one notch = 5%, Shift = 1%).</summary>
     public const double WheelStepPercent = 5.0;
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
@@ -521,7 +474,7 @@ public class FluidVolumeSlider : Slider
                     Math.Sin(now * 7.30 * 1.6180339887 + nx * 8.0) * 0.7 +
                     Math.Cos(now * 2.10 * Math.PI + nx * 17.0) * 0.5 +
                     Math.Sin(now * 9.70 * Math.Sqrt(3) + nx * 3.0) * 0.4;
-                
+
                 double totalAmp = dynamicAmp + _simulatedPeak;
                 double sloshCurve = centerOffset * centerOffset * _sloshWave * Math.Sign(centerOffset);
                 return fluidY + (off * totalAmp) + (centerOffset * _sloshTilt) + sloshCurve;
@@ -539,10 +492,10 @@ public class FluidVolumeSlider : Slider
                 double by = tubeY + b.Y * tubeHeight;
                 if (by < fluidY + b.Size + 2) continue;
                 double opacity = b.Opacity * (0.5 + _turbulence * 0.5);
-                
+
                 var bubbleStroke = new ImmutableSolidColorBrush(Color.FromArgb((byte)(opacity * 255), 255, 255, 255));
                 context.DrawEllipse(null, new ImmutablePen(bubbleStroke, 0.8), new Point(bx, by), b.Size, b.Size);
-                
+
                 var hi = new ImmutableSolidColorBrush(Color.FromArgb((byte)(Math.Min(1.0, opacity + 0.4) * 255), 255, 255, 255));
                 context.DrawEllipse(hi, null, new Point(bx - b.Size * 0.3, by - b.Size * 0.3), b.Size * 0.35, b.Size * 0.35);
             }
@@ -577,7 +530,7 @@ public class FluidVolumeSlider : Slider
                 double my = tubeY + tubeHeight - m / 100.0 * tubeHeight;
                 context.DrawLine(s_markerDarkPen, new Point(tubeX + 3, my + 1), new Point(tubeX + tubeWidth - 3, my + 1));
                 context.DrawLine(s_markerLightPen, new Point(tubeX + 3, my), new Point(tubeX + tubeWidth - 3, my));
-                
+
                 if (!s_markerTextCache.TryGetValue(m, out var markerText))
                 {
                     markerText = new FormattedText(
@@ -585,7 +538,7 @@ public class FluidVolumeSlider : Slider
                         FlowDirection.LeftToRight, s_typeface, 6.5, s_markerTextBrush);
                     s_markerTextCache[m] = markerText;
                 }
-                
+
                 context.DrawText(markerText, new Point(tubeX + tubeWidth - markerText.Width - 3.5, my - markerText.Height - 0.5));
             }
         }
@@ -614,7 +567,6 @@ public class FluidVolumeSlider : Slider
         context.DrawGeometry(null, ghostPen, ghostStick);
         context.DrawGeometry(null, stickGlowPen, stick);
         context.DrawGeometry(null, stickPen, stick);
-
 
         string label = ((int)Math.Round(_targetVolume)).ToString(CultureInfo.InvariantCulture) + "%";
         var ft = new FormattedText(label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, s_typeface, 10, s_white);

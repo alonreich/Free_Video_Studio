@@ -5,7 +5,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>AIAUDIT_01 — caption burn-in fixes: centre anchoring and meme-splice timing.</summary>
 public sealed class CaptionAuditFixTests
 {
     [Fact]

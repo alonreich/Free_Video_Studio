@@ -1,10 +1,5 @@
 ﻿namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// VOSTALL_01: compare the actual output clock with captured PCM, never source seconds.
-/// A rendered freeze advances normally. Stalls, seeks and device-clock drift cannot silently
-/// accumulate within a take. The tolerance includes mpv's observed-clock and WinMM buffer cadence.
-/// </summary>
 public sealed class VoiceOverClockGuard
 {
     public const double MaximumDriftSec = 0.15;

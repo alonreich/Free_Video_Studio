@@ -2,11 +2,6 @@
 
 namespace FreeVideoStudio.AvRegression.Tests;
 
-/// <summary>
-/// The Video Merger's queue as the window builds it: <see cref="MergedTimeline.Build"/> over the clips
-/// (no intro tags, no custom thumbnail), the ONE-EDL preview URL (<see cref="MergeEditorSource"/>)
-/// and the export (<see cref="MergerWorker"/> with the window's EDL), plus the merged-clock checks.
-/// </summary>
 internal sealed class MergerRig
 {
     public IReadOnlyList<Clip> Clips { get; }
@@ -18,17 +13,12 @@ internal sealed class MergerRig
         Timeline = MergedTimeline.Build(clips.Select(c => new MergeClipSource(c.Path, c.DurationSec, 0)).ToList(), scraperEnabled: false, customThumbnail: false);
     }
 
-    /// <summary>
-    /// The URL the Merger preview loads (VideoMergerWindow.EdlPreview: MergeEditorSource.PreviewUrl,
-    /// with the silent stream under soundless clips) — time-pos = merged seconds.
-    /// </summary>
     public async Task<(string Url, bool AudioStream)> PreviewUrlAsync()
     {
         string? silence = await MergeEditorSource.EnsureSilenceFileAsync(Repo.Ffmpeg, Repo.MediaDir);
         return MergeEditorSource.PreviewUrl(Timeline.Composite, path => Clips.First(c => c.Path == path).HasAudio, silence);
     }
 
-    /// <summary>Loads the preview like the window: the URL, then the audio-only stream's track when there is one.</summary>
     public async Task LoadPreviewAsync(PlayerRig p, double at = 0, bool reloadWhilePlaying = false)
     {
         var (url, audioStream) = await PreviewUrlAsync();
@@ -37,7 +27,7 @@ internal sealed class MergerRig
         if (!audioStream) return;
         for (int i = 0; i < 40; i++)
         {
-            if (MergeEditorSource.SilentStreamAudioTrack(p.Ipc.GetPropertyString("track-list")) is int aid)
+            if (MergeEditorSource.SilentStreamAudioTrack(await p.Ipc.ReadPropertyAsync("track-list")) is int aid)
             {
                 if (aid > 1) await p.Cmd(p.Ipc.SetPropertyAsync("aid", aid.ToString(System.Globalization.CultureInfo.InvariantCulture)), "select audio stream");
                 return;
@@ -47,10 +37,8 @@ internal sealed class MergerRig
         throw new AvDefect("merger preview: the audio-only stream for soundless clips never appeared");
     }
 
-    /// <summary>Merger player options on top of the shared ones (VideoMergerWindow.EdlPreview).</summary>
     public static readonly Dictionary<string, string> PlayerOptions = new() { ["hr-seek"] = "yes", ["gapless-audio"] = "yes" };
 
-    /// <summary>Merged second of each join between clips.</summary>
     public IEnumerable<double> Joins => Timeline.Clips.Skip(1).Select(c => c.MergedStartSec);
 
     public async Task<ExportScan> ExportAsync(string work)
@@ -65,7 +53,6 @@ internal sealed class MergerRig
         return await ExportRig.MergerAsync(worker, work);
     }
 
-    /// <summary>Source seconds a clip's barcode means (the VFR test clip restarts its numbering at 3 s).</summary>
     private static double CodeToSec(Clip clip, int code, double near)
     {
         if (!clip.Path.Contains("vfr-", StringComparison.Ordinal)) return code / clip.Fps;
@@ -73,10 +60,6 @@ internal sealed class MergerRig
         return Math.Abs(a - near) <= Math.Abs(b - near) ? a : b;
     }
 
-    /// <summary>
-    /// Every join, every marker: the picture of each clip in queue order, its sound with it (also
-    /// when a clip has no sound track), no skipped/stuck frames, nothing from a removed clip.
-    /// </summary>
     public void Verify(ExportScan scan)
     {
         var expected = new List<(double Merged, bool Sound)>();

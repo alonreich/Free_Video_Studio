@@ -1,25 +1,10 @@
-﻿
-using System;
+﻿using System;
 using System.Globalization;
 using System.Windows.Input;
 using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.ViewModels;
 
-/// <summary>
-/// MEMEMODE_01 — the meme popup's "how should it play?" half (UI-MEMESELECT). Bound, not looked up
-/// (MVVM_01). Two cards — FULL SCREEN (interrupt the gameplay, the video becomes +X.X s longer) and
-/// CORNER OVERLAY (keep the gameplay running, the length stays the same) — and:
-/// <list type="bullet">
-/// <item>both modes: "Play meme sound" (MEMESOUND_02 — it used to be hidden for full screen while
-/// still applying), and the part of the meme used (MEMETRIM_01: a picture's length 1–10 s, a video's
-/// start and length);</item>
-/// <item>corner: four corner buttons or a dragged position (MEMEPOS_01), Small / Medium / Large and
-/// how it appears (MEMEANIM_01: none / fade / slide);</item>
-/// <item>full screen: how it cuts in and out (MEMETRANS_01: cut / fade / zoom).</item>
-/// </list>
-/// Defaults: the last choice used (MEMELAST_01), else Full Screen, Bottom Right, Medium, sound on.
-/// </summary>
 public sealed class MemeChoiceViewModel : ViewModelBase
 {
     private MemePresentationMode _mode = MemePresentationMode.InlineFullScreen;
@@ -61,7 +46,6 @@ public sealed class MemeChoiceViewModel : ViewModelBase
         TogglePlayCommand = new RelayCommand(() => IsPlaying = !IsPlaying);
     }
 
-    /// <summary>Starts from an existing meme (editing its properties).</summary>
     public void LoadFrom(MemePlacement existing)
     {
         Mode = existing.Mode;
@@ -77,7 +61,6 @@ public sealed class MemeChoiceViewModel : ViewModelBase
         OnPartChanged();
     }
 
-    /// <summary>MEMELAST_01 — a new meme starts the way the last one was shown.</summary>
     public void LoadLast(Infrastructure.MemePickerPrefsStore.LastChoice? last)
     {
         if (last == null) return;
@@ -89,10 +72,6 @@ public sealed class MemeChoiceViewModel : ViewModelBase
         Transition = last.Transition;
     }
 
-    /// <summary>
-    /// MEMETRIM_01 — a meme was chosen. <paramref name="keepPart"/> keeps the start/length already
-    /// loaded (editing the same file); otherwise a picture gets 4 s and a video its whole length.
-    /// </summary>
     public void SetMeme(string? path, bool isImage, double? fileDurationSec, bool keepPart)
     {
         MemePath = path;
@@ -112,7 +91,6 @@ public sealed class MemeChoiceViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasVideoLength));
     }
 
-    /// <summary>The probed file length arrived (video).</summary>
     public void SetFileDuration(double? fileDurationSec, bool keepPart)
     {
         _fileDurationSec = fileDurationSec;
@@ -175,7 +153,6 @@ public sealed class MemeChoiceViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Raised when the mode flips (the list re-evaluates which shape warnings apply).</summary>
     public event Action? ModeChanged;
 
     public MemeOverlayCorner Corner
@@ -231,19 +208,16 @@ public sealed class MemeChoiceViewModel : ViewModelBase
         }
     }
 
-    /// <summary>MEMEPOS_01 — the dragged position (fractions of the free room), -1 = in the chosen corner.</summary>
     public double PosX { get => _posX; set => SetPositionRaw(value, _posY); }
     public double PosY { get => _posY; set => SetPositionRaw(_posX, value); }
     public bool HasCustomPosition => _posX >= 0 && _posY >= 0;
 
-    /// <summary>Both coordinates at once; -1 in either puts the meme back in its corner.</summary>
     public void SetPosition(double x, double y)
     {
         if (x < 0 || y < 0) { SetPositionRaw(-1, -1); return; }
         SetPositionRaw(x, y);
     }
 
-    /// <summary>One coordinate may arrive before the other (two bindings), so each is kept as given.</summary>
     private void SetPositionRaw(double x, double y)
     {
         double nx = x < 0 ? -1 : Math.Clamp(x, 0, 1);
@@ -274,16 +248,12 @@ public sealed class MemeChoiceViewModel : ViewModelBase
         ? "Own position — drag the meme in the preview, or press a corner to snap back"
         : "Tip: drag the meme in the preview to place it anywhere";
 
-    /// <summary>True once a meme is chosen: the cards are shown only then.</summary>
     public bool HasMeme { get => _hasMeme; set => SetProperty(ref _hasMeme, value); }
 
-    /// <summary>MEMEPICK_03 — the meme being previewed (path), for the preview control.</summary>
     public string? MemePath { get => _memePath; private set => SetProperty(ref _memePath, value); }
 
-    /// <summary>The preview frame is the export's: 9:16 in portrait, else 16:9.</summary>
     public bool PreviewPortrait { get => _previewPortrait; set => SetProperty(ref _previewPortrait, value); }
 
-    /// <summary>The preview animates (silently) while true.</summary>
     public bool IsPlaying
     {
         get => _isPlaying;
@@ -292,10 +262,8 @@ public sealed class MemeChoiceViewModel : ViewModelBase
 
     public string PlayButtonText => _isPlaying ? "⏸ Pause" : "▶ Play";
 
-    /// <summary>MEMEPICK_04 — editing a meme whose file is gone: everything but the file can still change.</summary>
     public bool FileMissing { get => _fileMissing; set => SetProperty(ref _fileMissing, value); }
 
-    /// <summary>The chosen meme's length (null while it is being read).</summary>
     public double? DurationSec
     {
         get => _durationSec;
@@ -306,7 +274,6 @@ public sealed class MemeChoiceViewModel : ViewModelBase
     public bool IsVideo => !_isImage;
     public bool HasVideoLength => !_isImage && _fileDurationSec is > 0.01;
 
-    /// <summary>MEMETRIM_01 — where the used part of a video starts (seconds into the file).</summary>
     public decimal? ClipInSec
     {
         get => _clipInSec;
@@ -318,7 +285,6 @@ public sealed class MemeChoiceViewModel : ViewModelBase
         }
     }
 
-    /// <summary>MEMETRIM_01 — how long the meme plays (picture: 1–10 s; video: up to the rest of the file).</summary>
     public decimal? LengthSec
     {
         get => _lengthSec;
@@ -363,7 +329,6 @@ public sealed class MemeChoiceViewModel : ViewModelBase
     public bool IsTransFade => _transition == MemeTransition.Fade;
     public bool IsTransZoom => _transition == MemeTransition.Zoom;
 
-    /// <summary>"Video becomes +4.0 sec longer".</summary>
     public string FullScreenLengthText => FormatLonger(_durationSec);
 
     public static string FormatLonger(double? seconds) => seconds is double d && d > 0
@@ -388,7 +353,6 @@ public sealed class MemeChoiceViewModel : ViewModelBase
     public ICommand ResetPartCommand { get; }
     public ICommand TogglePlayCommand { get; }
 
-    /// <summary>Applies the choice to a placement (every presentation property and the used part).</summary>
     public MemePlacement ApplyTo(MemePlacement placement) =>
         placement with
         {
@@ -398,7 +362,6 @@ public sealed class MemeChoiceViewModel : ViewModelBase
             DurationSec = _lengthSec > 0 ? (double)_lengthSec : placement.DurationSec,
         };
 
-    /// <summary>MEMELAST_01 — the choice to remember for the next new meme.</summary>
     public Infrastructure.MemePickerPrefsStore.LastChoice ToLastChoice() =>
         new(_mode, _corner, _size, _playSound, _animation, _transition);
 }

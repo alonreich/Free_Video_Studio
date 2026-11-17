@@ -4,7 +4,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>MUSICPAD_01 — the music meets the video on the frames the preview showed, with fade pads on.</summary>
 public class MusicPadAlignmentTests
 {
     [Fact]

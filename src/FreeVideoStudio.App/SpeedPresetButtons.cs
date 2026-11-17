@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Globalization;
 using Avalonia.Controls;
 using FreeVideoStudio.App.Controls;

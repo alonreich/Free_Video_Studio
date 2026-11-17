@@ -1,25 +1,14 @@
-﻿
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using FreeVideoStudio.App.Controls;
 using FreeVideoStudio.App.ViewModels;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// UPGRADEUX_05 — the new app's first launch after an install or update (<c>--upgrade-health</c>).
-///
-/// <para>The main window must stay disabled until the broker commits (05 SYS-UPGRADE: "Editing
-/// stays disabled until commit"). That rule is unchanged. What changed is that the user is now
-/// TOLD: a small card says "Finishing the update…" while the window is greyed out, and then
-/// "✓ Updated from X to Y" once it is usable.</para>
-/// </summary>
 internal static class UpgradeFinishedNotice
 {
-    /// <summary>Passed by the broker: "install" or "update".</summary>
     public const string KindArgument = "--upgrade-kind";
 
-    /// <summary>Passed by the broker when it could read the version being replaced.</summary>
     public const string FromArgument = "--upgrade-from";
 
     private static readonly TimeSpan AutoClose = TimeSpan.FromSeconds(15);

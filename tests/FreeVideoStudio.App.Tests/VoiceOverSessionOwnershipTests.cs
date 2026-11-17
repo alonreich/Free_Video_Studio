@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -13,10 +12,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// SESSIONOWNER_01 — one admission policy for capture / recovery / Apply / close (T1), and
-/// VORECOVERY_02 — terminal resolutions dominate stale snapshots (T2).
-/// </summary>
 public sealed class VoiceOverSessionOwnershipTests : IDisposable
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
@@ -55,7 +50,6 @@ public sealed class VoiceOverSessionOwnershipTests : IDisposable
     private VoiceOverRecoveryManager Manager(IVoiceOverRecoveryStore? store = null) => new(() => Video, () => _dir, store);
 
     private static KeyEventArgs VKey() => new() { Key = Key.V, RoutedEvent = InputElement.KeyDownEvent };
-
 
     [AvaloniaFact]
     public async Task RecordClickKeyAndDirectEntry_AreRejected_WhileValidationOwnsTheSession()
@@ -154,7 +148,6 @@ public sealed class VoiceOverSessionOwnershipTests : IDisposable
         await capture.WhenFinalizationsSettled().WaitAsync(Timeout);
         Assert.True(await window.RecoverFailedTakesAction());
     }
-
 
     private (VoiceOverRecoveryManager Stale, VoiceOverRecoveryManager Other, string Wav) TwoHolders(IVoiceOverRecoveryStore? store = null)
     {
@@ -263,7 +256,6 @@ public sealed class VoiceOverSessionOwnershipTests : IDisposable
         Assert.Single(fresh.PendingFailedTakes);
     }
 
-    /// <summary>Real file system with explicit gates on read/validate/delete/write.</summary>
     private sealed class GatedStore : IVoiceOverRecoveryStore
     {
         private readonly FileVoiceOverRecoveryStore _inner = FileVoiceOverRecoveryStore.Instance;

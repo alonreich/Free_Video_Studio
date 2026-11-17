@@ -11,12 +11,10 @@
     <Grid>
         <Border Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="3">
             <Grid RowDefinitions="30, Auto, *, Auto, Auto">
-                <!-- Row 0: Window Title Bar -->
                 <Border Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
                     <TextBlock Text="AI SMART ZOOM — WHO SHOULD THE CAMERA FOLLOW?" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
                 </Border>
 
-                <!-- Row 1: Header Instructions -->
                 <StackPanel Grid.Row="1" Margin="28,16,28,8" Spacing="4">
                     <TextBlock Text="Pick who the camera should follow" FontSize="{DynamicResource AppFontSize20}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
                     <TextBlock Name="PickerIntroText" Text="The AI looked at 3 moments of this segment. Pick who the camera should follow — the box on the frames shows where they are."
@@ -24,9 +22,7 @@
                     <TextBlock Name="LookaheadNoticeText" IsVisible="False" Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSize13}" TextWrapping="Wrap" FontWeight="SemiBold"/>
                 </StackPanel>
 
-                <!-- Row 2: 3 Multi-Angle Segment Frames -->
                 <Grid Grid.Row="2" ColumnDefinitions="*,12,*,12,*" Margin="28,8,28,12">
-                    <!-- Frame 1 -->
                     <Border Grid.Column="0" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
                         <Grid RowDefinitions="Auto, *">
                             <Border Background="{DynamicResource AppScrimBrush}" Padding="8,4">
@@ -39,7 +35,6 @@
                         </Grid>
                     </Border>
 
-                    <!-- Frame 2 -->
                     <Border Grid.Column="2" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
                         <Grid RowDefinitions="Auto, *">
                             <Border Background="{DynamicResource AppScrimBrush}" Padding="8,4">
@@ -52,7 +47,6 @@
                         </Grid>
                     </Border>
 
-                    <!-- Frame 3 -->
                     <Border Grid.Column="4" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
                         <Grid RowDefinitions="Auto, *">
                             <Border Background="{DynamicResource AppScrimBrush}" Padding="8,4">
@@ -66,7 +60,6 @@
                     </Border>
                 </Grid>
 
-                <!-- Row 3: Detected Characters List -->
                 <Border Grid.Row="3" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="28,0,28,12" Padding="14">
                     <StackPanel Spacing="8">
                         <TextBlock Text="WHO THE AI FOUND (CLICK ONE):" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppTextMutedBrush}" LetterSpacing="1"/>
@@ -76,7 +69,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Row 4: Action Footer -->
                 <Grid Grid.Row="4" ColumnDefinitions="Auto, Auto, *, Auto" Margin="28,0,28,18">
                     <Button Name="CancelPickerBtn" Grid.Column="0" Classes="Secondary" Content="CANCEL" MinWidth="110" MinHeight="42" Cursor="Hand" IsCancel="True"
                             ToolTip.Tip="Closes this list. Nothing changes in your video."/>

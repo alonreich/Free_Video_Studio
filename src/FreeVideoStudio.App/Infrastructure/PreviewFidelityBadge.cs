@@ -1,5 +1,4 @@
-﻿
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -7,15 +6,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// PREVIEWFIDELITY_01 — the "PREVIEW ≈ EXPORT" marker. A small, quiet label in the top-left corner of a
-/// video host, shown ONLY while <see cref="PreviewFidelity.Evaluate"/> lists a material difference; its
-/// tooltip names every difference and says the export is the reference. No popup, no sound, no repeat:
-/// it is a state, not a notification, so it cannot become noise.
-///
-/// Laid over the host exactly like <see cref="CornerMemeOverlayPresenter"/> (nearest ancestor panel,
-/// spanning it), so no window markup changes.
-/// </summary>
 public sealed class PreviewFidelityBadge
 {
     private readonly Canvas _layer = new() { ZIndex = 60, ClipToBounds = true };
@@ -40,7 +30,6 @@ public sealed class PreviewFidelityBadge
         _layer.Children.Add(_badge);
     }
 
-    /// <summary>The issues currently shown (empty = the preview matches the export).</summary>
     public IReadOnlyList<PreviewFidelityIssue> Issues { get; private set; } = System.Array.Empty<PreviewFidelityIssue>();
 
     public void Attach(Control? videoHost)
@@ -60,7 +49,6 @@ public sealed class PreviewFidelityBadge
         _videoHost = videoHost;
     }
 
-    /// <summary>Shows or hides the marker for <paramref name="issues"/>. Returns true when the set changed.</summary>
     public bool Show(IReadOnlyList<PreviewFidelityIssue> issues)
     {
         string? tip = PreviewFidelity.Describe(issues);

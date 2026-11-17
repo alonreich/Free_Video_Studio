@@ -9,7 +9,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>LANES_01 — Video-Merger-Migration.md P5.1/P5.2 (T5.1a, T5.2a).</summary>
 public class ProgressiveLanesTests
 {
     private static LaneClip C(int i, double start, double end, double keepStart = 0)
@@ -151,8 +150,6 @@ public class ProgressiveLanesTests
         Assert.Equal(WaveformPeaks.MaxPeaks, WaveformPeaks.PeakCount(100000));
     }
 
-
-    /// <summary>Serves a byte array in deterministic, deliberately odd-sized fragments.</summary>
     internal sealed class FragmentedStream(byte[] data, int seed, int maxChunk = 7) : System.IO.Stream
     {
         private readonly Random _rng = new(seed);
@@ -176,7 +173,6 @@ public class ProgressiveLanesTests
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
-    /// <summary>Generates <paramref name="totalBytes"/> of deterministic PCM on the fly — nothing is stored.</summary>
     internal sealed class SyntheticPcmStream(long totalBytes) : System.IO.Stream
     {
         private long _pos;
