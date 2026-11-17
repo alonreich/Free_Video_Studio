@@ -28,7 +28,7 @@ Voiceover timing additions (all listed specs govern these files):
 
 | File | Specs and tags |
 | :--- | :--- |
-| `Core/Media/VoiceOverPlaybackPlan.cs` | 01 TL-OUTPUTTIMELINE; 03 FFM-TEMPO; VOCLOCK_01 |
+| `Core/Media/VoiceOverPlaybackPlan.cs` | 01 TL-OUTPUTTIMELINE; 03 FFM-TEMPO; VOCLOCK_01; 02 AUD-FREEZESFX (FREEZEPARITY_01, `FreezeVideoLufs`) |
 | `Core/Media/VoiceCaptureBudget.cs`, `VOSAMPLE_01` | 01 TL-OUTPUTTIMELINE; 02 AUD-VOICEOVER; sample-frame endpoint and immutable opening anchor |
 | `VOWRITE_01`, `VoiceCaptureBudgetTests` | 02 AUD-VOICEOVER; terminal WAV-write faults and acknowledged PCM prefix |
 | `Core/Media/VoiceOverClockGuard.cs`, `Core/Media/VoiceOverTiming.cs` | 01 TL-OUTPUTTIMELINE; 02 AUD-VOICEOVER; VOSTALL_01, VOTIMING_01 |
@@ -237,7 +237,7 @@ Voiceover timing additions (all listed specs govern these files):
   LocalAiAppTests.cs                         04 UI-AIZOOM | 01 TL-LOCALTRACK
   AiEliminationTrackerTests.cs               01 TL-AITRACKING | 05 SYS-AISETTINGS
   MainWindow.AiElimination.cs                01 TL-AITRACKING | 05 SYS-AISETTINGS
-  MainWindow.QuickStart.cs                   04 UI-SAFEGUARDS (DROPCLICK_01) | 04 UI-AIEASE (KILLQUICK_01, AIHINT_01)
+  MainWindow.QuickStart.cs                   04 UI-SAFEGUARDS (DROPCLICK_01) | 04 UI-AIEASE (KILLQUICK_01, AIHINT_01, AIHINT_02 — start-screen AI hint removed)
   AiOnboardingTests.cs                       04 UI-SAFEGUARDS | 04 UI-AIEASE
   FinishedDialogWindow.AiViral.cs            04 UI-MERGER-MULTISELECT | 05 SYS-AISETTINGS
   AiJsonSchema.cs                            05 SYS-AISETTINGS (AISCHEMA_01)

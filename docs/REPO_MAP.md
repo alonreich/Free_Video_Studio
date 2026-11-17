@@ -173,7 +173,7 @@ Speed Editor desktop: tests/DesktopPreviewSmoke/SpeedEditorSmokeApp.cs (--speed-
 Freeze sound:         Core/Media/FreezeSoundEffect.cs + Core/Assets/FreezeSounds/*.wav (Church_Bell with ring-out, default; Cinematic_Dramatic_Slow-Down
                       spliced to the hold; picked in Settings › Sound & Music; one render for export and preview; music duck/carve/underwater,
                       FREEZESFX_05 / FREEZEMUSIC_01, docs/02 AUD-FREEZESFX; gate AV S44-S45);
-                      Services/FreezeSoundPreview.cs plays it in the Speed Editor preview and the Settings Play button (FREEZESFX_02/05);
+                      Services/FreezeSoundPreview.cs plays it in the Speed Editor, the Voice-Over Studio live hold and the Settings Play button (FREEZESFX_02/05, FREEZEPARITY_01);
                       Core/Media/VideoLoudnessCache.cs keeps the uploaded video's loudness so the sound sits at 83 % of it (FREEZELEVEL_01);
                       MainWindow.FreezeSound.cs plays it in the Main App's live preview (FREEZEPARITY_01);
                       MusicWizardWindow.FreezeSound.cs and VideoMergerWindow.EdlPreview.cs play it in Add Music and the Video Merger (FREEZEPARITY_02).
