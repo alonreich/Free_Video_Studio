@@ -9,12 +9,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// Covers the cooperative shutdown ladder (GracefulProcessTerminator) and the drain-safe
-/// AsyncProcessRunner that uses it. Children are real OS processes (cmd.exe / powershell.exe /
-/// ping.exe) so the escalation, the stdin quit command, and the exit confirmations are
-/// exercised exactly as they behave against ffmpeg.exe in production.
-/// </summary>
 public sealed class GracefulProcessTerminatorTests
 {
     private static string CmdPath =>

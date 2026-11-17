@@ -6,40 +6,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// WORKERSTAGE_01 — THE ELEVATED UPDATE WORKER RUNS ONLY FROM A FOLDER ITS OWN USER CANNOT CHANGE
-/// (05 SYS-UPGRADE-TRUST).
-///
-/// <para>⚠️ WHY. The worker — the only part of an install or update that runs as administrator — used
-/// to be copied into <c>%LOCALAPPDATA%\FreeVideoStudioUpdates\Stage\&lt;id&gt;</c> and started from there
-/// with <c>Verb = "runas"</c>. Every program the user runs can write to that folder. Between the copy
-/// and the user's "Yes" on the Windows prompt, anything running as the user could swap the file or drop
-/// a DLL beside it, and the user — who EXPECTS a prompt at that moment, and whose prompt says "Unknown
-/// publisher" for this certificate anyway — would hand it administrator rights.</para>
-///
-/// <para>The copy now lives in <c>%ProgramData%\FreeVideoStudio-Worker-&lt;random&gt;\FreeVideoStudio.exe</c>:</para>
-/// <list type="bullet">
-/// <item>The folder is created with a PROTECTED access list (nothing inherited): SYSTEM and
-///   Administrators full control; the user read/execute only. The <c>OWNER RIGHTS</c> entry takes away the
-///   rights an owner normally keeps implicitly (changing the access list), and gives the creator ONLY
-///   "add a file". Standard users have no "delete child" right on <c>%ProgramData%</c> itself, so the folder
-///   cannot be renamed or replaced either.</item>
-/// <item>The program file is created WITH its final access list (read/execute for the user) by this
-///   process, which keeps the one write handle it was granted at creation; nobody else can ever open it
-///   for writing, delete it or rename it.</item>
-/// <item>The protection is PROVEN, not assumed: after the file is written, writing, deleting and
-///   renaming are attempted and must all be refused; the folder must hold exactly that one file; the
-///   copy must hash to the bytes that were written and (Release builds) carry the publisher's
-///   signature. Any doubt stops the update before Windows is asked — there is no fallback to the
-///   user-writable folder.</item>
-/// <item>A read handle that denies writers is held until the elevated process has started.</item>
-/// <item>The worker refuses to run elevated from anywhere else (<see cref="IsProtectedWorkerPath"/>,
-///   checked in <c>UpgradeInstallWorker.RunAsync</c>) and restricts its own DLL search to System32
-///   (<c>NativeHelpers.RestrictDllSearchToSystem32</c>), so a file added to the folder is never loaded.</item>
-/// </list>
-/// <para>The user cannot delete these folders; the elevated worker removes old ones at the end of every
-/// install (<see cref="SweepStale"/>, from <c>MaintainAsync</c>) and the uninstaller removes them all.</para>
-/// </summary>
 [SupportedOSPlatform("windows")]
 internal sealed class ProtectedWorkerStage : IDisposable
 {
@@ -54,19 +20,12 @@ internal sealed class ProtectedWorkerStage : IDisposable
         _denyWriters = denyWriters;
     }
 
-    /// <summary>The protected folder.</summary>
     public string FolderPath { get; }
 
-    /// <summary>The verified worker copy to start with <c>Verb = "runas"</c>.</summary>
     public string ExecutablePath { get; }
 
-    /// <summary><c>%ProgramData%</c>: the only per-machine folder a standard user may create in but not rename in.</summary>
     internal static string Root => Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
 
-    /// <summary>
-    /// Copies <paramref name="sourceExecutable"/> into a new protected folder and proves the protection.
-    /// Throws <see cref="IOException"/> (plain English) when Windows does not allow it.
-    /// </summary>
     public static ProtectedWorkerStage Create(string sourceExecutable)
     {
         byte[] image = File.ReadAllBytes(sourceExecutable);
@@ -119,10 +78,6 @@ internal sealed class ProtectedWorkerStage : IDisposable
         }
     }
 
-    /// <summary>
-    /// True only for <c>%ProgramData%\FreeVideoStudio-Worker-&lt;32 hex&gt;\FreeVideoStudio.exe</c>.
-    /// The worker checks its own path with this before doing anything as administrator.
-    /// </summary>
     internal static bool IsProtectedWorkerPath(string? path)
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
@@ -146,7 +101,6 @@ internal sealed class ProtectedWorkerStage : IDisposable
         }
     }
 
-    /// <summary>Every worker folder that exists (for the elevated sweep and the uninstaller).</summary>
     internal static IEnumerable<string> ExistingFolders()
     {
         if (!Directory.Exists(Root)) return [];
@@ -163,10 +117,6 @@ internal sealed class ProtectedWorkerStage : IDisposable
         }
     }
 
-    /// <summary>
-    /// Elevated only. Removes every worker folder except the one this process runs from. A folder still
-    /// in use is left for the next install. Returns how many were removed.
-    /// </summary>
     internal static int SweepStale(string? runningExecutable)
     {
         string? keep = string.IsNullOrWhiteSpace(runningExecutable) ? null : Path.GetDirectoryName(Path.GetFullPath(runningExecutable));
@@ -187,7 +137,6 @@ internal sealed class ProtectedWorkerStage : IDisposable
         return removed;
     }
 
-    /// <summary>Releases the deny-writers handle. Call right after the elevated process has started.</summary>
     public void Dispose()
     {
         _denyWriters?.Dispose();
@@ -197,7 +146,6 @@ internal sealed class ProtectedWorkerStage : IDisposable
     private static readonly SecurityIdentifier LocalSystem = new(WellKnownSidType.LocalSystemSid, null);
     private static readonly SecurityIdentifier Administrators = new(WellKnownSidType.BuiltinAdministratorsSid, null);
 
-    /// <summary>S-1-3-4: replaces the owner's implicit READ_CONTROL/WRITE_DAC with exactly what it grants.</summary>
     private static readonly SecurityIdentifier OwnerRights = new("S-1-3-4");
 
     private const FileSystemRights ReadOnly = FileSystemRights.ReadAndExecute | FileSystemRights.Synchronize;
@@ -225,7 +173,6 @@ internal sealed class ProtectedWorkerStage : IDisposable
         return security;
     }
 
-    /// <summary>Each of these must be REFUSED. One that succeeds means the folder is not protected.</summary>
     private static void ProveLocked(string folder, string exe)
     {
         Refused("write to the installer copy", () => { using var _ = new FileStream(exe, FileMode.Open, FileAccess.Write, FileShare.ReadWrite); });

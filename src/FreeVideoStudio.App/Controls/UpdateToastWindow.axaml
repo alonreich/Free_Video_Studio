@@ -1,7 +1,3 @@
-<!-- BGUPDATE_01 — the update card in the bottom-right corner of the main window.
-     Owned, non-activating (never steals focus from the editor), no title bar, not persisted, not
-     in WindowBoundsHelper. Positioned by UpdateService against its owner. All state is bound to
-     UpdateToastViewModel (MVVM_01). -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
         xmlns:vm="clr-namespace:FreeVideoStudio.App.ViewModels"
@@ -23,7 +19,6 @@
                 <TextBlock Grid.Column="0" Text="{Binding Headline}" TextWrapping="Wrap" FontWeight="Bold"
                            FontSize="{DynamicResource AppFontSize13}"
                            Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                <!-- While downloading: pause (keeps what was downloaded). -->
                 <Button Grid.Column="1" Classes="Secondary" Content="PAUSE" Padding="8,2" Cursor="Hand"
                         IsVisible="{Binding IsWorking}" Command="{Binding PauseCommand}"
                         AutomationProperties.Name="Pause the update download"
@@ -34,7 +29,6 @@
                        FontSize="{DynamicResource AppFontSize12}"
                        Foreground="{DynamicResource AppTextMutedBrush}"/>
 
-            <!-- RELNOTES_03 — what this version brings: up to four headlines from its release notes. -->
             <StackPanel Spacing="2" IsVisible="{Binding HasWhatsNew}">
                 <TextBlock Text="What's new" FontWeight="SemiBold"
                            FontSize="{DynamicResource AppFontSize12}"
@@ -50,7 +44,6 @@
                          Foreground="{DynamicResource AppInfoBrush}"
                          Background="{DynamicResource AppPanelBrush}"/>
 
-            <!-- Update ready: SKIP this version, LATER (deferred on close), or RESTART & UPDATE now. -->
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" IsVisible="{Binding IsReady}">
                 <Button Classes="Secondary" Content="SKIP" MinWidth="60" Cursor="Hand"
                         Command="{Binding SkipCommand}"

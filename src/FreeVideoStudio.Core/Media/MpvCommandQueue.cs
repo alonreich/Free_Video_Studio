@@ -7,17 +7,11 @@ namespace FreeVideoStudio.Core.Media;
 
 public enum MpvCommandStatus { Accepted, Rejected, Superseded, Unavailable, Disposed, QueueFull, TimedOut }
 
-/// <summary>Command acknowledgement, not proof that a decoded seek has landed.</summary>
 public readonly record struct MpvCommandResult(MpvCommandStatus Status, int NativeError = 0, string? Value = null)
 {
     public bool Succeeded => Status == MpvCommandStatus.Accepted;
 }
 
-/// <summary>
-/// MPVQUEUE_01 — bounded FIFO with exactly one native acknowledgement outstanding.
-/// Admission never calls native code. Only adjacent, unsubmitted replaceable requests coalesce;
-/// relative seeks and command barriers retain their ordering. Completion never runs under the lock.
-/// </summary>
 internal sealed class MpvCommandQueue
 {
     internal sealed class Request

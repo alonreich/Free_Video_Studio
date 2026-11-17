@@ -4,35 +4,12 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// MUSICWIN_01 — EVERY SONG'S CHOSEN PART, AND ONE WAY TO READ IT.
-///
-/// The Add Music wizard now lets the user choose which part of EVERY song plays (drag the song's
-/// edges on the Fit &amp; Mix screen), not only where the first song starts. Those choices travel
-/// in <see cref="MusicStartsSeconds"/> / <see cref="MusicEndsSeconds"/>, index-aligned with
-/// <see cref="MusicWizardResult.MusicFilePaths"/>.
-///
-/// The Main App export, the Main App preview, the Video Merger export and the Video Merger preview
-/// each used to rebuild "paths + durations + first offset" by hand, and each filtered missing files
-/// and then indexed the durations by the FILTERED position — so one missing song shifted every
-/// length after it onto the wrong file. <see cref="ToBedTracks"/> is the one reader now: it keeps
-/// the original index for every lookup and only then drops missing files.
-///
-/// Older results (and saved sessions) carry no windows: the first song then starts at
-/// <see cref="MusicWizardResult.OffsetSeconds"/>, every other song at 0, and every song plays to
-/// its end — exactly the layout they were saved with.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class MusicWizardResult
 {
-    /// <summary>MUSICWIN_01 — where each song's chosen part starts inside its file.</summary>
     public List<double> MusicStartsSeconds { get; set; } = new();
 
-    /// <summary>MUSICWIN_01 — where each song's chosen part ends inside its file; 0 = to the end.</summary>
     public List<double> MusicEndsSeconds { get; set; } = new();
 
-    /// <summary>The songs in play order: <see cref="MusicFilePaths"/>, or the single <see cref="MusicFilePath"/>.</summary>
     public List<string> OrderedPaths()
     {
         var paths = new List<string>();
@@ -41,11 +18,6 @@ public partial class MusicWizardResult
         return paths;
     }
 
-    /// <summary>
-    /// The plan tracks for this result, in play order, skipping songs <paramref name="exists"/> rejects
-    /// (default: <see cref="System.IO.File.Exists(string)"/>). Every per-song value is looked up by the
-    /// song's ORIGINAL index, before any file is skipped.
-    /// </summary>
     public List<MusicBedTrack> ToBedTracks(Func<string, bool>? exists = null)
     {
         exists ??= System.IO.File.Exists;
@@ -69,7 +41,22 @@ public partial class MusicWizardResult
         return tracks;
     }
 
-    /// <summary>A short, user-facing name for what is on the music button: the song, or "3 songs".</summary>
+    public MusicPreviewBed PreviewBed(double trimStartMs, double videoEndMs, Func<double, double> sourceMsToOutputSec,
+        bool keepMusicDuringMeme = false, IReadOnlyList<(double AnchorOutputSec, double DurationSec)>? inlineMemes = null)
+    {
+        double musicStartMs = Math.Max(trimStartMs, TimelineStartSeconds * 1000.0);
+        double musicEndMs = Math.Min(videoEndMs, TimelineEndSeconds * 1000.0);
+        double startDelay = sourceMsToOutputSec(musicStartMs);
+        double outputEnd = sourceMsToOutputSec(musicEndMs);
+        double bedDuration = outputEnd - startDelay;
+        if (bedDuration <= 0) bedDuration = 1.0;
+        double stretch = 0;
+        if (keepMusicDuringMeme && inlineMemes != null)
+            foreach (var (anchor, duration) in inlineMemes)
+                if (duration > 0 && anchor >= startDelay - 1e-3 && anchor <= outputEnd + 1e-3) stretch += duration;
+        return new MusicPreviewBed(MusicBedPlan.Build(ToBedTracks(), bedDuration + stretch, LoopMusic, startDelay), startDelay, bedDuration);
+    }
+
     public string DescribeSongs()
     {
         var paths = OrderedPaths();
@@ -78,3 +65,5 @@ public partial class MusicWizardResult
         return $"{paths.Count} songs";
     }
 }
+
+public readonly record struct MusicPreviewBed(IReadOnlyList<MusicBedSegment> Plan, double StartDelaySec, double DurationSec);

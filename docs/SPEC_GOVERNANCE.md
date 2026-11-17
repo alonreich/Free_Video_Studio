@@ -8,7 +8,7 @@
 | `docs/INDEX.md` | Flat Symbol & File Lookup | `Symbol -> Spec Section`, `Stable {#ANCHOR} ids`, `CO-GOVERNED marks` | Zero-Cost Routing Lookup |
 | `src/FreeVideoStudio.Core/Infrastructure/ApplicationPaths.cs` | `ApplicationPaths` | `ProgramDataRoot`, `RecoveryStateFile`, `SessionStateFile`, `AppDirectoryName` | System Path Governance |
 | `src/FreeVideoStudio.Core/Infrastructure/RecoveryManager.cs` | `RecoveryManager` | `SaveState`, `LoadState`, `CheckFault`, `IsSafeModeActive` | Session State & Fault Governance |
-| `src/FreeVideoStudio.App/MainWindow.axaml.cs` | `MainWindow` (partial class) | `AttachPreviewMonitor`, `OnSuccessAction` (this file); the recovery hooks live in partials governed by their own headers — `SaveRecoveryState` in `MainWindow.Recovery.cs`, the startup `RecoveryManager.CheckFault()` call in `MainWindow.Wireup.cs` | Main Process Governance Root |
+| `src/FreeVideoStudio.App/MainWindow.axaml.cs` | `MainWindow` (partial class) | `AttachPreviewMonitor`, `OnSuccessAction` (this file); the recovery hooks live in partials routed by `docs/INDEX.md` §1 — `SaveRecoveryState` in `MainWindow.Recovery.cs`, the startup `_recovery.CheckFault()` call in `MainWindow.Wireup.cs` | Main Process Governance Root |
 
 ---
 
@@ -41,6 +41,8 @@ mini-maps; read and cite them before code changes (§1–§3 still apply).
 Do not add boilerplate headers to satisfy a test. The former header-presence architecture test
 is retired by this explicit rule change. Fix-specific sentinel markers in `build/sentinels.txt`
 and behavioral tests remain required; they are distinct from the removed routing boilerplate.
+Engineering tags (`ABC_01`) in Code Mini-Map rows route requirements; they are not code tokens. Since
+NOCOMMENTS_02 they live in `build/sentinels.txt` (`TAG=path#Symbol`) and `docs/CODE_NOTES_*.md`, not in the `.cs` file.
 
 ## 5. Specification Invariant Audit Verification
 When audits or tests reveal discrepancies between text documentation and active C# implementation:

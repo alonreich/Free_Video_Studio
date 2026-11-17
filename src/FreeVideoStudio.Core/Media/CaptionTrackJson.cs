@@ -5,11 +5,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// CAPTIONS_01 — NativeAOT-safe, reflection-free JSON serialization and deserialization for
-/// <see cref="CaptionTrack"/> and nested elements. Used for .fvsproj project document persistence
-/// and crash recovery snapshots.
-/// </summary>
 public static class CaptionTrackJson
 {
     public static JsonObject? Write(CaptionTrack? track)

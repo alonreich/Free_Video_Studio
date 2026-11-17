@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -7,64 +6,27 @@ using FreeVideoStudio.Core.Abstractions;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// AIHUD_01 — the outcome of parsing one AI answer.
-/// </summary>
-/// <param name="Candidates">Only the candidates that survived every check, best first.</param>
-/// <param name="Rejected">How many entries were present but failed validation.</param>
-/// <param name="Error">Non-null when the document as a whole could not be read (malformed JSON,
-/// wrong shape). Candidates is then empty.</param>
 public sealed record AiHudParseResult(IReadOnlyList<AiHudCandidate> Candidates, int Rejected, string? Error)
 {
     public bool IsMalformed => Error != null;
 }
 
-/// <summary>
-/// AIHUD_01 — DO NOT TRUST MODEL GEOMETRY. The only door an AI answer comes in through.
-///
-/// <para><b>Schema</b> (normalized 0..1 SOURCE-FRAME coordinates, top-left origin):</para>
-/// <code>
-/// { "candidates": [ { "label": "minimap", "normalizedX": 0.82, "normalizedY": 0.03,
-///                     "normalizedWidth": 0.15, "normalizedHeight": 0.26, "confidence": 0.9 } ] }
-/// </code>
-/// <para>A bare top-level array of the same objects is also accepted, and a markdown code fence
-/// around the JSON is stripped — models add one even when told not to. Anything else is
-/// malformed.</para>
-///
-/// <para><b>Rejected per entry:</b> missing/non-numeric fields; NaN or ±Infinity; negative or zero
-/// width/height; X/Y outside [0,1]; a box whose right/bottom edge leaves the frame; confidence
-/// outside [0,1]; an empty label; a box smaller than <see cref="MinSide"/> on either side or
-/// <see cref="MinArea"/> in area (sensor noise, not HUD); a box larger than
-/// <see cref="MaxSide"/> on either side or <see cref="MaxArea"/> in area (near-whole-screen junk —
-/// no single HUD element covers a third of the screen).</para>
-///
-/// <para>Parsing uses <see cref="JsonDocument"/> only, so it is NativeAOT- and trim-safe with no
-/// reflection and no source-generated context.</para>
-/// </summary>
 public static class AiHudResponseParser
 {
-    /// <summary>Tolerance for a right/bottom edge that lands a hair past 1.0 through float noise.</summary>
     public const double EdgeEpsilon = 0.002;
 
-    /// <summary>1% of the frame on the short side: a 1080p health pip is ~11px; anything smaller is noise.</summary>
     public const double MinSide = 0.01;
 
-    /// <summary>0.05% of the frame's area (~1,000 px² at 1080p).</summary>
     public const double MinArea = 0.0005;
 
-    /// <summary>No HUD element spans 90% of either axis.</summary>
     public const double MaxSide = 0.90;
 
-    /// <summary>No HUD element covers more than a third of the frame.</summary>
     public const double MaxArea = 0.33;
 
-    /// <summary>Longest label kept; longer text is truncated, not rejected.</summary>
     public const int MaxLabelLength = 40;
 
-    /// <summary>Hard cap on AI candidates taken from one answer (highest confidence first).</summary>
     public const int MaxCandidates = 12;
 
-    /// <summary>Hard cap on entries even looked at, so a runaway answer cannot cost unbounded work.</summary>
     private const int MaxEntriesInspected = 64;
 
     public static AiHudParseResult Parse(string? text)
@@ -138,7 +100,6 @@ public static class AiHudResponseParser
         }
     }
 
-    /// <summary>True when one entry passes every geometric and semantic check.</summary>
     public static bool TryReadCandidate(JsonElement entry, out AiHudCandidate? candidate)
     {
         candidate = null;
@@ -158,10 +119,6 @@ public static class AiHudResponseParser
         return true;
     }
 
-    /// <summary>
-    /// The geometry and confidence gate, public so a test (and any other producer) applies the
-    /// exact same rule.
-    /// </summary>
     public static bool IsValid(AiHudCandidate c)
     {
         if (c is null) return false;
@@ -198,7 +155,6 @@ public static class AiHudResponseParser
         return !string.IsNullOrWhiteSpace(value);
     }
 
-    /// <summary>Single line, printable, trimmed, at most <see cref="MaxLabelLength"/> characters.</summary>
     public static string CleanLabel(string? label)
     {
         if (string.IsNullOrWhiteSpace(label)) return string.Empty;

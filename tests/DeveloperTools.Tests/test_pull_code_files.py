@@ -28,9 +28,6 @@ WORK = SUITE / 'work'
 
 
 def setUpModule():
-    # TESTOUT_01 / TESTCLEAN_01: this suite writes only to logs/Python_Results. Run on its own it replaces
-    # the whole folder; under the gate (FVS_TEST_OUTPUT_MANAGED=1) the gate emptied it and is writing
-    # console.log there, so only work/ is replaced. Never source or user exports.
     target = WORK if os.environ.get('FVS_TEST_OUTPUT_MANAGED') == '1' else SUITE
     if target.resolve() != REPO.resolve() / 'logs' / target.relative_to(REPO / 'logs'):
         raise RuntimeError('Refusing redirected test output')
@@ -266,6 +263,79 @@ class ExportTests(unittest.TestCase):
         self.assertEqual('TEXT', entries['tests/FreeVideoStudio.AvRegression.Tests/Scenarios/Playback.cs'].status)
         self.assertEqual('METADATA', entries['tests/fixtures/reference.mp4'].status)
 
+    def test_code_assignments_are_not_redacted(self):
+        code = ('apiKey = userInput;\n'
+                'previous.AccessToken = previous.IdToken = string.Empty;\n'
+                'AccessToken = ReadString(json, "accessToken"),\n'
+                'settings.GeminiApiKey = key.Trim();\n'
+                'const string SecretName = "GEMINI_API_KEY";\n'
+                'string password = "Enter your password";\n')
+        self.assertEqual((code, 0), exporter.redact_sensitive(code, 'src/App/Settings.cs'))
+        self.assertEqual(code, exporter.redact_sensitive(code)[0])
+        literal = 'password = "fixture-value-9"'
+        self.assertNotIn('fixture-value-9', exporter.redact_sensitive(literal, 'src/App/A.cs')[0])
+
+    def test_git_ignored_files_and_directories_are_skipped_with_reason(self):
+        self.put('.dev-run/app/copy.cs', 'copy')
+        self.put('notes.lock', b'')
+        self.put('src/Kept.cs', 'kept')
+        entries = {e.path: e for e in exporter.collect_entries(self.root, ignored=['.dev-run/', 'notes.lock'])}
+        self.assertEqual('SKIPPED', entries['.dev-run/'].status)
+        self.assertIn('git-ignored', entries['.dev-run/'].reason)
+        self.assertNotIn('.dev-run/app/copy.cs', entries)
+        self.assertEqual('SKIPPED', entries['notes.lock'].status)
+        self.assertEqual('TEXT', entries['src/Kept.cs'].status)
+
+    def test_uncommitted_deletion_is_reported_but_not_an_error(self):
+        state = {'commit': 'b' * 40, 'status': ' D old.py', 'available': True,
+                 'tracked': ['old.py'], 'deleted': ['old.py'], 'ignored': []}
+        with patch.object(exporter, 'git_snapshot', return_value=state):
+            folder, status = self.run_export()
+        self.assertEqual(0, status)
+        self.assertIn('old.py | DELETED', self.text(folder))
+        self.assertNotIn('INCOMPLETE', self.text(folder))
+
+    def test_binary_files_get_a_placeholder_block_with_byte_hash(self):
+        png = (b'\x89PNG\r\n\x1a\n' + b'\0\0\0\rIHDR' + (640).to_bytes(4, 'big')
+               + (360).to_bytes(4, 'big') + b'\x08\x02\0\0\0')
+        self.put('assets/logo.png', png)
+        self.put('custom.data', b'\x00\x01unknown')
+        entries = exporter.collect_entries(self.root)
+        payloads = exporter.make_payloads(entries)
+        by_path = {e.path: e for e in entries}
+        for path, data in (('assets/logo.png', png), ('custom.data', b'\x00\x01unknown')):
+            entry = by_path[path]
+            self.assertEqual(hashlib.sha256(data).hexdigest(), entry.digest)
+            lines = payloads[entry.bundle].splitlines()
+            self.assertEqual('FILE: ' + path, lines[entry.line - 1])
+            self.assertIn('METADATA (placeholder', lines[entry.line])
+            self.assertIn('File bytes SHA256: ' + entry.digest, lines[entry.line + 1])
+        self.assertIn('PNG image, 640x360 px', by_path['assets/logo.png'].kind)
+
+    def test_code_notes_are_a_placeholder_unless_requested(self):
+        self.put('docs/CODE_NOTES_App.md', '# CODE NOTES\nremoved comment text\n')
+        folder, _ = self.run_export()
+        self.assertNotIn('removed comment text', self.text(folder))
+        self.assertIn('docs/CODE_NOTES_App.md | METADATA', self.text(folder))
+        folder, _ = self.run_export(include_code_notes=True)
+        self.assertIn('removed comment text', self.text(folder))
+
+    def test_parts_are_balanced(self):
+        items = [(str(i), 'x' * 100_000) for i in range(80)]
+        sizes = [sum(len(b) for _, b in part) for part in exporter.pack_into_capped_parts(items)]
+        self.assertEqual([1_000_000] * 8, sizes)
+        items = [(str(i), 'x' * (900_000 if i == 4 else 100_000)) for i in range(120)]
+        sizes = [sum(len(b) for _, b in part) for part in exporter.pack_into_capped_parts(items)]
+        self.assertLessEqual(max(sizes), math.ceil(sum(sizes) / 8) + 100_000)
+
+    def test_locked_binary_keeps_its_placeholder(self):
+        path = self.put('tests/.test-run.lock', b'')
+        with patch.object(exporter, 'file_sha256', side_effect=PermissionError('locked')):
+            entry = exporter.read_entry(path, 'tests/.test-run.lock', '06_Tests')
+        self.assertEqual('METADATA', entry.status)
+        self.assertEqual('', entry.digest)
+        self.assertIn('not hashed', entry.reason)
+        self.assertIn('unavailable (file in use)', exporter.file_block(entry))
 
 if __name__ == '__main__':
     unittest.main()

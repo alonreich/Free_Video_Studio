@@ -4,11 +4,6 @@ using Xunit;
 
 namespace FreeVideoStudio.AvRegression.Tests;
 
-/// <summary>
-/// Video Merger — several clips previewed as ONE edit list on the real player, played across every
-/// join, reordered / removed / undone while playing, mixed formats, and the merged export.
-/// The reported bug: with more than one video the playhead sometimes gets stuck.
-/// </summary>
 [Collection(AvCollection.Name)]
 public sealed class S21_S26_MergerTests
 {
@@ -19,7 +14,6 @@ public sealed class S21_S26_MergerTests
         return list;
     }
 
-    /// <summary>Plays the merged preview from just before each join through it and checks the playhead never sticks.</summary>
     private static async Task PlayEveryJoinAsync(PlayerRig p, MergerRig m, string label)
     {
         foreach (double join in m.Joins)

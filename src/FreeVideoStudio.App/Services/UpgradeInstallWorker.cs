@@ -7,7 +7,6 @@ using Microsoft.Win32;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>UPGRADE_09 — privileged work is restricted to verified machine installation roots.</summary>
 internal static class UpgradeInstallWorker
 {
     internal static bool IsElevated()
@@ -146,11 +145,6 @@ internal static class UpgradeInstallWorker
         }
     }
 
-    /// <summary>
-    /// UPGRADEUX_01 — relays "phase|fraction" to the broker while synchronous file work runs on the
-    /// thread pool. Only this flow writes to the channel, so progress can never interleave with a
-    /// protocol message. Reporting is best-effort display data; a lost line changes nothing.
-    /// </summary>
     private sealed class ProgressRelay(UpgradeChannel channel)
     {
         private readonly object _gate = new();
@@ -193,11 +187,6 @@ internal static class UpgradeInstallWorker
         }
     }
 
-    /// <summary>
-    /// DIST-SMART — the elevated side NEVER trusts what the unelevated updater checked. It re-reads the
-    /// manifest and signature from the staging folder and verifies the signature itself, against the
-    /// pinned publisher root (or, for a publicly trusted certificate, against its OWN signer).
-    /// </summary>
     private static SmartUpdateManifest LoadVerifiedSmartUpdate(string folder)
     {
         UpgradeFiles.RequirePlainPath(folder);

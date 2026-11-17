@@ -8,15 +8,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.ViewModels;
 
-/// <summary>
-/// COMMENTARYMIX_01 / COMMENTARYUI_02 — everything the AI Commentary options window shows, bound (MVVM_01).
-///
-/// <para>BASIC (always visible): the four one-click styles, placement (Upper · Middle · Lower), language and
-/// the range. ADVANCED (an expander that is ALWAYS closed when the window opens): the four tone sliders,
-/// text look and size, how often it talks, swearing, caption animation, game type and extra notes.
-/// A style button sets the four sliders; moving a slider afterwards changes only that slider. Every choice is
-/// remembered for next time (<see cref="FromSettings"/> / <see cref="Remember"/>).</para>
-/// </summary>
 public sealed class AiCommentaryOptionsViewModel : ViewModelBase
 {
     public static IReadOnlyList<string> Languages { get; } =
@@ -58,7 +49,6 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
         ? "Caption only the speed block selected on the timeline."
         : "No speed block currently selected on the timeline.";
 
-    /// <summary>COMMENTARYUI_02 — the Advanced section; always starts closed (never remembered open).</summary>
     public bool IsAdvancedOpen { get => _isAdvancedOpen; set => SetProperty(ref _isAdvancedOpen, value); }
 
     public CommentaryPreset Preset => _preset;
@@ -67,7 +57,6 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
     public bool IsCoach { get => _preset == CommentaryPreset.Coach; set { if (value) ApplyPreset(CommentaryPreset.Coach); } }
     public bool IsRoastMe { get => _preset == CommentaryPreset.RoastMe; set { if (value) ApplyPreset(CommentaryPreset.RoastMe); } }
 
-    /// <summary>A style button: selects the style and sets the four sliders to its amounts.</summary>
     public void ApplyPreset(CommentaryPreset preset)
     {
         _preset = preset;
@@ -93,7 +82,6 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
     public string EnergyText => CommentaryPersonality.EnergyName(_energy);
     public string TacticalText => CommentaryPersonality.LevelName(_tactical);
 
-    /// <summary>TACTICAL_01/02 — what high Tactical changes, in one sentence.</summary>
     public string TacticalHint => _tactical >= CommentaryPersonality.LongLinesFromTactical
         ? "Explains your moves from what is on screen (health, enemies, distance). Lines can be longer and stay up longer."
         : "Explains your moves only from what is on screen — never guessed reasons.";
@@ -199,7 +187,6 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
     public CommentaryPersonality Personality =>
         new CommentaryPersonality(_funny, _sarcastic, _energy, _tactical, _chattiness, _allowSwearing).Normalized();
 
-    /// <summary>AIPROFILE_ONE_01 — the game-type list order: index ↔ profile (the single place the mapping lives).</summary>
     internal static int ProfileToIndex(AiGameProfile p) => p switch
     {
         AiGameProfile.FirstPerson => 1,
@@ -224,12 +211,6 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
             _entireTimeline || !HasSelectedSegment, mix, _preset, _look, _size);
     }
 
-    /// <summary>
-    /// AICOMMENTARY_REMEMBER_01 / COMMENTARYMIX_01 — the window as the user left it last time. Never chosen →
-    /// the 🔥 Hype Streamer style (or the style matching <paramref name="initialTone"/> of an existing track),
-    /// Lower placement, Outline, Medium, Normal, no swearing. "Selected block" falls back to the whole video
-    /// when no block is selected now. Advanced is always closed.
-    /// </summary>
     public static AiCommentaryOptionsViewModel FromSettings(AppSettings s, bool hasSelectedSegment, CaptionTone? initialTone, AiGameProfile initialProfile)
     {
         var vm = new AiCommentaryOptionsViewModel(hasSelectedSegment);
@@ -260,7 +241,6 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
         return vm;
     }
 
-    /// <summary>AICOMMENTARY_REMEMBER_01 — stores every choice, for the next time the window opens.</summary>
     public static void Remember(AiCommentaryDialogResult r) => SettingsManager.Update(s =>
     {
         s.AiCommentaryLastTone = r.Tone.ToString();

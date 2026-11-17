@@ -62,8 +62,43 @@ public partial class AiSetupWizardWindow : Window
         => text.Length >= MinKeyChars && text.Length - previousLength >= PasteJumpChars
            && ViewModels.SettingsViewModel.DetectKeyVendor(text) != null;
 
-    public AiSetupWizardWindow(AiVendor vendor, AiUsage? targetUsage, bool chooseCompanyFirst)
+    internal static string[] KeySteps(AiVendor vendor) => vendor switch
     {
+        AiVendor.Anthropic => new[]
+        {
+            "Press the blue button below. On the page: sign in (it may ask you to add credit first).",
+            "→ Click 'Create Key', type any name (for example Free Video Studio), click 'Add'.",
+            "→ Click 'Copy' next to the new key (it starts with sk-ant-).",
+        },
+        AiVendor.OpenAI => new[]
+        {
+            "Press the blue button below. On the page: sign in (it may ask you to add credit first).",
+            "→ Click 'Create new secret key', type any name (for example Free Video Studio), click 'Create secret key'.",
+            "→ Click 'Copy' (the key starts with sk-).",
+        },
+        _ => new[]
+        {
+            "Press the blue button below. On the page: sign in with any Google account.",
+            "→ Click 'Create API key' (if it asks for a project, pick any one or click 'Create project').",
+            "→ Click 'Copy' next to the new key (it starts with AIza).",
+        },
+    };
+
+    internal static string CostLine(AiVendor vendor) => vendor switch
+    {
+        AiVendor.Anthropic => "Cost: paid. Each AI run usually costs a few cents on your Anthropic account.",
+        AiVendor.OpenAI => "Cost: paid. Each AI run usually costs a few cents on your OpenAI account (or free with ChatGPT Plus/Pro above).",
+        _ => "Cost: free to start with Google's free plan. No credit card needed.",
+    };
+
+    private readonly string? _reason;
+
+    public AiSetupWizardWindow(AiVendor vendor, AiUsage? targetUsage, bool chooseCompanyFirst)
+        : this(vendor, targetUsage, chooseCompanyFirst, null) { }
+
+    public AiSetupWizardWindow(AiVendor vendor, AiUsage? targetUsage, bool chooseCompanyFirst, string? reason)
+    {
+        _reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
         _vendor = vendor;
         _targetUsage = targetUsage;
         _companyPicked = !chooseCompanyFirst;
@@ -93,6 +128,18 @@ public partial class AiSetupWizardWindow : Window
             if (statusLabel == null) return;
             statusLabel.Text = text;
             statusLabel.Foreground = ThemeResources.Brush(this, brushKey, statusLabel.Foreground ?? Brushes.Gray);
+        }
+
+        void ShowStep3(bool connected)
+        {
+            string vName = AiVisionProviders.DisplayName(_vendor);
+            if (scope?.Find("Step3Text") is TextBlock t3)
+            {
+                t3.Text = connected ? $"Connected ✓ {vName} is ready." : "Connected ✓ (waiting for your key)";
+                t3.Foreground = ThemeResources.Brush(this, connected ? "AppSuccessBrush" : "AppTextMutedBrush", t3.Foreground ?? Brushes.Gray);
+            }
+            if (scope?.Find("Step3Badge") is Border badge)
+                badge.Background = ThemeResources.Brush(this, connected ? "AppSuccessBrush" : "AppAccentBrush", badge.Background ?? Brushes.Gray);
         }
 
         void SetBusy(bool busy)
@@ -198,23 +245,25 @@ public partial class AiSetupWizardWindow : Window
             {
                 if (btn == null) return;
                 string vName = AiVisionProviders.DisplayName(v);
-                bool hasKey = SettingsManager.Instance.HasAiCredential(v);
+                bool broken = AiAccountFix.IsBroken(SettingsManager.Instance, v);
+                bool hasKey = !broken && AiAccountFix.IsUsable(SettingsManager.Instance, v);
+                string note = broken ? "Key not working" : hasKey ? "Connected" : PriceNote(v);
                 var lines = new StackPanel { Spacing = 1 };
                 lines.Children.Add(new TextBlock
                 {
-                    Text = hasKey ? $"✓ {vName}" : vName,
+                    Text = broken ? $"✗ {vName}" : hasKey ? $"✓ {vName}" : vName,
                     FontWeight = FontWeight.SemiBold,
                     HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                 });
                 lines.Children.Add(new TextBlock
                 {
-                    Text = hasKey ? "Connected" : PriceNote(v),
+                    Text = note,
                     FontSize = 11,
                     Opacity = 0.85,
                     HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
                 });
                 btn.Content = lines;
-                Avalonia.Automation.AutomationProperties.SetName(btn, $"{vName}, {(hasKey ? "connected" : PriceNote(v))}");
+                Avalonia.Automation.AutomationProperties.SetName(btn, $"{vName}, {note.ToLowerInvariant()}");
                 btn.Classes.Clear();
                 btn.Classes.Add(_companyPicked && v == _vendor ? "Primary" : "Secondary");
             }
@@ -230,12 +279,13 @@ public partial class AiSetupWizardWindow : Window
             _companyPicked = true;
             if (scope?.Find("KeyStep1Border") is Control k1) k1.IsVisible = true;
             if (scope?.Find("KeyStep2Border") is Control k2) k2.IsVisible = true;
+            if (scope?.Find("KeyStep3Border") is Control k3) k3.IsVisible = true;
             UpdateVendorButtons();
             PopulateModels(_vendor);
 
             string name = AiVisionProviders.DisplayName(_vendor);
             if (scope?.Find("WizardHeadline") is TextBlock headline) headline.Text = $"Connect {name}";
-            if (scope?.Find("Step1Title") is TextBlock s1) s1.Text = $"Get your {name} key";
+            if (scope?.Find("Step1Title") is TextBlock s1) s1.Text = $"Open the {name} key page";
             if (openBtn != null) openBtn.Content = $"Open the {name} key page";
             if (capabilityHint != null)
             {
@@ -243,36 +293,18 @@ public partial class AiSetupWizardWindow : Window
                 {
                     AiVendor.Anthropic => "Anthropic Claude looks at still pictures of your video (no sound). You pay Anthropic for what you use.",
                     AiVendor.OpenAI => "OpenAI looks at still pictures of your video (no sound). You pay OpenAI for what you use.",
-                    _ => "Google Gemini watches your video and hears its sound. It has a small free plan.",
+                    _ => "Google Gemini watches your video and hears its sound. It has a small free plan. " + AiVisionProviders.GoogleFreePlanDataNote,
                 };
             }
 
-            string[] lines = _vendor switch
-            {
-                AiVendor.Anthropic => new[]
+            string[] lines = KeySteps(_vendor);
+            for (int i = 0; i < 4; i++)
+                if (scope?.Find($"Step1Line{i + 1}") is TextBlock line)
                 {
-                    "1. Press the button below and sign in to the Anthropic Console (it may ask you to add credit).",
-                    "2. Open Settings › API Keys and click Create Key.",
-                    "3. Give it any name, for example Free Video Studio.",
-                    "4. Copy the key (it starts with sk-ant-). This window picks it up by itself and connects.",
-                },
-                AiVendor.OpenAI => new[]
-                {
-                    "1. Press the button below and sign in to the OpenAI Platform (it may ask you to add credit).",
-                    "2. Open API keys and click Create new secret key.",
-                    "3. Give it any name, for example Free Video Studio.",
-                    "4. Copy the key (it starts with sk-). This window picks it up by itself and connects.",
-                },
-                _ => new[]
-                {
-                    "1. Press the button below and sign in with any Google account.",
-                    "2. Click Create API key.",
-                    "3. Choose 'Create API key in new project'.",
-                    "4. Copy the key (it starts with AIza). This window picks it up by itself and connects.",
-                },
-            };
-            for (int i = 0; i < lines.Length; i++)
-                if (scope?.Find($"Step1Line{i + 1}") is TextBlock line) line.Text = lines[i];
+                    line.Text = i < lines.Length ? lines[i] : string.Empty;
+                    line.IsVisible = i < lines.Length;
+                }
+            if (scope?.Find("Step1Cost") is TextBlock cost) cost.Text = CostLine(_vendor);
 
             if (clearKeyInput && keyInput != null)
             {
@@ -284,8 +316,14 @@ public partial class AiSetupWizardWindow : Window
 
             SetBusy(false);
 
-            bool isConnected = SettingsManager.Instance.HasAiCredential(_vendor);
-            if (isConnected)
+            bool isBroken = AiAccountFix.IsBroken(SettingsManager.Instance, _vendor);
+            bool isConnected = !isBroken && AiAccountFix.IsUsable(SettingsManager.Instance, _vendor);
+            if (isBroken)
+            {
+                if (keyInput != null) keyInput.Watermark = $"Paste your NEW {name} key here (Ctrl+V)…";
+                Status($"✗ The saved {name} key does not work. Get a new one with step 1, then paste it here.", "AppDangerBrush");
+            }
+            else if (isConnected)
             {
                 if (keyInput != null) keyInput.Watermark = "Already connected (paste a new key to replace it)…";
                 Status($"✓ {name} is already connected. Press DONE.", "AppSuccessBrush");
@@ -296,7 +334,8 @@ public partial class AiSetupWizardWindow : Window
                 Status("Paste your key. It is checked right away.", "AppTextMutedBrush");
             }
 
-            if (startBtn != null) startBtn.IsEnabled = HasAnyApiKeyConfigured();
+            if (startBtn != null) startBtn.IsEnabled = AiAccountFix.AnyUsable(SettingsManager.Instance);
+            ShowStep3(isConnected);
             UpdateChatGptCard();
         }
 
@@ -408,6 +447,7 @@ public partial class AiSetupWizardWindow : Window
 
             UpdateVendorButtons();
             Status($"✓ Connected to {currentVendorName}. You're all set.", "AppSuccessBrush");
+            ShowStep3(true);
             if (startBtn != null) startBtn.IsEnabled = true;
             DispatcherTimer.RunOnce(() => { if (IsVisible) Close(true); }, CloseAfterConnect);
         }
@@ -545,7 +585,7 @@ public partial class AiSetupWizardWindow : Window
                 UpdateVendorButtons();
                 UpdateChatGptCard();
                 Status(message, "AppTextMutedBrush");
-                if (startBtn != null) startBtn.IsEnabled = HasAnyApiKeyConfigured();
+                if (startBtn != null) startBtn.IsEnabled = AiAccountFix.AnyUsable(SettingsManager.Instance);
             };
         }
 
@@ -553,7 +593,7 @@ public partial class AiSetupWizardWindow : Window
         {
             startBtn.Click += (_, _) =>
             {
-                if (SettingsManager.Instance.HasAiCredential(_vendor))
+                if (AiAccountFix.IsUsable(SettingsManager.Instance, _vendor))
                     SaveSelectionToSettings(_vendor, null, SelectedModel);
                 Close(true);
             };
@@ -572,6 +612,12 @@ public partial class AiSetupWizardWindow : Window
             _testCts.Dispose();
         };
 
+        if (_reason != null)
+        {
+            if (scope?.Find("WizardReasonBorder") is Control reasonCard) reasonCard.IsVisible = true;
+            if (scope?.Find("WizardReasonText") is TextBlock reasonText) reasonText.Text = _reason;
+        }
+
         if (_companyPicked)
         {
             SelectVendor(_vendor);
@@ -580,16 +626,16 @@ public partial class AiSetupWizardWindow : Window
         {
             if (scope?.Find("KeyStep1Border") is Control k1) k1.IsVisible = false;
             if (scope?.Find("KeyStep2Border") is Control k2) k2.IsVisible = false;
+            if (scope?.Find("KeyStep3Border") is Control k3) k3.IsVisible = false;
             if (scope?.Find("WizardHeadline") is TextBlock headline) headline.Text = "Pick your AI company";
             if (capabilityHint != null)
-                capabilityHint.Text = "Google Gemini: watches video and hears sound, small free plan. Anthropic Claude and OpenAI: look at still pictures, no sound. Pick one to continue.";
+                capabilityHint.Text = "Google Gemini: watches video and hears sound, small free plan (Google may use free-plan uploads to improve its products). Anthropic Claude and OpenAI: look at still pictures, no sound. Pick one to continue.";
             UpdateVendorButtons();
             if (startBtn != null) startBtn.IsEnabled = false;
         }
         AttachTitleBarDrag();
     }
 
-    /// <summary>AISETUP_02 — checks a key with its provider (rejects 0-model keys). Never throws.</summary>
     internal static async Task<(bool Success, string Message)> TestKeyAsync(AiVendor vendor, string key, CancellationToken ct)
     {
         var def = SettingsManager.Instance.AiDefaultUsage;
@@ -599,10 +645,8 @@ public partial class AiSetupWizardWindow : Window
         return (res.Success, res.Message);
     }
 
-    /// <summary>Opens Google AI Studio's key page in the default browser. Never throws.</summary>
     public static void OpenAiStudio() => OpenKeyPage(AiVendor.Google);
 
-    /// <summary>Opens the key page of <paramref name="vendor"/> in the default browser. Never throws.</summary>
     public static void OpenKeyPage(AiVendor vendor)
     {
         try
@@ -629,16 +673,10 @@ public partial class AiSetupWizardWindow : Window
         }
     }
 
-    /// <summary>
-    /// Checks if an API key is configured. If neither the requested vendor nor any vendor has an API key,
-    /// or if the requested vendor is missing its key, presents the setup wizard.
-    /// Allows connecting one or more providers in a single session.
-    /// Returns true if a key is ready to use.
-    /// </summary>
     public static async Task<bool> EnsureApiKeyConfiguredAsync(Window owner, AiVendor vendor = AiVendor.Google, AiUsage? usage = null)
     {
         var initial = SettingsManager.Instance;
-        if (!string.IsNullOrWhiteSpace(initial.GetApiKey(vendor)) && AiSetup.UsesOnline(AiSetup.Current()))
+        if (AiAccountFix.IsUsable(initial, vendor) && AiSetup.UsesOnline(AiSetup.Current()))
         {
             return true;
         }
@@ -650,11 +688,25 @@ public partial class AiSetupWizardWindow : Window
                     "This needs online AI. You chose 'On this PC only', so nothing is sent online.",
                     "Needs Online AI", "Change how AI works", "Not now"))
                 await AiModeWindow.RunAsync(owner);
-            return AiSetup.UsesOnline(AiSetup.Current()) && !string.IsNullOrWhiteSpace(SettingsManager.Instance.GetApiKey(vendor));
+            return AiSetup.UsesOnline(AiSetup.Current()) && AiAccountFix.IsUsable(SettingsManager.Instance, vendor);
         }
-        if (SettingsManager.Instance.HasAiCredential(vendor)) return true;
+        if (AiAccountFix.IsUsable(SettingsManager.Instance, vendor)) return true;
 
-        var wizard = new AiSetupWizardWindow(vendor, usage, chooseCompanyFirst: !AiSetup.HasStoredKey(SettingsManager.Instance));
+        string? reason = null;
+        if (AiAccountFix.IsBroken(SettingsManager.Instance, vendor))
+        {
+            reason = AiAccountFix.BrokenKeyReason(vendor, SettingsManager.Instance.GetApiKey(vendor));
+            RuntimeLog.Info("AiSetup", $"{AiAccountFix.Tag}: the saved {vendor} key is marked not working; opening Connect Your AI instead of sending a request.");
+        }
+        return await RunWizardAsync(owner, vendor, usage, reason, chooseCompanyFirst: !AiSetup.HasStoredKey(SettingsManager.Instance));
+    }
+
+    internal static Task<bool> FixKeyAsync(Window owner, AiVendor vendor, AiUsage? usage, string? reason, bool chooseCompanyFirst = false)
+        => RunWizardAsync(owner, vendor, usage, reason, chooseCompanyFirst);
+
+    private static async Task<bool> RunWizardAsync(Window owner, AiVendor vendor, AiUsage? usage, string? reason, bool chooseCompanyFirst)
+    {
+        var wizard = new AiSetupWizardWindow(vendor, usage, chooseCompanyFirst, reason);
         bool? result = await wizard.ShowDialog<bool?>(owner);
         if (result != true) return false;
 
@@ -662,7 +714,7 @@ public partial class AiSetupWizardWindow : Window
         AiVendor chosenVendor = wizard.SelectedVendor;
         string chosenModel = wizard.SelectedModel;
 
-        AiVendor? readyVendor = fresh.HasAiCredential(chosenVendor)
+        AiVendor? readyVendor = AiAccountFix.IsUsable(fresh, chosenVendor)
             ? chosenVendor
             : GetAnyConfiguredVendor();
         if (!readyVendor.HasValue) return false;
@@ -677,7 +729,7 @@ public partial class AiSetupWizardWindow : Window
             s.AiDefaultUsage = cfg.Clone();
             if (readyVendor.Value == AiVendor.Google)
                 s.GeminiModelName = finalModel;
-            if (usage.HasValue && (s.IsUsageOverridden(usage.Value) || !s.HasAiCredential(s.GetUsageConfig(usage.Value).Vendor)))
+            if (usage.HasValue && (s.IsUsageOverridden(usage.Value) || !AiAccountFix.IsUsable(s, s.GetUsageConfig(usage.Value).Vendor)))
             {
                 s.SetUsageConfig(usage.Value, cfg.Clone());
             }
@@ -685,23 +737,15 @@ public partial class AiSetupWizardWindow : Window
 
         var verified = SettingsManager.Instance;
         AiVendor effectiveVendor = usage.HasValue ? verified.GetUsageConfig(usage.Value).Vendor : readyVendor.Value;
-        return verified.HasAiCredential(effectiveVendor);
+        return AiAccountFix.IsUsable(verified, effectiveVendor);
     }
 
-    /// <summary>True if at least one AI vendor has an API key saved.</summary>
-    public static bool HasAnyApiKeyConfigured()
-    {
-        var settings = SettingsManager.Instance;
-        return settings.HasAiCredential(AiVendor.Google) || settings.HasAiCredential(AiVendor.Anthropic) || settings.HasAiCredential(AiVendor.OpenAI);
-    }
-
-    /// <summary>Returns the first configured AI vendor, or null if none.</summary>
     public static AiVendor? GetAnyConfiguredVendor()
     {
         var settings = SettingsManager.Instance;
-        if (!string.IsNullOrWhiteSpace(settings.GetStoredApiKey(AiVendor.Google))) return AiVendor.Google;
-        if (!string.IsNullOrWhiteSpace(settings.GetStoredApiKey(AiVendor.Anthropic))) return AiVendor.Anthropic;
-        if (settings.HasAiCredential(AiVendor.OpenAI)) return AiVendor.OpenAI;
+        if (AiAccountFix.IsUsable(settings, AiVendor.Google)) return AiVendor.Google;
+        if (AiAccountFix.IsUsable(settings, AiVendor.Anthropic)) return AiVendor.Anthropic;
+        if (AiAccountFix.IsUsable(settings, AiVendor.OpenAI)) return AiVendor.OpenAI;
         return null;
     }
 }

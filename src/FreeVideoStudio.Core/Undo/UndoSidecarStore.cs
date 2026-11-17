@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
@@ -10,84 +9,27 @@ using FreeVideoStudio.Core.Project;
 
 namespace FreeVideoStudio.Core.Undo;
 
-/// <summary>
-/// UNDO_24 — THE SIDECAR. EDIT HISTORY THAT SURVIVES CLOSING THE APPLICATION.
-///
-/// <para>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// <b>WHAT THIS CLOSES.</b> <c>07_UNDO_AND_HISTORY.md</c> §4 describes this store and §5 lists it
-/// as item 1 of the work not yet done. Until now <c>UndoStack&lt;T&gt;</c> held everything in
-/// memory, so quitting the application discarded every step of how a montage was built. A user who
-/// closed the app, reopened their project and pressed Ctrl+Z got nothing — and got no explanation
-/// either, because there was no history to say "there is none".
-/// </para>
-///
-/// <para>
-/// ⚠️ <b>HISTORY IS NOT PART OF THE DOCUMENT, AND THIS IS NOT A STYLE CHOICE.</b> §4 is explicit:
-/// history is per-machine, disposable, and would bloat a file meant to be portable. Sending a
-/// colleague a montage must not send them forty snapshots of how it was made — and worse, a
-/// <c>.fvsproj</c> carrying history would make the file grow without bound across sessions, on a
-/// format whose whole appeal is that it is small enough to email. So it lives BESIDE the project,
-/// keyed to it, and its absence is never an error.
-/// </para>
-///
-/// <para>
-/// <b>EVERY FAILURE HERE IS SILENT-BY-DESIGN AND THAT IS DELIBERATE, ONCE.</b> This is the one
-/// place in the suite where a read failure genuinely leaves the user's outcome unchanged: they get
-/// an empty history, which is exactly what they had before this class existed. Writing it through
-/// <c>IFaultSink</c> as Degraded would produce a notice saying "your undo history could not be
-/// loaded" for a feature the user has never been able to rely on, every time a sidecar is missing —
-/// which is most of the time. The CALLER decides whether an empty result is worth mentioning;
-/// this class reports the fact and does not editorialise.
-/// </para>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public sealed class UndoSidecarStore
 {
-    /// <summary>
-    /// UNDO_24 — the format this build writes. Bumped when the meaning of a stored field changes.
-    /// A sidecar from a different schema is DISCARDED rather than migrated: it is disposable data
-    /// and a wrong migration would silently hand the user someone else's edits.
-    /// </summary>
     public const int SchemaVersion = 1;
 
-    /// <summary>
-    /// UNDO_24 — the ceiling, mirroring U2. Enforced on WRITE as well as on restore, because a
-    /// file is the one place a stack can outlive the in-memory cap that was supposed to bound it.
-    /// </summary>
     public const int MaxEntries = UndoStack<ProjectDocument>.DefaultMaxDepth;
 
     private const string FolderName = "History";
 
     private readonly string _folder;
 
-    /// <param name="historyFolder">
-    /// Where sidecars live. Under ProgramData, never beside the <c>.fvsproj</c>: the project may
-    /// sit on a network share, a USB stick or a read-only folder, and per-machine disposable data
-    /// has no business being written there.
-    /// </param>
     public UndoSidecarStore(string historyFolder)
     {
         _folder = historyFolder ?? throw new ArgumentNullException(nameof(historyFolder));
     }
 
-    /// <summary>Builds a store rooted under the application's ProgramData directory.</summary>
     public static UndoSidecarStore CreateDefault(ApplicationPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
         return new UndoSidecarStore(Path.Combine(paths.ProgramDataRoot, FolderName));
     }
 
-    /// <summary>
-    /// UNDO_24 — the sidecar path for a project.
-    ///
-    /// <para>
-    /// ⚠️ Named by a HASH of the project's full path, not by its file name. Two projects called
-    /// <c>montage.fvsproj</c> in two folders are two projects, and sharing one history between them
-    /// would hand a user edits they never made. The hash also sidesteps every path-length and
-    /// illegal-character question in one step.
-    /// </para>
-    /// </summary>
     public string PathFor(string projectPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectPath);
@@ -97,33 +39,12 @@ public sealed class UndoSidecarStore
         return Path.Combine(_folder, Convert.ToHexString(hash, 0, 12) + ".history.json");
     }
 
-    /// <summary>
-    /// UNDO_24 — writes the history beside the project.
-    ///
-    /// <para>
-    /// <paramref name="sourceFingerprint"/> is stored and checked on load. A project edited by
-    /// another machine, or restored from a backup, has a history that no longer describes it —
-    /// replaying those snapshots would silently revert the user to a document that never existed
-    /// on this timeline. Cheaper to discard than to be subtly wrong.
-    /// </para>
-    /// </summary>
-    /// <returns><see langword="true"/> when the file was written.</returns>
     public bool Save(string projectPath, string sourceFingerprint, UndoStack<ProjectDocument> history)
     {
         ArgumentNullException.ThrowIfNull(history);
         return Save(projectPath, sourceFingerprint, history.UndoEntries, history.RedoEntries);
     }
 
-    /// <summary>
-    /// AUTOSAVEBG_01 — the same write, from a SNAPSHOT of the branches rather than the live stack.
-    ///
-    /// <para>
-    /// ⚠️ <see cref="UndoStack{T}.UndoEntries"/> exposes the stack's own list. Handing that to a
-    /// worker thread while the UI keeps pushing edits is a torn read. The background autosave
-    /// copies both branches on the UI thread (entries are immutable records holding immutable
-    /// documents, so a shallow array copy IS a snapshot) and calls this overload off-thread.
-    /// </para>
-    /// </summary>
     public bool Save(
         string projectPath,
         string sourceFingerprint,
@@ -158,17 +79,6 @@ public sealed class UndoSidecarStore
         }
     }
 
-    /// <summary>
-    /// UNDO_24 — reads the history back, or returns <see langword="null"/> when there is none to
-    /// read, when it belongs to a different version of the project, or when it cannot be parsed.
-    ///
-    /// <para>
-    /// ⚠️ ALL THREE OF THOSE ARE THE SAME ANSWER ON PURPOSE: <i>start with an empty history</i>.
-    /// A user cannot act on "your sidecar is schema 2", and the recovery from every one of them is
-    /// identical. Distinguishing them in the return type would only tempt a caller into handling
-    /// them differently, and there is no different handling to do.
-    /// </para>
-    /// </summary>
     public UndoSidecar? Load(string projectPath, string expectedSourceFingerprint)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectPath);
@@ -209,10 +119,6 @@ public sealed class UndoSidecarStore
         }
     }
 
-    /// <summary>
-    /// UNDO_24 — removes the sidecar. Called when a project is deleted or explicitly reset, so a
-    /// stale history cannot be matched to a later file that happens to reuse the path.
-    /// </summary>
     public void Delete(string projectPath)
     {
         try
@@ -225,7 +131,6 @@ public sealed class UndoSidecarStore
             CoreLogger.Warn("UNDO", $"Could not delete the history sidecar: {ex.Message}");
         }
     }
-
 
     private static JsonArray WriteEntries(IReadOnlyList<UndoEntry<ProjectDocument>> entries)
     {
@@ -273,7 +178,6 @@ public sealed class UndoSidecarStore
     }
 }
 
-/// <summary>UNDO_24 — a history read back from disk, ready for <see cref="UndoStack{T}.Restore"/>.</summary>
 public sealed record UndoSidecar(
     IReadOnlyList<UndoEntry<ProjectDocument>> Undo,
     IReadOnlyList<UndoEntry<ProjectDocument>> Redo);

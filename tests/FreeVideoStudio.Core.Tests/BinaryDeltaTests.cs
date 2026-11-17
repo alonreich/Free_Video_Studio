@@ -6,7 +6,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>BINDELTA_01 — a patch rebuilds exactly the new file, or fails; it never builds a wrong one.</summary>
 public sealed class BinaryDeltaTests
 {
     private static byte[] Random(int length, int seed)
@@ -16,7 +15,6 @@ public sealed class BinaryDeltaTests
         return data;
     }
 
-    /// <summary>Simulates a recompiled program: inserted code shifts everything, and many 4-byte addresses change.</summary>
     private static byte[] Recompile(byte[] old, int seed)
     {
         var rng = new System.Random(seed);
@@ -90,7 +88,6 @@ public sealed class BinaryDeltaTests
         Assert.ThrowsAny<Exception>(() => BinaryDelta.Apply(old, new MemoryStream(bytes)));
     }
 
-    /// <summary>The pre-BINDELTA_02 whole-array decoder, verbatim — the compatibility reference.</summary>
     private static byte[] LegacyApply(byte[] oldFile, Stream patch)
     {
         BinaryDelta.Header header = BinaryDelta.ReadHeader(patch);
@@ -172,7 +169,6 @@ public sealed class BinaryDeltaTests
         return output.ToArray();
     }
 
-    /// <summary>Returns at most a few bytes per Read — a network-like, fragmented stream.</summary>
     private sealed class TrickleStream(Stream inner, int seed, Action? onRead = null) : Stream
     {
         private readonly System.Random _rng = new(seed);
@@ -222,7 +218,6 @@ public sealed class BinaryDeltaTests
         }
     }
 
-    /// <summary>A hand-written FVSDELTA1 patch (not made by Create): negative seek, zero-length blocks, wraparound.</summary>
     [Fact]
     public void AHandWrittenFvsDelta1PatchDecodes()
     {
@@ -331,10 +326,6 @@ public sealed class BinaryDeltaTests
             BinaryDelta.Apply(new MemoryStream(old, writable: false), patchStream, output, midway.Token));
     }
 
-    /// <summary>
-    /// BINDELTA_02 regression: a 192 MiB program is rebuilt from disk to disk while the managed heap
-    /// allocates well under 1 % of it. The whole-array path allocated ≥ old + new (≥ 384 MiB here).
-    /// </summary>
     [Fact]
     public void ALargeFileIsRebuiltWithBoundedMemory()
     {

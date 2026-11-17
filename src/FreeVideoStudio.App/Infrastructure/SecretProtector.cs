@@ -4,21 +4,6 @@ using System.Text;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// KEYPROTECT_01 (docs/05 SYS-AISETTINGS) — keeps the Gemini API key out of settings.json as plain text.
-///
-/// <para>On Windows the key is sealed with DPAPI (<c>CryptProtectData</c>, CURRENT USER scope, an
-/// app-specific entropy) and stored as <c>"dpapi1:" + base64</c>. Only the same Windows account on the
-/// same machine can open it, so a copied settings file, a quarantined corrupt copy or a support
-/// bundle no longer carries a usable key. Direct P/Invoke to crypt32 — no extra package, NativeAOT-safe.</para>
-///
-/// <para>Text without the prefix is legacy plain text (schema ≤ 13) and is returned as-is; the settings
-/// migration re-seals it. Off Windows (test hosts only — the product is Windows-only) the value is stored
-/// with the <c>"plain1:"</c> prefix so it is still recognisable and never mistaken for a sealed blob.</para>
-///
-/// <para>Never throws, never logs the secret. An undecryptable blob (another user / machine) reads as
-/// empty: the user is asked for the key again rather than shown an error with the blob in it.</para>
-/// </summary>
 public static class SecretProtector
 {
     public const string DpapiPrefix = "dpapi1:";
@@ -26,7 +11,6 @@ public static class SecretProtector
 
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("FreeVideoStudio.GeminiApiKey.v1");
 
-    /// <summary>True when <paramref name="stored"/> is already in a protected (prefixed) form.</summary>
     public static bool IsProtectedForm(string? stored)
         => stored != null && (stored.StartsWith(DpapiPrefix, StringComparison.Ordinal) || stored.StartsWith(PlainPrefix, StringComparison.Ordinal));
 

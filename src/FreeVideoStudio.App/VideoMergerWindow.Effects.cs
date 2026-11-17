@@ -6,16 +6,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// MERGEEDIT_02 — GRANULAR EDIT ON THE WHOLE MERGE (Video-Merger-Migration.md P6.4, D16).
-///
-/// The button opens the Main App's Granular Speed Editor on the merge as ONE virtual file
-/// (<see cref="MergeEditorSource"/>). On Accept every effect is put back into the clip it sits on
-/// (<see cref="MergeEditorSource.FromEditor"/>), the edit list is replaced as ONE undo step
-/// ("granular edit"), and the autosave follows. Cancel changes nothing.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class VideoMergerWindow
 {
     private Button? _cGranularButton;
@@ -29,7 +19,6 @@ public partial class VideoMergerWindow
         UpdateMergerGranularButton();
     }
 
-    /// <summary>Enabled once the merged timeline describes the queue (the editor needs the clip windows).</summary>
     private void UpdateMergerGranularButton()
     {
         var btn = GranularButtonCtl;
@@ -57,18 +46,11 @@ public partial class VideoMergerWindow
         }
     }
 
-    /// <summary>
-    /// MUSICMAP_01 (P7.2, D8) — where a music start/end placed on the merged clock lands in the
-    /// exported body: through the composite timeline, so speed ramps, freezes, memes and cuts before
-    /// that moment move it exactly as they move the video. Falls back to merged / base speed (the old
-    /// rule, identical when there are no effects) if the edit list does not describe the queue.
-    /// </summary>
     private double MusicExportSec(double mergedSec, double speedFactor)
         => EdlDescribesQueue()
             ? CompositeTimeline.Build(CurrentEdl).MergedSecToBodyOutputSec(mergedSec)
             : mergedSec / speedFactor;
 
-    /// <summary>True when the captured edit list is the queue as analysed (same clips, same order).</summary>
     private bool EdlDescribesQueue()
     {
         var edl = CurrentEdl;
@@ -76,10 +58,6 @@ public partial class VideoMergerWindow
                && edl.Clips.Select(c => c.Path).SequenceEqual(VideoQueue, StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// MERGESIZE_01 — length of the finished video from the edit list (effects, removed intros, custom
-    /// thumbnail), or null while it does not describe the queue. Feeds TOTAL LENGTH and the size estimate.
-    /// </summary>
     private double? EdlOutputSec() => EdlDescribesQueue() ? CompositeTimeline.Build(CurrentEdl).TotalOutputSec : null;
 
     private async Task OpenMergeGranularEditorAsync()
@@ -175,15 +153,11 @@ public partial class VideoMergerWindow
         }
     }
 
-    /// <summary>
-    /// AIMERGEKILLS_01 (docs/04 UI-MERGER-KILLS) — with "Mark my kills" on, each merged clip is scanned (a saved or
-    /// earlier scan of the same file is reused, AIREUSE_04) and the kills inside the kept part of each clip are
-    /// handed to the speed editor in MERGED seconds, so the ✕ markers appear there and AI Commentary gets the
-    /// kill timings for clips of the Merger too. Runs in the background; closing the editor stops it.
-    /// </summary>
     internal const string AiMergeStopTag = "AIMERGESTOP_01";
 
-    private async Task ScanMergeClipsForKillsAsync(MergeEditorSource source, GranularSpeedEditorWindow editor, System.Threading.CancellationTokenSource cts)
+    internal const string UsageLineTag = "AIUSAGE_06";
+
+    private async Task ScanMergeClipsForKillsAsync(MergeEditorSource source, GranularSpeedEditorWindow editor, System.Threading.CancellationTokenSource cts, bool userAsked = false)
     {
         var ct = cts.Token;
         void Status(string? text, string? detail, bool isError, bool running)
@@ -215,27 +189,46 @@ public partial class VideoMergerWindow
                 Services.AiCostEstimator.EstimateKillTracker(config.Vendor, model, Services.AiEliminationTrackerService.MomentBudgetForRanges(keptRanges)),
                 config.Vendor, apiKey, model);
             string costNote = $"{vendorName} · {Services.AiCostEstimator.PlainCostShort(est, config.Vendor, model)} (estimate)";
+
+            var planned = new System.Collections.Generic.List<(MergeEditorClip Clip, double DurationSec, double From, double To)>();
+            foreach (var clip in source.Clips)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (!System.IO.File.Exists(clip.Path)) continue;
+                double clipDurationSec = await Services.AiFfmpeg.ProbeDurationSecAsync(ffmpeg, clip.Path, ct);
+                if (clipDurationSec <= 0) continue;
+                double clipFrom = Math.Max(0, clip.KeepInUs / 1_000_000.0 - 1.5);
+                double clipTo = Math.Min(clipDurationSec, clip.KeepOutUs / 1_000_000.0 + 0.5);
+                if (clipTo <= clipFrom) continue;
+                planned.Add((clip, clipDurationSec, clipFrom, clipTo));
+            }
+            bool allSaved = planned.Count > 0 && planned.All(p => Services.AiEliminationTrackerService.HasSavedScan(p.Clip.Path, p.DurationSec, config.Vendor, model, p.From, p.To));
+            if (!Services.AiEliminationTrackerService.StartsByItself(userAsked, allSaved, est, config.Vendor, model, settings.AiAutoApproveUnderUsd))
+            {
+                string price = Services.AiCostEstimator.PlainCostShort(est, config.Vendor, model);
+                RuntimeLog.Info("AIElimination", $"Merger kill scan waits for a click ({price}, estimate; {Services.AiEliminationTrackerService.SharedGateTag}).");
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    if (ct.IsCancellationRequested) return;
+                    editor.SetKillScanStatus($"AI kill scan: click ▶ Start ({price}, estimate)",
+                        $"{costNote}\nScans under ${Services.AiEliminationTrackerService.AutoScanUnderUsd.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)} start by themselves.",
+                        false, null, () => _ = ScanMergeClipsForKillsAsync(source, editor, cts, userAsked: true));
+                });
+                return;
+            }
             var startedUtc = DateTime.UtcNow;
             Status("AI: looking for your kills…", costNote, false, true);
 
             var mergedSec = new System.Collections.Generic.List<double>();
             int failedClips = 0;
             string? lastFailure = null;
-            string? lastFailureRef = null;
-            decimal usedUsd = 0;
-            bool anyUsage = false;
-            foreach (var clip in source.Clips)
+            using var usage = Services.AiUsageMeter.BeginTask("AI Kill Tracker (Merger)", config.Vendor);
+            usage.SetEstimate(est);
+            currentRef = usage.Id;
+            foreach (var (clip, durationSec, from, to) in planned)
             {
                 ct.ThrowIfCancellationRequested();
-                if (!System.IO.File.Exists(clip.Path)) continue;
-                double durationSec = await Services.AiFfmpeg.ProbeDurationSecAsync(ffmpeg, clip.Path, ct);
-                if (durationSec <= 0) continue;
-                double from = Math.Max(0, clip.KeepInUs / 1_000_000.0 - 1.5);
-                double to = Math.Min(durationSec, clip.KeepOutUs / 1_000_000.0 + 0.5);
-                if (to <= from) continue;
                 int clipNo = clip.Index + 1;
-                using var usage = Services.AiUsageMeter.BeginTask("AI Kill Tracker (Merger clip)", config.Vendor);
-                currentRef = usage.Id;
                 var result = await Task.Run(() => Services.AiEliminationTrackerService.ScanAsync(
                     ffmpeg, clip.Path, durationSec, config.Vendor, apiKey, model,
                     status =>
@@ -250,8 +243,7 @@ public partial class VideoMergerWindow
                     if (us < clip.KeepInUs || us > clip.KeepOutUs) continue;
                     mergedSec.Add(clip.ToMergedMs(us) / 1000.0);
                 }
-                if (result.Failed) { failedClips++; lastFailure = result.Summary; lastFailureRef = usage.Id; }
-                if (usage.Tally.Requests > 0) { anyUsage = true; usedUsd += usage.EstimatedUsd; }
+                if (result.Failed) { failedClips++; lastFailure = result.Summary; }
                 if (result.AccountProblem)
                 {
                     RuntimeLog.Info("AIElimination", $"Merger clip {clipNo}: account problem, the other clips are not scanned ({AiMergeStopTag}).");
@@ -259,16 +251,17 @@ public partial class VideoMergerWindow
                     Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (!ct.IsCancellationRequested) editor.SetAiEliminations(partialSnapshot); });
                     break;
                 }
-                RuntimeLog.Info("AIElimination", $"Merger clip {clipNo}: {result.Summary} {usage.SummaryWithEstimate()}");
+                RuntimeLog.Info("AIElimination", $"Merger clip {clipNo}: {result.Summary}");
                 var snapshot = mergedSec.OrderBy(t => t).ToList();
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (!ct.IsCancellationRequested) editor.SetAiEliminations(snapshot); });
             }
             string found = mergedSec.Count switch { 0 => "no kills of yours found", 1 => "1 kill found", _ => $"{mergedSec.Count} kills found" };
-            string cost = anyUsage ? $" · {Services.AiCostEstimator.PlainUsd(usedUsd)} (estimate)" : "";
+            string usageLine = usage.PlainSummary();
+            RuntimeLog.Info("AIElimination", $"Merger kill scan: {found}. {usage.SummaryWithEstimate()} ({UsageLineTag})");
             if (failedClips > 0)
-                Status($"AI kill scan: {found}; {failedClips} clip(s) failed: {lastFailure} (Reference: {lastFailureRef})", costNote, true, false);
+                Status($"AI kill scan: {found}; {failedClips} clip(s) failed: {lastFailure} (Reference: {usage.Id})", $"{usageLine}\n{costNote}", true, false);
             else
-                Status($"AI: {found}{cost}", costNote, false, false);
+                Status($"AI: {found}", $"{usageLine}\n{costNote}", false, false);
         }
         catch (OperationCanceledException)
         {

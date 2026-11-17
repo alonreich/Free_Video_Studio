@@ -318,7 +318,7 @@ public sealed class CropWorkflowTests : IAsyncLifetime
     public async Task GlobalActiveMaskOverlayMismatch_SavesOnlyToVerifiedProfile()
     {
         MaskOverlayManager.EnsureDefaults();
-        
+
         var otherConfig = CropConfigDefaults.Create();
         otherConfig["overlays"]!["loot"]!["x"] = 999;
         string otherProfilePath = Profile("OtherProfile");

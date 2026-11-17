@@ -6,20 +6,6 @@ namespace FreeVideoStudio.Core.Infrastructure;
 
 public sealed class RecoveryManager
 {
-    /// <summary>
-    /// Shape version of <c>recovery_v2.json</c>.
-    ///
-    /// ISSUE_06 — this did not exist, and THAT was the bug. <see cref="LoadState"/> threw
-    /// "Missing schema_version in recovery state" whenever the key was absent, but NOTHING ever
-    /// wrote the key: MainWindow.SaveRecoveryState builds the payload by hand and stamps 59 keys,
-    /// none of them <c>schema_version</c>. So the throw fired on every single restore, was
-    /// swallowed by the catch below, and LoadState returned null every time — meaning the
-    /// "restore your previous work?" prompt could never restore anything. The stamp is now applied
-    /// centrally in <see cref="SaveState"/> so every writer gets it automatically and no caller
-    /// has to remember.
-    ///
-    /// Bump ONLY when the payload shape changes incompatibly.
-    /// </summary>
     public const int SchemaVersion = 1;
 
     private readonly ApplicationPaths _paths;
@@ -31,7 +17,6 @@ public sealed class RecoveryManager
 
     private static long NextVersion() => Interlocked.Increment(ref _writeVersion);
 
-    /// <summary>Caller holds _saveLock. True when <paramref name="version"/> is newer than anything applied to the file.</summary>
     private bool TryClaimVersionLocked(long version)
     {
         string key = _paths.RecoveryStateFile;
@@ -45,19 +30,12 @@ public sealed class RecoveryManager
     private int _crashedRestoreAttempts;
     private bool _restoreAttemptedThisProcess;
 
-    /// <summary>RESTORECRASH_01 — consecutive restore attempts that died with their owner (0 = none).</summary>
     public int CrashedRestoreAttempts => _crashedRestoreAttempts;
 
-    /// <summary>RESTORECRASH_01 — true when the previous launch died while restoring the snapshot.</summary>
     public bool RestoreCrashDetected => _crashedRestoreAttempts > 0;
 
-    /// <summary>RESTORECRASH_01 — false once the retry budget is spent or this process already tried.</summary>
     public bool CanRetryRestore => !_restoreAttemptedThisProcess && _crashedRestoreAttempts < MaxRestoreAttempts;
 
-    /// <summary>
-    /// RESTORECRASH_01 — where the last snapshot moved aside by <see cref="QuarantineSnapshot"/> is kept,
-    /// byte for byte. Each quarantine gets a unique name so an earlier kept copy is never overwritten.
-    /// </summary>
     public string? QuarantinedSnapshotFile { get; private set; }
 
     public RecoveryManager(ApplicationPaths? paths = null)
@@ -65,19 +43,6 @@ public sealed class RecoveryManager
         _paths = paths ?? ApplicationPaths.CreateDefault();
     }
 
-    /// <summary>
-    /// RECOVERY_02 — records that the user is closing the app ON PURPOSE.
-    ///
-    /// MUST be called synchronously at the very top of the close handler, BEFORE any await. The
-    /// close path is asynchronous (save window bounds, stop mpv, dispose the host) and during a
-    /// Windows shutdown / restart / sign-out the OS can terminate the process partway through it.
-    /// The session lock then survives and the next launch reports a crash that never happened.
-    /// This marker is the evidence that the exit was intentional, written while we still certainly
-    /// have a thread to write it with.
-    ///
-    /// Non-throwing by contract: it runs inside a close handler, and a failure here must never
-    /// prevent the app from closing.
-    /// </summary>
     public void MarkCleanShutdownIntent()
     {
         try
@@ -182,21 +147,6 @@ public sealed class RecoveryManager
         return true;
     }
 
-    /// <summary>
-    /// RECOVERY_05 — is a restore currently in flight (or did one die mid-flight)?
-    ///
-    /// OWNERSHIP FIRST, AGE ONLY AS A BACKSTOP. This used to expire the sentinel purely on
-    /// wall-clock age (120 seconds). A restore of a large project on a slow disk can legitimately
-    /// take longer than that, and when it did the sentinel was deleted MID-RESTORE — so a crash
-    /// during that restore was no longer recognised as a crash loop, which is precisely the
-    /// scenario safe mode exists to break, arriving exactly when the session is heaviest.
-    ///
-    /// The sentinel now records the owning process the same way the session lock does
-    /// (PID + process start ticks, which together defeat PID reuse). It is honoured for as long as
-    /// that process is genuinely alive, however long the restore takes. It is considered stale —
-    /// and cleaned up — only when the owner is gone. The age check survives purely as a backstop
-    /// for a sentinel written by an older build that carries no owner stamp.
-    /// </summary>
     public bool IsSafeModeActive()
     {
         if (!File.Exists(_paths.SafeModeSentinelFile)) return false;
@@ -230,14 +180,12 @@ public sealed class RecoveryManager
         return false;
     }
 
-    /// <summary>RESTORECRASH_01 — the attempt number in "pid:startTicks:attempt"; older stamps count as attempt 1.</summary>
     private static int ParseRestoreAttempt(string content)
     {
         string[] parts = (content ?? "").Split(':');
         return parts.Length >= 3 && int.TryParse(parts[2], out int attempt) && attempt > 0 ? attempt : 1;
     }
 
-    /// <summary>Parses a "pid:startTicks" owner stamp. Shared by the lock and the safe-mode sentinel.</summary>
     private static bool TryParseOwner(string content, out int pid, out long startTicks)
     {
         pid = 0; startTicks = 0;
@@ -248,10 +196,6 @@ public sealed class RecoveryManager
                && long.TryParse(parts[1], out startTicks);
     }
 
-    /// <summary>
-    /// True when the stamped process is still alive AND is genuinely the same process — the start
-    /// ticks are what stop a recycled PID from impersonating the previous owner.
-    /// </summary>
     private static bool IsProcessStillRunning(int pid, long startTicks)
     {
         try
@@ -277,11 +221,6 @@ public sealed class RecoveryManager
         catch (System.Exception ex) { CoreLogger.Swallowed(ex); return false; }
     }
 
-    /// <summary>
-    /// Marks this process as the restore owner. RESTORECRASH_01: returns false (and restores
-    /// nothing) once the retry budget is spent or this process already attempted a restore, so a
-    /// crashing snapshot can never be retried automatically or endlessly.
-    /// </summary>
     public bool ActivateSafeMode()
     {
         if (!CanRetryRestore)
@@ -306,10 +245,6 @@ public sealed class RecoveryManager
         return true;
     }
 
-    /// <summary>
-    /// Clears the safe-mode sentinel. Called after a recovery restore completes
-    /// successfully so that genuine later crashes in this session remain recoverable.
-    /// </summary>
     public void DeactivateSafeMode()
     {
         try
@@ -371,12 +306,6 @@ public sealed class RecoveryManager
         _skipCleanup = skip;
     }
 
-    /// <summary>
-    /// Deletes only the session lock file without clearing recovery state.
-    /// Use during intentional process handoffs (Main → Merger/CropTool) so
-    /// CheckFault() returns false on restart, but recovery state is preserved
-    /// for genuine crash detection.
-    /// </summary>
     public void ReleaseLockOnly()
     {
         try
@@ -396,7 +325,6 @@ public sealed class RecoveryManager
         Task.Run(() => SaveStateVersioned(state, version));
     }
 
-    /// <summary>GRANULARPERF_01 — atomic editor-node update under the same gate as app-level saves.</summary>
     public void UpdateGranularSession(JsonObject? session)
     {
         lock (_saveLock)
@@ -411,7 +339,6 @@ public sealed class RecoveryManager
 
     public void SaveState(JsonObject state) => SaveStateVersioned(state, NextVersion());
 
-    /// <summary>WRITEORDER_01 test seam: reserve a version now, apply the save later (what SaveStateAsync does).</summary>
     internal static long ReserveVersionForTests() => NextVersion();
     internal void ApplySaveForTests(JsonObject state, long version) => SaveStateVersioned(state, version);
 
@@ -429,7 +356,6 @@ public sealed class RecoveryManager
         }
     }
 
-    /// <summary>Caller holds _saveLock. The RECOVERY_03-preserving atomic write.</summary>
     private void WriteLocked(JsonObject state)
     {
         {
@@ -519,12 +445,6 @@ public sealed class RecoveryManager
         }
     }
 
-    /// <summary>
-    /// RESTORECRASH_01 — the retry budget is spent, or a restore failed without crashing
-    /// (RESTOREFAIL_01). Moves the snapshot aside INTACT (one atomic
-    /// rename, sequenced like every other whole-file write by WRITEORDER_01) so the crash loop
-    /// stops without destroying the user's work. Returns false when there was nothing to move.
-    /// </summary>
     public bool QuarantineSnapshot()
     {
         long version = NextVersion();
@@ -545,7 +465,6 @@ public sealed class RecoveryManager
         }
     }
 
-    /// <summary>RESTORECRASH_01 — explicit user Start Fresh: the ONLY path that discards a crashed-restore snapshot.</summary>
     public void DiscardRecoveryState()
     {
         ClearState();

@@ -1,5 +1,4 @@
-﻿
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Media;
@@ -9,15 +8,6 @@ using Xunit.Abstractions;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// LIBAVPROBE_01/03 — native libav metadata vs the ffprobe subprocess it replaces.
-/// Every assertion compares the two backends on the SAME file through the SAME MediaProber
-/// accessors, plus the raw JSON keys those accessors (and OutputSizeEstimator) read.
-/// LIBAVPROBE_04 — <see cref="RepeatedProbesShowNoResourceGrowth"/> reads PROCESS-wide private bytes and handles,
-/// so this class runs in a collection with parallelisation disabled (after, never beside, other tests).
-/// In the 2026-11-13 gate run the probes stayed flat for 240 of 300 pairs (163 → 171 MB) and then another
-/// test running in parallel added +375 MB and +133 handles inside the last block — not a probe leak.
-/// </summary>
 [CollectionDefinition(nameof(LibAvMetadataProbeTests), DisableParallelization = true)]
 public sealed class LibAvMetadataProbeCollection { }
 
@@ -33,7 +23,6 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
         _out = output;
     }
 
-
     public sealed class Fixtures : IAsyncLifetime
     {
         public string Root { get; private set; } = string.Empty;
@@ -41,7 +30,6 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
         public string FfmpegPath => Path.Combine(Root, "binaries", "ffmpeg.exe");
         public string Work { get; } = Path.Combine(Path.GetTempPath(), $"fvs-libav-{Guid.NewGuid():N}");
 
-        /// <summary>name → path. Generated + representative repository media.</summary>
         public Dictionary<string, string> Valid { get; } = new();
         public Dictionary<string, string> Invalid { get; } = new();
         public List<string> NotCovered { get; } = new();
@@ -134,11 +122,10 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
         public Task DisposeAsync()
         {
             try { if (Directory.Exists(Work)) Directory.Delete(Work, recursive: true); }
-            catch (IOException) { /* temp cleanup only; a locked file here is reported by the lock test */ }
+            catch (IOException) {  }
             return Task.CompletedTask;
         }
     }
-
 
     private static readonly string[] StreamKeys =
         { "index", "codec_type", "width", "height", "pix_fmt", "color_range", "color_space", "color_transfer", "color_primaries", "avg_frame_rate", "duration", "bit_rate" };
@@ -253,10 +240,6 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
         Assert.Equal("60000/1001", fps);
     }
 
-    /// <summary>
-    /// LIBAVPROBE_02 — the backend binds by GetExport and must leave FreeVideoStudio.Core's single
-    /// DllImportResolver slot free (libmpv's P/Invokes are resolved through it).
-    /// </summary>
     [WindowsOnlyFact]
     public async Task NativeBackendLeavesTheAssemblyResolverSlotFree()
     {
@@ -264,7 +247,6 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
         System.Runtime.InteropServices.NativeLibrary.SetDllImportResolver(typeof(MediaProber).Assembly, (_, _, _) => IntPtr.Zero);
         Assert.True((await MediaMetadataProbe.ProbeAsync(_fx.FfprobePath, _fx.Valid["av.mp4"], TimeSpan.FromSeconds(15), default, MediaProbeBackend.Native)).Ok);
     }
-
 
     [WindowsOnlyFact]
     public async Task PreCancelledTokenIsCancellationNotFailure()
@@ -310,7 +292,6 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
         Assert.True(worst < 3000, $"a cancelled probe took {worst} ms");
         AssertNotLocked(clip);
     }
-
 
     private sealed class FakeNative(NativeProbeStatus status, bool throwCancel = false) : INativeMediaBackend
     {
@@ -391,7 +372,6 @@ public sealed class LibAvMetadataProbeTests : IClassFixture<LibAvMetadataProbeTe
             MediaMetadataProbe.NativeOverride = null;
         }
     }
-
 
     private static void AssertNotLocked(string path)
     {

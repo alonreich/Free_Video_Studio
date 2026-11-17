@@ -44,7 +44,6 @@ packages/
 src/FreeVideoStudio.App/payload.zip
 temp_staging/
 
-# SECRETSCAN_01 — credentials never enter git (also enforced by tests/FreeVideoStudio.App.Tests/SecretLeakTests.cs)
 *.pfx
 *.p12
 *.snk
@@ -52,9 +51,9 @@ temp_staging/
 *.password.txt
 settings.json.corrupt-*.bak
 
-# Generated dev diagnostics. TESTOUT_01: logs/ is the ONLY test-output folder (logs/<Suite>_Results/).
 /.devlogs/
 /.dev-run/
 /.dev-run.lock
 /tests/.test-run.lock
 /logs/
+developer_tools/local_ai_pack/out/

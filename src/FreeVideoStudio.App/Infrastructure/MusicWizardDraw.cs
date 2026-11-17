@@ -4,11 +4,6 @@ using Avalonia.Media;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// MWDRAW_01 — the two canvas primitives the music wizard draws its timeline furniture with: the
-/// playhead line and the lane boundaries. Pure "given a canvas and a coordinate, put a shape
-/// there" helpers with no wizard state. Extracted from <c>MusicWizardWindow</c>; bodies verbatim.
-/// </summary>
 internal static class MusicWizardDraw
 {
     internal static void EnsurePlayheadLine(

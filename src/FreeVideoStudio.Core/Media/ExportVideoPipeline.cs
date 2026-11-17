@@ -1,14 +1,8 @@
-﻿
-using System.Text;
+﻿using System.Text;
 using System.Text.RegularExpressions;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// Plans video memory and filtering together. A hardware encoder alone does not
-/// imply GPU filtering. Unknown effects retain the original software graph.
-/// Audio filters always remain on the CPU and do not download video frames.
-/// </summary>
 public sealed partial class ExportVideoPipeline
 {
     private static readonly HashSet<string> FrameMetadataFilters =
@@ -17,7 +11,7 @@ public sealed partial class ExportVideoPipeline
         ["anull", "anullsrc", "atrim", "asetpts", "aresample", "aformat", "atempo", "rubberband", "afade",
          "volume", "asplit", "amix", "adelay", "apad", "loudnorm", "alimiter", "equalizer",
          "highpass", "lowpass", "agate", "acrossover", "sidechaincompress",
-         "aevalsrc"];
+         "amovie", "pan"];
 
     private ExportVideoPipeline(string encoder, string graph, bool gpu, string reason)
     {
@@ -39,17 +33,6 @@ public sealed partial class ExportVideoPipeline
     public string DecoderDescription { get; }
     public string Description { get; }
 
-    /// <summary>
-    /// CUDATAG_01 — FFmpeg 7.1+ negotiates colour space on every filter link. The encoder-side
-    /// output tags (<see cref="ExportColorPolicy.OutputTagArgs"/>, passed here as
-    /// <paramref name="codecFlags"/>) become a buffersink constraint, and untagged CUDA frames
-    /// cannot meet it: FFmpeg inserts a software auto_scale after the last scale_cuda and the
-    /// graph fails ("Impossible to convert between the formats supported by the filter
-    /// 'Parsed_scale_cuda_N' and the filter 'auto_scale_0'"). The CPU route gets the same
-    /// relabel for free from swscale. The resident route therefore stamps the identical
-    /// metadata on each decoded input with <c>setparams</c> (a metadata-only filter that
-    /// accepts hardware frames), so every link agrees and frames never leave VRAM.
-    /// </summary>
     public static ExportVideoPipeline Create(string encoder, string softwareGraph, bool allowGpuFrames = true,
         IReadOnlyList<string>? codecFlags = null)
     {
@@ -87,7 +70,6 @@ public sealed partial class ExportVideoPipeline
         return new(encoder, colourTag == null ? output.ToString() : TagVideoInputs(output.ToString(), colourTag), true, "");
     }
 
-    /// <summary>CUDATAG_01 — the setparams equivalent of the encoder's colour flags, or null when there are none.</summary>
     private static string? ColourTagFilter(IReadOnlyList<string>? codecFlags)
     {
         if (codecFlags == null) return null;
@@ -103,10 +85,6 @@ public sealed partial class ExportVideoPipeline
         return parts.Count == 0 ? null : "setparams=" + string.Join(':', parts);
     }
 
-    /// <summary>
-    /// CUDATAG_01 — every decoded video input pad (<c>[N:v]</c>, <c>[N:v:M]</c>) is routed through
-    /// one setparams chain before its first consumer. Labels are only rewritten outside quotes.
-    /// </summary>
     private static string TagVideoInputs(string graph, string colourTag)
     {
         var prefix = new StringBuilder();

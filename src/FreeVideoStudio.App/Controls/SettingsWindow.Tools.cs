@@ -12,14 +12,8 @@ using FreeVideoStudio.App.ViewModels;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// Settings window tools: "Restore this tab" (SETRESTORE_01), the Danger Zone (SETDANGER_01),
-/// Backup / Import (SETBACKUP_01) and the instant search (SETSEARCH_01). Every one of them changes
-/// PENDING values only — nothing reaches settings.json until SAVE.
-/// </summary>
 public partial class SettingsWindow
 {
-
     private static string SectionName(SettingsSection s) => s switch
     {
         SettingsSection.Editing => "Editing",
@@ -33,10 +27,6 @@ public partial class SettingsWindow
 
     private void OnRestoreTab(object? sender, RoutedEventArgs e) => _ = RestoreTabAsync();
 
-    /// <summary>
-    /// SETRESTORECONFIRM_01 — "Restore this tab" asks first, like "Reset all settings": the only other
-    /// way back was CANCEL, which also throws away the changes on every OTHER tab.
-    /// </summary>
     private async System.Threading.Tasks.Task RestoreTabAsync()
     {
         var section = CurrentSection;
@@ -123,7 +113,6 @@ public partial class SettingsWindow
         }
     }
 
-
     private sealed record SearchEntry(string Label, string Haystack, TabItem Tab, Control Target)
     {
         public override string ToString() => $"{Label}   ·   {Tab.Header}";
@@ -167,7 +156,6 @@ public partial class SettingsWindow
         }
     }
 
-    /// <summary>Every label, check box, radio button and section heading — with its tooltip, so help words match too.</summary>
     private void BuildSearchIndex(TabControl tabs)
     {
         _searchIndex.Clear();

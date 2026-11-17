@@ -6,15 +6,8 @@ using FreeVideoStudio.App.Services;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-
-/// <summary>
-/// SETTINGSTYPES_01 / G03 — which chip encodes the final video. Member names are EXACTLY the strings
-/// EncoderManager / ExportEncoderStrategy have always understood ("Auto", "NVIDIA", "AMD", "INTEL",
-/// "CPU"), so <c>ToString()</c> is still a valid strategy string and the file format is unchanged.
-/// </summary>
 public enum EncoderPreference { Auto, NVIDIA, AMD, INTEL, CPU }
 
-/// <summary>SETTINGSTYPES_01 — reads an enum from its name (any case) or its number; unknown → default, logged.</summary>
 public sealed class LenientEnumConverter<TEnum> : JsonConverter<TEnum> where TEnum : struct, Enum
 {
     private readonly TEnum _fallback;
@@ -45,7 +38,6 @@ public sealed class LenientEnumConverter<TEnum> : JsonConverter<TEnum> where TEn
         => writer.WriteStringValue(value.ToString());
 }
 
-/// <summary>SETTINGSTYPES_01 — <see cref="EncoderPreference"/> on disk ("Auto"/"NVIDIA"/…).</summary>
 public sealed class EncoderPreferenceJsonConverter : JsonConverter<EncoderPreference>
 {
     private static readonly LenientEnumConverter<EncoderPreference> Inner = new(EncoderPreference.Auto);
@@ -53,7 +45,6 @@ public sealed class EncoderPreferenceJsonConverter : JsonConverter<EncoderPrefer
     public override void Write(Utf8JsonWriter w, EncoderPreference v, JsonSerializerOptions o) => Inner.Write(w, v, o);
 }
 
-/// <summary>SETTINGSTYPES_01 — the AI camera view on disk (its enum name).</summary>
 public sealed class AiGameProfileJsonConverter : JsonConverter<FreeVideoStudio.Core.Media.AiGameProfile>
 {
     private static readonly LenientEnumConverter<FreeVideoStudio.Core.Media.AiGameProfile> Inner = new(FreeVideoStudio.Core.Media.AiGameProfiles.Default);
@@ -61,10 +52,6 @@ public sealed class AiGameProfileJsonConverter : JsonConverter<FreeVideoStudio.C
     public override void Write(Utf8JsonWriter w, FreeVideoStudio.Core.Media.AiGameProfile v, JsonSerializerOptions o) => Inner.Write(w, v, o);
 }
 
-/// <summary>
-/// SETTINGSTYPES_01 / AICONSENT_02 — a consent stamp: the company a permission was given to, or
-/// null for "no stamp" (a pre-AICONSENT_02 file, which meant Google). On disk: the company name or "".
-/// </summary>
 public sealed class ConsentVendorJsonConverter : JsonConverter<AiVendor?>
 {
     public override bool HandleNull => true;
@@ -89,10 +76,6 @@ public sealed class ConsentVendorJsonConverter : JsonConverter<AiVendor?>
         => writer.WriteStringValue(value?.ToString() ?? "");
 }
 
-/// <summary>
-/// SETTINGSTYPES_01 — the per-feature override list: <see cref="AiUsage"/> values, read from their
-/// names, unknown names dropped, duplicates removed. Immutable once read (IReadOnlyList).
-/// </summary>
 public sealed class AiUsageListJsonConverter : JsonConverter<IReadOnlyList<AiUsage>?>
 {
     public override bool HandleNull => true;
@@ -123,7 +106,6 @@ public sealed class AiUsageListJsonConverter : JsonConverter<IReadOnlyList<AiUsa
     }
 }
 
-/// <summary>AIMODE_01 — "How should AI work?" on disk (its enum name); unknown text reads as NotChosen.</summary>
 public sealed class AiModeJsonConverter : JsonConverter<AiMode>
 {
     private static readonly LenientEnumConverter<AiMode> Inner = new(AiMode.NotChosen);

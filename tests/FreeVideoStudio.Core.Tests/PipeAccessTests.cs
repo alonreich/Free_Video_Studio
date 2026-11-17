@@ -10,7 +10,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>PIPEAUTH_01 — owner-only pipe DACL, FirstPipeInstance and server-identity verification.</summary>
 public sealed class PipeAccessTests
 {
     private static string UniqueName() => "FvsPipeAccessTest_" + Guid.NewGuid().ToString("N");

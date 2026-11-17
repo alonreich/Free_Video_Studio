@@ -7,17 +7,10 @@ using FreeVideoStudio.App.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AIAPPROVE_01 (docs/04 UI-AIAPPROVE) — the one "Ready to send" question before an AI run that sends more than
-/// one request: what is sent, to whom, how many requests, about how long, and the estimated tokens and price
-/// (always labelled an estimate). START / START AND DON'T ASK UNDER $0.05 / CANCEL. A run whose known estimated
-/// price is under the saved threshold starts without asking; an unknown price is always asked.
-/// </summary>
 internal static class AiRunApproval
 {
     internal const double QuietThresholdUsd = 0.05;
 
-    /// <summary>Pure decision, for tests: must the user be asked?</summary>
     internal static bool MustAsk(int requests, AiEstimatedUsage estimate, AiVendor vendor, string model, double autoApproveUnderUsd)
     {
         if (requests <= 1) return false;
@@ -25,7 +18,6 @@ internal static class AiRunApproval
         return (double)estimate.EstimatedUsd >= autoApproveUnderUsd;
     }
 
-    /// <summary>The question text (pure, for tests).</summary>
     internal static string Message(string whatIsSent, int requests, int minutes, AiEstimatedUsage estimate, AiVendor vendor, string model)
     {
         return $"Sent to {AiVisionProviders.DisplayName(vendor)}: {whatIsSent}\n\n" +
@@ -34,7 +26,6 @@ internal static class AiRunApproval
                "Nothing changes in your video until you accept the preview.";
     }
 
-    /// <summary>True = go ahead. Never throws; a dialog that cannot be shown is a "no".</summary>
     internal static async Task<bool> ConfirmAsync(Window owner, string feature, string whatIsSent, int requests, int minutes,
         AiEstimatedUsage estimate, AiVendor vendor, string model)
     {

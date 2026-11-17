@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -18,7 +17,7 @@ public static class WaveformGenerator
         try
         {
             tempPng = Path.Combine(FreeVideoStudio.Core.Infrastructure.ApplicationPaths.CreateDefault().TempDirectory, $"fvs_wave_{Guid.NewGuid():N}.png");
-            
+
             var ci = System.Globalization.CultureInfo.InvariantCulture;
 
             var waveArgs = new List<string> { "-y", "-hide_banner", "-loglevel", "error" };

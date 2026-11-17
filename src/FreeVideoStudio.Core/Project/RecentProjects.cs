@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json.Nodes;
@@ -7,34 +6,10 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Project;
 
-/// <summary>One entry in the recent list. <paramref name="Exists"/> is resolved at read time, not stored.</summary>
 public readonly record struct RecentProject(string Path, string Title, long OpenedUtcSeconds, bool Exists);
 
-/// <summary>
-/// PROJ_09 — THE RECENT PROJECTS LIST.
-///
-/// <para>
-/// Saving work is only half of the feature. A user who can save but must then hunt through Explorer
-/// for the file has been given a filing chore, not a document model. The recent list is what makes
-/// "carry on where I left off" a single click, and it is the surface the main window's empty state
-/// should be built around.
-/// </para>
-///
-/// <para>
-/// ⚠️ MISSING FILES ARE SHOWN, NOT SILENTLY DROPPED. A project on an external drive that is not
-/// plugged in is not a project the user deleted. Entries carry <see cref="RecentProject.Exists"/>
-/// so the UI can grey them out and explain, and <see cref="Prune"/> removes an entry only when the
-/// user asks. Quietly deleting the row is how a user concludes the app "lost" their montage.
-/// </para>
-///
-/// <para>⚠️ Synchronous disk I/O — never call from the Avalonia dispatcher (North Star #6).</para>
-/// </summary>
 public sealed class RecentProjects
 {
-    /// <summary>
-    /// Ten is the number of projects a person can actually recognise in a menu. A longer list stops
-    /// being a shortcut and becomes a second file browser with worse sorting.
-    /// </summary>
     public const int MaxEntries = 10;
 
     private readonly string _storePath;
@@ -45,7 +20,6 @@ public sealed class RecentProjects
         _storePath = Path.Combine(paths.ProgramDataRoot, "recent_projects.json");
     }
 
-    /// <summary>Test seam: point the list at an arbitrary file.</summary>
     public RecentProjects(string storePath)
     {
         _storePath = storePath ?? throw new ArgumentNullException(nameof(storePath));
@@ -94,11 +68,6 @@ public sealed class RecentProjects
         return result;
     }
 
-    /// <summary>
-    /// Moves <paramref name="path"/> to the top of the list, de-duplicating case-insensitively
-    /// (Windows paths differing only in case are the same file, and showing both is a bug the user
-    /// reads as the app being confused).
-    /// </summary>
     public void Touch(string path, string title)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
@@ -117,7 +86,6 @@ public sealed class RecentProjects
         }
     }
 
-    /// <summary>Removes one entry. Called when the USER dismisses a row, never automatically.</summary>
     public void Prune(string path)
     {
         try

@@ -1,35 +1,17 @@
-﻿
-using System.Net;
+﻿using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>Progress of one download, for the update toast.</summary>
 internal readonly record struct DownloadProgress(long Done, long Total, double BytesPerSecond, string? Problem = null);
 
-/// <summary>
-/// DLRESUME_01 — DOWNLOADS THAT SURVIVE A BAD CONNECTION.
-///
-/// <para>A dropped connection at 90 % used to fail the update and start again from zero on the next
-/// launch. Now the partial file (<c>.part</c>) is kept in a folder named after the release, a broken
-/// transfer is retried by itself (2 s, 5 s, 15 s), and every retry — including one after an app
-/// restart — continues from the last byte with an HTTP Range request. A server that ignores Range
-/// (answers 200 instead of 206) restarts the file cleanly; nothing is ever glued together wrongly.</para>
-///
-/// <para>⚠️ Resuming is only about bytes on the wire. The finished file is ALWAYS hashed against the
-/// expected SHA-256 before it is moved into place, and a mismatch deletes it.</para>
-/// </summary>
 internal static class UpdateDownloader
 {
     private static readonly TimeSpan[] RetryDelays = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15)];
     private static readonly TimeSpan StallLimit = TimeSpan.FromSeconds(45);
 
-    /// <summary>
-    /// Downloads <paramref name="source"/> (an https URL, or a local file in the dev environment) to
-    /// <paramref name="target"/>, resuming any earlier partial copy. Throws when it cannot finish.
-    /// </summary>
     public static async Task DownloadAsync(HttpClient http, string source, string? localSource, string target,
         long expectedLength, string? expectedSha256, Action<DownloadProgress>? progress, CancellationToken cancel)
     {
@@ -160,7 +142,6 @@ internal static class UpdateDownloader
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { RuntimeLog.Swallowed(ex); }
     }
 
-    /// <summary>UPDATEUX_03 — download speed averaged over the last few seconds, for "time left".</summary>
     internal sealed class SpeedMeter
     {
         private readonly Queue<(DateTime At, long Bytes)> _samples = new();

@@ -6,11 +6,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// SIGNPATH_01 (docs/05_SYSTEM_LIFECYCLE_STORAGE.md #SYS-SIGNING) — a file signed with SignPath
-/// Foundation's shared open-source certificate is trusted only when Windows trusts the signature AND
-/// the publisher-signed update list names its exact SHA-256.
-/// </summary>
 public sealed class SignPathTrustTests
 {
     private static AuthenticodeVerifier.SignatureInfo Shared(bool chainValid = true) =>

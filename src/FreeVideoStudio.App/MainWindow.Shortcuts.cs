@@ -111,22 +111,6 @@ public partial class MainWindow
 
         var kb = SettingsManager.Instance.KeyBinds;
 
-        if (e.Key == Key.Delete)
-        {
-            if (FocusManager?.GetFocusedElement() is ListBox listBox && listBox.SelectedItem is string filePath)
-            {
-                try
-                {
-                    System.IO.File.Delete(filePath);
-                }
-                catch (System.Exception __ex)
-                {
-                    RuntimeLog.Fail("UI", $"Could not delete '{System.IO.Path.GetFileName(filePath)}': {__ex.Message}");
-                    RuntimeLog.Swallowed(__ex);
-                    ShowTacticalError("Could not delete that file");
-                }
-            }
-        }
         var playPause = new Avalonia.Input.KeyGesture(kb.PlayPause);
         var markStart = new Avalonia.Input.KeyGesture(kb.MarkStart);
         var markEnd = new Avalonia.Input.KeyGesture(kb.MarkEnd);
@@ -230,23 +214,12 @@ public partial class MainWindow
         }
     }
 
-
     private FreeVideoStudio.App.ViewModels.RelayCommand? _playPauseCommand;
     private FreeVideoStudio.App.ViewModels.RelayCommand? _markStartCommand;
     private FreeVideoStudio.App.ViewModels.RelayCommand? _markEndCommand;
 
-    /// <summary>
-    /// Unified play/pause behaviour. Returns true when the key was consumed, mirroring
-    /// KeyBinding.TryHandle (Handled only when the command actually ran).
-    /// </summary>
-    /// <summary>DOUBLEFIRE_01 — when the transport toggle last actually ran.</summary>
     private DateTime _lastTransportToggleUtc = DateTime.MinValue;
 
-    /// <summary>
-    /// DOUBLEFIRE_01 — the shortest gap between two DELIBERATE play/pause presses. A person
-    /// cannot press a button twice in 60 ms; two activations that close together are one physical
-    /// press arriving down two wirings.
-    /// </summary>
     private const int TransportToggleCoalesceMs = 60;
 
     private bool TryExecutePlayPause()
@@ -368,7 +341,6 @@ public partial class MainWindow
             Controls.ParticleBurstCanvas.BurstPreset.MarkerDrop);
     }
 
-    /// <summary>Attaches the transport Commands and settings-bound KeyBindings to the transport buttons.</summary>
     private void RefreshTransportKeyBindings()
     {
         var kb = SettingsManager.Instance.KeyBinds;

@@ -9,10 +9,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AIPROVIDER_01 / AISETTINGS_01 (docs/05 SYS-AISETTINGS) — factory, catalog, and recommended defaults
-/// for multi-vendor AI vision services across Google Gemini, Anthropic Claude, and OpenAI.
-/// </summary>
 public static class AiVisionProviders
 {
     private static readonly Lazy<GeminiProvider> GoogleLazy = new(() => new GeminiProvider());
@@ -22,7 +18,6 @@ public static class AiVisionProviders
     public const string AnthropicConsoleKeysUrl = "https://console.anthropic.com/settings/keys";
     public const string OpenAiPlatformKeysUrl = "https://platform.openai.com/api-keys";
 
-    /// <summary>Recommended defaults (AIMODELS_02, 2026-10-16: the vendors' current stable vision models).</summary>
     public const AiVendor RecommendedVendor = AiVendor.Google;
     public const string RecommendedModel = GeminiClient.DefaultModel;
 
@@ -32,16 +27,10 @@ public static class AiVisionProviders
     public static readonly string[] KnownAnthropicModels = { ClaudeProvider.DefaultModelName, "claude-haiku-5-5", "claude-opus-5-5" };
     public static readonly string[] KnownOpenAiModels = { OpenAiProvider.DefaultModelName, "gpt-6.1-sol", "gpt-6-astra" };
 
-    /// <summary>
-    /// AIMODELS_02 — model names that no longer answer (or are about to stop). A saved setting naming one is
-    /// moved to the vendor's default on load (<c>SettingsManager.Migrate</c>), so an app update fixes it with
-    /// no user action. Prefix match, case-insensitive.
-    /// </summary>
     private static readonly string[] RetiredGooglePrefixes = { "gemini-1.", "gemini-2.0-", "gemini-2.5-", "gemini-3-pro-preview", "gemini-3.1-flash-lite-preview" };
     private static readonly string[] RetiredAnthropicPrefixes = { "claude-2", "claude-instant", "claude-3-", "claude-3." };
     private static readonly string[] RetiredOpenAiPrefixes = { "o1", "o3-mini", "gpt-3.5", "gpt-4-", "gpt-4o-2024-05-13" };
 
-    /// <summary>AIMODELS_02 — true when <paramref name="model"/> is a retired name for <paramref name="vendor"/>.</summary>
     public static bool IsRetiredModel(AiVendor vendor, string? model)
     {
         string m = (model ?? string.Empty).Trim();
@@ -57,10 +46,8 @@ public static class AiVisionProviders
         return prefixes.Any(p => m.StartsWith(p, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>AIMODELS_02 — the model to use instead of a retired or empty one (the vendor default), else the input.</summary>
     public static string ReplaceRetired(AiVendor vendor, string? model)
         => string.IsNullOrWhiteSpace(model) || IsRetiredModel(vendor, model) ? GetDefaultModel(vendor) : model.Trim();
-
 
     private static readonly object RemapGate = new();
     private static readonly Dictionary<string, string> SessionRemap = new(StringComparer.OrdinalIgnoreCase);
@@ -86,11 +73,6 @@ public static class AiVisionProviders
         ActiveKeyFingerprints[vendor] = fp;
     }
 
-    /// <summary>
-    /// AIMODELFALLBACK_02 — the model this session actually calls for <paramref name="configured"/>: the
-    /// configured name, unless an earlier call this session found it gone (404) and switched to a live one
-    /// for the same API key.
-    /// </summary>
     public static string EffectiveModel(AiVendor vendor, string configured, string? apiKey = null)
     {
         string fp = KeyFingerprint(apiKey);
@@ -105,11 +87,6 @@ public static class AiVisionProviders
         }
     }
 
-    /// <summary>
-    /// AIMODELFALLBACK_02 — after a 404 on <paramref name="missing"/>, lists the key's live models and picks the
-    /// best replacement (newest stable general model of the same family). The choice is remembered for the rest
-    /// of the session (scoped by API key fingerprint) so later calls skip the 404; the user's setting is NOT changed.
-    /// </summary>
     public static async Task<string?> FindLiveReplacementAsync(IAiVisionProvider provider, string apiKey, string missing, Action<string>? userLog, CancellationToken ct)
     {
         string vendorName = DisplayName(provider.Vendor);
@@ -150,7 +127,6 @@ public static class AiVisionProviders
         return pick;
     }
 
-    /// <summary>AIMODELFALLBACK_02 — pure choice of a replacement from a vendor's live list (newest-first lists are assumed).</summary>
     public static string? PickReplacement(AiVendor vendor, IReadOnlyList<string> available, string? exclude)
     {
         if (available == null || available.Count == 0) return null;
@@ -188,10 +164,13 @@ public static class AiVisionProviders
         }
     }
 
-    /// <summary>AIVENDORCAPS_01 — only Gemini watches video clips and hears audio; Claude and OpenAI see stills.</summary>
     public static bool WatchesVideoWithAudio(AiVendor vendor) => vendor == AiVendor.Google;
 
-    /// <summary>The company + product name shown to the user.</summary>
+    internal const string FreePlanDataTag = "AIFREEDATA_01";
+
+    public const string GoogleFreePlanDataNote =
+        "Google's free plan: Google may use what you send to improve its products, and people at Google may look at it. With billing turned on (paid plan), it does not. Don't use the free plan for private videos.";
+
     public static string DisplayName(AiVendor vendor) => vendor switch
     {
         AiVendor.Anthropic => "Anthropic Claude",
@@ -199,7 +178,6 @@ public static class AiVisionProviders
         _ => "Google Gemini",
     };
 
-    /// <summary>Where the user creates a key for <paramref name="vendor"/>.</summary>
     public static string KeyPageUrl(AiVendor vendor) => vendor switch
     {
         AiVendor.Anthropic => AnthropicConsoleKeysUrl,

@@ -9,10 +9,6 @@ using Xunit;
 
 namespace FreeVideoStudio.AvRegression.Tests;
 
-/// <summary>
-/// Everything around the edit: dialogs and window moves mid-playback, save → reopen, edge clips,
-/// a long seeded random session, and opening/closing players many times (leaks).
-/// </summary>
 [Collection(AvCollection.Name)]
 public sealed class S32_S36_CrossCuttingTests
 {

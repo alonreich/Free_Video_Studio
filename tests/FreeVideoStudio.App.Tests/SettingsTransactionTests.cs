@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -12,11 +11,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// SETTX_02 — behavioural proof of the settings transaction: one named-mutex acquisition spans
-/// read → migrate → patch → serialize → atomic write; unknown/future data survives; Instance is
-/// published only after a durable write.
-/// </summary>
 public sealed class SettingsTransactionTests : IDisposable
 {
     private readonly string _tempDir;
@@ -42,7 +36,7 @@ public sealed class SettingsTransactionTests : IDisposable
             if (File.Exists(_settingsFile)) File.SetAttributes(_settingsFile, FileAttributes.Normal);
             if (Directory.Exists(_tempDir)) Directory.Delete(_tempDir, true);
         }
-        catch (Exception) { /* best-effort temp cleanup */ }
+        catch (Exception) {  }
     }
 
     private AppSettings ReadDisk()

@@ -7,7 +7,6 @@ using Xunit.Abstractions;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>VOLEVEL_01: measure actual preview WAV and AAC export against the live take reader.</summary>
 public class VoiceOverLevelTests(ITestOutputHelper log)
 {
     [Theory]

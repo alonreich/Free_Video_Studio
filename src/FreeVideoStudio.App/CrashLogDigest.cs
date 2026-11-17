@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -12,22 +11,8 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// On startup, sweeps the Windows Application event log for THIS app's crash / hang
-/// entries (Application Error, .NET Runtime, Application Hang, Windows Error Reporting)
-/// that occurred since the last sweep and folds them into RuntimeLog — so native crashes
-/// that only Windows Error Reporting saw (the ones you'd otherwise dig out of Event Viewer
-/// by hand) end up in the same .log file as everything else.
-///
-/// NOHIDDENTOOLS_01 — reads the log through the Windows Event Log API (wevtapi.dll, direct
-/// P/Invoke: NativeAOT-safe, unlike the reflection-heavy <c>System.Diagnostics.EventLog</c>). It used
-/// to start the hidden Windows event tool on EVERY launch; a program that starts hidden system tools
-/// at startup is what antivirus behaviour rules score (SYS-AVCLEAN). Reading the Application log does
-/// not require elevation. Spec: docs/05_SYSTEM_LIFECYCLE_STORAGE.md #SYS-AVCLEAN.
-/// </summary>
 internal static partial class CrashLogDigest
 {
-    /// <summary>Fire-and-forget: runs off the UI/startup thread so it never delays launch.</summary>
     public static Task RunAsync() => Task.Run(Run);
 
     private static void Run()
@@ -87,11 +72,6 @@ internal static partial class CrashLogDigest
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool EvtClose(nint handle);
 
-    /// <summary>
-    /// NOHIDDENTOOLS_01 — the newest <paramref name="max"/> events of the Application log that match
-    /// <paramref name="query"/>, each as its event XML. Empty when the log cannot be read: a crash
-    /// digest must never disturb a launch.
-    /// </summary>
     internal static unsafe List<string> ReadEvents(string query, int max)
     {
         var events = new List<string>();
@@ -137,18 +117,12 @@ internal static partial class CrashLogDigest
         return new string(buffer, 0, Math.Min(buffer.Length, (int)(used / 2))).TrimEnd((char)0);
     }
 
-    /// <summary>True when the event names this app or one of its media helpers (pure, unit-tested).</summary>
     internal static bool Mentions(string xml, string exe) =>
         xml.Contains("FreeVideoStudio", StringComparison.OrdinalIgnoreCase)
         || xml.Contains(exe, StringComparison.OrdinalIgnoreCase)
         || xml.Contains("ffmpeg.exe", StringComparison.OrdinalIgnoreCase)
         || xml.Contains("ffprobe.exe", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Collapses one event's XML into a readable line: source, event number, time, then the values
-    /// Windows recorded (faulting program, module, exception code, …). Pure, unit-tested. XML that
-    /// cannot be read is kept as shortened text rather than lost.
-    /// </summary>
     internal static string CondenseXml(string xml)
     {
         const int cap = 1200;

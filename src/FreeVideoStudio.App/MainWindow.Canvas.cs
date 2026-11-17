@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using Avalonia;
@@ -27,7 +26,7 @@ public partial class MainWindow
             double effectiveEnd = _trimEndMs > 0 ? _trimEndMs : duration * 1000.0;
             double effectiveStart = _trimStartSet ? _trimStartMs : 0;
             _thumbnailPosMs = effectiveStart + (effectiveEnd - effectiveStart) * 0.6666;
-            
+
             double thumbMs = Math.Clamp(_thumbnailPosMs, 0, duration * 1000.0);
             double thumbX = (thumbMs / 1000.0 / duration) * canvasWidth;
             Avalonia.Controls.Canvas.SetLeft(_thumbnailCameraControl, ClampTimelineCameraLeft(thumbX, canvasWidth));
@@ -37,9 +36,9 @@ public partial class MainWindow
     private void UpdateDraggingVisuals(double canvasWidth, double duration)
     {
         if (duration <= 0) return;
-        
+
         UpdateAutoThumbnailMarker(canvasWidth, duration);
-        
+
         if (_regionRectRef != null)
         {
             double regStartX = (_trimStartMs / 1000.0 / duration) * canvasWidth;
@@ -124,14 +123,6 @@ public partial class MainWindow
         };
     }
 
-    /// <summary>
-    /// THUMB_02 — one exit for the thumbnail-marker drag, reached from PointerReleased, from a
-    /// move with no button held, and from PointerCaptureLost. The marker stays SELECTED (the arrow
-    /// keys still nudge it, per TL-HITBOX) — only the DRAG ends here.
-    ///
-    /// <paramref name="redraw"/> is false on capture-loss on purpose: that path is usually already
-    /// inside a rebuild, and asking for another one from within it re-enters the same teardown.
-    /// </summary>
     private void EndThumbnailMarkerDrag(Control marker, bool redraw)
     {
         _isDraggingThumbnailMarker = false;
@@ -143,22 +134,12 @@ public partial class MainWindow
         SaveRecoveryState(label: "move thumbnail");
     }
 
-    /// <summary>
-    /// THUMB_01 — is the preview parked on the thumbnail frame? Half a second of tolerance,
-    /// because a seek lands near a keyframe rather than exactly where it was asked, and demanding
-    /// an exact match would make REMOVE unreachable.
-    /// </summary>
     private bool IsPlayheadOnThumbnail()
     {
         if (!_thumbnailSet) return false;
         return Math.Abs(GetCurrentMpvTime() * 1000.0 - _thumbnailPosMs) <= 500.0;
     }
 
-    /// <summary>
-    /// THUMB_01 — keeps the button's label, colour and tooltip describing what pressing it will
-    /// actually do right now. Called from the playback tick, so it must stay cheap: it writes
-    /// nothing unless the text has genuinely changed.
-    /// </summary>
     private void UpdateThumbnailButtonState()
     {
         var btn = SetThumbnailButtonCtl;
@@ -222,14 +203,6 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>
-    /// THUMB_01 — nudges the thumbnail marker and scrubs the preview to match.
-    ///
-    /// The frame rate now comes from the file (mpv's container-fps) instead of a hard-coded 60.
-    /// On 30 fps footage the old constant stepped a frame and a half, so a control advertised as
-    /// frame-accurate landed between frames on most real recordings; 60 remains the fallback for
-    /// the moment before mpv has reported anything.
-    /// </summary>
     private void MoveThumbnailMarkerByFrames(int frameDelta)
     {
         var ipc = ActiveVideoHost?.IpcClient;
@@ -252,7 +225,6 @@ public partial class MainWindow
         QueueThumbnailRecoverySave();
     }
 
-    /// <summary>THUMB_01 — coalesces recovery writes while the marker is being nudged.</summary>
     private Avalonia.Threading.DispatcherTimer? _thumbnailSaveDebounce;
 
     private void QueueThumbnailRecoverySave()
@@ -286,47 +258,10 @@ public partial class MainWindow
         _ = SeekInternal(markerMs / 1000.0);
     }
 
-
-    /// <summary>
-    /// TIMELINEDRAW_01 — one rebuild per frame, not one per call.
-    ///
-    /// <para>WHAT WAS WRONG. <see cref="UpdateTimelineMarkers"/> posts a FULL teardown and rebuild
-    /// of the timeline visual tree — every trim marker, cut glyph, meme block, music block, scale
-    /// tick and label, plus the ~32 pointer handlers attached to them — and it is invoked from
-    /// THIRTY call sites across five partial files. Nothing coalesced those posts, so a single user
-    /// action that touched two pieces of state (release a marker -> update markers -> save recovery
-    /// -> update dragging visuals) queued two, three or four complete rebuilds into the same frame.
-    /// Worse, the 100 ms playback timer re-checks <c>canvas.Children.Count == 0</c>
-    /// (MainWindow.axaml.cs) to decide whether to draw — and because the rebuild is DEFERRED, that
-    /// count is still zero when it looks, so it posted again on the next tick, and the next.</para>
-    ///
-    /// <para>This flag collapses any number of requests in one dispatcher turn into exactly one
-    /// rebuild. It is read and written only on the UI thread: all thirty call sites are event
-    /// handlers, key handlers or UI methods, and the reset happens inside the posted callback,
-    /// which is by definition on the UI thread. No interlocked access is needed or wanted.</para>
-    ///
-    /// <para>⚠️ THE GUARDS MOVED WITH INTENT. <see cref="RenderTimelineMarkersCore"/> re-reads the
-    /// canvas, the IpcClient and the duration when it actually runs, instead of capturing them at
-    /// request time. Before, <c>duration</c> was captured OUTSIDE the post and used inside it, so a
-    /// rebuild could draw against a duration that was already stale by the time it ran. Coalescing
-    /// widens that window, so the read had to move; re-reading is strictly more correct either
-    /// way.</para>
-    /// </summary>
     private bool _timelineRedrawQueued;
 
-    /// <summary>
-    /// TIMELINEDRAW_01 — ceiling on how long a queued rebuild will wait for a gesture to finish.
-    ///
-    /// The deferral below re-queues while <see cref="IsMarkerGestureActive"/> is true. If a drag
-    /// flag ever LEAKS — pointer capture lost without the handler clearing it, which this codebase
-    /// has a documented history of (ISSUE_13) — an unbounded wait would mean the timeline silently
-    /// never redraws again for the rest of the session. That is a worse failure than the one the
-    /// deferral prevents, so after this long the rebuild happens anyway: the outcome degrades to
-    /// exactly the pre-TIMELINEDRAW_01 behaviour instead of to a dead timeline.
-    /// </summary>
     private const int TimelineRedrawGestureWaitCeilingMs = 5000;
 
-    /// <summary>Tick count at which the currently queued rebuild stops deferring and just runs.</summary>
     private long _timelineRedrawDeadlineTicks;
 
     private void UpdateTimelineMarkers()
@@ -343,20 +278,6 @@ public partial class MainWindow
         QueueTimelineRedrawPass(Avalonia.Threading.DispatcherPriority.Normal);
     }
 
-    /// <summary>
-    /// TIMELINEDRAW_01 — posts the one pending rebuild, deferring past any live marker gesture.
-    ///
-    /// <para>THUMB_02 is the reason this exists at the RENDER end rather than at the call sites.
-    /// Suppressing a mid-gesture rebuild used to be the caller's job, and only ONE of the thirty
-    /// call sites did it; every other path could destroy the control holding pointer capture and
-    /// kill the drag under the user's cursor. Checking here covers all thirty at once.</para>
-    ///
-    /// <para>⚠️ DEFER, DO NOT DROP. A dropped request would leave the timeline showing stale state
-    /// whenever the last request of a gesture happened to arrive before the flags cleared. Keeping
-    /// <see cref="_timelineRedrawQueued"/> true and re-posting at Background priority means the
-    /// rebuild lands on the first idle turn after the gesture ends, costs one boolean read per idle
-    /// turn while it waits, and can never queue a second rebuild alongside itself.</para>
-    /// </summary>
     private void QueueTimelineRedrawPass(Avalonia.Threading.DispatcherPriority priority)
     {
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -372,12 +293,6 @@ public partial class MainWindow
         }, priority);
     }
 
-    /// <summary>
-    /// TIMELINEDRAW_01 — the actual rebuild, extracted verbatim from the lambda that used to live
-    /// inside <see cref="UpdateTimelineMarkers"/>. Body unchanged apart from indentation; every
-    /// early <c>return</c> keeps the same meaning it had in the lambda (leave the rebuild).
-    /// UI thread only.
-    /// </summary>
     private void RenderTimelineMarkersCore()
     {
         var canvas = TimelineMarkersCanvasCtl;
@@ -419,7 +334,6 @@ public partial class MainWindow
             canvas.Children.Add(regionRect);
             _regionRectRef = regionRect;
         }
-
 
         if (_cuts.Count > 0)
         {
@@ -516,7 +430,7 @@ public partial class MainWindow
             Avalonia.Controls.Canvas.SetLeft(freezeCamera, ClampTimelineCameraLeft(freezeX, canvasWidth));
             Avalonia.Controls.ToolTip.SetTip(freezeCamera, $"Freeze Image set at {FormatTime(TimeSpan.FromMilliseconds(_freezeTimeMs))} for {_freezeDurationS:0.0}s");
             canvas.Children.Add(freezeCamera);
-            
+
             var freezeLine = new Avalonia.Controls.Shapes.Rectangle
             {
                 Width = 4,
@@ -568,7 +482,6 @@ public partial class MainWindow
             double thumbMs = Math.Clamp(_thumbnailPosMs, 0, duration * 1000.0);
             double thumbX = (thumbMs / 1000.0 / duration) * canvasWidth;
 
-
             _thumbnailCameraControl = CreateTimelineCameraIcon(
                 _isThumbnailMarkerSelected || _isDraggingThumbnailMarker,
                 _marchingAntsOffset,
@@ -602,7 +515,7 @@ public partial class MainWindow
                 e.Pointer.Capture(startHitBox);
                 e.Handled = true;
             };
-            
+
             canvas.Children.Add(startHitBox);
 
             var startText = new TextBlock { Text = "START", Foreground = Avalonia.Media.Brushes.SeaGreen, FontSize = Infrastructure.ThemeManager.ScaledFontSize(9), FontWeight = Avalonia.Media.FontWeight.Bold, Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#80000000")), Padding = new Avalonia.Thickness(2,0) };
@@ -655,14 +568,14 @@ public partial class MainWindow
                 if (_draggingStartMarker) {
                     var pt = e.GetPosition(canvas);
                     double newX = Math.Max(0, Math.Min(pt.X, canvasWidth));
-                    
+
                     double currentEndSec = _trimEndMs / 1000.0;
                     double currentEndX = (currentEndSec / duration) * canvasWidth;
-                    
+
                     if (_trimEndMs > 0 && newX >= currentEndX) {
                         newX = currentEndX - 1;
                     }
-                    
+
                     double newStartSec = (newX / canvasWidth) * duration;
                     _trimStartMs = newStartSec * 1000.0;
                     Avalonia.Controls.Canvas.SetLeft(startHitBox, newX - 12);
@@ -760,14 +673,14 @@ public partial class MainWindow
                 if (_draggingEndMarker) {
                     var pt = e.GetPosition(canvas);
                     double newX = Math.Max(0, Math.Min(pt.X, canvasWidth));
-                    
+
                     double currentStartSec = _trimStartMs / 1000.0;
                     double currentStartX = (currentStartSec / duration) * canvasWidth;
-                    
+
                     if (newX <= currentStartX) {
                         newX = currentStartX + 1;
                     }
-                    
+
                     double newEndSec = (newX / canvasWidth) * duration;
                     _trimEndMs = newEndSec * 1000.0;
                     _prewarmArmed = true;
@@ -834,7 +747,7 @@ public partial class MainWindow
 
             var startNoteText = new TextBlock { Text = "♪", FontFamily = new Avalonia.Media.FontFamily("Segoe UI Symbol"), Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(255, 255, 105, 180)), FontSize = Infrastructure.ThemeManager.ScaledFontSize(52), HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Width = 52, TextAlignment = Avalonia.Media.TextAlignment.Center, Effect = new Avalonia.Media.DropShadowDirectionEffect { Color = Avalonia.Media.Colors.Black, BlurRadius = 4, Opacity = 0.8 }, IsHitTestVisible = false };
             var startStick = new Avalonia.Controls.Shapes.Rectangle { Width = 4, Height = 40, Fill = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(255, 255, 105, 180)), IsHitTestVisible = false };
-            
+
             var startHitBox = new Avalonia.Controls.Border {
                 Width = 52,
                 Height = 41,
@@ -858,7 +771,7 @@ public partial class MainWindow
                 Height = 80,
                 Child = startCanvas
             };
-            
+
             startHitBox.PointerEntered += (s, e) => {
                 startNoteText.Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(255, 255, 180, 0));
                 startNoteText.Effect = new Avalonia.Media.DropShadowDirectionEffect { Color = Avalonia.Media.Color.FromArgb(255, 255, 180, 0), BlurRadius = 15, Opacity = 0.9 };
@@ -876,7 +789,7 @@ public partial class MainWindow
 
             var endNoteText = new TextBlock { Text = "♪", FontFamily = new Avalonia.Media.FontFamily("Segoe UI Symbol"), Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(255, 255, 105, 180)), FontSize = Infrastructure.ThemeManager.ScaledFontSize(52), HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Width = 52, TextAlignment = Avalonia.Media.TextAlignment.Center, Effect = new Avalonia.Media.DropShadowDirectionEffect { Color = Avalonia.Media.Colors.Black, BlurRadius = 4, Opacity = 0.8 }, IsHitTestVisible = false };
             var endStick = new Avalonia.Controls.Shapes.Rectangle { Width = 4, Height = 40, Fill = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(255, 255, 105, 180)), IsHitTestVisible = false };
-            
+
             var endHitBox = new Avalonia.Controls.Border {
                 Width = 52,
                 Height = 41,
@@ -1112,41 +1025,12 @@ public partial class MainWindow
         DrawAiEliminationOverlay(canvas, duration, canvasWidth);
     }
 
-    /// <summary>POPSICLE_01 — x:Name of the visible stick inside a timeline camera/magnifier.</summary>
     public const string TimelineCameraStickName = "TimelineCameraStick";
 
-    /// <summary>
-    /// POPSICLE_01 — the stick length every marker is BUILT with: head bottom (local y 56) down to
-    /// the bottom of the 103px control. Correct for the Main App's 32px marker canvas, which is the
-    /// only caller that leaves it alone.
-    /// </summary>
     public const double TimelineCameraDefaultStickPx = 47;
 
-    /// <summary>POPSICLE_01 — local y at which the stick starts, i.e. the bottom of the head.</summary>
     public const double TimelineCameraStickTopPx = 56;
 
-    /// <summary>
-    /// POPSICLE_01 — LENGTHEN ONE MARKER'S STICK SO THE POPSICLE REACHES THE BOTTOM OF THE TIMELINE.
-    ///
-    /// <para>
-    /// The marker is built 52x103 with a 47px stick, which was sized for the Main App's single
-    /// 32px marker canvas. The Granular editor mounts the same control on a marker overlay that
-    /// spans the ruler AND BOTH 60px lanes (~150px), so the stick died roughly halfway down the
-    /// upper lane and the popsicle read as floating rather than pointing at an instant.
-    /// </para>
-    /// <para>
-    /// ⚠️ THE STICK IS STRETCHED, THE MARKER IS NOT MOVED. Dropping the whole control would take
-    /// the head down with it and destroy the shape — the head must stay above the ruler. Callers
-    /// pass the height they need; every caller that does not call this is bit-identical to before,
-    /// which is what keeps the Main App timeline untouched.
-    /// </para>
-    /// <para>
-    /// ⚠️ ONLY THE DRAWN STICK MOVES — NOT `stemHit`. Its 16x47 grab column is deliberately short
-    /// (HITBOX_02): a full-height grab box over a staggered pair swallows the lower head's clicks,
-    /// which is the exact bug HITBOX_02 exists to prevent. A longer VISIBLE line costs nothing
-    /// because it is `IsHitTestVisible = false`.
-    /// </para>
-    /// </summary>
     public static void StretchTimelineCameraStick(Control marker, double stickHeightPx)
     {
         if (marker is not Canvas outer) return;
@@ -1697,5 +1581,4 @@ public partial class MainWindow
         ShowTacticalFeedback("Music removed");
         RuntimeLog.Info("UI", $"User removed background music ({how}).");
     }
-
 }

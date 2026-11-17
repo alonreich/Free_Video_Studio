@@ -4,7 +4,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>VOLEVEL_01: one responsive studio fader controls current playback and saved take gain.</summary>
 public partial class VoiceOverWindow
 {
     public ViewModels.VoiceOverGainViewModel VoiceVolume { get; } = new();

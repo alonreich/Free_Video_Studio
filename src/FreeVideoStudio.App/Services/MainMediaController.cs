@@ -26,12 +26,12 @@ public class MainMediaController
             RuntimeLog.Info("Process", "Starting video processing pipeline via MainMediaController.");
             worker.OutputDirectory = payload.OutputDirectory;
             worker.OutputBaseName = payload.OutputBaseName;
-            
+
             worker.ProgressUpdate += (percent) => onProgress(percent);
             worker.PhaseUpdate += (phase, title, prog) => onPhase(phase, title, prog);
-            
+
             var tcs = new TaskCompletionSource<ExportResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-            
+
             using var cancelReg = ct.Register(() => {
                 try { worker.Cancel(); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
             });
@@ -61,9 +61,9 @@ public class MainMediaController
                     });
                 }
             };
-            
+
             ApplyPayload(worker, payload);
-            
+
             _ = worker.RunAsync(ct).ContinueWith(t =>
             {
                 if (t.IsFaulted && t.Exception != null)
@@ -106,23 +106,19 @@ public class MainMediaController
         }
     }
 
-    /// <summary>
-    /// Copies an export payload onto a worker. Shared by the export and by the live preview's
-    /// rendered mix (PREVIEWMIX_01), so the two can never be configured differently.
-    /// </summary>
     public static void ApplyPayload(ProcessWorker worker, ExportPayload payload)
     {
         worker.InputPath = payload.InputPath;
         worker.StartTimeMs = payload.TrimStartMs;
-        
+
         double effectiveEndMs = payload.TrimEndMs > 0 ? payload.TrimEndMs : payload.LoadedVideoDurationMs;
         worker.EndTimeMs = effectiveEndMs;
-        
+
         if (payload.SpeedSegments != null) worker.SpeedSegments = payload.SpeedSegments;
         if (payload.Cuts != null) worker.Cuts = payload.Cuts;
         worker.SpeedFactor = payload.BaseSpeed;
         worker.HardwareStrategy = payload.HardwareMode;
-        
+
         if (payload.ThumbnailSet && payload.ThumbnailPosMs > 0)
         {
             worker.ThumbnailPosMs = payload.ThumbnailPosMs;
@@ -134,12 +130,13 @@ public class MainMediaController
             worker.IntroAbsTimeMs = payload.ThumbnailPosMs > 0 ? payload.ThumbnailPosMs : payload.TrimStartMs;
             worker.IntroStillSec = 0.1;
         }
-        
+
         var audioPrefs = Infrastructure.SettingsManager.Instance;
         worker.GameplayLoudnessLufs = payload.GameplayLoudnessLufs;
+        worker.FreezeVideoLufs = payload.FreezeVideoLufs;
         bool peakWanted = payload.ApplyPeakFlattening ?? audioPrefs.PeakFlatteningPrompt != Infrastructure.AudioFixPrompt.NeverApply;
         worker.AutoSpikeFlattening = audioPrefs.Defaults.AutoSpikeFlattening && peakWanted;
-        
+
         worker.IsMobileFormat = payload.IsMobileFormat;
         worker.EnableFades = payload.EnableFades;
         worker.ShowTeammates = payload.ShowTeammates;
@@ -149,30 +146,25 @@ public class MainMediaController
         if (payload.MemePlacements != null && payload.MemePlacements.Count > 0)
             worker.MemePlacements = payload.MemePlacements;
         worker.PortraitText = payload.PortraitText;
-        
+
         worker.QualityLevel = payload.QualityLevel;
         worker.TargetMbOverride = payload.TargetMbOverride;
-        
+
         worker.MusicLeadFadeIn = payload.MusicLeadFadeIn;
         worker.MusicTailFadeOut = payload.MusicTailFadeOut;
         if (payload.MusicTracks != null) worker.MusicTracks = payload.MusicTracks;
         if (payload.MusicConfig != null) worker.MusicConfig = payload.MusicConfig;
         worker.KeepMusicDuringMeme = payload.KeepMusicDuringMeme;
         worker.CaptionTrack = payload.CaptionTrack;
-        
+
         worker.VoiceOverWavPath = payload.VoiceOverWavPath;
         worker.VoiceOverStartSec = payload.VoiceOverStartSec;
         if (payload.VoiceOverTakes != null) worker.VoiceOverTakes = payload.VoiceOverTakes;
-        
+
         worker.VoiceOverDuckAudio = payload.VoiceOverDuckAudio;
         worker.VoiceOverProtectFromMusic = payload.VoiceOverProtectFromMusic;
     }
 
-    /// <summary>
-    /// PREVIEWMIX_01 — renders the export's final audio for <paramref name="payload"/> to
-    /// <paramref name="wavPath"/> and returns where the preview clock lands in it; null on failure
-    /// or cancellation (the preview then simply keeps its live players).
-    /// </summary>
     public static async Task<AudioPreviewMap?> RenderAudioPreviewAsync(ExportPayload payload, string wavPath, CancellationToken ct)
     {
         using var worker = new ProcessWorker(ApplicationPaths.CreateDefault());

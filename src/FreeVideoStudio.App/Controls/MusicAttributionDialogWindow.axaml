@@ -16,7 +16,6 @@
                     <TextBlock Text="Music Credit — Prevent Mute" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
                 </Border>
 
-                <!-- Warning Banner & Oversimplified Instructions -->
                 <StackPanel Grid.Row="1" Margin="24,18,24,10" Spacing="10">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBlock Text="⚠️" FontSize="{DynamicResource AppFontSize18}" VerticalAlignment="Center"/>
@@ -24,7 +23,7 @@
                     </StackPanel>
                     <TextBlock Text="Your video has background music that requires a credit to prevent automatic muting or copyright blocks on YouTube and TikTok."
                                Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap"/>
-                    
+
                     <Border Background="{DynamicResource AppPanelBrush}" CornerRadius="6" Padding="12,10" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
                         <StackPanel Spacing="6">
                             <TextBlock Text="HOW TO USE (EASY 2 STEPS):" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppAccentBrush}"/>
@@ -36,7 +35,6 @@
                     </Border>
                 </StackPanel>
 
-                <!-- Credit text box -->
                 <Border Grid.Row="2" Margin="24,4,24,16" Background="{DynamicResource AppVideoSurfaceBrush}" CornerRadius="6" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" Padding="10">
                     <ScrollViewer MaxHeight="130" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                         <TextBox Name="AttributionTextBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
@@ -45,7 +43,6 @@
                     </ScrollViewer>
                 </Border>
 
-                <!-- Action buttons -->
                 <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="16" Margin="0,0,0,24">
                     <Button Name="CopyCreditButton" Classes="Primary" MinWidth="240" Cursor="Hand" Click="OnCopyCreditClicked"
                             AutomationProperties.Name="Copy credit to clipboard">

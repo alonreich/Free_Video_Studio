@@ -19,8 +19,6 @@ internal enum TakeRecoveryState
     Committed
 }
 
-/// <summary>VORECOVERY_01 — why a take is (still) pending. Validation, storage and publication
-/// failures are distinct: a rejected UI publication is never reported as corrupt audio.</summary>
 internal enum RecoveryErrorKind
 {
     None,
@@ -41,13 +39,10 @@ internal sealed class PendingFailedTake
     public TakeRecoveryState State { get; set; } = TakeRecoveryState.Pending;
     public string? SourceManifestPath { get; set; }
 
-    /// <summary>Predicate 1 — blocks Apply.</summary>
     public bool BlocksApply => State == TakeRecoveryState.Pending || State == TakeRecoveryState.Validating;
 
-    /// <summary>Predicate 2 — must stay in the durable recovery index (discoverable after reopen).</summary>
     public bool MustRemainDurable => State != TakeRecoveryState.Discarded && State != TakeRecoveryState.Committed;
 
-    /// <summary>Predicate 3 — terminal: this take's record may be removed from storage.</summary>
     public bool IsTerminal => !MustRemainDurable;
 
     public PendingFailedTake(VoiceOverWindow.VoiceOverSession session, CapturedTake? takeOutcome, string failureReason, string? id = null)
@@ -61,43 +56,29 @@ internal sealed class PendingFailedTake
 
 internal sealed record RecoveryBatchResult(int RecoveredCount, int FailedCount, string? ErrorMessage)
 {
-    /// <summary>Non-null when the takes changed state but the durable index could not be updated.</summary>
     public string? StorageError { get; init; }
 }
 
-/// <summary>VORECOVERY_01 — truthful outcome of a recovery-index read/write. Never a silent void.</summary>
 internal sealed record RecoveryStoreResult(bool Success, string? Error)
 {
     public static readonly RecoveryStoreResult Ok = new(true, null);
 
-    /// <summary>VORECOVERY_02 — takes this manager still held as durable that another session had
-    /// already committed/discarded. The stale transition was rejected; the manager adopts the
-    /// terminal state instead of resurrecting the record.</summary>
     public IReadOnlyDictionary<string, TakeRecoveryState>? ResolvedElsewhere { get; init; }
 }
 
-/// <summary>Outcome of validating one recovered WAV off the UI thread.</summary>
 internal sealed record RecoveryAudioVerdict(bool IsValid, double DurationSec, string? Error);
 
-/// <summary>
-/// VORECOVERY_01 — every file-system touch of the recovery transaction goes through this seam so
-/// the manager can run it off the dispatcher and tests can gate/fail it deterministically.
-/// </summary>
 internal interface IVoiceOverRecoveryStore
 {
     IReadOnlyList<string> EnumerateManifests(string directory, string searchPattern);
     bool ManifestExists(string path);
     string ReadManifest(string path);
-    /// <summary>Unique temp file + flush-to-disk + atomic replace. On failure the previous file is untouched.</summary>
     void WriteManifestAtomic(string path, byte[] content);
     void DeleteManifest(string path);
     bool AudioExists(string path);
-    /// <summary>Deletes the audio and proves it is gone; throws if it is still present.</summary>
     void DeleteAudio(string path);
     RecoveryAudioVerdict ValidateAudio(string path);
 
-    /// <summary>VORECOVERY_02 — cross-PROCESS exclusion for one read-merge-write of the recovery
-    /// folder (the static gate only covers this process). Null = the store needs no OS lock.</summary>
     IDisposable? AcquireStoreLock(string directory) => null;
 }
 
@@ -191,19 +172,6 @@ internal sealed class FileVoiceOverRecoveryStore : IVoiceOverRecoveryStore
     }
 }
 
-/// <summary>
-/// VORECOVERY_01 — durable failed-take recovery for Voice Over Studio.
-/// <para>Threading: the in-memory take list is owned by the caller's thread (the UI dispatcher in
-/// production). Every async method snapshots state on that thread, performs ALL file-system work
-/// off-thread through <see cref="IVoiceOverRecoveryStore"/>, and publishes results back on the
-/// caller's context. One recovery operation is owned at a time (<see cref="IsOperationInFlight"/>);
-/// a caller that stops waiting does not end that ownership.</para>
-/// <para>Storage: one manifest per (canonical video, recording session) —
-/// <c>voiceover_recovery_{videoKey}_{sessionId}.json</c>. Each take carries a serialized stable id.
-/// Writes are process-serialized, merge by take id (records this manager does not hold are
-/// preserved), use a unique temp file and atomic replace, and a newer snapshot is never
-/// overwritten by an older one.</para>
-/// </summary>
 internal sealed class VoiceOverRecoveryManager
 {
     internal const int SchemaVersion = 2;
@@ -226,9 +194,7 @@ internal sealed class VoiceOverRecoveryManager
     public IReadOnlyList<PendingFailedTake> PendingFailedTakes => _pendingFailedTakes;
     public bool HasUnresolvedFailedTakes => _pendingFailedTakes.Exists(t => t.BlocksApply);
     public bool HasDurableTakes => _pendingFailedTakes.Exists(t => t.MustRemainDurable);
-    /// <summary>True while a recover / discard / discovery operation owns the take list.</summary>
     public bool IsOperationInFlight { get; private set; }
-    /// <summary>Manifests that exist but could not be read — preserved on disk, surfaced to the user.</summary>
     public IReadOnlyList<string> LoadErrors => _loadErrors;
     public RecoveryStoreResult LastStoreResult { get; private set; } = RecoveryStoreResult.Ok;
 
@@ -239,7 +205,6 @@ internal sealed class VoiceOverRecoveryManager
         _store = store ?? FileVoiceOverRecoveryStore.Instance;
     }
 
-    /// <summary>The latest persistence started by this manager (for tests and close-time observers).</summary>
     public Task<RecoveryStoreResult> WhenStoreIdle() => _lastPersist;
 
     private static string CanonicalVideo(string? videoPath)
@@ -253,8 +218,6 @@ internal sealed class VoiceOverRecoveryManager
         }
     }
 
-    /// <summary>VORECOVERY_01 — an empty/invalid identity is NOT "default": it maps to a dedicated
-    /// unbound key and only ever matches other unbound manifests.</summary>
     public static string ComputeVideoKey(string? videoPath)
     {
         string canonical = CanonicalVideo(videoPath);
@@ -272,7 +235,6 @@ internal sealed class VoiceOverRecoveryManager
         return path;
     }
 
-
     private PendingFailedTake AddFailedTake(VoiceOverWindow.VoiceOverSession session, CapturedTake? takeOutcome, string failureReason)
     {
         var pending = new PendingFailedTake(session, takeOutcome, failureReason)
@@ -284,20 +246,17 @@ internal sealed class VoiceOverRecoveryManager
         return pending;
     }
 
-    /// <summary>Synchronous variant (tests / non-UI callers). Returns the truthful storage result.</summary>
     public RecoveryStoreResult RegisterFailedTake(VoiceOverWindow.VoiceOverSession session, CapturedTake? takeOutcome, string failureReason)
     {
         AddFailedTake(session, takeOutcome, failureReason);
         return SaveManifest();
     }
 
-    /// <summary>UI variant: the take is registered in memory at once; the index write runs off-thread.</summary>
     public Task<RecoveryStoreResult> RegisterFailedTakeAsync(VoiceOverWindow.VoiceOverSession session, CapturedTake? takeOutcome, string failureReason)
     {
         AddFailedTake(session, takeOutcome, failureReason);
         return PersistAsync();
     }
-
 
     private sealed record TakeRecord(string Id, string WavPath, double StartSec, double EndSec, double TrimLeftSec,
         double TrimRightSec, bool IsMuted, string Reason, RecoveryErrorKind ErrorKind, TakeRecoveryState State,
@@ -380,7 +339,6 @@ internal sealed class VoiceOverRecoveryManager
         return new PersistPlan(gen, SessionId, CanonicalVideo(_videoPathProvider()), Path.GetDirectoryName(own) ?? BaseDirectory(), paths, terminal);
     }
 
-    /// <summary>Synchronous persistence (tests / non-UI callers). Production UI uses <see cref="PersistAsync"/>.</summary>
     public RecoveryStoreResult SaveManifest()
     {
         var result = ExecutePlan(BuildPersistPlan(), _store);
@@ -390,7 +348,6 @@ internal sealed class VoiceOverRecoveryManager
         return result;
     }
 
-    /// <summary>Snapshot on the caller's thread, write off-thread. The returned result is truthful.</summary>
     public Task<RecoveryStoreResult> PersistAsync()
     {
         var task = PersistCoreAsync(BuildPersistPlan());
@@ -407,7 +364,6 @@ internal sealed class VoiceOverRecoveryManager
         return result;
     }
 
-    /// <summary>VORECOVERY_02 — a known commit/discard dominates this manager's stale view.</summary>
     private void ApplyResolvedElsewhere(RecoveryStoreResult result)
     {
         if (result.ResolvedElsewhere is not { Count: > 0 } resolved) return;
@@ -561,7 +517,6 @@ internal sealed class VoiceOverRecoveryManager
 
     private static double Finite(double v) => double.IsFinite(v) ? v : 0.0;
 
-
     private sealed record LoadedManifest(string Path, List<LoadedTake> Takes);
     private sealed record LoadedTake(string Id, string WavPath, double StartSec, double EndSec, double TrimLeftSec,
         double TrimRightSec, bool IsMuted, string Reason, bool AudioPresent, bool TimingValid,
@@ -643,8 +598,6 @@ internal sealed class VoiceOverRecoveryManager
         return new LoadBatch(manifests, errors);
     }
 
-    /// <summary>Stable take identity. Legacy entries written without an id get a deterministic one
-    /// derived from their audio path, so adoption and merge-on-write stay idempotent.</summary>
     private static string EntryId(JsonElement item)
     {
         if (item.ValueKind != JsonValueKind.Object) return "";
@@ -693,7 +646,6 @@ internal sealed class VoiceOverRecoveryManager
         }
     }
 
-    /// <summary>Synchronous discovery (tests). Production uses <see cref="CheckAndOfferReopenRecoveryAsync"/>.</summary>
     public void CheckAndOfferReopenRecovery()
     {
         string canonical = CanonicalVideo(_videoPathProvider());
@@ -715,7 +667,6 @@ internal sealed class VoiceOverRecoveryManager
         }
         finally { IsOperationInFlight = false; }
     }
-
 
     private List<PendingFailedTake> BeginValidation()
     {
@@ -770,7 +721,6 @@ internal sealed class VoiceOverRecoveryManager
     private static Func<VoiceOverWindow.VoiceOverSession, bool> AsPublisher(Action<VoiceOverWindow.VoiceOverSession> action)
         => s => { action(s); return true; };
 
-    /// <summary>Synchronous variant (tests / non-UI callers).</summary>
     public RecoveryBatchResult RecoverTakes(IVoiceCaptureSession capture, Action<VoiceOverWindow.VoiceOverSession> onTakeRecovered)
     {
         if (capture.HasUnreleasedDevice)
@@ -784,10 +734,6 @@ internal sealed class VoiceOverRecoveryManager
         return result with { StorageError = store.Success ? null : store.Error };
     }
 
-    /// <summary>
-    /// UI variant: validation (file I/O) off-thread; publication on the caller's context; index write off-thread.
-    /// <paramref name="publish"/> returns false (or throws) to reject — the take then stays Pending and durable.
-    /// </summary>
     public async Task<RecoveryBatchResult> RecoverTakesAsync(IVoiceCaptureSession capture, Func<VoiceOverWindow.VoiceOverSession, bool> publish)
     {
         if (capture.HasUnreleasedDevice)
@@ -819,7 +765,6 @@ internal sealed class VoiceOverRecoveryManager
         }
         finally { IsOperationInFlight = false; }
     }
-
 
     public bool DiscardTakes(IVoiceCaptureSession capture, out string? error, IEnumerable<string>? takeIds = null)
     {
@@ -902,7 +847,6 @@ internal sealed class VoiceOverRecoveryManager
     public Task<(bool Success, string? Error)> DiscardPendingTakeAsync(IVoiceCaptureSession capture, PendingFailedTake take)
         => DiscardAsync(capture, new List<PendingFailedTake> { take });
 
-
     private void MarkCommitted(IEnumerable<string> committedWavPaths)
     {
         var set = new HashSet<string>(committedWavPaths, StringComparer.OrdinalIgnoreCase);
@@ -919,7 +863,6 @@ internal sealed class VoiceOverRecoveryManager
         return SaveManifest();
     }
 
-    /// <summary>Apply's commit: removes ONLY the committed take ids from the durable index, off-thread.</summary>
     public Task<RecoveryStoreResult> CommitTakesAsync(IEnumerable<string> committedWavPaths)
     {
         MarkCommitted(committedWavPaths);

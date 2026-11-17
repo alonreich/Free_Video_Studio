@@ -3,20 +3,11 @@ using System.Text.Json;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AIANSWER_01 (docs/05 SYS-AISETTINGS §7.7) — shared checks every provider runs on an answer before handing
-/// it to a feature: an answer the vendor cut off at its length limit is reported as
-/// <see cref="AiProviderErrorKind.Truncated"/> (retrying cannot help, a shorter range can), and a JSON answer
-/// that does not parse is re-asked ONCE in the transport, so no feature needs its own retry for it.
-/// </summary>
 internal static class AiAnswerGuard
 {
-    /// <summary>The plain-English sentence for a cut-off answer.</summary>
     internal const string TruncatedMessage =
         "The AI's answer was cut off before it finished. Try a shorter block or a shorter range.";
 
-    /// <summary>The vendor's own reason for stopping (Gemini <c>finishReason</c>, Claude <c>stop_reason</c>,
-    /// OpenAI <c>finish_reason</c>), or an empty string.</summary>
     internal static string StopReason(AiVendor vendor, string? body)
     {
         if (string.IsNullOrWhiteSpace(body)) return string.Empty;
@@ -48,7 +39,6 @@ internal static class AiAnswerGuard
         }
     }
 
-    /// <summary>True when the vendor says it stopped because it hit the output length limit.</summary>
     internal static bool IsTruncated(AiVendor vendor, string? body)
     {
         string reason = StopReason(vendor, body);
@@ -60,7 +50,23 @@ internal static class AiAnswerGuard
         };
     }
 
-    /// <summary>True when <paramref name="text"/> (code fence stripped) is one complete JSON value.</summary>
+    internal const string RefusalTag = "AIREFUSAL_01";
+
+    internal static bool IsRefusal(AiVendor vendor, string? body)
+    {
+        string reason = StopReason(vendor, body);
+        return vendor switch
+        {
+            AiVendor.Anthropic => reason == "refusal",
+            AiVendor.OpenAI => reason == "content_filter",
+            _ => false,
+        };
+    }
+
+    internal static AiProviderException Refused(AiVendor vendor, string vendorShort, string? stopReason)
+        => new(vendor, AiProviderErrorKind.Blocked,
+            $"{vendorShort} declined to analyse this footage. Try a different segment.", $"{RefusalTag}: stop reason {stopReason}");
+
     internal static bool IsReadableJson(string? text)
     {
         string json = GeminiClient.StripCodeFence(text);
@@ -82,10 +88,6 @@ internal static class AiAnswerGuard
             ? new GeminiException(GeminiErrorKind.Truncated, TruncatedMessage, $"stop reason {stopReason}")
             : new AiProviderException(vendor, AiProviderErrorKind.Truncated, TruncatedMessage, $"stop reason {stopReason}");
 
-    /// <summary>
-    /// AIREASONING_02 — true when a 400 answer is about the thinking / reasoning setting, so the request can be
-    /// sent once more without it (a model that does not support that setting must not fail the feature).
-    /// </summary>
     internal const string RetryOwnerTag = "AIRETRYONE_01";
 
     internal const string BillingTag = "AIBILLING_01";
@@ -111,11 +113,17 @@ internal static class AiAnswerGuard
             "prepayment", "payment required", "add credit");
     }
 
+    internal static bool LooksLikeRegion(string? code, string? message)
+    {
+        string text = (code ?? string.Empty) + " " + (message ?? string.Empty);
+        return MentionsAny(text, "unsupported_country", "location is not supported", "not available in your country",
+            "country, region, or territory", "region is not supported", "not supported in your region");
+    }
+
     internal static bool IsReasoningRejection(AiProviderException ex)
         => ex.Kind == AiProviderErrorKind.BadRequest && MentionsAny(ex.Detail + " " + ex.Message,
             "thinking", "reasoning", "budget");
 
-    /// <summary>AIFPSFALLBACK_02 — true when a 400 answer is about the clip's custom frame rate.</summary>
     internal static bool IsFpsRejection(AiProviderException ex)
         => ex.Kind == AiProviderErrorKind.BadRequest && MentionsAny(ex.Detail + " " + ex.Message,
             "fps", "videoMetadata", "video_metadata", "video metadata");

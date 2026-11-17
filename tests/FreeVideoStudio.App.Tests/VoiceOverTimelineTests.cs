@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -16,14 +15,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// VOREC_02 / VOREC_03 / VOLIVE_01 — where a take sits on the studio's SOURCE-time axis while it
-/// is recorded and after it is saved, against the authoritative OutputTimeline (docs/01
-/// TL-OUTPUTTIMELINE): trim-relative start, monotonic bounded growth, 0.5x / 2x, a freeze hold,
-/// the trim-end stop, pause/resume, a cut, resizing, and the bounded live envelope. The export
-/// anchor (RenderStartSec through granularTimeMapper) is asserted unchanged; Apply's trim
-/// arguments are asserted to cut exactly what the user trimmed, in WAV (output) seconds.
-/// </summary>
 public sealed class VoiceOverTimelineTests : IDisposable
 {
     [Theory]

@@ -59,10 +59,6 @@ public sealed class TestArtifactDirectoryTests : IDisposable
         Assert.Throws<IOException>(() => TestArtifactDirectory.Reset(root, Relative));
     }
 
-    /// <summary>
-    /// TESTOUT_01: logs\&lt;Suite&gt;_Results\ is the only place test output may go. Test and build code
-    /// must not name a retired output folder again.
-    /// </summary>
     [Fact]
     public void NoTestWritesOutsideTheLogsSuiteFolders()
     {

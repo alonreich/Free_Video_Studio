@@ -23,8 +23,9 @@
   stable `{#ANCHOR}`, never a section number).
 * **Spec routing:** maintain domain mini-maps and `INDEX.md`; repeated source headers are not required
   (`SPEC_GOVERNANCE.md` §4, SPECROUTING_02).
-* **No comments in code (NOCOMMENTS_01, user decision 2026-11-13):** `.cs` files carry no `//` or `/* */` comments, tests included; `developer_tools/Find_and_Remove_Comments.py` strips them before a commit. Anything worth explaining (why a rule exists, a tag, a measured number) goes in the owning spec in `docs/`. Consequences: a sentinel tag must sit in code that is not such a comment (sentinels whose tag only lived in a `//` comment were retired on 2026-11-13); fake test keys are written split (`"sk-" + "ant-dummy…"`) so the secret scan does not match them, instead of carrying a `SECRETSCAN_ALLOW` comment. The tool treats ANY `//` outside a quoted string as a comment, including inside multi-line raw strings (base64, URLs): after running it, check that `SmartUpdateTests.ThePinnedRootIsIntact` still passes.
-* **Land the sentinel with the fix:** a guarded fix adds its `TAG=path` line to `build/sentinels.txt` in the
+* **No comments in code (NOCOMMENTS_01 / NOCOMMENTS_02 / NOCOMMENTS_03, user decisions 2026-11-13, 2026-11-15 and 2026-11-16):** code files carry no comments of any kind and no extra blank lines, tests included: `.cs` (`//`, `/* */`, `///`, `/** */`), XML/`.axaml`/`.csproj`/`.props`/`.manifest` (`<!-- -->`), `.ps1` (`#`, `<# #>`), `.py` (`#`), `.cmd`/`.bat` (`REM`, `::`), `.yml` (`#`), `.iss` (`;`, `//`, `{ }`, `(* *)`) and `.gitignore`/`.gitattributes`/`.agignore` (`#`). Documentation is never touched: `docs/`, `.md`, `.txt`, `LICENSE`. Kept because they do something: a Python shebang/encoding line, PowerShell `#Requires`, Inno `{$…}`/`{#…}` directives, and `#` lines inside YAML block scalars (they are script text). Blank lines: none at the start or end of a file; at most one in a row (Python: two before top-level code); in `.cs` none right after `{` or before `}`; never inside a string, here-string or block scalar. Anything worth explaining goes in the owning spec in `docs/`. `.\developer_tools\Find_and_Remove_Comments.cmd` (or double-click it; it runs the C# project `developer_tools/CommentRemover/CommentRemover.csproj` from the repository root) takes no arguments and reads every code file git tracks or would add, first PRINTS a preview (full file path, line number and text of every comment it would remove, the number of lines it would delete per file, and any sentinel it would re-point) and asks `[Y/N]`; only Y writes (N, or no input, exits 2 with nothing written). On Y it removes comments and extra blank lines, appends the removed text word for word to `docs/CODE_NOTES_App.md` / `CODE_NOTES_Core.md` / `CODE_NOTES_Tests.md` / `CODE_NOTES_Tools.md` (grep-only history, the spec wins), re-points affected sentinels to `TAG=path#Symbol`, and exits 0. It checks every file with that language's own parser (Roslyn, `XmlReader`, YamlDotNet, the PowerShell parser, Python `tokenize`) and refuses (exit 1, nothing written) if any file would change meaning, does not parse, or a sentinel cannot be re-pointed; all files are written together or none (a file changed meanwhile, or a failed write, puts every file back). `ArchitectureRuleTests.NoCSharpFileContainsAComment` enforces the `.cs` part in CI. Consequences: a sentinel whose tag only lived in a comment names the member it described, `TAG=path#Symbol` (05 SYS-VERIFYTOOL); fake test keys are written split (`"sk-" + "ant-dummy…"`) so the secret scan does not match them.
+* **All developer tools live in `developer_tools/` (DEVTOOLS_01, user decision 2026-11-16):** every developer-only script, console app or helper (never shipped) goes in `developer_tools/` — one file per script, or one sub-folder per C# project (`developer_tools/<Name>/<Name>.csproj`). There is no `tools/` folder; do not create one or put tools anywhere else. The comment and blank-line remover is run by `developer_tools/Find_and_Remove_Comments.cmd`, which starts `developer_tools/CommentRemover/CommentRemover.csproj` (a launcher may sit next to its project under a different name, so tab completion finds the launcher first). The list of tools is in [`REPO_MAP.md`](REPO_MAP.md).
+* **Land the sentinel with the fix:** a guarded fix adds its `TAG=path` (tag in non-comment code) or `TAG=path#Symbol` line to `build/sentinels.txt` in the
   same change (checked by `build/FvsVerify` via `dev.cmd`, DEVVERIFY_01, and by
   `ArchitectureRuleTests.EveryFixSentinelStillResolves` in CI). Sentinels fail verification when their
   in-code token disappears; spec anchors (`{#ANCHOR}`) only route requirements. A correct source file does
@@ -52,7 +53,8 @@ structure without all of these ([`09` DIST-RELEASENOTES](09_DISTRIBUTION_AND_REL
 2. **User notes — [`CHANGELOG.md`](CHANGELOG.md) → `## Upcoming`** (never a guessed version heading): plain,
    short, oversimplified English for end users, `**Headline:** one or two sentences`. Technical jargon,
    method, class and file names and engineering tags are forbidden. MERGE with an existing bullet instead of
-   adding a near-duplicate; at most 15 bullets in total (the release lint, RELNOTES_02, refuses more).
+   adding a near-duplicate; at most 15 bullets, each under 320 characters, no backticks (the release lint,
+   RELNOTES_02, refuses more and CI fails).
    Internal-only changes (tests, docs, build tooling) need no user bullet.
 3. **Map sync:** new or removed files, components or rules → update [`REPO_MAP.md`](REPO_MAP.md) and
    [`INDEX.md`](INDEX.md) §1 (and the owning spec's Code Mini-Map).
@@ -68,7 +70,10 @@ structure without all of these ([`09` DIST-RELEASENOTES](09_DISTRIBUTION_AND_REL
 > **No developer or AI agent may declare ANY change done, fixed or successful until `tests\run-av-tests.cmd`
 > has run and printed `PASS`.** It checks the playhead, scrubbing, click-to-seek, marks, thumbnails, memes
 > (full-screen and corner), music, voice-over, the Speed Editor, the Video Merger and the other windows for
-> stalls, stutter, hangs, A/V desync and preview-vs-export drift, using the real player and real exports.
+> stalls, stutter, hangs, A/V desync and preview-vs-export drift, using the real player and real exports, and
+> (S39–S43) that EVERY editing screen previews every layer of the edit (music, voice-over, speed blocks, cuts,
+> freezes, memes) on the export's clock without re-seeking the music or the voice (PREVIEWLAYERS_01), and
+> (S44–S45) that the freeze sound and the music under a freeze sound the same in the preview and the export.
 
 1. Run `tests\run-av-tests.cmd` from the repo root (5–10 min). Wait. Do not read logs while it runs.
 2. Read ONLY what it prints (the same text is kept in `logs\Gate_Results\LAST_RESULT.txt`): `PASS`, or one block per failure saying what the user would see, the drift
@@ -125,6 +130,7 @@ logs\
 | Goal | Command | Who |
 | :--- | :--- | :--- |
 | Run the app from source | `.\dev.cmd` (incremental Release managed run; settings preserved; `dev fresh` for full-clean troubleshooting) | anyone |
+| Dev modes | `.\dev.cmd [run\|build\|rebuild\|fresh\|clean\|restore\|trace\|verify]`: build = stage, no launch; rebuild/fresh = clear dev caches, then run (settings kept); clean = clear dev caches only; restore = `dotnet restore`; trace = diagnostic logs in `.devlogs`; verify = sentinel check only. Refuses while a repo-built FreeVideoStudio/mpv/ffmpeg/ffprobe is running and stops no process (BUILDKILL_01). | anyone |
 | Full local packaging check (NativeAOT + installer, no GitHub) | `.\dev_build.cmd` | anyone |
 | A/V regression gate (before declaring ANY change done) | `tests\run-av-tests.cmd` (§0.3a) | everyone |
 | Compile / test | `dotnet build FreeVideoStudio.sln -c Release`, `dotnet test tests/FreeVideoStudio.Core.Tests/FreeVideoStudio.Core.Tests.csproj`, `dotnet test tests/FreeVideoStudio.App.Tests/FreeVideoStudio.App.Tests.csproj` | anyone |
@@ -139,11 +145,10 @@ logs\
 | [`SPEC_GOVERNANCE.md`](SPEC_GOVERNANCE.md) | Before any code inspection or change: the zero-leakage contract. |
 | [`INDEX.md`](INDEX.md) | You know a file, symbol, constant or tag and need its spec (grep it; never read it whole). |
 | [`REPO_MAP.md`](REPO_MAP.md) | You need where a component, tool, test suite or asset folder lives. |
-| [`01_TIMELINE_COORDINATE_MATH.md`](01_TIMELINE_COORDINATE_MATH.md) … [`08_APPLICATION_COMPOSITION.md`](08_APPLICATION_COMPOSITION.md) | The domain specs (§3 routes you to one). |
-| [`09_DISTRIBUTION_AND_RELEASE.md`](09_DISTRIBUTION_AND_RELEASE.md) | Installer, smart updates, release gate, release notes, retention. |
-| [`05_SYSTEM_LIFECYCLE_STORAGE.md`](05_SYSTEM_LIFECYCLE_STORAGE.md) | Install/update transaction and its trust, auto-update, signing, dev harness. |
+| [`01_TIMELINE_COORDINATE_MATH.md`](01_TIMELINE_COORDINATE_MATH.md) … [`09_DISTRIBUTION_AND_RELEASE.md`](09_DISTRIBUTION_AND_RELEASE.md) | The domain specs (§3 routes you to one). |
 | [`CHANGELOG.md`](CHANGELOG.md) / [`changes.md`](changes.md) | User release notes / technical change log (§0.3). |
 | [`New-Release.md`](New-Release.md) | The human checklist after a public release (antivirus submissions). |
+| `CODE_NOTES_App.md` / `CODE_NOTES_Core.md` / `CODE_NOTES_Tests.md` / `CODE_NOTES_Tools.md` | The text of the comments removed from code files (NOCOMMENTS_02/03), by file and member or nearby code name. Grep it; never read it whole. |
 | [`REBRAND_MIGRATION.md`](REBRAND_MIGRATION.md) | Old→new product identity and its migration. |
 
 
@@ -160,6 +165,8 @@ Free Video Studio is a specialized, hardware-accelerated desktop video editing s
 
 `FreeVideoStudio.sln` contains `src/FreeVideoStudio.App`, `src/FreeVideoStudio.Core`, `build/FvsVerify`, `tests/FreeVideoStudio.App.Tests`, `tests/FreeVideoStudio.Core.Tests`, `tests/FvsVerify.Tests` and `tests/FreeVideoStudio.AvRegression.Tests` (`build/FvsBuild` is built separately). The application assembly is `FreeVideoStudio`; its root namespace remains `FreeVideoStudio.App`. The core assembly and namespace are `FreeVideoStudio.Core`. `FvsBuild`, `FvsVerify`, `.fvsproj` and the existing `FVS_*` environment variables retain their internal names.
 
+**Session lifecycle (user decisions 2026-11-16):** opening another video asks "Save your changes?" only when an edit would be lost (06 NEWVIDEOGUARD_01); after PROCESS or MERGE finishes with no edit since, closing asks nothing and the next start is an empty new state (DONECLEAN_01, 05 [SYS-RECOVERY](05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-RECOVERY)); after a crash, restore brings back the edits, playhead, AI kill marks and audio choices and keeps the work marked unsaved (RECOVERYFULL_01).
+
 Use [distribution identity](09_DISTRIBUTION_AND_RELEASE.md#DIST-IDENTITY) for packaging names and local validation commands, and [storage migration](05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-REBRAND) for canonical AppData paths and legacy compatibility. `project_structure.txt` and `AGENTS.md` at the repository root only point to THIS file, the single entry point; the repository map that used to live in `project_structure.txt` is [`REPO_MAP.md`](REPO_MAP.md) (§5). Repository links are relative to the checkout; the GitHub repository is `alonreich/Free_Video_Studio` ([`REBRAND_MIGRATION.md`](REBRAND_MIGRATION.md)).
 
 ---
@@ -171,7 +178,7 @@ All subsystems, controls, and rendering components across `src/` must strictly e
 2. **Absolute Authority for Time:** `src/FreeVideoStudio.Core/Media/OutputTimeline.cs` is the authoritative mathematical model for single-clip linear edits and per-clip segment durations. For multi-clip NLE virtual timelines, `src/FreeVideoStudio.Core/Media/CompositeTimeline.cs` and `MergeEdl.cs` constitute the sole mathematical authority mapping source µs, 60 fps merged frames, and output seconds across `edl://` libmpv preview playback and FFmpeg multi-clip rendering.
 3. **Strict A/V Process Isolation:** Master preview volume (Windows OS PID session) and preview playback remain completely decoupled from FFmpeg export filtergraphs. Master preview slider adjustments must never alter export loudness.
 4. **Leak-Free Render Pipelines:** The deprecated FFmpeg `zoompan` filter is banned suite-wide due to fatal native heap leaks. Dynamic zooms must be achieved via frame-evaluated padding, dynamic scaling, cropping, and contrast-adaptive sharpening (`cas=0.5`).
-5. **Zero Raw Hex Styling:** All Avalonia styles, controls, and dynamic templates must resolve colors exclusively through named `DynamicResource` tokens in `AvaloniaApp.axaml`. Hardcoded hex values in shared styling are strictly prohibited.
+5. **Zero Raw Hex Styling:** XAML (`.axaml`) styles, controls and templates resolve colors only through named `DynamicResource` tokens in `AvaloniaApp.axaml` (enforced: `ArchitectureRuleTests.NoRawHexColoursInSharedStyling`; a justified literal carries `ARCHTEST_ALLOW_HEX`). Brushes built in code-behind (timeline drawing) resolve through `ThemeResources` with a literal only as the fallback; that part is not test-enforced.
 6. **Thread-Bound Safety Contracts & GPU Preview Lock:** UI dispatchers must never block on native audio/video subsystem calls. WASAPI audio capture lifecycles run on an isolated serialized worker thread; SkiaSharp snapshot encoding and heavy image decodes execute off the UI thread.
    * ⚠️ **MANDATORY ARCHITECTURAL LOCK — libmpv PREVIEW ENGINE:** libmpv's Render API (`mpv_render_context_create`) does NOT support Direct3D 11 (`"d3d11"` returns `-19 / MPV_ERROR_NOT_IMPLEMENTED`). The `WGL_NV_DX_interop` bridge (rendering into OpenGL FBOs shared directly with Direct3D 11 textures in GPU VRAM) combined with non-blocking 0 ms 16-slot ring probing is the **frozen, permanently locked hardware architecture**. It provides zero-copy VRAM throughput, unlocked 120/240 FPS playback, and unobstructed Avalonia XAML overlays without Win32 HWND airspace occlusion. Attempting to bypass WGL with non-existent libmpv D3D11 APIs guarantees a pitch-black screen (audio-only), and re-introducing blocking KeyedMutex timeouts (e.g. 1,000 ms `AcquireSync`) reintroduces 1 FPS lock contention. Modifying this architecture or reintroducing blocking mutex waits is strictly prohibited.
 7. **Monotonic Progress Guarantee:** Render progress tracking must be cost-weighted and mathematically monotonic (P(n+1) >= P(n)). Progress bars may never snap, stutter, or lerp backward across multi-pass operations.

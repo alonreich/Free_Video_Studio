@@ -4,7 +4,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>MERGEEDL_01 — Video-Merger-Migration.md P2.1 (T2.1a equality, T2.1b JSON round-trip).</summary>
 public class MergeEdlTests
 {
     private static readonly Guid A = Guid.Parse("11111111-1111-1111-1111-111111111111");
@@ -88,12 +87,6 @@ public class MergeEdlTests
         Assert.Equal(-1, edl.IndexOf(Guid.Empty));
     }
 
-    /// <summary>
-    /// EDLNULL_01 regression — an autosave written BEFORE a field existed (here: no "Cuts", no "Effects",
-    /// empty "Effects") must load with empty lists, compare equal, and never throw. The source-generated
-    /// reader does not run property initializers; before the fix these came back null, every capture
-    /// threw, the Merger's autosave froze on an old queue and IsEmpty crashed the app.
-    /// </summary>
     [Fact]
     public void OldAutosaveShapes_LoadWithEmptyLists_AndCompare()
     {

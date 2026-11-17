@@ -6,12 +6,6 @@ using FreeVideoStudio.Core.Project;
 
 namespace FreeVideoStudio.AvRegression.Tests;
 
-/// <summary>
-/// The main screen's edit state, as the user builds it: marks, speed, speed blocks, freeze, cuts,
-/// memes, music notes, voice-over. <see cref="Compose"/> builds the export payload the way
-/// <c>MainWindow.ComposeExportPayloadAsync</c> does (guarded by S03's source-shape check), and the
-/// preview-side questions are answered by the app's own <see cref="TimelineViewModel"/>.
-/// </summary>
 internal sealed class MainEdit
 {
     public required Clip Source { get; init; }
@@ -28,7 +22,6 @@ internal sealed class MainEdit
     public bool Fades { get; set; }
     public List<VoiceOverTake>? VoiceTakes { get; set; }
     public CaptionTrack? Captions { get; set; }
-    /// <summary>9:16 export (the crop/HUD path).</summary>
     public bool Portrait { get; set; }
 
     public double EndMs => TrimEndMs > 0 ? TrimEndMs : Source.DurationSec * 1000;
@@ -49,10 +42,8 @@ internal sealed class MainEdit
         return t;
     }
 
-    /// <summary>Preview clock: finished-video seconds of a source moment, memes NOT counted (MUSICSYNC_01).</summary>
     public double PreviewOut(double sourceSec) => Timeline().PreviewSourceToOutputSeconds(sourceSec * 1000);
 
-    /// <summary>Full-screen meme seconds inserted before preview-output second <paramref name="u"/>.</summary>
     public double MemesBefore(double u, bool inclusive = false) =>
         MemePlacement.InlineOnly(Memes).Where(m =>
         {
@@ -60,14 +51,12 @@ internal sealed class MainEdit
             return inclusive ? at <= u + 1e-6 : at < u - 1e-6;
         }).Sum(m => m.DurationSec);
 
-    /// <summary>Export clock (relative to the start of the gameplay body): preview clock + memes before it.</summary>
     public double ExportOut(double sourceSec)
     {
         double u = PreviewOut(sourceSec);
         return u + MemesBefore(u, inclusive: true);
     }
 
-    /// <summary>Source times where the picture is ambiguous (edges of blocks, cuts, freeze, memes, marks).</summary>
     public IEnumerable<double> EdgesSec()
     {
         yield return TrimStartMs / 1000; yield return EndMs / 1000;
@@ -77,7 +66,6 @@ internal sealed class MainEdit
         foreach (var m in Memes) yield return TrimStartMs / 1000 + m.AtSourceSecRelative;
     }
 
-    /// <summary>Gameplay markers that survive the edit, away from every edge, and where the export must show them.</summary>
     public List<(double Source, double ExportBody)> ExpectedGameplay(double margin = 0.12)
     {
         var edges = EdgesSec().ToArray();
@@ -92,7 +80,6 @@ internal sealed class MainEdit
         return result;
     }
 
-    /// <summary>The music bed as the preview plays it (MusicBedPlan, shared with the export): segments in preview-output seconds.</summary>
     public (IReadOnlyList<MusicBedSegment> Plan, double StartDelay, double Duration) MusicPlan()
     {
         var t = Timeline();
@@ -105,7 +92,6 @@ internal sealed class MainEdit
         return (MusicBedPlan.Build(Music.ToBedTracks(), dur, Music.LoopMusic, startDelay), startDelay, dur);
     }
 
-    /// <summary>The export payload, composed like MainWindow.ComposeExportPayloadAsync.</summary>
     public ExportPayload Compose(string outputDirectory)
     {
         var t = Timeline();
@@ -153,7 +139,6 @@ internal sealed class MainEdit
         };
     }
 
-    /// <summary>The project document the main window saves (mirrors ProjectSession.Capture).</summary>
     public ProjectDocument ToDocument() => new()
     {
         Source = SourceClip.Probe(Source.Path, Source.DurationSec * 1000, Source.Width, Source.Height, Source.Fps),
@@ -165,7 +150,6 @@ internal sealed class MainEdit
         Memes = Memes.ToArray(),
     };
 
-    /// <summary>A reopened project (mirrors ProjectSession.Apply).</summary>
     public static MainEdit FromDocument(ProjectDocument d, Clip source)
     {
         var e = new MainEdit { Source = source, TrimStartMs = d.SourceCutStartMs, TrimEndMs = d.SourceCutStartMs + d.TrimmedDurationMs, BaseSpeed = d.BaseSpeed };
@@ -175,7 +159,6 @@ internal sealed class MainEdit
         return e;
     }
 
-    /// <summary>A music bed placed by the music notes (source seconds), songs given in order.</summary>
     public static MusicWizardResult MusicAt(double startSourceSec, double endSourceSec, string path, double fileSeconds, double offsetSec = 0, bool loop = false) => new()
     {
         MusicFilePath = path, MusicFilePaths = new List<string> { path }, MusicDurationsSeconds = new List<double> { fileSeconds },

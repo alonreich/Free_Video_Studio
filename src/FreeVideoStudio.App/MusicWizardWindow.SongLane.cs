@@ -13,27 +13,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// SONGLANE_01 + SONGCARD_01 — WHERE EACH SONG PLAYS, AND WHICH PART OF IT.
-///
-/// SONGLANE_01 — the music lane under the film shows one coloured, numbered, named block per song,
-/// at the exact place it plays in the finished video (the plan's output seconds), and a red
-/// "no music" band over any part of the video the songs do not reach. The right edge of every
-/// block can be dragged: it is where that song ENDS. Shortening a song pulls every later song
-/// earlier — songs always follow each other with the export's crossfade, never with a gap. Clicking
-/// a block picks that song for the song card and moves the playhead there.
-///
-/// SONGCARD_01 — the song card draws the picked song WHOLE, with the part that plays lit up:
-///   • drag inside the bright box → a different part of the song plays (same length);
-///   • drag the box's left / right edge → trim the start / the end;
-///   • click outside the box → the box starts there;
-///   • on release, "Snap to beat" moves the start onto the nearest strong beat.
-/// A dashed line inside the box marks where the video ends when the song is cut short by it.
-///
-/// Both read <see cref="CurrentPlan"/>, so what is drawn is what is heard and what is exported.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class MusicWizardWindow
 {
     private Canvas? _cSongLaneCanvas;
@@ -89,7 +68,6 @@ public partial class MusicWizardWindow
             strip.KeyDown += (s, e) => HandleSongOffsetKeyDown(e);
         }
     }
-
 
     private void DrawSongLane()
     {
@@ -284,7 +262,6 @@ public partial class MusicWizardWindow
         e.Handled = true;
     }
 
-    /// <summary>The cheap part of a refresh, for every pointer move of a drag.</summary>
     private void RefreshAfterTrimLive()
     {
         KeepPlayheadAnchored();
@@ -307,7 +284,6 @@ public partial class MusicWizardWindow
         UpdatePlayhead();
     }
 
-    /// <summary>Moves the Fit &amp; Mix playhead (video and music) to <paramref name="videoRelativeSec"/>.</summary>
     private void SeekFitScreen(double videoRelativeSec)
     {
         if (_currentStep != StepFit || !_phase3Ready) return;
@@ -319,8 +295,6 @@ public partial class MusicWizardWindow
         UpdatePlayhead();
     }
 
-
-    /// <summary>SONGCARD_01 — title, the part that plays and where in the video it is heard (all bound).</summary>
     private void RefreshSongCard()
     {
         var entry = SelectedEntry;
@@ -368,7 +342,6 @@ public partial class MusicWizardWindow
         if (label != null) label.Text = text;
     }
 
-    /// <summary>SONGCARD_01 — the picked song's whole waveform, rendered once per song and cached.</summary>
     private void EnsureSongStripWaveform()
     {
         if (_currentStep != StepFit) return;
@@ -552,10 +525,6 @@ public partial class MusicWizardWindow
         e.Handled = true;
     }
 
-    /// <summary>
-    /// SONGCARD_01 — a click outside the bright box: the box (same length) now starts at the click.
-    /// Kept under its old name; it is still "set the song start from the pointer".
-    /// </summary>
     private void SetOffsetFromPointer(double x, double width)
     {
         if (width <= 0 || _playlist.Count == 0) return;
@@ -569,7 +538,6 @@ public partial class MusicWizardWindow
         RecordWizardEdit();
     }
 
-    /// <summary>"Snap to beat": the start of the picked song moves onto the nearest strong beat within a second.</summary>
     private async Task SnapSelectedSongToBeatAsync(bool keepLength)
     {
         var entry = SelectedEntry;
@@ -598,7 +566,6 @@ public partial class MusicWizardWindow
         }
     }
 
-    /// <summary>"Start at: Beginning" — the picked song plays from its first audible moment.</summary>
     private void StartSelectedSongAtBeginning()
     {
         var entry = SelectedEntry;
@@ -609,8 +576,6 @@ public partial class MusicWizardWindow
         ApplySongStartSeconds(start, $"Starts from the beginning ({Clock(start)}).");
     }
 
-
-    /// <summary>The music lane's waveform is an ffmpeg render: redone once the user stops changing things.</summary>
     private void QueuePhase3MusicLaneRefresh()
     {
         if (_currentStep != StepFit || !_phase3Ready) return;
@@ -632,7 +597,6 @@ public partial class MusicWizardWindow
         _phase3WaveTask = RunPhase3WaveformLaneAsync(waveLane, _musicLaneCts.Token, _phase3LoadVersion);
     }
 
-    /// <summary>After the songs change while playing, the next tick reloads the right song at the right second.</summary>
     private void ResyncPreviewMusic()
     {
         _phase3PreviewMusicPath = null;
@@ -640,7 +604,6 @@ public partial class MusicWizardWindow
         if (_isPreviewPlaying && _currentStep == StepFit) QueuePhase3MusicPreviewSync();
     }
 
-    /// <summary>XFADEPLAN_01 — the export's outgoing fade, reproduced on the single preview player.</summary>
     private double CurrentCrossfadeGain()
     {
         if (_currentStep != StepFit || !_isPreviewPlaying) return 1.0;

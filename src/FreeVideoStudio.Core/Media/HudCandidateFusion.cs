@@ -1,38 +1,9 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// AIHUD_02 — deterministic LOCAL + AI candidate fusion.
-///
-/// <para><b>Inputs.</b> Local candidates in the detector's own rank order (the first is the
-/// minimap, by design), and AI candidates ALREADY validated by <see cref="AiHudResponseParser"/>
-/// and converted once by <see cref="AiHudGeometry"/> into the same source-pixel space.</para>
-///
-/// <para><b>Algorithm.</b></para>
-/// <list type="number">
-/// <item>AI candidates are sorted by confidence desc, then Y, X, W, H, label (ordinal) — a total
-/// order, so identical inputs always give identical output whatever order the model listed them
-/// in.</item>
-/// <item>Each AI box, in that order, claims the not-yet-claimed local box with the highest IoU,
-/// provided the roles are compatible (equal, or either side unknown) AND the boxes overlap enough:
-/// IoU ≥ <see cref="MatchIoU"/>, or the smaller box lies ≥ <see cref="MatchContainment"/> inside
-/// the larger. Ties go to the lower local index.</item>
-/// <item>A matched pair becomes ONE <see cref="HudCandidateSource.Fused"/> result. It keeps the
-/// LOCAL box unless the AI is confident (≥ <see cref="RefineConfidence"/>) AND agrees closely
-/// (IoU ≥ <see cref="RefineIoU"/>) — then the AI box refines it. The local role wins; the AI
-/// fills a missing one. A refinement never relocates a box, only tightens or loosens it.</item>
-/// <item>Unmatched local boxes survive unchanged — the AI missing something is not evidence.</item>
-/// <item>Unmatched AI boxes survive only at confidence ≥ <see cref="MinAiOnlyConfidence"/>, and
-/// only if they do not duplicate an already-kept box (IoU ≥ <see cref="DuplicateIoU"/>).</item>
-/// <item>Output: local-rank order for local/fused results, then AI-only results in AI order; cut
-/// at <see cref="MaxCandidates"/>. Local/fused results are placed first so a cap can never drop
-/// a local result in favour of an AI-only one.</item>
-/// </list>
-/// </summary>
 public static class HudCandidateFusion
 {
     public const double MatchIoU = 0.30;
@@ -132,7 +103,6 @@ public static class HudCandidateFusion
         return union <= 0 ? 0 : inter / union;
     }
 
-    /// <summary>Intersection over the SMALLER box's area: 1.0 means one box lies wholly inside the other.</summary>
     public static double Containment(HudCandidate a, HudCandidate b)
     {
         double inter = Intersection(a, b);

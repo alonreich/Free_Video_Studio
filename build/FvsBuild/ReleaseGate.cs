@@ -4,51 +4,13 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FvsBuild;
 
-/// <summary>What an official release will publish, decided BEFORE anything is built or changed.</summary>
-/// <param name="Version">The four-part calendar version (yyyy.MM.dd.HHmm, UTC).</param>
-/// <param name="Tag">"v" + <paramref name="Version"/>.</param>
-/// <param name="Beta">BETA_01 — published as a pre-release for the Beta update channel.</param>
-/// <param name="Branch">The branch the release is cut from (the default branch for a stable release).</param>
-/// <param name="BaseSha">The pushed commit the release starts from; <see cref="ReleaseGate.Undo"/> returns here.</param>
-/// <param name="Notes">The GitHub release notes: the linted `## Upcoming` bullets of docs/CHANGELOG.md.</param>
 internal sealed record ReleasePlan(string Version, string Tag, bool Beta, string Branch, string BaseSha, string Notes);
 
-/// <summary>
-/// RELGATE_01 — THE GATE IN FRONT OF A PUBLIC RELEASE (09 DIST-RELEASEGATE).
-///
-/// <para>⚠️ WHY IT EXISTS. `Build.cmd` used to publish whatever was on disk: it never checked that
-/// the working tree was committed or pushed, it rewrote five version files and left them
-/// uncommitted, and it asked GitHub to tag "the default branch" — the remote HEAD, not the commit
-/// that was built. A release could therefore ship code that exists in no commit, under a tag that
-/// points at different code, while the repository's own version files fell behind every release.</para>
-///
-/// <para>The release is now a short, ordered transaction. Nothing outside obj\ and compiled\ changes
-/// until <see cref="Preflight"/> has proven the starting point is exact:</para>
-/// <list type="number">
-/// <item><see cref="Preflight"/> — touches nothing. Clean tree (tracked AND untracked), on the default
-///   branch (stable) and exactly equal to its remote, the tag unused locally and on GitHub, the GitHub
-///   CLI signed in, user-facing notes present and lint-clean (RELNOTES_02), then an explicit
-///   confirmation (type PUBLISH, or `--yes` when there is no terminal).</item>
-/// <item><see cref="CommitVersion"/> — writes the version files, commits ONLY them as
-///   "release: vX", and creates an annotated tag on that commit. The build then compiles that commit.</item>
-/// <item>Build. Any failure → <see cref="Undo"/>: the commit and tag are removed and the tree is
-///   exactly as the developer left it (safe because step 1 proved it was clean).</item>
-/// <item><see cref="TreeStillClean"/> — the build must not have changed a tracked file, or the binary
-///   would not be the tagged source.</item>
-/// <item><see cref="PushRelease"/> — pushes the commit and tag atomically. Failure → <see cref="Undo"/>.</item>
-/// <item>`GitHubReleasePublisher` creates the release from that tag (`--verify-tag`).</item>
-/// <item><see cref="RecordReleaseNotes"/> (stable only, after a successful publish) — promotes
-///   `## Upcoming` / `## Unreleased` to the new version in docs/CHANGELOG.md and docs/changes.md,
-///   prunes them to their retention, commits "docs: release notes for vX" and pushes. Done last on
-///   purpose: a failed publish leaves the notes in Upcoming for the next attempt.</item>
-/// </list>
-/// </summary>
 internal static partial class ReleaseGate
 {
     internal const string UserChangelogPath = "docs/CHANGELOG.md";
     internal const string TechnicalLogPath = "docs/changes.md";
 
-    /// <summary>Files <see cref="SynchronizeVersionFiles"/> rewrites; the release commit contains exactly these.</summary>
     internal static readonly string[] VersionFiles =
     [
         "version.txt",
@@ -58,7 +20,6 @@ internal static partial class ReleaseGate
         "src/FreeVideoStudio.App/app.manifest",
     ];
 
-    /// <summary>Step 1. Returns the plan, or null after logging every reason the release cannot start.</summary>
     public static ReleasePlan? Preflight(string version, bool beta, bool assumeYes, BuildLog log)
     {
         string tag = "v" + version;
@@ -148,27 +109,15 @@ internal static partial class ReleaseGate
         return plan;
     }
 
-    /// <summary>RELRESUME_01 — what is left to do for a release whose commit and tag are already on GitHub.</summary>
     internal enum ResumeState
     {
-        /// <summary>No GitHub release exists for the tag: publish it.</summary>
         NotPublished,
-        /// <summary>A draft (unverified or unpublished) exists: replace it with a verified one.</summary>
         Draft,
-        /// <summary>The release is public: only the release-notes promotion may be missing.</summary>
         Published,
     }
 
-    /// <summary>RELRESUME_01 — a resumed release and the step it resumes at.</summary>
     internal sealed record ResumePlan(ReleasePlan Plan, ResumeState State, bool NotesAlreadyPromoted);
 
-    /// <summary>
-    /// RELRESUME_01 — <c>Build.cmd --resume</c>. A publish that failed after the release commit and tag were
-    /// pushed used to be a dead end: running again refused the existing tag and built a NEW version, leaving
-    /// a tag with no release, an orphaned draft and version files that named a version nobody could download.
-    /// Resume finishes THAT release, from the files the failed run left in .\compiled and obj\ReleaseAssets,
-    /// after proving they are that version, and never rebuilds anything. Touches nothing until confirmed.
-    /// </summary>
     public static ResumePlan? PreflightResume(bool beta, bool assumeYes, BuildLog log)
     {
         var problems = new List<string>();
@@ -252,7 +201,6 @@ internal static partial class ReleaseGate
         return Confirm(assumeYes, log) ? new ResumePlan(plan, state, promoted) : null;
     }
 
-    /// <summary>The linted `## Upcoming` notes, or an empty string with the problems added.</summary>
     internal static string PrepareNotes(bool beta, List<string> problems)
     {
         if (!File.Exists(UserChangelogPath))
@@ -278,7 +226,6 @@ internal static partial class ReleaseGate
             : body;
     }
 
-    /// <summary>RELQA_02 — the environment variable that must accompany <c>--yes</c>.</summary>
     internal const string UnattendedVariable = "FVS_RELEASE_UNATTENDED";
 
     private static bool Confirm(bool assumeYes, BuildLog log)
@@ -303,7 +250,6 @@ internal static partial class ReleaseGate
         return string.Equals(answer?.Trim(), "PUBLISH", StringComparison.Ordinal);
     }
 
-    /// <summary>Step 2. Commits the version files and tags the commit. Returns false (after undoing) on failure.</summary>
     public static bool CommitVersion(ReleasePlan plan, BuildLog log)
     {
         SynchronizeVersionFiles(plan.Version, log);
@@ -320,10 +266,6 @@ internal static partial class ReleaseGate
         return true;
     }
 
-    /// <summary>
-    /// Returns the checkout to <see cref="ReleasePlan.BaseSha"/> and removes the local tag. Only ever
-    /// called after <see cref="Preflight"/> proved the tree was clean, so nothing of the developer's is lost.
-    /// </summary>
     public static void Undo(ReleasePlan plan, BuildLog log)
     {
         Git(out _, "tag", "-d", plan.Tag);
@@ -333,7 +275,6 @@ internal static partial class ReleaseGate
             log.Warn("[RELEASE] Could not return the checkout to its starting commit; check `git status` and `git tag`.");
     }
 
-    /// <summary>Step 4. The build must not have modified a tracked file.</summary>
     public static bool TreeStillClean(BuildLog log)
     {
         if (Git(out List<string> status, "status", "--porcelain", "--untracked-files=normal") && status.Count == 0) return true;
@@ -342,7 +283,6 @@ internal static partial class ReleaseGate
         return false;
     }
 
-    /// <summary>Step 5. Pushes the release commit and its tag in one atomic push.</summary>
     public static bool PushRelease(ReleasePlan plan, BuildLog log)
     {
         if (Git(out _, "push", "--atomic", "--quiet", "origin", "HEAD:refs/heads/" + plan.Branch, "refs/tags/" + plan.Tag))
@@ -354,10 +294,6 @@ internal static partial class ReleaseGate
         return false;
     }
 
-    /// <summary>
-    /// Step 7 (stable only). Promotes the staged notes in both logs to <paramref name="plan"/>'s version,
-    /// prunes them, commits and pushes. Never fails the release: it is already public. Problems are warnings.
-    /// </summary>
     public static void RecordReleaseNotes(ReleasePlan plan, BuildLog log)
     {
         try
@@ -394,11 +330,6 @@ internal static partial class ReleaseGate
         File.WriteAllText(path, log.ToString());
     }
 
-    /// <summary>
-    /// SYS-AUTOUPDATE — stamps the release version into the five version files. Called ONLY inside the
-    /// release transaction (<see cref="CommitVersion"/>), so the stamp is always committed and tagged.
-    /// Dev and --no-publish builds pass the version to the compiler only and leave these files alone.
-    /// </summary>
     internal static void SynchronizeVersionFiles(string buildVersion, BuildLog log)
     {
         log.Info($"[VERSION] Synchronizing version '{buildVersion}' across project files...");
@@ -464,14 +395,10 @@ internal static partial class ReleaseGate
         }
     }
 
-
-    /// <summary>RELQA_01 — CI jobs (ci.yml / lfs-guard.yml job names) that must be green on the release commit.</summary>
     internal static readonly string[] RequiredChecks = ["Fix sentinels", "Release records", "Build + test (Windows)", "LFS pointers resolve"];
 
-    /// <summary>RELQA_01 — the NativeAOT link job; it runs on the default branch only, so stable releases require it.</summary>
     internal const string AotCheck = "NativeAOT publish";
 
-    /// <summary>RELQA_01 — CI must have passed for <paramref name="sha"/> (the commit the release starts from).</summary>
     private static void RequireGreenCi(string sha, bool beta, List<string> problems)
     {
         if (!Cli.TryCapture("gh", ["api", "repos/{owner}/{repo}/commits/" + sha + "/check-runs?per_page=100"], out List<string> lines))
@@ -484,10 +411,6 @@ internal static partial class ReleaseGate
             problems.Add(problem + " Wait for CI to finish (or fix it) and run again.");
     }
 
-    /// <summary>
-    /// RELQA_01 — the pure decision (unit-tested): for every required job, its MOST RECENT run on the commit
-    /// must be completed with conclusion "success". Missing, running, failed or cancelled is a problem.
-    /// </summary>
     internal static IReadOnlyList<string> CiProblems(string checkRunsJson, IReadOnlyList<string> required)
     {
         var problems = new List<string>();
@@ -515,7 +438,6 @@ internal static partial class ReleaseGate
         return problems;
     }
 
-    /// <summary>RELQA_01 — the fix sentinels and both test suites, on this machine, against this checkout.</summary>
     private static void RunLocalChecks(List<string> problems, BuildLog log)
     {
         (string What, string[] Args)[] checks =
@@ -536,11 +458,6 @@ internal static partial class ReleaseGate
         if (!TreeStillClean(log)) problems.Add("Running the checks changed tracked files. Commit or revert them.");
     }
 
-    /// <summary>
-    /// RELRECORD_01 — every <c>## v…</c> heading in docs/CHANGELOG.md must be a tag on GitHub. Four headings
-    /// once described versions that were never published (no tag, no release), so the history users read
-    /// and the downloads that exist disagreed. (ci.yml checks the same on every push.)
-    /// </summary>
     private static void RequireChangelogMatchesTags(List<string> problems)
     {
         if (!File.Exists(UserChangelogPath)) return;
@@ -553,7 +470,6 @@ internal static partial class ReleaseGate
             problems.Add($"{UserChangelogPath} has a '## v{missing}' section but GitHub has no tag v{missing}. Move it to {UserChangelogArchivePath}.");
     }
 
-    /// <summary>RELRECORD_01 — the pure check (unit-tested): release headings whose tag is not in <paramref name="lsRemoteLines"/>.</summary>
     internal static IReadOnlyList<string> HeadingsWithoutTags(string changelogText, IEnumerable<string> lsRemoteLines)
     {
         var tags = new HashSet<string>(lsRemoteLines
@@ -566,11 +482,6 @@ internal static partial class ReleaseGate
             .ToList();
     }
 
-    /// <summary>
-    /// RELRECORD_02 — a stable release whose notes equal the newest published release's notes is the
-    /// "notes were never promoted" failure (the publish worked, the docs commit did not): publishing would
-    /// announce the old changes as new. <c>--resume</c> promotes them instead.
-    /// </summary>
     private static void RequireNotesNotAlreadyPublished(string notes, List<string> problems)
     {
         if (notes.Length == 0) return;
@@ -589,7 +500,6 @@ internal static partial class ReleaseGate
         }
     }
 
-    /// <summary>RELRECORD_02 — notes compared without regard to line endings and surrounding blank space.</summary>
     internal static bool SameNotes(string a, string b)
     {
         static string Norm(string t) => string.Join("\n", t.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n')
@@ -597,15 +507,12 @@ internal static partial class ReleaseGate
         return Norm(a).Length > 0 && string.Equals(Norm(a), Norm(b), StringComparison.Ordinal);
     }
 
-    /// <summary>RELRECORD_01 — where release sections go when they leave docs/CHANGELOG.md (never deleted).</summary>
     internal const string UserChangelogArchivePath = "docs/CHANGELOG_ARCHIVE.md";
 
-    /// <summary>RELRECORD_01 — where technical release sections go when they leave docs/changes.md.</summary>
     internal const string TechnicalLogArchivePath = "docs/changes_ARCHIVE.md";
 
     private static bool Git(out List<string> output, params string[] args) => Cli.TryCapture("git", args, out output);
 
-    /// <summary>The calendar version used for every build (UTC minute): yyyy.MM.dd.HHmm.</summary>
     internal static string NewVersion(DateTime utcNow) => utcNow.ToString("yyyy.MM.dd.HHmm", CultureInfo.InvariantCulture);
 
     [GeneratedRegex(@"(<assemblyIdentity\s+version="")[^""]*("")")]

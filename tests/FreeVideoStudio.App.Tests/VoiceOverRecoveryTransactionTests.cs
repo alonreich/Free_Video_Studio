@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
@@ -16,12 +15,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// VORECOVERY_01 — Voice Over failed-take recovery transaction: durable per-session identity,
-/// merge-on-write ownership, truthful storage results, off-dispatcher I/O and UI exclusion.
-/// Real WAVs are test-owned in a unique temp directory; gated/failing stores use the
-/// <see cref="IVoiceOverRecoveryStore"/> seam, never sleeps.
-/// </summary>
 public sealed class VoiceOverRecoveryTransactionTests : IDisposable
 {
     [Fact]
@@ -87,7 +80,6 @@ public sealed class VoiceOverRecoveryTransactionTests : IDisposable
 
     private static CapturedTake FailedOutcome(string message = "Endpoint hang")
         => new(44100 * 2, 10, 0.5f, IsSuccess: false, EndpointReleased: true, FileFinalized: false, Error: new InvalidOperationException(message));
-
 
     [Fact]
     public void TwoSessions_ResolvingOne_LeavesTheOtherSessionsFileAndRecordIntact()
@@ -333,7 +325,6 @@ public sealed class VoiceOverRecoveryTransactionTests : IDisposable
         Assert.True(File.Exists(manager.GetRecoveryManifestPath()));
         Assert.True(File.Exists(wav));
     }
-
 
     private VoiceOverWindow WindowWithFailedTake(VoiceCaptureSession capture, out string wav)
     {
@@ -832,7 +823,6 @@ public sealed class VoiceOverRecoveryTransactionTests : IDisposable
         Assert.True(File.Exists(wav));
     }
 
-    /// <summary>Real file system with scriptable failures and explicit gates.</summary>
     private sealed class ScriptedStore : IVoiceOverRecoveryStore
     {
         private readonly FileVoiceOverRecoveryStore _inner = FileVoiceOverRecoveryStore.Instance;

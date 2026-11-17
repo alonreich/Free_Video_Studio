@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,30 +13,14 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// MERGEEDIT_02 — THE SAME GRANULAR EDITOR, OPENED ON A WHOLE MERGE (Video-Merger-Migration.md P6.3, D16).
-///
-/// The Merger opens this window with <c>videoPath</c> = the merge's inline <c>edl://</c> URL
-/// (<see cref="MergeEditorSource.MpvUrl"/>), trim 0..<see cref="MergeEditorSource.TotalMs"/> and every
-/// effect already mapped into MERGED milliseconds. To the editor that is one source with one clock;
-/// mpv plays it seamlessly (P4.1). Only three things differ, all handled here or behind
-/// <see cref="IsMergeMode"/>:
-///   • no editor crash-recovery and no parked history (the Merger autosaves and undoes the EDL);
-///   • the film lane cannot be decoded from a URL, so it is stitched from one strip per clip;
-///   • clip boundaries are drawn as dividers, at their OUTPUT positions, so they follow speed edits.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class GranularSpeedEditorWindow
 {
     private MergeEditorSource? _mergeSource;
     private Canvas? _mergeDividerCanvas;
     private bool _mergeDividersQueued;
 
-    /// <summary>True when this editor edits a merge (its source is an inline mpv EDL).</summary>
     private bool IsMergeMode => _edit.IsMergeMode;
 
-    /// <summary>The merge being edited. Set before ShowDialog; null in the Main App.</summary>
     public MergeEditorSource? MergeSource
     {
         get => _mergeSource;
@@ -124,11 +107,6 @@ public partial class GranularSpeedEditorWindow
         }
     }
 
-    /// <summary>
-    /// The merge's film lane: one keyframe strip per clip (frames in proportion to its length), blitted
-    /// into ONE bitmap that spans the merged clock, so the editor's own lane code lays it out unchanged.
-    /// The composite is mounted at once (dark) and repainted as each clip's frames land.
-    /// </summary>
     private async Task BuildMergeFrameLaneAsync(Grid laneGrid, Border? loading)
     {
         var src = _mergeSource;
@@ -204,7 +182,6 @@ public partial class GranularSpeedEditorWindow
         RelayoutFrameLane();
     }
 
-    /// <summary>Copies a clip's strip into the composite at pixel column <paramref name="destX"/>.</summary>
     private static void BlitStrip(WriteableBitmap strip, WriteableBitmap composite, int destX)
     {
         int w = Math.Min(strip.PixelSize.Width, composite.PixelSize.Width - destX);

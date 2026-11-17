@@ -1,7 +1,3 @@
-<!-- Audio warning dialog, shared by BOTH audio checks (loudness-off-standard and harsh peaks).
-     WindowStartupLocation="CenterOwner" is the same INTENTIONAL exception documented on
-     ConfirmDialogWindow and ErrorDialogWindow: this is a transient modal, not one of the 8
-     windows tracked by WindowBoundsHelper, so centring on its parent is correct here. -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
         x:Class="FreeVideoStudio.App.Controls.AudioFixPromptWindow"
@@ -24,7 +20,6 @@
                                Foreground="{DynamicResource TitleBarForeground}" />
                 </Border>
 
-                <!-- Headline + the plain-English explanation -->
                 <Border Grid.Row="1" Padding="25,20,25,8">
                     <StackPanel Orientation="Horizontal" Spacing="14">
                         <TextBlock Text="&#x26A0;"
@@ -49,8 +44,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- The measured numbers, for anyone who wants them. Muted so it never competes
-                     with the plain-English sentence above. -->
                 <Border Grid.Row="2" Padding="25,0,25,14">
                     <TextBlock Name="DetailText" Text=""
                                Foreground="{DynamicResource AppTextMutedBrush}"
@@ -58,11 +51,8 @@
                                TextWrapping="Wrap" />
                 </Border>
 
-                <!-- Yes / No. Tooltips spell out the consequence of each in one short sentence. -->
                 <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center"
                             Spacing="15" Margin="0,0,0,16">
-                    <!-- ISSUE_04 (audit round 5): MinHeight="38" removed — it overrode the global
-                         AppButtonMinHeight token (44) and blocked font-scale growth. -->
                     <Button Name="YesBtn" Classes="Success" Content="YES" ToolTip.Tip="Re-encode the audio so it plays correctly everywhere. Takes a little longer."
                             MinWidth="150" Cursor="Hand" IsDefault="True"
                             AutomationProperties.Name="Yes, fix the audio" />
@@ -71,8 +61,6 @@
                             AutomationProperties.Name="No, leave the audio alone" />
                 </StackPanel>
 
-                <!-- Remember-my-answer. Mutually exclusive: ticking one clears the other, because
-                     "always fix" and "never fix" are contradictory instructions. -->
                 <Border Grid.Row="4" Padding="25,0,25,22">
                     <StackPanel Spacing="8">
                         <Border Background="{DynamicResource AppPanelBrush}" CornerRadius="6" Padding="12,10">

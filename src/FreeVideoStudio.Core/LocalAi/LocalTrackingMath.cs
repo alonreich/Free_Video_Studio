@@ -4,7 +4,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.Core.LocalAi;
 
-/// <summary>A box in SOURCE pixels.</summary>
 public readonly record struct PixelBox(double X1, double Y1, double X2, double Y2)
 {
     public double Width => X2 - X1;
@@ -18,17 +17,10 @@ public readonly record struct PixelBox(double X1, double Y1, double X2, double Y
         Math.Clamp(X1, 0, w), Math.Clamp(Y1, 0, h), Math.Clamp(X2, 0, w), Math.Clamp(Y2, 0, h));
 }
 
-/// <summary>One mask the decoder proposed: its box in SOURCE pixels and the decoder's predicted IoU.</summary>
 public readonly record struct MaskCandidate(PixelBox Box, double Score, int Index = -1);
 
-/// <summary>One tracked frame: time in seconds from the start of the block, the box, and whether the target was seen.</summary>
 public readonly record struct TrackedFrame(double TimeSec, PixelBox Box, bool Visible, double Score);
 
-/// <summary>
-/// LOCALTRACK_01 (docs/01 TL-LOCALTRACK) — the pure maths around the local tracker: the model's input tensor, mask to
-/// box, the next frame's box prompt, the "is this still the same target" check and the reduction of dense per-frame
-/// boxes into the 0.5 s 0-1000 waypoints the existing <see cref="AiTrajectorySmoother"/> consumes.
-/// </summary>
 public static class LocalTrackingMath
 {
     public const double WaypointIntervalSec = 0.5;
@@ -40,7 +32,6 @@ public static class LocalTrackingMath
     private static readonly float[] Mean = { 0.485f, 0.456f, 0.406f };
     private static readonly float[] Std = { 0.229f, 0.224f, 0.225f };
 
-    /// <summary>RGB24 (size × size) → normalised float CHW, the SAM 2 encoder input.</summary>
     public static void FillEncoderInput(ReadOnlySpan<byte> rgb, int size, float[] chw)
     {
         int plane = size * size;
@@ -55,10 +46,6 @@ public static class LocalTrackingMath
         }
     }
 
-    /// <summary>
-    /// Prompt in model space: SAM's box corners (labels 2 = top-left, 3 = bottom-right) plus one positive point
-    /// (label 1) at <paramref name="centreX"/>, <paramref name="centreY"/>, where the target is expected to be.
-    /// </summary>
     public static (float[] Coords, float[] Labels) BoxPrompt(PixelBox box, double centreX, double centreY, int sourceW, int sourceH, int modelSize)
     {
         double sx = modelSize / (double)sourceW, sy = modelSize / (double)sourceH;
@@ -67,7 +54,6 @@ public static class LocalTrackingMath
             new[] { 2f, 3f, 1f });
     }
 
-    /// <summary>Intersection over union of two boxes (0 when either is empty).</summary>
     public static double Iou(PixelBox a, PixelBox b)
     {
         double ix = Math.Max(0, Math.Min(a.X2, b.X2) - Math.Max(a.X1, b.X1));
@@ -79,29 +65,16 @@ public static class LocalTrackingMath
 
     public const double MinPredictedIou = 0.1;
 
-    /// <summary>LOCALTRACK_02 — how alike two boxes are in SIZE only (1 = same width and height), wherever they sit.</summary>
     public static double SameSize(PixelBox a, PixelBox b)
     {
         if (a.IsEmpty || b.IsEmpty) return 0;
         return Math.Min(a.Width, b.Width) / Math.Max(a.Width, b.Width) * (Math.Min(a.Height, b.Height) / Math.Max(a.Height, b.Height));
     }
 
-    /// <summary>
-    /// Motion-aware choice among the decoder's masks (the SAMURAI idea): a candidate must pass <see cref="IsConsistent"/>
-    /// against the last good box and overlap the PREDICTED box (IoU at least <see cref="MinPredictedIou"/>); of those the
-    /// highest 0.4 × decoder score + 0.6 × IoU with the prediction wins. On the first frame (<paramref name="last"/> empty)
-    /// the prediction is the starting box itself. Null = nothing believable.
-    /// </summary>
     public const double MinAppearance = 0.35;
     public const double AppearanceRate = 0.05;
     public const int AppearanceBins = 64;
 
-    /// <summary>
-    /// LOCALMEMORY_01 — picks the candidate that is the same target. <paramref name="appearance"/> (colour similarity with the
-    /// target's remembered look, 0-1) refuses a candidate below <see cref="MinAppearance"/> and adds to the score, so the
-    /// tracker does not swap onto someone else when two bodies cross. <paramref name="excluded"/> (OWNBODY_01) refuses
-    /// the player's own avatar or hands.
-    /// </summary>
     public static MaskCandidate? Choose(IReadOnlyList<MaskCandidate> candidates, PixelBox predicted, PixelBox last, double referenceArea,
         Func<PixelBox, double>? appearance = null, Func<PixelBox, bool>? excluded = null, bool motionUnknown = false)
     {
@@ -132,8 +105,6 @@ public static class LocalTrackingMath
         return best;
     }
 
-    /// <summary>The bounding box of the positive logits of one low-resolution mask, in SOURCE pixels. Null when empty.</summary>
-    /// <summary>LOCALMEMORY_01 — normalised 4×4×4 RGB histogram of the inner 80 % of <paramref name="box"/> on the model-size frame.</summary>
     public static float[] Appearance(ReadOnlySpan<byte> rgb, int size, PixelBox box, int sourceW, int sourceH)
     {
         var hist = new float[AppearanceBins];
@@ -160,7 +131,6 @@ public static class LocalTrackingMath
         return hist;
     }
 
-    /// <summary>Bhattacharyya coefficient of two normalised histograms: 1 = same colours, 0 = nothing in common.</summary>
     public static double Similarity(float[] a, float[] b)
     {
         double sum = 0;
@@ -169,18 +139,12 @@ public static class LocalTrackingMath
         return Math.Clamp(sum, 0, 1);
     }
 
-    /// <summary>Moves the remembered look <paramref name="rate"/> of the way towards <paramref name="sample"/> (slow, so a brief swap cannot rewrite it).</summary>
     public static void Blend(float[] reference, float[] sample, double rate)
     {
         int len = Math.Min(reference.Length, sample.Length);
         for (int k = 0; k < len; k++) reference[k] = (float)((1 - rate) * reference[k] + rate * sample[k]);
     }
 
-    /// <summary>
-    /// OWNBODY_01 — true when <paramref name="b"/> sits where the player's own body is for this footage: the third-person
-    /// avatar (large, lower centre — the same rule as the online path's SanitizeWaypointsAgainstLocalPlayer) or the
-    /// first-person hands and weapon (tall, touching the bottom, centre-right). Generic footage has none.
-    /// </summary>
     public static bool LooksLikeOwnBody(AiGameProfile profile, PixelBox b, int sourceW, int sourceH)
     {
         if (b.IsEmpty || sourceW <= 0 || sourceH <= 0) return false;
@@ -190,10 +154,6 @@ public static class LocalTrackingMath
         return false;
     }
 
-    /// <summary>
-    /// LOCALMEMORY_01 — the remembered mask (low-resolution logits) moved by (<paramref name="dx"/>, <paramref name="dy"/>)
-    /// mask pixels into <paramref name="dst"/>; uncovered pixels get <paramref name="fill"/> (background).
-    /// </summary>
     public static void ShiftMask(ReadOnlySpan<float> src, Span<float> dst, int maskSize, int dx, int dy, float fill)
     {
         for (int y = 0; y < maskSize; y++)
@@ -227,11 +187,6 @@ public static class LocalTrackingMath
         return new PixelBox(minX * sx, minY * sy, (maxX + 1) * sx, (maxY + 1) * sy);
     }
 
-    /// <summary>
-    /// The prompt for the next frame: the last box moved by its motion over <paramref name="framesAhead"/> frames
-    /// (1 normally; more while the target is lost, so the prompt coasts with it) and widened by
-    /// <see cref="PromptMargin"/> of its size plus the per-frame speed on each side, ×(1 + 0.2 per lost frame, max 2.5).
-    /// </summary>
     public static PixelBox NextPrompt(PixelBox last, double vxPerFrame, double vyPerFrame, int sourceW, int sourceH, int framesAhead = 1)
     {
         framesAhead = Math.Max(1, framesAhead);
@@ -244,12 +199,6 @@ public static class LocalTrackingMath
         return moved.Clamp(sourceW, sourceH);
     }
 
-    /// <summary>
-    /// True when the new box is believable as the SAME target: the model is confident, the size changed by at most
-    /// <see cref="MaxStepAreaRatio"/>× since the last good box and stays within <see cref="MaxReferenceAreaRatio"/>× of
-    /// the target's usual size (<paramref name="referenceArea"/>, 0 = unknown) — so a mask cannot creep step by step
-    /// over the background — and the centre did not leap further than 1.5 box diagonals.
-    /// </summary>
     public static bool IsConsistent(PixelBox previous, PixelBox candidate, double score, double referenceArea = 0)
     {
         if (candidate.IsEmpty || score < MinScore) return false;
@@ -266,11 +215,6 @@ public static class LocalTrackingMath
         return Math.Sqrt(dx * dx + dy * dy) <= 1.5 * Math.Max(diag, 1.0);
     }
 
-    /// <summary>
-    /// Dense frames → one waypoint every <see cref="WaypointIntervalSec"/> (0-1000 grid): a window is visible when at
-    /// least half its frames saw the target, and its box is the MEDIAN of those frames (one wrong frame cannot move
-    /// the camera). Windows without frames are left out; the first and last windows are anchored at 0 and the end.
-    /// </summary>
     public static List<RawSubjectWaypoint> ToWaypoints(IReadOnlyList<TrackedFrame> frames, double durationSec, int sourceW, int sourceH)
     {
         var result = new List<RawSubjectWaypoint>();
@@ -318,7 +262,6 @@ public static class LocalTrackingMath
         return result;
     }
 
-    /// <summary>0-1000 box (the AI discovery grid) → source pixels.</summary>
     public static PixelBox FromGrid(int ymin, int xmin, int ymax, int xmax, int sourceW, int sourceH) => new(
         Math.Clamp(xmin, 0, 1000) / 1000.0 * sourceW, Math.Clamp(ymin, 0, 1000) / 1000.0 * sourceH,
         Math.Clamp(xmax, 0, 1000) / 1000.0 * sourceW, Math.Clamp(ymax, 0, 1000) / 1000.0 * sourceH);

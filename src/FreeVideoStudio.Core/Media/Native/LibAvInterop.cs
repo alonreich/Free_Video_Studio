@@ -1,12 +1,9 @@
-﻿
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 
 namespace FreeVideoStudio.Core.Media.Native;
 
-
-/// <summary>Constants copied from the 1e5c65f539 headers (values verified by compiling them).</summary>
 internal static class LibAvConstants
 {
     public const long AV_NOPTS_VALUE = long.MinValue;
@@ -20,7 +17,6 @@ internal static class LibAvConstants
     public const int AV_LOG_QUIET = -8;
     public const int AVERROR_EXIT = -1414092869;
 
-    /// <summary>AV_VERSION_INT(major, minor, 0) — the version guard ignores micro.</summary>
     public static uint MajorMinor(uint version) => version & 0xFFFF_FF00u;
     public static uint Version(uint major, uint minor) => (major << 16) | (minor << 8);
 
@@ -45,7 +41,6 @@ internal static class LibAvConstants
     public const int AVFMT_SEEK_TO_PTS = 0x4000000;
 }
 
-/// <summary>struct AVRational (libavutil/rational.h). Sequential, 8 bytes.</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct AVRational
 {
@@ -53,10 +48,6 @@ internal struct AVRational
     public int den;
 }
 
-/// <summary>
-/// Read-only VIEW of struct AVFormatContext (libavformat/avformat.h, sizeof = 472 on Win64).
-/// Only fields this backend reads or writes are declared. Never allocated from managed code.
-/// </summary>
 [StructLayout(LayoutKind.Explicit, Size = 472)]
 internal unsafe struct AVFormatContextView
 {
@@ -72,7 +63,6 @@ internal unsafe struct AVFormatContextView
     [FieldOffset(224)] public void* interrupt_opaque;
 }
 
-/// <summary>Read-only VIEW of struct AVStream (sizeof = 216 on Win64).</summary>
 [StructLayout(LayoutKind.Explicit, Size = 216)]
 internal unsafe struct AVStreamView
 {
@@ -87,7 +77,6 @@ internal unsafe struct AVStreamView
     [FieldOffset(200)] public int event_flags;
 }
 
-/// <summary>LIBAVFRAME_01 — read-only VIEW of the public head of struct AVInputFormat (libavformat/avformat.h).</summary>
 [StructLayout(LayoutKind.Explicit, Size = 20)]
 internal unsafe struct AVInputFormatView
 {
@@ -95,7 +84,6 @@ internal unsafe struct AVInputFormatView
     [FieldOffset(16)] public int flags;
 }
 
-/// <summary>Read-only VIEW of struct AVCodecParameters (libavcodec/codec_par.h, sizeof = 176 on Win64).</summary>
 [StructLayout(LayoutKind.Explicit, Size = 176)]
 internal unsafe struct AVCodecParametersView
 {
@@ -114,10 +102,6 @@ internal unsafe struct AVCodecParametersView
     [FieldOffset(120)] public int video_delay;
 }
 
-/// <summary>
-/// LIBAVFRAME_01 — VIEW of struct AVPacket (libavcodec/packet.h, sizeof = 104 on Win64). Allocated
-/// ONLY by av_packet_alloc and freed ONLY by av_packet_free (<see cref="PacketHandle"/>).
-/// </summary>
 [StructLayout(LayoutKind.Explicit, Size = 104)]
 internal unsafe struct AVPacketView
 {
@@ -129,11 +113,6 @@ internal unsafe struct AVPacketView
     [FieldOffset(36)] public int stream_index;
 }
 
-/// <summary>
-/// LIBAVFRAME_01 — VIEW of struct AVFrame (libavutil/frame.h, sizeof = 416 on Win64; the
-/// deprecated fields removed at the lavu 60 bump are NOT in this layout). Allocated ONLY by
-/// av_frame_alloc, freed ONLY by av_frame_free (<see cref="FrameHandle"/>).
-/// </summary>
 [StructLayout(LayoutKind.Explicit, Size = 416)]
 internal unsafe struct AVFrameView
 {
@@ -157,7 +136,6 @@ internal unsafe struct AVFrameView
     [FieldOffset(408)] public long duration;
 }
 
-/// <summary>LIBAVFRAME_01 — struct AVFrameSideData (libavutil/frame.h): type@0, data@8, size@16 (sizeof 40).</summary>
 [StructLayout(LayoutKind.Explicit, Size = 40)]
 internal unsafe struct AVFrameSideDataView
 {
@@ -166,7 +144,6 @@ internal unsafe struct AVFrameSideDataView
     [FieldOffset(16)] public nuint size;
 }
 
-/// <summary>LIBAVFRAME_01 — struct AVPacketSideData (libavcodec/packet.h): data@0, size@8, type@16 (sizeof 24).</summary>
 [StructLayout(LayoutKind.Explicit, Size = 24)]
 internal unsafe struct AVPacketSideDataView
 {
@@ -175,7 +152,6 @@ internal unsafe struct AVPacketSideDataView
     [FieldOffset(16)] public int type;
 }
 
-/// <summary>struct AVDictionaryEntry (libavutil/dict.h): { char *key; char *value; }.</summary>
 [StructLayout(LayoutKind.Explicit, Size = 16)]
 internal unsafe struct AVDictionaryEntryView
 {
@@ -183,29 +159,6 @@ internal unsafe struct AVDictionaryEntryView
     [FieldOffset(8)] public byte* value;
 }
 
-/// <summary>
-/// LIBAVPROBE_02 — libav entry points as UNMANAGED FUNCTION POINTERS bound with
-/// <see cref="NativeLibrary.GetExport"/> against the exact module handles <see cref="LibAvLibrary"/>
-/// loaded by absolute path.
-///
-/// <para>
-/// ⚠️ WHY NOT [LibraryImport]. The first cut used source-generated [LibraryImport] plus
-/// <c>NativeLibrary.SetDllImportResolver</c>. .NET allows ONE resolver per assembly, and
-/// FreeVideoStudio.Core already has another legitimate owner of that slot: the libmpv P/Invokes
-/// (MediaPipelineChecks registers a resolver for <c>MpvWrapper</c>'s assembly to point libmpv-2.dll at
-/// binaries\). Whoever registers second throws, so the two features could not coexist — the
-/// harness proved it ("A resolver is already set for the assembly"). Function pointers need no
-/// resolver at all, cannot bind a DLL found through PATH or the app directory (an unbound pointer is
-/// null, never "searched for"), and are fully NativeAOT-safe: no marshalling stubs, no
-/// Marshal.GetDelegateForFunctionPointer, no reflection, no runtime code generation.
-/// </para>
-///
-/// <para>
-/// Strings in: converted to NUL-terminated UTF-8 here (libav's file protocol converts UTF-8 to
-/// UTF-16 on Windows). Strings out (<c>const char*</c> owned by libav) are returned as
-/// <c>byte*</c> and copied with <see cref="Utf8"/>; they are never freed.
-/// </para>
-/// </summary>
 internal static unsafe class LibAv
 {
     private static delegate* unmanaged[Cdecl]<uint> _avformat_version;
@@ -230,7 +183,6 @@ internal static unsafe class LibAv
     private static delegate* unmanaged[Cdecl]<int, byte*> _av_color_space_name;
     private static delegate* unmanaged[Cdecl]<int, byte*, nuint, int> _av_strerror;
 
-    /// <summary>The 21 imported symbols (all verified present in the bundled DLL export tables).</summary>
     internal static readonly (string Library, string Symbol)[] Imports =
     {
         (LibAvLibrary.AvFormat, "avformat_version"), (LibAvLibrary.AvFormat, "avformat_alloc_context"),
@@ -246,11 +198,6 @@ internal static unsafe class LibAv
         (LibAvLibrary.AvUtil, "av_strerror"),
     };
 
-    /// <summary>
-    /// Binds every entry point from the given module handles. Throws
-    /// <see cref="EntryPointNotFoundException"/> if any symbol is missing; on throw nothing is bound
-    /// (all-or-nothing), so a partially bound table can never be called.
-    /// </summary>
     internal static void Bind(IReadOnlyDictionary<string, nint> modules)
     {
         nint E(string lib, string sym) => NativeLibrary.GetExport(modules[lib], sym);
@@ -279,7 +226,6 @@ internal static unsafe class LibAv
         _av_strerror = (delegate* unmanaged[Cdecl]<int, byte*, nuint, int>)t[k++];
     }
 
-    /// <summary>NUL-terminated UTF-8 copy for a <c>const char*</c> argument.</summary>
     private static byte[] Utf8Z(string s)
     {
         var bytes = new byte[Encoding.UTF8.GetByteCount(s) + 1];
@@ -291,8 +237,6 @@ internal static unsafe class LibAv
     internal static AVFormatContextView* avformat_alloc_context() => _avformat_alloc_context();
     internal static void avformat_free_context(AVFormatContextView* s) => _avformat_free_context(s);
 
-    /// <summary>On failure libav frees the context it was given and sets <c>*ps = NULL</c>
-    /// (libavformat/demux.c, label <c>fail:</c>). The caller must not free it again.</summary>
     internal static int avformat_open_input(AVFormatContextView** ps, string url, void* fmt, void** options)
     {
         byte[] u = Utf8Z(url);
@@ -301,7 +245,6 @@ internal static unsafe class LibAv
 
     internal static int avformat_find_stream_info(AVFormatContextView* ic, void** options) => _avformat_find_stream_info(ic, options);
 
-    /// <summary>Takes AVFormatContext** — closes the input, frees the context, writes NULL back.</summary>
     internal static void avformat_close_input(AVFormatContextView** s) => _avformat_close_input(s);
     internal static void* avformat_get_class() => _avformat_get_class();
     internal static void* av_stream_get_class() => _av_stream_get_class();
@@ -327,7 +270,6 @@ internal static unsafe class LibAv
     internal static byte* av_color_space_name(int space) => _av_color_space_name(space);
     internal static int av_strerror(int errnum, byte* errbuf, nuint errbufSize) => _av_strerror(errnum, errbuf, errbufSize);
 
-    /// <summary>Copies a libav-owned NUL-terminated UTF-8 string. Never frees it.</summary>
     internal static string? Utf8(byte* s) => s == null ? null : Marshal.PtrToStringUTF8((nint)s);
 
     internal static string ErrorText(int err)
@@ -338,11 +280,6 @@ internal static unsafe class LibAv
     }
 }
 
-/// <summary>
-/// LIBAVPROBE_01 — interrupt state shared with libav's AVIOInterruptCB. Lives in NATIVE memory so
-/// the callback never touches a managed object (no GCHandle, no captured delegate). Owned by a
-/// SafeHandle that the probe disposes deterministically AFTER avformat_close_input has returned.
-/// </summary>
 internal sealed unsafe class InterruptStateHandle : SafeHandle
 {
     [StructLayout(LayoutKind.Sequential)]
@@ -365,14 +302,8 @@ internal sealed unsafe class InterruptStateHandle : SafeHandle
 
     public override bool IsInvalid => handle == IntPtr.Zero;
 
-    /// <summary>The opaque pointer handed to libav. Valid until this handle is disposed.</summary>
     public void* Opaque => (void*)handle;
 
-    /// <summary>
-    /// Called from the CancellationToken registration. The probe disposes that registration
-    /// (which waits for an in-flight callback) BEFORE it disposes this handle, so the native
-    /// block is always alive here.
-    /// </summary>
     public void Cancel() => Volatile.Write(ref ((State*)handle)->Cancelled, 1);
 
     public bool WasCancelled => Volatile.Read(ref ((State*)handle)->Cancelled) != 0;
@@ -392,11 +323,6 @@ internal sealed unsafe class InterruptStateHandle : SafeHandle
         return true;
     }
 
-    /// <summary>
-    /// AVIOInterruptCB.callback. [UnmanagedCallersOnly] = a real C function pointer, no delegate,
-    /// no reverse-P/Invoke thunk allocated at run time (NativeAOT-safe). Must never throw.
-    /// Returns non-zero to make the blocking libav call fail with AVERROR_EXIT.
-    /// </summary>
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     internal static int Callback(void* opaque)
     {
@@ -408,12 +334,6 @@ internal sealed unsafe class InterruptStateHandle : SafeHandle
     }
 }
 
-/// <summary>
-/// LIBAVPROBE_01 — owns one opened AVFormatContext. ReleaseHandle calls avformat_close_input with
-/// a pointer-to-pointer, as the API requires. Created ONLY after avformat_open_input succeeded
-/// (on failure libav already freed the context), so there is exactly one free per context.
-/// Disposed with <c>using</c> on the probing thread — the finalizer is a backstop, not the owner.
-/// </summary>
 internal sealed unsafe class FormatContextHandle : SafeHandle
 {
     public FormatContextHandle(AVFormatContextView* opened) : base(IntPtr.Zero, ownsHandle: true)
@@ -431,22 +351,6 @@ internal sealed unsafe class FormatContextHandle : SafeHandle
     }
 }
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// LIBAVFRAME_01 — the SINGLE-FRAME DECODE tier of the same binding: entry points from
-/// avformat-62 / avcodec-62 / avutil-60 (modules <see cref="LibAvLibrary"/> already loaded) plus
-/// swscale-9 (loaded by <see cref="LibAvLibrary.TryEnsureFrameTierLoaded"/> from the SAME directory,
-/// after avutil, which is its only libav import). Same rules as <see cref="LibAv"/>: unmanaged
-/// function pointers bound with NativeLibrary.GetExport, all-or-nothing, no resolver, no
-/// marshalling stubs. Every symbol below was checked against the bundled export tables
-/// (objdump -p) and every signature against the 1e5c65f539 headers.
-///
-/// <para>
-/// The tier is latched SEPARATELY from the metadata tier: a missing swscale-9.dll or a version
-/// mismatch disables frame decoding only (callers keep their ffmpeg subprocess), never metadata.
-/// </para>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 internal static unsafe class LibAvFrame
 {
     private static delegate* unmanaged[Cdecl]<AVFormatContextView*, int, long, long, long, int, int> _avformat_seek_file;
@@ -474,7 +378,6 @@ internal static unsafe class LibAvFrame
     private static delegate* unmanaged[Cdecl]<void**, void> _sws_free_context;
     private static delegate* unmanaged[Cdecl]<void*, AVFrameView*, AVFrameView*, int> _sws_scale_frame;
 
-    /// <summary>The 24 imported symbols of the frame tier (all verified present in the bundled DLL export tables).</summary>
     internal static readonly (string Library, string Symbol)[] Imports =
     {
         (LibAvLibrary.AvFormat, "avformat_seek_file"), (LibAvLibrary.AvFormat, "av_read_frame"),
@@ -491,7 +394,6 @@ internal static unsafe class LibAvFrame
         (LibAvLibrary.SwScale, "sws_free_context"), (LibAvLibrary.SwScale, "sws_scale_frame"),
     };
 
-    /// <summary>All-or-nothing, exactly like <see cref="LibAv.Bind"/>.</summary>
     internal static void Bind(IReadOnlyDictionary<string, nint> modules)
     {
         nint E(string lib, string sym) => NativeLibrary.GetExport(modules[lib], sym);
@@ -523,34 +425,25 @@ internal static unsafe class LibAvFrame
         _sws_scale_frame = (delegate* unmanaged[Cdecl]<void*, AVFrameView*, AVFrameView*, int>)t[k++];
     }
 
-    /// <summary>int avformat_seek_file(AVFormatContext *s, int stream_index, int64_t min_ts, int64_t ts, int64_t max_ts, int flags)</summary>
     internal static int avformat_seek_file(AVFormatContextView* s, int streamIndex, long minTs, long ts, long maxTs, int flags)
         => _avformat_seek_file(s, streamIndex, minTs, ts, maxTs, flags);
-    /// <summary>int av_read_frame(AVFormatContext *s, AVPacket *pkt) — on success the packet holds a reference the caller must unref.</summary>
     internal static int av_read_frame(AVFormatContextView* s, AVPacketView* pkt) => _av_read_frame(s, pkt);
-    /// <summary>const AVCodec *avcodec_find_decoder(enum AVCodecID id) — static, never freed.</summary>
     internal static void* avcodec_find_decoder(int codecId) => _avcodec_find_decoder(codecId);
     internal static void* avcodec_alloc_context3(void* codec) => _avcodec_alloc_context3(codec);
-    /// <summary>Takes AVCodecContext** — frees and writes NULL back.</summary>
     internal static void avcodec_free_context(void** avctx) => _avcodec_free_context(avctx);
     internal static int avcodec_parameters_to_context(void* avctx, AVCodecParametersView* par) => _avcodec_parameters_to_context(avctx, par);
-    /// <summary>On return *options holds the entries the codec did NOT consume; the caller still owns (and frees) the dictionary.</summary>
     internal static int avcodec_open2(void* avctx, void* codec, void** options) => _avcodec_open2(avctx, codec, options);
-    /// <summary>A NULL packet enters draining mode. Does not take ownership of the packet's reference.</summary>
     internal static int avcodec_send_packet(void* avctx, AVPacketView* pkt) => _avcodec_send_packet(avctx, pkt);
-    /// <summary>Unrefs <paramref name="frame"/> first, then (on 0) hands it a new reference.</summary>
     internal static int avcodec_receive_frame(void* avctx, AVFrameView* frame) => _avcodec_receive_frame(avctx, frame);
     internal static void avcodec_flush_buffers(void* avctx) => _avcodec_flush_buffers(avctx);
     internal static AVPacketView* av_packet_alloc() => _av_packet_alloc();
     internal static void av_packet_free(AVPacketView** pkt) => _av_packet_free(pkt);
     internal static void av_packet_unref(AVPacketView* pkt) => _av_packet_unref(pkt);
-    /// <summary>Returns a pointer INTO the codecpar's side-data array (owned by libav), or NULL.</summary>
     internal static AVPacketSideDataView* av_packet_side_data_get(void* sd, int nbSd, int type) => _av_packet_side_data_get(sd, nbSd, type);
     internal static AVFrameView* av_frame_alloc() => _av_frame_alloc();
     internal static void av_frame_free(AVFrameView** frame) => _av_frame_free(frame);
     internal static void av_frame_unref(AVFrameView* frame) => _av_frame_unref(frame);
     internal static int av_frame_copy_props(AVFrameView* dst, AVFrameView* src) => _av_frame_copy_props(dst, src);
-    /// <summary>Returns a pointer INTO the frame's side data (owned by the frame), or NULL.</summary>
     internal static AVFrameSideDataView* av_frame_get_side_data(AVFrameView* frame, int type) => _av_frame_get_side_data(frame, type);
     internal static int av_opt_set_int(void* obj, string name, long value, int searchFlags)
     {
@@ -559,14 +452,11 @@ internal static unsafe class LibAvFrame
         fixed (byte* p = bytes) return _av_opt_set_int(obj, p, value, searchFlags);
     }
     internal static uint swscale_version() => _swscale_version();
-    /// <summary>SwsContext with every option at its AVOption default (sws_flags = bicubic) — what vf_scale starts from.</summary>
     internal static void* sws_alloc_context() => _sws_alloc_context();
     internal static void sws_free_context(void** ctx) => _sws_free_context(ctx);
-    /// <summary>Dynamic-mode scale: frame properties come from the frames; allocates dst buffers when dst->data[0] is NULL.</summary>
     internal static int sws_scale_frame(void* ctx, AVFrameView* dst, AVFrameView* src) => _sws_scale_frame(ctx, dst, src);
 }
 
-/// <summary>LIBAVFRAME_01 — owns one AVCodecContext; ReleaseHandle = avcodec_free_context(&amp;p).</summary>
 internal sealed unsafe class CodecContextHandle : SafeHandle
 {
     public CodecContextHandle(void* ctx) : base(IntPtr.Zero, ownsHandle: true) => SetHandle((nint)ctx);
@@ -580,7 +470,6 @@ internal sealed unsafe class CodecContextHandle : SafeHandle
     }
 }
 
-/// <summary>LIBAVFRAME_01 — owns one AVPacket; ReleaseHandle = av_packet_free(&amp;p) (which also unrefs it).</summary>
 internal sealed unsafe class PacketHandle : SafeHandle
 {
     public PacketHandle(AVPacketView* pkt) : base(IntPtr.Zero, ownsHandle: true) => SetHandle((nint)pkt);
@@ -594,7 +483,6 @@ internal sealed unsafe class PacketHandle : SafeHandle
     }
 }
 
-/// <summary>LIBAVFRAME_01 — owns one AVFrame; ReleaseHandle = av_frame_free(&amp;p) (which also unrefs its buffers).</summary>
 internal sealed unsafe class FrameHandle : SafeHandle
 {
     public FrameHandle(AVFrameView* frame) : base(IntPtr.Zero, ownsHandle: true) => SetHandle((nint)frame);
@@ -608,7 +496,6 @@ internal sealed unsafe class FrameHandle : SafeHandle
     }
 }
 
-/// <summary>LIBAVFRAME_01 — owns one SwsContext; ReleaseHandle = sws_free_context(&amp;p).</summary>
 internal sealed unsafe class SwsContextHandle : SafeHandle
 {
     public SwsContextHandle(void* ctx) : base(IntPtr.Zero, ownsHandle: true) => SetHandle((nint)ctx);

@@ -3,20 +3,14 @@ using System.Collections.Generic;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>What the Merger preview does over one stretch of the merged clock.</summary>
 public enum PreviewStepKind
 {
-    /// <summary>Play footage at <see cref="PreviewStep.Speed"/> (absolute mpv speed: segment speed, else the base speed).</summary>
     Play,
-    /// <summary>Deleted footage: jump to <see cref="PreviewStep.MergedEndSec"/>.</summary>
     Cut,
-    /// <summary>Hold the frame at <see cref="PreviewStep.MergedStartSec"/> for <see cref="PreviewStep.HoldSec"/> seconds.</summary>
     Freeze,
-    /// <summary>Show a meme for <see cref="PreviewStep.HoldSec"/> seconds, then carry on at <see cref="PreviewStep.MergedStartSec"/>.</summary>
     Meme,
 }
 
-/// <summary>One step of the preview schedule. Holds (freeze/meme) have MergedEndSec == MergedStartSec.</summary>
 public sealed record PreviewStep(
     PreviewStepKind Kind,
     int ClipIndex,
@@ -27,7 +21,6 @@ public sealed record PreviewStep(
     double OutputStartSec,
     EdlMeme? Meme = null)
 {
-    /// <summary>Seconds of the finished body this step occupies.</summary>
     public double OutputLengthSec => Kind switch
     {
         PreviewStepKind.Play => (MergedEndSec - MergedStartSec) / Speed,
@@ -38,49 +31,20 @@ public sealed record PreviewStep(
     public bool IsHold => Kind is PreviewStepKind.Freeze or PreviewStepKind.Meme;
 }
 
-/// <summary>MEMEMODE_01 — one corner overlay's visible span on the gameplay clock.</summary>
 public sealed record CornerOverlaySpan(MemePlacement Meme, double GameStartSec, double GameEndSec);
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// MERGEPREVIEW_01 — THE MERGER PREVIEW PLAYS THE EXPORT'S SCHEDULE (Video-Merger-Migration.md P8.1).
-///
-/// The preview plays the merge as ONE mpv EDL whose clock is the MERGED clock (P4.2), so the effects
-/// must be applied live, the way the Main App previews them: mpv <c>speed</c> per stretch, a timed
-/// pause for a freeze, a jump over a cut, a meme cut-away for a meme. This plan is that schedule, read
-/// straight from the chunk list of every clip's <see cref="OutputTimeline"/> — the SAME chunks the
-/// export's graph and <see cref="CompositeTimeline"/> use — so the preview cannot drift from the file.
-///
-/// Clock mapping: chunk seconds are clip-relative (0 = the clip's kept-in point, length = the clip's
-/// merged frames / 60), so merged seconds = clip start + chunk seconds. <see cref="OutputSecAt"/> is
-/// the body output second (the music preview's clock), equal to
-/// <see cref="CompositeTimeline.MergedSecToBodyOutputSec"/> (unit-tested).
-/// Pure: no UI, no mpv.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public sealed class MergerPreviewPlan
 {
-    /// <summary>Tolerance for "at the same instant", well under one 60 fps frame.</summary>
     private const double Eps = 0.0005;
 
     public IReadOnlyList<PreviewStep> Steps { get; }
     public double TotalMergedSec { get; }
     public double TotalOutputSec { get; }
 
-    /// <summary>True when the plan does anything other than play everything at one speed.</summary>
     public bool HasEffects { get; }
 
-    /// <summary>
-    /// P8.2 — every meme as the Main App's <see cref="MemePlacement"/> on the MERGED clock (origin 0),
-    /// for <c>MemePreviewDirector</c>, which plays the cut-away when forward playback crosses it.
-    /// </summary>
     public IReadOnlyList<MemePlacement> MemePlacements { get; }
 
-    /// <summary>
-    /// MEMEMODE_01 — every corner overlay, on the GAMEPLAY clock (<see cref="GameplaySecAt"/>: body
-    /// output seconds with full-screen meme holds removed), clipped to its clip. Corner overlays are
-    /// never steps: they do not pause, seek or swap the gameplay.
-    /// </summary>
     public IReadOnlyList<CornerOverlaySpan> CornerOverlays { get; private set; } = Array.Empty<CornerOverlaySpan>();
 
     public static readonly MergerPreviewPlan Empty = new(new List<PreviewStep>(), 0, false);
@@ -159,12 +123,6 @@ public sealed class MergerPreviewPlan
         return plan;
     }
 
-    /// <summary>
-    /// MEMEMODE_01 — the GAMEPLAY clock at <paramref name="mergedSec"/>: <see cref="OutputSecAt"/> minus
-    /// every full-screen meme hold already passed. Corner overlays run on this clock, so a full-screen
-    /// cutaway pauses them exactly as it pauses the gameplay they sit on (the export overlays them on
-    /// the clip body before the cutaways are spliced in).
-    /// </summary>
     public double GameplaySecAt(double mergedSec)
     {
         double t = Math.Clamp(mergedSec, 0, TotalMergedSec);
@@ -183,7 +141,6 @@ public sealed class MergerPreviewPlan
         return null;
     }
 
-    /// <summary>The play or cut stretch that owns <paramref name="mergedSec"/> (a boundary belongs to the stretch that starts there), or null.</summary>
     public PreviewStep? StretchAt(double mergedSec)
     {
         PreviewStep? last = null;
@@ -197,11 +154,18 @@ public sealed class MergerPreviewPlan
         return last is { } l && mergedSec >= TotalMergedSec - Eps ? l : null;
     }
 
-    /// <summary>mpv speed at <paramref name="mergedSec"/> (the base speed when nothing else applies).</summary>
+    public double ClipBodyOutputEndSec(int clipIndex)
+    {
+        double end = 0;
+        foreach (var s in Steps)
+            if (s.ClipIndex == clipIndex && s.Kind != PreviewStepKind.Meme)
+                end = Math.Max(end, s.OutputStartSec + s.OutputLengthSec);
+        return end;
+    }
+
     public double SpeedAt(double mergedSec, double fallback)
         => StretchAt(mergedSec) is { Kind: PreviewStepKind.Play } s ? s.Speed : fallback;
 
-    /// <summary>Where playback resumes when <paramref name="mergedSec"/> is inside deleted footage; null when it is not.</summary>
     public double? CutResumeAt(double mergedSec)
     {
         foreach (var s in Steps)
@@ -217,12 +181,6 @@ public sealed class MergerPreviewPlan
         return null;
     }
 
-    /// <summary>
-    /// The first hold (freeze or meme) placed in [<paramref name="fromSec"/>, <paramref name="toSec"/>]
-    /// on the merged clock, in schedule order, whose index is greater than <paramref name="afterIndex"/>.
-    /// Returns its index in <see cref="Steps"/>, or -1. <paramref name="includeMemes"/> false = freezes
-    /// only (the preview hands memes to <c>MemePreviewDirector</c>).
-    /// </summary>
     public int NextHold(double fromSec, double toSec, int afterIndex, bool includeMemes = true)
     {
         for (int i = Math.Max(0, afterIndex + 1); i < Steps.Count; i++)
@@ -235,7 +193,6 @@ public sealed class MergerPreviewPlan
         return -1;
     }
 
-    /// <summary>Index of the last step that starts at or before <paramref name="mergedSec"/> (for re-arming holds after a seek), or -1.</summary>
     public int LastStepIndexBefore(double mergedSec)
     {
         int idx = -1;
@@ -247,10 +204,6 @@ public sealed class MergerPreviewPlan
         return idx;
     }
 
-    /// <summary>
-    /// Body output second at <paramref name="mergedSec"/>, BEFORE any hold that starts exactly there
-    /// (a freeze at t is still ahead of a playhead that has just reached t). Inside a cut: the join.
-    /// </summary>
     public double OutputSecAt(double mergedSec)
     {
         double t = Math.Clamp(mergedSec, 0, TotalMergedSec);

@@ -6,31 +6,12 @@ using FreeVideoStudio.App.ViewModels;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// UPGRADEUX_01 — runs the upgrade broker (<c>--upgrade-broker</c>) WITH A WINDOW.
-///
-/// <para>══════════════════════════════════════════════════════════════════════════════════════
-/// WHAT WAS WRONG. <see cref="UpgradeCoordinator.RunAsync"/> ran in a process started with
-/// <c>CreateNoWindow</c> and returned before Avalonia was ever initialised. The old
-/// <c>DeploymentProgressWindow</c> was only reachable through the retired
-/// <c>--install-worker</c> path, which nothing launches any more. So every install and every
-/// update — the moment the app closed — went dark: a Windows permission prompt out of nowhere,
-/// then a minute or more of nothing while hundreds of MB were unpacked, copied and hashed.
-/// ══════════════════════════════════════════════════════════════════════════════════════</para>
-///
-/// <para>The window is display-only. The coordinator's protocol, journals, rollback and order are
-/// unchanged; this host only gives them a <see cref="IUpgradeProgress"/> that draws. If the UI
-/// libraries cannot be loaded (for example the Skia natives are missing beside the staged copy),
-/// the broker still runs, headless, with native message boxes (<see cref="HeadlessUpgradeProgress"/>).
-/// It runs BEFORE any settings are loaded and must never load them: user data may be mid-migration.</para>
-/// </summary>
 internal static class UpgradeBrokerHost
 {
     private static string[] _args = [];
     private static Task<int>? _work;
     private static WindowProgress? _progress;
 
-    /// <summary>True in the broker process. <c>AvaloniaApp</c> then skips settings, theme and sounds.</summary>
     public static bool IsActive { get; private set; }
 
     public static async Task<int> RunAsync(string[] args)
@@ -64,7 +45,6 @@ internal static class UpgradeBrokerHost
         return await UpgradeCoordinator.RunAsync(args, HeadlessUpgradeProgress.Instance).ConfigureAwait(false);
     }
 
-    /// <summary>Called from <c>AvaloniaApp.OnFrameworkInitializationCompleted</c> in the broker process.</summary>
     public static void Attach(IClassicDesktopStyleApplicationLifetime desktop)
     {
         var vm = new UpgradeProgressViewModel();
@@ -97,17 +77,14 @@ internal static class UpgradeBrokerHost
         }, TaskScheduler.Default);
     }
 
-    /// <summary>The window-backed <see cref="IUpgradeProgress"/>. Every call marshals to the UI thread.</summary>
     private sealed class WindowProgress : IUpgradeProgress
     {
         private readonly UpgradeProgressViewModel _vm;
         private readonly UpgradeProgressWindow _window;
         private volatile bool _native, _succeeded, _finished;
 
-        /// <summary>True once <see cref="Succeeded"/> was called (set before the UI catches up).</summary>
         public bool SucceededShown => _succeeded;
 
-        /// <summary>True once a final success or failure has been shown.</summary>
         public bool Finished => _finished;
         private TaskCompletionSource<RunningAppChoice>? _answer;
         private TaskCompletionSource? _dismissed;
@@ -125,7 +102,6 @@ internal static class UpgradeBrokerHost
             vm.CloseRequested += () => _dismissed?.TrySetResult();
         }
 
-        /// <summary>The UI died mid-update: answer anything still pending with native dialogs.</summary>
         public void FallBackToNative()
         {
             _native = true;

@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -10,13 +9,8 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// PCMSTREAM_02/03 — the Add Music wizard's energy/beat analysis streams ffmpeg's PCM in bounded memory
-/// and is bit-identical to the previous whole-buffer implementation; the child is always reaped.
-/// </summary>
 public class MusicEnergyAnalysisTests
 {
-    /// <summary>The previous MusicWizardWindow.AnalyzeAudioEnergyAsync maths, verbatim, as the oracle.</summary>
     private static (double[] Energy, double[] Peaks, double Duration)? Legacy(byte[] data)
     {
         const int sampleRate = 1000;
@@ -58,7 +52,6 @@ public class MusicEnergyAnalysisTests
         return (energy, peaks.Select(i => i * bucketSeconds).ToArray(), sampleCount / (double)sampleRate);
     }
 
-    /// <summary>A song-like signal: noise floor plus a loud transient every 500 ms, 1 kHz mono.</summary>
     private static byte[] Song(int seconds, int seed, bool oddTail = false)
     {
         var rng = new Random(seed);
@@ -175,10 +168,6 @@ public class MusicEnergyAnalysisTests
     }
 }
 
-/// <summary>
-/// PCMSTREAM_01/03 — allocation-bound proofs. They read the PROCESS-wide allocation counter, so they
-/// run in a collection with parallelisation disabled (after, and never beside, the other tests).
-/// </summary>
 [CollectionDefinition(nameof(PcmMemoryBoundTests), DisableParallelization = true)]
 public sealed class PcmMemoryBoundCollection { }
 
@@ -212,5 +201,4 @@ public class PcmMemoryBoundTests
         Assert.True(allocated < compact * 4 + 16L * 1024 * 1024,
             $"Analysing {pcmBytes >> 20} MiB of PCM allocated {allocated >> 20} MiB (compact output {compact >> 20} MiB).");
     }
-
 }

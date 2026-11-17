@@ -11,9 +11,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// Output payload of the Modern Viral Post Helper.
-/// </summary>
 public sealed record ViralPostResult(
     string Title,
     string Caption,
@@ -25,23 +22,16 @@ public sealed record ViralPostResult(
             : $"{Caption}\n\n{string.Join(" ", Hashtags)}";
 }
 
-/// <summary>AIVIRAL_HONEST_01 — what really happened when the post was requested.</summary>
 public enum ViralPostStatus
 {
     AiGenerated,
     NoKey,
     Failed,
+    AccountProblem,
 }
 
-/// <summary>AIVIRAL_HONEST_01 — the post (only when <see cref="Status"/> is AiGenerated) and a plain message otherwise.</summary>
 public sealed record ViralPostOutcome(ViralPostStatus Status, ViralPostResult? Post, string? Message);
 
-/// <summary>
-/// Modern Viral Post Helper for social media export (TikTok, YouTube Shorts, Reels).
-/// Uses cloud multimodal AI (Google Gemini, Anthropic Claude, OpenAI) to formulate high-engagement clickbait titles,
-/// punchy captions with comment-driving hooks, and trending hashtags.
-/// Zero local AI models are ever used.
-/// </summary>
 public static class AiViralPostService
 {
     public static readonly TimeSpan OverallDeadline = TimeSpan.FromSeconds(75);
@@ -84,7 +74,6 @@ public static class AiViralPostService
         }
         """;
 
-    /// <summary>Back-compatible wrapper: the post, or null when no key / the AI failed. Prefer <see cref="GenerateAsync"/>.</summary>
     public static async Task<ViralPostResult?> GenerateViralPostAsync(
         string ffmpegPath,
         string videoPath,
@@ -94,12 +83,6 @@ public static class AiViralPostService
         CancellationToken ct = default)
         => (await GenerateAsync(ffmpegPath, videoPath, vendor, apiKey, model, null, ct).ConfigureAwait(false)).Post;
 
-    /// <summary>
-    /// AIVIRAL_HONEST_01 — writes a title, caption and hashtags for the exported video and says what really
-    /// happened: <see cref="ViralPostStatus.AiGenerated"/> only when the AI answered; <see cref="ViralPostStatus.NoKey"/>
-    /// without a key; <see cref="ViralPostStatus.Failed"/> with a plain reason otherwise. Never dresses a stock
-    /// template up as an AI answer. <paramref name="avoidTitle"/> (a regenerate) asks for a different take.
-    /// </summary>
     public static Task<ViralPostOutcome> GenerateAsync(
         string ffmpegPath,
         string videoPath,
@@ -125,6 +108,8 @@ public static class AiViralPostService
 
         if (string.IsNullOrWhiteSpace(apiKey))
             return new ViralPostOutcome(ViralPostStatus.NoKey, null, "Add an AI key to get a title, caption and hashtags written for this video.");
+        if (AiKeyHealth.IsNotWorking(vendor, apiKey))
+            return new ViralPostOutcome(ViralPostStatus.AccountProblem, null, $"Your {AiVisionProviders.DisplayName(vendor)} key does not work any more. {AiAccountFix.NothingCharged} Press SET UP AI to fix it.");
 
         var provider = AiVisionProviders.Get(vendor);
         string effectiveModel = !string.IsNullOrWhiteSpace(model) ? model : provider.DefaultModel;
@@ -238,6 +223,8 @@ public static class AiViralPostService
         catch (AiProviderException ex)
         {
             RuntimeLog.Fail("AI_VIRAL", AiDiagnostics.Tag + GeminiClient.Redact($"{ex.Vendor} {ex.Kind}: {ex.Message} {ex.Detail}", apiKey));
+            if (AiAccountFix.KindFor(ex.Kind) != AiFixKind.None)
+                return new ViralPostOutcome(ViralPostStatus.AccountProblem, null, $"{ex.Message} {AiAccountFix.NothingCharged} Press SET UP AI to fix it.");
             return new ViralPostOutcome(ViralPostStatus.Failed, null, ex.Message);
         }
         catch (Exception ex)
@@ -261,7 +248,6 @@ public static class AiViralPostService
     private static string Truncate(string? s, int max)
         => string.IsNullOrEmpty(s) ? "" : (s.Length <= max ? s : s[..max] + "…");
 
-    /// <summary>AIVIRAL_HONEST_01 — the parsed post, or null when the answer has no usable title (no stock filler).</summary>
     public static ViralPostResult? TryParseJsonResponse(string? json)
     {
         try

@@ -6,17 +6,11 @@ using MemePlacement = FreeVideoStudio.Core.Media.MemePlacement;
 
 namespace FreeVideoStudio.AvRegression.Tests;
 
-/// <summary>
-/// Granular Speed Editor — speed blocks played live, FULL-SCREEN (blocking) memes and CORNER memes in
-/// the preview (the app's own MemePreviewDirector on the real player) and in the export, moving /
-/// resizing / deleting memes with undo, AI zoom + captions, and closing the editor.
-/// </summary>
 [Collection(AvCollection.Name)]
 public sealed class S15_S20_SpeedEditorAndMemeTests
 {
     private const double Trim = 2.0;
 
-    /// <summary>The editor's tick: speed follows the block under the playhead (GranularEditSession.SpeedAt).</summary>
     private static async Task DriveSpeedAsync(PlayerRig p, GranularEditSession s, int ms, List<(double Pos, double Speed)> log)
     {
         double current = -1;
@@ -73,7 +67,6 @@ public sealed class S15_S20_SpeedEditorAndMemeTests
     private static MemePreviewDirector Director(PlayerRig p, Clip clip, List<string> busy) =>
         new(() => p.Ipc, () => clip.Path, () => Trim, (on, msg) => { lock (busy) busy.Add((on ? "ON " : "OFF ") + msg); }, "AVREG", () => 18.0);
 
-    /// <summary>Drives the director like a host tick (60 Hz) until it returns to idle, or fails on a hang.</summary>
     private static async Task<(double TotalMs, double MemeMs)> TickThroughMemeAsync(PlayerRig p, MemePreviewDirector d, double budgetMs)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -129,7 +122,6 @@ public sealed class S15_S20_SpeedEditorAndMemeTests
         }
     }
 
-    /// <summary>"Keep music during memes" with a meme AFTER the music's END note: the song must still stop on the note.</summary>
     [Fact, Trait("Tier", "Quick")]
     public async Task S16_KeepMusic_MemeAfterTheEndNote_MusicStillStopsOnTheNote()
     {

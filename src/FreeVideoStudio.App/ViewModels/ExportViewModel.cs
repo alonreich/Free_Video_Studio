@@ -93,7 +93,6 @@ public sealed class ExportViewModel : ViewModelBase
         set => SetProperty(ref _statusText, value);
     }
 
-
     public string ResolveHardwareMode()
     {
         return ExportEncoderStrategy.Resolve(
@@ -190,20 +189,10 @@ public sealed class ExportViewModel : ViewModelBase
         return false;
     }
 
-    /// <summary>NOPOWERSHELL_02 — the one argument that makes this executable apply the RDP GPU policy and exit.</summary>
     public const string ApplyRdpGpuPolicyArgument = "--apply-rdp-gpu-policy";
 
     private const string RdpPolicyKeyPath = @"SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services";
 
-    /// <summary>
-    /// NOPOWERSHELL_02 — the Auto-Fix starts THIS signed executable elevated (Windows asks the user)
-    /// with <see cref="ApplyRdpGpuPolicyArgument"/>, and that copy writes the two DWORDs through the
-    /// .NET registry API (<see cref="ApplyRdpGpuPolicyElevated"/>). It used to start a hidden
-    /// <c>powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden</c> as administrator to edit
-    /// machine policy — a combination antivirus heuristics treat as an attack (MITRE T1059.001,
-    /// T1112) and one of the reasons new releases were reported as a trojan. Same values, same UAC
-    /// prompt, no script host.
-    /// </summary>
     public async Task<bool> AutoFixRdpGpuPolicyAsync()
     {
         string? self = Environment.ProcessPath;
@@ -228,11 +217,6 @@ public sealed class ExportViewModel : ViewModelBase
         }
     }
 
-    /// <summary>
-    /// NOPOWERSHELL_02 — runs in the elevated copy only (dispatched first thing by <c>Program</c>).
-    /// Fixed action, no parameters: nothing on the command line can choose a different key or value.
-    /// Returns 0 on success, 2 when not elevated, 1 on failure.
-    /// </summary>
     public static int ApplyRdpGpuPolicyElevated()
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return 1;

@@ -1,8 +1,6 @@
-# Executable regression tests for TESTGATE_01 / TESTCLEAN_01; no Pester dependency.
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'TestHarness.ps1')
 $repo = Split-Path -Parent $PSScriptRoot
-# TESTOUT_01: this suite's own output folder is logs\Harness_Results\work (a fake repository).
 $fixture = Enter-SuiteOutput $repo 'Harness'
 $null = New-Item -ItemType Directory -Force (Join-Path $fixture 'tests')
 [IO.File]::WriteAllText((Join-Path $fixture 'FreeVideoStudio.sln'), 'fixture repository')
@@ -59,7 +57,6 @@ Check (Test-Path -LiteralPath (Join-Path $outside 'keep.mp4')) 'Cleanup followed
 $null = New-Item -ItemType Junction -Path $owned -Target $outside
 Refuses { Reset-TestOutputs $fixture @('AV') } 'A linked output root was accepted.'
 Check (Test-Path -LiteralPath (Join-Path $outside 'keep.mp4')) 'Root-link rejection modified the target.'
-# Unlink this verified fixture junction itself; never recurse into its target.
 [IO.Directory]::Delete($owned)
 $lock = Enter-TestRun $fixture
 try { Refuses { $other = Enter-TestRun $fixture; $other.Dispose() } 'Concurrent runs can erase each other.' }

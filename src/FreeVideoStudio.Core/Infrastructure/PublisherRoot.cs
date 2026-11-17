@@ -3,49 +3,17 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>
-/// UPDATEPIN_01 — THE PUBLISHER ROOT, BUILT INTO THE APP.
-///
-/// <para>Releases are signed with the repository's own certificate (ssl-certificate\, SIGNLOCAL_01),
-/// which chains to a PRIVATE root. No other PC trusts that root, so the old rule — "the running
-/// build must chain to a root Windows trusts" — refused every in-app update on every user's PC
-/// (UPDATETRUST_02) and sent them to download 296 MB by hand.</para>
-///
-/// <para>The fix needs no paid certificate: the root's PUBLIC certificate is compiled into the app.
-/// An update is trusted when its Authenticode signature is intact AND its signer chains to THIS root
-/// (custom trust, code-signing EKU). That is a stronger statement than "some public CA vouches for
-/// someone": only the holder of this root's key can produce a file that passes. The same anchor
-/// verifies the signed update manifest (<see cref="SmartUpdateManifest"/>).</para>
-///
-/// <para>⚠️ NEVER REGENERATE THE ROOT casually. A new root means every installed copy refuses every
-/// future update until the user reinstalls by hand. ssl-certificate\create-dev-codesign-cert.ps1
-/// makes a new root; FvsBuild refuses to sign with a certificate that does not chain to the root
-/// below. A new LEAF from the same root (the leaf expires 2029-09-24) is fine.</para>
-///
-/// <para>Windows' own "unknown publisher" warning on the very FIRST download is not affected: that
-/// needs a publicly trusted certificate, which only money buys.</para>
-/// </summary>
 public static class PublisherRoot
 {
-    /// <summary>SHA-256 fingerprint of the root below (CN=FVS Local Development Root CA, valid to 2036-09-22).</summary>
     public const string Sha256Thumbprint = "C2E12D96D138A6E11E96F8A84E6646961DE5D7F7CDC4DC841DD5F6229BF1946A";
 
     private const string CodeSigningOid = "1.3.6.1.5.5.7.3.3";
 
-    /// <summary>
-    /// REVOKE_01 — publisher LEAF certificates (SHA-256 thumbprints) withdrawn by the publisher, compiled
-    /// in. A leaked leaf key is switched off by (1) issuing a new leaf from the same root, (2) adding the
-    /// old thumbprint to <c>build/revoked-signers.txt</c> AND here, (3) releasing. Every copy that installs
-    /// that release refuses the old leaf for good, and every copy that only DOWNLOADS its signed list
-    /// learns it too (<see cref="SmartUpdateManifest.RevokedSigners"/> → <see cref="AddRevoked"/>).
-    /// ⚠️ Must equal <c>build/revoked-signers.txt</c> (PublisherRootTests.CompiledRevocationListMatchesTheBuildList).
-    /// </summary>
     public static readonly IReadOnlyList<string> RevokedSignerThumbprints = [];
 
     private static readonly object RevokedSync = new();
     private static readonly HashSet<string> RuntimeRevoked = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>REVOKE_01 — adds thumbprints learned at run time (a signed list, or the per-user store).</summary>
     public static void AddRevoked(IEnumerable<string>? thumbprints)
     {
         if (thumbprints is null) return;
@@ -59,7 +27,6 @@ public static class PublisherRoot
         }
     }
 
-    /// <summary>REVOKE_01 — true when the publisher withdrew this signer (compiled list or learned at run time).</summary>
     public static bool IsRevoked(string? sha256Thumbprint)
     {
         if (string.IsNullOrWhiteSpace(sha256Thumbprint)) return false;
@@ -67,13 +34,11 @@ public static class PublisherRoot
         lock (RevokedSync) return RuntimeRevoked.Contains(sha256Thumbprint);
     }
 
-    /// <summary>The run-time revocations, for persisting them (REVOKE_01).</summary>
     public static IReadOnlyList<string> RuntimeRevokedSnapshot()
     {
         lock (RevokedSync) return RuntimeRevoked.OrderBy(t => t, StringComparer.Ordinal).ToList();
     }
 
-    /// <summary>A SHA-256 thumbprint: 64 hexadecimal characters.</summary>
     public static bool IsThumbprint(string? text) =>
         text is { Length: 64 } && text.All(Uri.IsHexDigit);
 
@@ -111,14 +76,8 @@ public static class PublisherRoot
         -----END CERTIFICATE-----
         """;
 
-    /// <summary>The pinned root certificate (public part only).</summary>
     public static X509Certificate2 Load() => X509Certificate2.CreateFromPem(RootPem);
 
-    /// <summary>
-    /// True when <paramref name="signer"/> chains to the pinned root and may sign code. Time
-    /// validity is not required: Authenticode signatures are RFC-3161 timestamped, so a file signed
-    /// while the leaf was valid stays valid after it expires (SIGNMANDATE_01).
-    /// </summary>
     public static bool Vouches(X509Certificate2 signer, out string detail)
     {
         using X509Certificate2 root = Load();

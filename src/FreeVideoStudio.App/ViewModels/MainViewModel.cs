@@ -408,7 +408,6 @@ public sealed class MainViewModel : ViewModelBase
         return _recoveryService.HasUnsavedWork(this, Timeline, Export);
     }
 
-
     private void NotifyStateDirty()
     {
         OnRecoveryStateDirty?.Invoke();

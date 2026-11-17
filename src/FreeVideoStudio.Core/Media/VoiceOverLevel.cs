@@ -2,7 +2,6 @@
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>VOLEVEL_01: linear take gain, independent of monitoring volume; mono is duplicated at unity.</summary>
 public static class VoiceOverLevel
 {
     public static double Clamp(double gain) => double.IsFinite(gain) ? Math.Clamp(gain, 0, 1.5) : 1;

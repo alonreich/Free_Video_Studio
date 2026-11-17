@@ -2,7 +2,6 @@
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>AIMODE_01 (docs/04 UI-AIMODE) — the answer to "How should AI work?".</summary>
 public enum AiMode
 {
     NotChosen,
@@ -11,11 +10,6 @@ public enum AiMode
     Hybrid,
 }
 
-/// <summary>
-/// AIMODE_01 — what the chosen AI mode needs and whether setup is finished. A choice is saved only after every step it
-/// needs succeeded, so an unfinished setup reads as NotChosen (or incomplete) and the next AI button opens the
-/// walk-through again.
-/// </summary>
 internal static class AiSetup
 {
     public static bool UsesPc(AiMode mode) => mode is AiMode.LocalOnly or AiMode.Hybrid;
@@ -25,7 +19,6 @@ internal static class AiSetup
     public static bool HasStoredKey(AppSettings s)
         => s.HasAiCredential(AiVendor.Google) || s.HasAiCredential(AiVendor.Anthropic) || s.HasAiCredential(AiVendor.OpenAI);
 
-    /// <summary>The saved choice; an install from before the choice existed counts as Online (Both with a ready pack) once it has a key.</summary>
     public static AiMode Effective(AiMode saved, bool hasKey, bool packReady)
     {
         if (saved != AiMode.NotChosen) return saved;

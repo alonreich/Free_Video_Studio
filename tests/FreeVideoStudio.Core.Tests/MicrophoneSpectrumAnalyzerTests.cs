@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using FreeVideoStudio.Core.Media;
@@ -7,16 +6,10 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// SPECTRUM_01 — the Voice Over meter's analyzer, proven on generated PCM (no WAV assets, no
-/// microphone). Tolerances are spectral, not pixel: a Hann window spreads a tone over ±2 bins, so
-/// "the band containing f" is allowed to be the adjacent band only where the test says so.
-/// </summary>
 public sealed class MicrophoneSpectrumAnalyzerTests
 {
     private const int Rate = 44100;
     private static readonly PcmCaptureFormat Mono16 = PcmCaptureFormat.ProductionMicrophone;
-
 
     private static double[] Tone(int samples, int rate, params (double Hz, double Amp)[] parts)
     {
@@ -70,7 +63,6 @@ public sealed class MicrophoneSpectrumAnalyzerTests
           + $"or an adjacent band; peaked in {actual} ({s.Bands[actual].LowHz:0}-{s.Bands[actual].HighHz:0} Hz).");
     }
 
-
     [Fact]
     public void DigitalSilence_IsFiniteFloorInEveryBand()
     {
@@ -79,7 +71,6 @@ public sealed class MicrophoneSpectrumAnalyzerTests
         Assert.All(s.BandDbfs, d => Assert.True(double.IsFinite(d)));
         Assert.All(s.Levels, l => Assert.Equal(0.0, l));
     }
-
 
     [Theory]
     [InlineData(125.0)]
@@ -130,7 +121,6 @@ public sealed class MicrophoneSpectrumAnalyzerTests
         Assert.True(Math.Abs(top2[0] - b250) <= 1 && Math.Abs(top2[1] - b4k) <= 1, $"{top2[0]},{top2[1]} vs {b250},{b4k}");
     }
 
-
     [Fact]
     public void FullScaleSineAtBandCentre_ReadsZeroDbfs()
     {
@@ -175,7 +165,6 @@ public sealed class MicrophoneSpectrumAnalyzerTests
         Assert.All(fs.BandDbfs, d => Assert.True(double.IsFinite(d)));
         Assert.All(fs.Levels, l => Assert.InRange(l, 0.0, 1.0));
     }
-
 
     [Theory]
     [InlineData(1)]
@@ -227,7 +216,6 @@ public sealed class MicrophoneSpectrumAnalyzerTests
         for (int i = 0; i < 40; i++) total += a.Process(packet);
         Assert.Equal((4410 + 40 * 2205 - 4096) / a.HopSize, total);
     }
-
 
     [Fact]
     public void Reset_RemovesTheOldTone()
@@ -333,7 +321,6 @@ public sealed class MicrophoneSpectrumAnalyzerTests
         Assert.Equal(mono.BandDbfs[mono.PeakBandIndex], stereoF.BandDbfs[mono.PeakBandIndex], 1);
     }
 
-
     [Fact]
     public void State_StaysBoundedOverManyCallbacks()
     {
@@ -348,7 +335,6 @@ public sealed class MicrophoneSpectrumAnalyzerTests
         Assert.Equal(before, a.StateElementCount);
         Assert.Equal(MicrophoneSpectrumAnalyzer.DefaultBandCount, a.Latest!.Levels.Length);
     }
-
 
     [Fact]
     public void Ballistics_AttackFast_ReleaseToZero_WhenSnapshotsStop()

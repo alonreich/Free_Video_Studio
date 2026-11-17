@@ -15,36 +15,8 @@ using FreeVideoStudio.Core.Project;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// RECOVERYDOC_10 - THE RESTORE SIDE OF THE ONE-CANONICAL-MODEL CONTRACT.
-///
-/// <para>
-/// This file used to be the SECOND implementation of project loading: a 470-line, field-by-field
-/// reconstruction of application state out of a parallel recovery JSON, drifting from the normal
-/// open path in exactly the way the old recovery WRITER drifted from the normal save path. The
-/// project itself is now applied through the canonical path (ProjectSession.OpenDocument - the
-/// tail of Open Project minus the file picker), so the project surface cannot drift between
-/// save, save-again and crash-restore.
-/// </para>
-///
-/// <para>
-/// What remains HERE is the crash-only transient state that deliberately is NOT part of a project
-/// document: the thumbnail frame, the freeze preview, HUD tool selections, the voice-over takes
-/// and protection flags, the music wizard's working state, and the in-flight granular editor
-/// session (granular_session, preserved by RecoveryManager beside the envelope). Everything about
-/// the user's WORK - source, trims, speed segments, cuts, memes, audio, export settings, mask,
-/// merge - arrives inside the ProjectDocument and never below.
-/// </para>
-/// </summary>
 public partial class MainWindow
 {
-    /// <summary>
-    /// RESTOREFAIL_01 — the restore FAILED (document not applied, or an exception partway) without
-    /// crashing. This used to ClearState(): the user's only copy of the crashed session was deleted
-    /// because the restore code failed, not because the snapshot was bad. Now the snapshot is moved
-    /// aside intact (so later autosaves of the half-restored editor cannot overwrite it) and the
-    /// user is told where it is. Corrupt / unusable snapshots above are still discarded (SYS-RECOVERY).
-    /// </summary>
     private async Task PreserveFailedRestoreSnapshotAsync()
     {
         try
@@ -295,11 +267,19 @@ public partial class MainWindow
                     await Task.Delay(25);
                 }
 
+                bool metadataReady = false;
                 if (ActiveVideoHost?.IpcClient != null)
                 {
-                    _ = ActiveVideoHost.IpcClient.LoadFileAsync(videoPath);
-                    _ = ActiveVideoHost.IpcClient.SetPropertyAsync("speed",
-                        _baseSpeed.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
+                    double previousDuration = ActiveVideoHost.IpcClient.Duration;
+                    await ActiveVideoHost.IpcClient.LoadFileAsync(videoPath);
+                    await ActiveVideoHost.IpcClient.SetPropertyAsync("pause", "yes");
+                    _ = _previewSpeed.Force(ActiveVideoHost.IpcClient, _baseSpeed);
+                    metadataReady = await WaitForVideoMetadataAsync(previousDuration);
+                    if (metadataReady && ActiveVideoHost?.IpcClient != null)
+                    {
+                        _loadedVideoDurationMs = ActiveVideoHost.IpcClient.Duration * 1000.0;
+                        _viewModel.Timeline.LoadedVideoDurationMs = _loadedVideoDurationMs;
+                    }
                 }
                 if (ActiveVideoHost != null) ActiveVideoHost.IsVisible = true;
                 UpdatePortraitOverlay();
@@ -320,11 +300,14 @@ public partial class MainWindow
                 UpdateTimelineMarkers();
 
                 RestoreVoiceOverTransient(document, state);
+                RestoreSessionExtras(state, videoPath, metadataReady);
             }
             else
             {
                 RuntimeLog.Info("RECOVERY", "Video file no longer exists. Skipping video restore; the edit state was applied from the document.");
             }
+
+            _projectSession?.MarkRecovered();
 
             RuntimeLog.Success("RECOVERY",
                 $"Session restored. Video={Path.GetFileName(document.Source.FilePath)}, Trim={_trimStartMs:F0}ms-{_trimEndMs:F0}ms, " +
@@ -357,11 +340,32 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>
-    /// The in-flight granular editor's own segments, cuts and memes re-instated over the
-    /// document's segments/cuts/memes. The granular editor's values are editor-relative; the
-    /// view-model's are absolute.
-    /// </summary>
+    internal const string RecoveryExtrasTag = "RECOVERYFULL_01";
+
+    private void RestoreSessionExtras(JsonObject state, string videoPath, bool metadataReady)
+    {
+        if (state["applyPeakFlattening"] is JsonNode peakNode) _applyPeakFlattening = peakNode.GetValue<bool>();
+        if (state["gameplayLoudnessLufs"] is JsonNode lufsNode) _gameplayLoudnessLufs = lufsNode.GetValue<double>();
+        FreeVideoStudio.Core.Media.VideoLoudnessCache.Set(videoPath, _gameplayLoudnessLufs);
+        if (_gameplayLoudnessLufs is null) _ = RunAudioPeakCheckAsync(videoPath);
+
+        var kills = new List<double>();
+        if (state["aiEliminations"] is JsonArray killArray)
+            foreach (var node in killArray)
+                if (node != null && double.TryParse(node.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double t))
+                    kills.Add(t);
+        if (kills.Count > 0) SetAiEliminations(kills);
+        else if (SettingsManager.Instance.AiEliminationTrackerEnabled) _ = RunAiEliminationScanAsync(videoPath);
+
+        double playheadSec = state["playheadSec"]?.GetValue<double>() ?? 0;
+        if (metadataReady && playheadSec > 0 && ActiveVideoHost?.IpcClient is { } ipc && playheadSec < ipc.Duration)
+            _ = SeekInternal(playheadSec);
+
+        RuntimeLog.Info("RECOVERY",
+            $"{RecoveryExtrasTag}: playhead={playheadSec:F2}s kills={kills.Count} peakFix={(_applyPeakFlattening?.ToString() ?? "ask")} " +
+            $"loudness={(_gameplayLoudnessLufs?.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) ?? "re-measuring")} metadata={metadataReady}.");
+    }
+
     private void RestoreGranularSessionTimeline(JsonObject granularSession)
     {
         if (granularSession["segments"] is JsonArray gSegs)
@@ -427,10 +431,6 @@ public partial class MainWindow
         _viewModel.Timeline.MarkMemesAnchored();
     }
 
-    /// <summary>
-    /// WHERE the voice-over sits (path, position, per-take starts) is project data - the takes
-    /// list and the ducking/protection toggles are working session state.
-    /// </summary>
     private void RestoreVoiceOverTransient(ProjectDocument document, JsonObject state)
     {
         bool hasVoiceOver = document.Audio.VoiceOverTakes.Count > 0 || document.Audio.VoiceOverFilePath != null

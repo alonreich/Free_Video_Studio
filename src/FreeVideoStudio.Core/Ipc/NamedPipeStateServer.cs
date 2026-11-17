@@ -23,10 +23,6 @@ public sealed class NamedPipeStateServer : IAsyncDisposable, IDisposable
     private JsonObject _currentState;
     private readonly ApplicationPaths _paths;
 
-    /// <summary>
-    /// IPCLEASE_01 — see <see cref="IpcProtocol.ServerMutexName"/>. This handle IS the lease; it is
-    /// never acquired and never released, so it has no thread affinity and can never be abandoned.
-    /// </summary>
     private readonly Mutex _serverLease;
 
     private readonly CancellationTokenSource _cts = new();
@@ -37,38 +33,10 @@ public sealed class NamedPipeStateServer : IAsyncDisposable, IDisposable
     private bool _isDirty;
     private System.Timers.Timer? _debounceTimer;
 
-    /// <summary>
-    /// FLUSHCEILING_01 — the debounce interval. Coalescing is mandatory here: without it a timeline
-    /// drag would issue hundreds of AtomicJsonFile.WriteObject calls per second, each taking a
-    /// Global\ mutex and a WriteThrough flush, and the disk pressure would visibly stutter preview
-    /// playback.
-    /// </summary>
     private const int FlushDebounceMs = 500;
 
-    /// <summary>
-    /// FLUSHCEILING_01 — THE MAXIMUM a change may sit in memory before it is forced to disk.
-    ///
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// WHAT WAS WRONG: ScheduleDiskFlush did Stop() then Start() on a 500ms one-shot timer, and it
-    /// is called from EVERY mutating opcode. A CONTINUOUS stream of updates — which is precisely
-    /// what dragging a timeline knob or a volume slider produces — restarted the 500ms clock before
-    /// it could ever elapse. The flush was therefore postponed INDEFINITELY: the app believed it was
-    /// "continuously serialising the session" (docs/05 §SYS-RECOVERY) while in fact nothing reached
-    /// the disk for as long as the user kept working. A crash during that drag — the moment a crash
-    /// is MOST likely, because it is when the app is busiest — lost everything since the last pause.
-    ///
-    /// A debounce with no maximum-wait ceiling is not a debounce. It is a promise that the work
-    /// happens only when the user stops.
-    ///
-    /// THE FIX: the trailing 500ms edge still coalesces bursts, but once a change has been waiting
-    /// this long the flush is forced regardless of how much more traffic is arriving. Worst case is
-    /// bounded at one write per 3 seconds during sustained editing.
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
     private const int FlushMaxWaitMs = 3000;
 
-    /// <summary>FLUSHCEILING_01 — TickCount64 when the current unflushed change first appeared, or 0
-    /// when there is nothing pending. Guarded by <see cref="_stateLock"/>.</summary>
     private long _firstDirtyTicks;
 
     private readonly object _flushGate = new();
@@ -78,12 +46,8 @@ public sealed class NamedPipeStateServer : IAsyncDisposable, IDisposable
     private bool _acceptingWrites = true;
     private bool _persistenceReleased;
 
-    /// <summary>IPCOWNER_01 test seam — delay between receiving a pipe mutation and applying it
-    /// (models a hung/slow server). Zero in production.</summary>
     internal TimeSpan ApplyDelayForTests { get; set; }
 
-    /// <summary>IPCOWNER_01 test seam — delay between applying a pipe mutation and sending its ACK
-    /// (models a server that applied the change but answered after the client timed out).</summary>
     internal TimeSpan AckDelayForTests { get; set; }
 
     public bool IsRunning => !_isDisposed && !_cts.IsCancellationRequested;
@@ -293,14 +257,10 @@ public sealed class NamedPipeStateServer : IAsyncDisposable, IDisposable
         }
     }
 
-    /// <summary>IPCOWNER_01 — true only when the update is part of the authoritative state (and so
-    /// of every later flush). False means this server is shutting down and applied nothing.</summary>
     public bool UpdateProperties(JsonObject updates) => ApplyMerge(updates, "in-proc update");
 
-    /// <summary>IPCOWNER_01 — see <see cref="UpdateProperties"/>.</summary>
     public bool SaveState(JsonObject state) => ApplyReplace(state, "in-proc save");
 
-    /// <summary>IPCOWNER_01 — see <see cref="UpdateProperties"/>.</summary>
     public bool ClearState() => ApplyClear();
 
     private bool ApplyMerge(JsonObject updates, string context)
@@ -357,11 +317,6 @@ public sealed class NamedPipeStateServer : IAsyncDisposable, IDisposable
         await IpcProtocol.WriteFrameAsync(stream, applied ? ack : IpcOpcode.Error, ReadOnlyMemory<byte>.Empty, ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// FLUSHCEILING_01 — debounce WITH a maximum-wait ceiling. See <see cref="FlushMaxWaitMs"/> for
-    /// the defect this encodes. Callers must already have set <c>_isDirty</c> under
-    /// <see cref="_stateLock"/>.
-    /// </summary>
     private void ScheduleDiskFlush()
     {
         bool forceNow = false;

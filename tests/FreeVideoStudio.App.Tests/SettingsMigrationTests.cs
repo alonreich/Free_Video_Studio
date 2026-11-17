@@ -194,7 +194,6 @@ public sealed class SettingsMigrationTests : IDisposable
         Assert.Equal(1.3, FreeVideoStudio.App.ViewModels.AiZoomTuning.MinScaleFor(SettingsManager.Instance.AiZoomBaseScale));
     }
 
-    /// <summary>KEYPROTECT_01 — a plain-text key on disk is sealed on load and the clear key leaves the file.</summary>
     [Fact]
     public void MigrateFromSchema13_SealsAPlainTextApiKeyOnDisk()
     {

@@ -7,9 +7,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// AIFRAMESEQ_01 — unit tests for AiFrameSequenceExtractor.
-/// </summary>
 public sealed class AiFrameSequenceExtractorTests
 {
     [Fact]

@@ -2,11 +2,9 @@ using Xunit;
 
 namespace FreeVideoStudio.AvRegression.Tests;
 
-/// <summary>All scenario tests run one at a time: real-time playback timing must not compete for the CPU.</summary>
 [CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class AvCollection { public const string Name = "AV"; }
 
-/// <summary>One-line verdicts. Every failure message says WHAT the user would see and the numbers.</summary>
 internal static class Av
 {
     public static void True(string what, bool ok, string? detail = null)
@@ -32,10 +30,6 @@ internal static class Av
             throw new AvDefect($"{what}: SLOW SEEK — {ms:0}ms (budget {budget:0}ms)");
     }
 
-    /// <summary>
-    /// Every expected marker time has an actual one within tolerance (after removing a constant
-    /// offset when <paramref name="offset"/> is given) and there are no extras.
-    /// </summary>
     public static void Markers(string what, IReadOnlyList<double> expected, IReadOnlyList<double> actual, double tolerance, double offset = 0)
     {
         var unused = actual.ToList();

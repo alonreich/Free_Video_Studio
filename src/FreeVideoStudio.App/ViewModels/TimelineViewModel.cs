@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
@@ -229,21 +228,6 @@ public sealed class TimelineViewModel : ViewModelBase
         return segments;
     }
 
-    /// <summary>
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// QUALITY_05 — NO MARKS SET MEANS THE WHOLE VIDEO, NOT NOTHING.
-    ///
-    /// Before MARK START or MARK END is pressed, `TrimEndMs` is 0, so this returned the floor of
-    /// 1ms and the size estimate read as good as nothing on a freshly loaded clip — the one moment
-    /// a user most wants to know what they are in for.
-    ///
-    /// The fallback is the same rule `EnsureTrimPointsSet` applies (start = 0, end = the whole
-    /// video), but READ-ONLY. EnsureTrimPointsSet MUTATES: it stamps IsTrimStartSet / IsTrimEndSet
-    /// true, which changes what the marker buttons and the export do next. A passive calculation
-    /// that silently marked the clip as trimmed would be a far worse bug than the blank label it
-    /// was fixing — so this resolves the same two numbers locally and writes nothing.
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
     public double CalculateEffectiveDurationMs()
     {
         double startMs = IsTrimStartSet ? TrimStartMs : 0.0;
@@ -310,18 +294,6 @@ public sealed class TimelineViewModel : ViewModelBase
     private (double StartMs, double EndMs, double BaseSpeed, int Segments, int Cuts)? _previewTimelineKey;
     private OutputTimeline? _previewTimeline;
 
-    /// <summary>
-    /// MUSICSYNC_01 — source ms to FINISHED-VIDEO seconds for LIVE PREVIEW use (called every UI
-    /// tick while playing).
-    /// <para>
-    /// Same mapping as <see cref="SourceMsToOutputSeconds"/> (North Star #2: OutputTimeline is the
-    /// only authority for time), with two differences that matter on a hot path:
-    ///   • it NEVER calls <see cref="EnsureTrimPointsSet"/>. Unset marks resolve read-only to "the
-    ///     whole video", the QUALITY_05 rule, so previewing cannot stamp the clip as trimmed;
-    ///   • the OutputTimeline is rebuilt only when its inputs change (trim, base speed, segments,
-    ///     freeze, cuts), not once per frame.
-    /// </para>
-    /// </summary>
     public double PreviewSourceToOutputSeconds(double sourceMs)
     {
         double startMs = IsTrimStartSet ? TrimStartMs : 0.0;
@@ -351,11 +323,6 @@ public sealed class TimelineViewModel : ViewModelBase
         return Math.Max(0.0, _previewTimeline.SourceToOutput(absSourceSec));
     }
 
-    /// <summary>
-    /// MEMEMARK_02 — the inverse of <see cref="PreviewSourceToOutputSeconds"/>: the ABSOLUTE source ms
-    /// the finished video (memes not counted) shows at <paramref name="outputSec"/>. Used to draw how
-    /// far a corner meme reaches on the main screen's source-time ruler.
-    /// </summary>
     public double PreviewOutputToSourceMs(double outputSec)
     {
         double startMs = IsTrimStartSet ? TrimStartMs : 0.0;
@@ -428,31 +395,18 @@ public sealed class TimelineViewModel : ViewModelBase
         return Math.Max(0, (spanMs - SurvivingMsFor(Cuts)) / 1000.0);
     }
 
-    /// <summary>
-    /// MEMETRIM_02 — the MARK START / MARK END the stored memes are measured from. Memes are kept in
-    /// CLIP-RELATIVE seconds (from MARK START) while cuts, speed blocks and the freeze are kept in
-    /// source milliseconds, so moving MARK START used to slide every meme onto a different gameplay
-    /// frame while nothing else moved. NaN = not anchored yet (the next rebase only records it).
-    /// </summary>
     public double MemeOriginMs { get; private set; } = double.NaN;
     private double _memeOriginEndMs = double.NaN;
 
     private double EffectiveTrimStartMs => IsTrimStartSet ? TrimStartMs : 0.0;
     private double EffectiveTrimEndMs => (IsTrimEndSet && TrimEndMs > EffectiveTrimStartMs) ? TrimEndMs : LoadedVideoDurationMs;
 
-    /// <summary>MEMETRIM_02 — the memes were just (re)built against the CURRENT trim: remember it.</summary>
     public void MarkMemesAnchored()
     {
         MemeOriginMs = EffectiveTrimStartMs;
         _memeOriginEndMs = EffectiveTrimEndMs;
     }
 
-    /// <summary>
-    /// MEMETRIM_02 — call after MARK START or MARK END moved. Every meme keeps its GAMEPLAY frame:
-    /// its clip-relative second is shifted by how far MARK START moved. A meme that sat on the old
-    /// end follows the new end (it was placed "after my video"); one that now falls outside the kept
-    /// part is removed and named in the result, so the caller can say so.
-    /// </summary>
     public List<string> RebaseMemesToTrim()
     {
         var dropped = new List<string>();

@@ -1,85 +1,29 @@
-﻿
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 
 namespace FreeVideoStudio.Core.Media.Native;
 
-/// <summary>Why a native metadata probe produced no data.</summary>
 public enum NativeProbeStatus
 {
-    /// <summary>Probe succeeded; <see cref="NativeProbeResult.Data"/> is set.</summary>
     Ok,
-    /// <summary>The backend cannot run in this process (DLLs missing, version or layout mismatch). Latched.</summary>
     Unavailable,
-    /// <summary>libav opened the backend fine but rejected this input (missing, unreadable, invalid data).</summary>
     MediaError,
 }
 
-/// <summary>Outcome of one native probe. Holds managed data only — no native pointer escapes the backend.</summary>
 public sealed record NativeProbeResult(NativeProbeStatus Status, JsonObject? Data, string Detail);
 
-/// <summary>
-/// LIBAVPROBE_01 — narrow in-process metadata seam. Callers get an ffprobe-shaped
-/// <see cref="JsonObject"/> (the subset of <c>-show_format -show_streams</c> that the product
-/// actually reads) and never see a pointer.
-/// </summary>
 public interface INativeMediaBackend
 {
-    /// <summary>
-    /// Probes <paramref name="mediaPath"/>. Throws <see cref="OperationCanceledException"/> when
-    /// <paramref name="cancellationToken"/> fires or <paramref name="timeout"/> elapses (the latter
-    /// with no token, mirroring AsyncProcessRunner's timeout). Never throws for media errors.
-    /// </summary>
     Task<NativeProbeResult> ProbeAsync(string ffprobePath, string mediaPath, TimeSpan timeout, CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// LIBAVPROBE_01 — ffprobe's METADATA, without the process.
-///
-/// <para>
-/// Mirrors <c>fftools/ffprobe.c</c> at 1e5c65f539 for the fields MediaProber / OutputSizeEstimator
-/// consume: avformat_alloc_context → avformat_open_input (format_opts scan_all_pmts=1, exactly as
-/// ffprobe sets it) → avformat_find_stream_info(NULL) → read AVFormatContext / AVStream /
-/// AVCodecParameters. Output keys and formatting follow ffprobe's JSON writer:
-/// <c>format.duration</c> "%f" seconds (omitted when AV_NOPTS_VALUE), <c>format.bit_rate</c> (omitted
-/// when ≤ 0), <c>format.tags</c>; per stream, in container order (NO selection here — every
-/// consumer keeps its own existing "first video / first audio" rule): <c>index</c>,
-/// <c>codec_type</c>, for video <c>width</c>/<c>height</c>/<c>pix_fmt</c>/<c>color_range</c>/
-/// <c>color_space</c>/<c>color_transfer</c>/<c>color_primaries</c> (colour keys omitted when
-/// UNSPECIFIED, as ffprobe's optional-field rule does), <c>avg_frame_rate</c> "num/den",
-/// <c>duration</c>, <c>bit_rate</c>. Attached pictures (MP3 cover art) remain video streams,
-/// because that is what ffprobe reports and what every existing consumer already sees.
-/// </para>
-///
-/// <para>
-/// ⚠️ OWNERSHIP, ALL ON ONE THREAD, ALL DETERMINISTIC:
-///   • InterruptStateHandle (native block read by the [UnmanagedCallersOnly] callback) — disposed LAST.
-///   • CancellationTokenRegistration — disposed before the state it writes to (Dispose waits for a
-///     running callback).
-///   • AVDictionary options — freed with av_dict_free in a finally, success or failure.
-///   • AVFormatContext — before open: freed with avformat_free_context if open is never reached;
-///     open FAILED: libav already freed it and nulled the pointer, nothing to do; open SUCCEEDED:
-///     owned by FormatContextHandle → avformat_close_input(&amp;p).
-/// No pointer is stored in a field, returned, or captured by a lambda that outlives the call.
-/// </para>
-///
-/// <para>
-/// ⚠️ INTERRUPTION. AVIOInterruptCB is installed BEFORE avformat_open_input, so every blocking read
-/// inside open and find_stream_info polls it. It aborts on the caller's token or on the
-/// deadline; libav then returns AVERROR_EXIT and the probe throws OperationCanceledException. A probe
-/// cannot outlive its timeout by more than one libav I/O step.
-/// </para>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public sealed class LibAvMediaBackend : INativeMediaBackend
 {
     public static LibAvMediaBackend Instance { get; } = new();
 
     private static int _layoutBroken;
 
-    /// <summary>True when the libraries loaded and passed the version guard (loads them on first call).</summary>
     public static bool TryInitialize(string? ffprobePath, out string detail)
     {
         if (Volatile.Read(ref _layoutBroken) != 0)
@@ -90,7 +34,6 @@ public sealed class LibAvMediaBackend : INativeMediaBackend
         return LibAvLibrary.TryEnsureLoaded(ffprobePath, out detail);
     }
 
-    /// <summary>LIBAVFRAME_01 — true when the metadata tier AND the frame tier (swscale-9) are usable.</summary>
     public static bool TryInitializeFrameTier(string? ffmpegOrFfprobePath, out string detail)
     {
         if (Volatile.Read(ref _layoutBroken) != 0)
@@ -134,15 +77,6 @@ public sealed class LibAvMediaBackend : INativeMediaBackend
         return new NativeProbeResult(NativeProbeStatus.Ok, BuildJson(ctx.Context), "ok");
     }
 
-    /// <summary>
-    /// LIBAVPROBE_01 / LIBAVFRAME_01 — the ONE open sequence, shared by the metadata probe and the
-    /// single-frame decoder: avformat_alloc_context → interrupt callback installed → open_input
-    /// (scan_all_pmts=1, as both ffprobe and ffmpeg set it) → find_stream_info(NULL).
-    /// Returns the opened context (caller disposes), or null with <paramref name="error"/> set when
-    /// libav rejected the input. Throws OperationCanceledException when the interrupt fired.
-    /// Ownership is exactly the pre-existing rule: alloc'd-but-never-opened → avformat_free_context;
-    /// open failed → libav already freed it; opened → FormatContextHandle.
-    /// </summary>
     internal static unsafe FormatContextHandle? OpenInputBlocking(string mediaPath, InterruptStateHandle interrupt, CancellationToken token, out string error)
     {
         AVFormatContextView* raw = LibAv.avformat_alloc_context();
@@ -196,7 +130,6 @@ public sealed class LibAvMediaBackend : INativeMediaBackend
         return ctx;
     }
 
-    /// <summary>A layout guard failed: native libav is disabled for the rest of the process (both tiers).</summary>
     internal static void MarkLayoutBroken() => Interlocked.Exchange(ref _layoutBroken, 1);
 
     internal static void ThrowIfInterrupted(int err, InterruptStateHandle interrupt, CancellationToken token)
@@ -207,7 +140,6 @@ public sealed class LibAvMediaBackend : INativeMediaBackend
             throw new OperationCanceledException("Native media probe timed out.");
     }
 
-    /// <summary>Guard 2 and 3 from LibAvInterop.cs. Cheap; runs on every probe.</summary>
     internal static unsafe bool ValidateLayout(AVFormatContextView* ctx, out string problem)
     {
         if (ctx->av_class != LibAv.avformat_get_class()) { problem = "AVFormatContext.av_class"; return false; }
@@ -268,7 +200,6 @@ public sealed class LibAvMediaBackend : INativeMediaBackend
         s[key] = LibAv.Utf8(name);
     }
 
-    /// <summary>ffprobe writer_print_time: N/A for AV_NOPTS_VALUE, else ts * av_q2d(tb) printed "%f".</summary>
     private static string? Seconds(long ts, int num, int den)
     {
         if (ts == LibAvConstants.AV_NOPTS_VALUE || den == 0) return null;

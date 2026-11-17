@@ -14,19 +14,6 @@
         ExtendClientAreaTitleBarHeightHint="30"
         DragDrop.AllowDrop="True">
 
-    <!-- ══════════════════════════════════════════════════════════════════════════════════════════
-         WIZ2STEP_01 — TWO STEPS, NOT THREE: "Choose music" → "Fit & mix".
-
-         The old step 2 asked the user where the song should start on a bare waveform, with no
-         video anywhere on screen; the video only appeared on step 3, and changing the start meant
-         going BACK (which tore the video player down and rebuilt it). The song-start tools now
-         live on the same screen as the video, under the timeline, so every change is seen and
-         heard against the picture straight away.
-
-         The code still calls the Fit & Mix screen "step 3" internally (StepFit = 3) because the
-         phase-3 player, its loaders and their staleness guards are keyed on that number; the user
-         only ever sees two dots.
-         ══════════════════════════════════════════════════════════════════════════════════════════ -->
     <Grid>
         <Border Name="MainBorder" Background="{DynamicResource AppSurfaceBrush}" CornerRadius="0" Padding="0" BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="5">
             <Grid RowDefinitions="30, *">
@@ -35,10 +22,8 @@
                 </Border>
                 <Grid Grid.Row="1" RowDefinitions="Auto,*,Auto" Margin="16,12,16,14">
 
-                    <!-- ISSUE_04: the permanent, always-available way back into this screen's walkthrough. -->
                     <Button Grid.Row="0" Name="WizardHelpButton" Classes="Secondary" Content="?" MinWidth="{DynamicResource AppSpeedPresetMinWidth}" MinHeight="{DynamicResource AppButtonMinHeight}" Padding="0" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Top" ZIndex="5" AutomationProperties.Name="Show me around the music wizard" ToolTip.Tip="New here? Play the short walkthrough that points out what everything on this screen does."/>
 
-                    <!-- Step Progress Bar (WIZ2STEP_01: two dots) -->
                     <Grid Grid.Row="0" Margin="0,0,0,10" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" HorizontalAlignment="Center" MinWidth="420">
                         <Border Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="105,0,105,0" Height="2" Background="{DynamicResource AppBorderBrush}"/>
                         <Border Grid.Row="0" Grid.Column="0" Name="Step1Dot" Classes="WizDotActive" MinWidth="32" MinHeight="32" CornerRadius="16" HorizontalAlignment="Center" ZIndex="1">
@@ -51,39 +36,16 @@
                         <TextBlock Grid.Row="1" Grid.Column="1" Name="Step2Label" Classes="WizLabelPending" Text="Fit &amp; mix" FontSize="{DynamicResource AppFontSize10}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
                     </Grid>
 
-                    <!-- Step Container -->
                     <Border Grid.Row="1" Background="{DynamicResource AppSurfaceBrush}" CornerRadius="8" BorderBrush="{DynamicResource AppPanelBrush}" BorderThickness="1" Padding="14">
                         <Panel>
 
-                            <!-- ══════════════════════════════════════════════════════════════════
-                                 STEP 1: CHOOSE MUSIC (LIST_08 / PLAYLIST_01).
-
-                                 LIST_08 — THE TABLE NOW FILLS ITS SPACE. LIST_02..LIST_07 sized the song
-                                 table to the LONGEST TITLE and pinned it to the left, while the search box
-                                 above it stretched the full width — so the list hugged the left edge, the
-                                 song count floated far right, and half the screen was empty. The name
-                                 column is now the star column of a full-width table, the length sits in a
-                                 fixed column on the right, and the search box spans exactly the table.
-                                 LIST_05's closed frame is kept (one border round headings and rows),
-                                 LIST_06's permanently visible scrollbar is kept (nothing measures widths
-                                 any more, but a gutter that never appears and disappears keeps the
-                                 columns still), and LIST_07's gutter is kept as the rows' right margin.
-
-                                 PLAYLIST_01 — every row has a ▶ (hear it) and a + (add it to your songs).
-                                 Clicking a row only SELECTS it: nothing plays until ▶ is pressed.
-                                 "Your songs" on the right is the play order, with each song's length and a
-                                 bar showing whether the songs cover the whole video.
-                                 ══════════════════════════════════════════════════════════════════ -->
                             <Grid Name="Step1Panel" IsVisible="True" RowDefinitions="Auto,Auto,*" ColumnDefinitions="*,Auto">
                                 <Grid Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" ColumnDefinitions="Auto,*,Auto,Auto,Auto" RowDefinitions="Auto,Auto" Margin="0,0,0,8">
                                     <TextBlock Grid.Column="0" Text="Music folder:" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                     <TextBlock Grid.Column="1" Text="{Binding MusicFolderText}" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" VerticalAlignment="Center" TextTrimming="PathSegmentEllipsis"/>
                                     <Button Grid.Column="2" Name="ChangeFolderBtn" Content="Change folder" Classes="Secondary" VerticalAlignment="Center" Margin="10,0,0,0" Cursor="Hand" ToolTip.Tip="Choose a different folder to browse for music files"/>
-                                    <!-- ISSUE_10: the in-app way to get the shared song library. Secondary on purpose:
-                                         green is reserved for NEXT, the one action that moves the user forward. -->
                                     <Button Grid.Column="3" Name="DownloadSongsBtn" Content="⬇ Get more songs" Classes="Secondary" VerticalAlignment="Center" Margin="8,0,0,0" Cursor="Hand" ToolTip.Tip="Download free background songs from the official library into this folder" AutomationProperties.Name="Download more songs"/>
                                     <Button Grid.Column="4" Name="AiAutoFitBtn" Content="✨ AI Auto-Fit" Click="OnAiAutoFitClicked" Classes="Secondary" VerticalAlignment="Center" Margin="8,0,0,0" Cursor="Hand" ToolTip.Tip="Let cloud AI analyze video scenes and automatically pick the best matching song and optimal timing" AutomationProperties.Name="AI Auto-Fit song"/>
-                                    <!-- AIMUSIC_PROGRESS_01 — what AI Auto-Fit is doing right now, how long it has run, and how it ended. -->
                                     <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="5" Name="AiAutoFitStatusText" IsVisible="False" TextWrapping="Wrap" Margin="0,6,0,0"
                                                Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}"/>
                                 </Grid>
@@ -101,11 +63,9 @@
                                     <TextBlock Grid.Column="2" Name="MusicResultCountText" Text="0 songs" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" MinWidth="70" TextAlignment="Right" Margin="10,0,0,0"/>
                                 </Grid>
 
-                                <!-- LIST_05 (kept) — one 1px frame round the headings AND the rows, now full width (LIST_08). -->
                                 <Border Grid.Row="2" Grid.Column="0" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4" Background="{DynamicResource AppSurfaceBrush}">
                                     <Grid RowDefinitions="Auto,*">
                                         <Border Grid.Row="0" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" Padding="7,5,0,5">
-                                            <!-- Same four columns as the row template, plus the LIST_07 gutter on the right. -->
                                             <Grid ColumnDefinitions="40,*,80,52" Margin="0,0,34,0">
                                                 <TextBlock Grid.Column="0" Text="Hear" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                 <TextBlock Grid.Column="1" Text="Song" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" VerticalAlignment="Center" Margin="8,0,0,0"/>
@@ -114,7 +74,6 @@
                                             </Grid>
                                         </Border>
                                         <Grid Grid.Row="1">
-                                            <!-- LIST_06 (kept): the scrollbar is ALWAYS visible, so its gutter never changes width under the rows. -->
                                             <ListBox Name="MusicListBox" Background="Transparent" BorderThickness="0" CornerRadius="0" Padding="2" ScrollViewer.VerticalScrollBarVisibility="Visible" ScrollViewer.AllowAutoHide="False">
                                                 <ListBox.Styles>
                                                     <Style Selector="ListBoxItem">
@@ -125,7 +84,6 @@
                                                 </ListBox.Styles>
                                                 <ListBox.ItemTemplate>
                                                     <DataTemplate x:DataType="local:MusicTrackItem">
-                                                        <!-- LIST_07 (kept): the 20px right margin is the scrollbar gutter. -->
                                                         <Border Padding="5,2" Cursor="Hand" HorizontalAlignment="Stretch" Margin="0,0,20,0"
                                                                 ToolTip.Tip="{CompiledBinding RowTip}"
                                                                 BorderThickness="0,0,0,1" BorderBrush="{DynamicResource AppTableHairlineBrush}">
@@ -149,7 +107,6 @@
                                     </Grid>
                                 </Border>
 
-                                <!-- PLAYLIST_01 — "Your songs": the play order and whether it covers the video. -->
                                 <Border Grid.Row="1" Grid.RowSpan="2" Grid.Column="1" Name="PlaylistPanel" IsVisible="{Binding PlaylistVisible}" Width="340" Margin="12,0,0,0" Padding="10"
                                         Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6">
                                     <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
@@ -177,7 +134,6 @@
                                             </ListBox>
                                             <TextBlock IsVisible="{Binding PlaylistEmpty}" Text="No songs yet.&#x0a;&#x0a;Press ▶ on a song to hear it, then + to add it here. Add as many as you like." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="14" IsHitTestVisible="False"/>
                                         </Grid>
-                                        <!-- COVERBAR_01 — the same coverage sentence the Fit & Mix screen shows. -->
                                         <StackPanel Grid.Row="3" Spacing="4" Margin="0,8,0,0">
                                             <Grid ColumnDefinitions="*,Auto">
                                                 <TextBlock Grid.Column="0" Text="{Binding PlaylistTotals}" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="SemiBold"/>
@@ -193,29 +149,19 @@
                                 </Border>
                             </Grid>
 
-                            <!-- ══════════════════════════════════════════════════════════════════
-                                 STEP 2 FOR THE USER — FIT & MIX (internally still phase 3, WIZ2STEP_01).
-                                 Rows: header · video + MIX · timeline (film + songs) · coverage · song card.
-                                 LAYOUT_02 / LAYOUT_03: the video row is the ONLY elastic row and the MIX
-                                 rack sits beside the video only; the lanes span the full width.
-                                 ══════════════════════════════════════════════════════════════════ -->
                             <Grid Name="Step3Panel" IsVisible="False" RowDefinitions="Auto, *, Auto, Auto, Auto" ColumnDefinitions="*, Auto" ClipToBounds="False">
-                                <!-- LAYOUT_01: one header row; the status text only takes space when it has something to say. -->
                                 <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,0,0,6" Spacing="3">
                                     <Grid ColumnDefinitions="Auto,Auto,*,Auto">
                                         <TextBlock Grid.Column="0" Text="FIT &amp; MIX" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" VerticalAlignment="Center"/>
                                         <TextBlock Grid.Column="1" Name="FinalPlacementLabel" Text="ⓘ" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" VerticalAlignment="Center" Cursor="Help" Margin="8,0,0,0"
                                                    ToolTip.Tip="Press play to watch your video with the music. The coloured blocks under the film are your songs."/>
                                         <TextBlock Grid.Column="2" Name="Phase3StatusLabel" Text="" IsVisible="False" Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="10,0,0,0"/>
-                                        <!-- SOUNDOPT_01: the two "applied when saved" switches live behind one button instead of
-                                             taking two full rows on the song-start screen. Both stay ON by default. -->
                                         <Button Grid.Column="3" Name="SoundOptionsBtn" Classes="Secondary" Content="⚙ Sound options" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center"
                                                 ToolTip.Tip="Two helpers that keep your game sound clear under the music. Both are on by default.">
                                             <Button.Flyout>
                                                 <Flyout Placement="BottomEdgeAlignedRight">
                                                     <StackPanel Spacing="6" Margin="8" MaxWidth="380">
                                                         <TextBlock Text="SOUND OPTIONS" Foreground="{DynamicResource AppAccentBrush}" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}"/>
-                                                        <!-- DUCKNAME_01: worded as what the user gets, not the machinery. -->
                                                         <CheckBox Name="DuckingCheckBox" Content="Protect the game sound from the music" MinHeight="40" IsChecked="True" Foreground="{DynamicResource AppTextPrimaryBrush}"
                                                                   ToolTip.Tip="Leave this ON.&#x0a;&#x0a;Whenever something loud happens in your gameplay — a gunshot, a shout, an explosion — the music steps back for a moment so you can still hear it. Then it comes back up.&#x0a;&#x0a;This is applied when your video is saved. You will not hear it change in this preview; the main preview plays the saved sound once this wizard closes."/>
                                                         <CheckBox Name="CarvingCheckBox" Content="Smooth blend between music and game sound" MinHeight="40" IsChecked="True" Foreground="{DynamicResource AppTextPrimaryBrush}"
@@ -235,10 +181,6 @@
                                     <Border Name="VideoHostBorder" Background="{DynamicResource AppVideoSurfaceBrush}" CornerRadius="6" ClipToBounds="True">
                                     </Border>
 
-                                    <!-- DETACH_01: shared pop-out preview. The MpvVideoView is created in
-                                         code-behind as VideoHostBorder's child, so the controller reparents
-                                         it out of the Border and back into it. Own geometry key:
-                                         MusicWizardPreviewMonitorBounds. -->
                                     <Border Name="WizardPreviewDetachedWatermark" IsVisible="False" ZIndex="65" Background="{DynamicResource AppVideoSurfaceBrush}" CornerRadius="6">
                                         <TextBlock Text="Preview Detached" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize36}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Border>
@@ -249,16 +191,11 @@
                                             ToolTip.Tip="Pop the preview out into its own floating window. It remembers its size, position and which screen you left it on."/>
                                     <Border Name="Phase3VideoLoadingOverlay" Background="{DynamicResource AppOverlayBrush}" CornerRadius="6" IsHitTestVisible="False" IsVisible="False">
                                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
-                                            <!-- ISSUE_5: Min sizes (were fixed Width/Height) so the loading bar
-                                                 scales with the font setting like the text beside it. -->
                                             <ProgressBar IsIndeterminate="True" MinWidth="100" MinHeight="4" Foreground="{DynamicResource AppAccentBrush}" Background="{DynamicResource AppPanelBrush}"/>
-                                            <TextBlock Text="Initializing Video Preview..." Foreground="{DynamicResource AppTextPrimaryBrush}" FontWeight="Bold" FontSize="{DynamicResource AppFontSize14}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Initializing Video Preview..." Foreground="{DynamicResource AppOnOverlayTextBrush}" FontWeight="Bold" FontSize="{DynamicResource AppFontSize14}" HorizontalAlignment="Center"/>
                                         </StackPanel>
                                     </Border>
 
-                                    <!-- MEME_07: the preview plays each meme where it will actually
-                                         appear by swapping the file in the one mpv host. That costs
-                                         a black moment at each end, so it is announced. -->
                                     <Border Name="MemeSwapOverlay" IsVisible="False" ZIndex="900" Background="{DynamicResource AppScrimBrush}" CornerRadius="6">
                                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
                                             <TextBlock Text="&#x1F921;" FontSize="{DynamicResource AppFontSize36}" HorizontalAlignment="Center"/>
@@ -269,13 +206,6 @@
                                     </Border>
                                 </Grid>
 
-                                <!-- LANES_04 — the shared TimelineLanesControl. LANE A (upper) is the film, LANE B (lower) is
-                                     the music. SONGLANE_01: lane B now shows ONE COLOURED, NAMED BLOCK PER SONG on top of
-                                     the music waveform, exactly where each song plays in the finished video, and a red
-                                     striped "no music" band wherever the video is left silent. Drag the right edge of a
-                                     block to make that song end sooner or later — the songs after it follow, so there is
-                                     never a gap between two songs. Click a block to edit that song below. -->
-                                <!-- LAYOUT_03 — THE LANES REACH THE RIGHT EDGE OF THE WINDOW (span both columns). -->
                                 <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" ZIndex="10" Margin="0,0,0,8" ClipToBounds="False">
                                     <controls:TimelineLanesControl Name="Phase3Lanes" ClipToBounds="False"/>
 
@@ -285,9 +215,8 @@
                                             <Canvas Name="ThumbnailOverlayCanvas" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ClipToBounds="True"/>
                                             <Border Name="Phase3ThumbLoadingOverlay" Background="{DynamicResource AppOverlayBrush}" IsHitTestVisible="False" IsVisible="False">
                                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="5">
-                                            <!-- ISSUE_5: Min sizes, see the loading bar above. -->
                                             <ProgressBar IsIndeterminate="True" MinWidth="60" MinHeight="3" Foreground="{DynamicResource AppWarningBrush}" Background="{DynamicResource AppPanelBrush}"/>
-                                            <TextBlock Text="Generating Frames..." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize10}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Generating Frames..." Foreground="{DynamicResource AppOnOverlayTextBrush}" FontSize="{DynamicResource AppFontSize10}" HorizontalAlignment="Center"/>
                                             </StackPanel>
                                             </Border>
                                         </Panel>
@@ -298,138 +227,32 @@
                                             </Canvas>
                                             <Border Name="Phase3WaveLoadingOverlay" Background="{DynamicResource AppOverlayBrush}" IsHitTestVisible="False" IsVisible="False">
                                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="5">
-                                            <!-- ISSUE_5: Min sizes, see the loading bar above. -->
                                             <ProgressBar IsIndeterminate="True" MinWidth="60" MinHeight="3" Foreground="{DynamicResource AppSuccessBrush}" Background="{DynamicResource AppPanelBrush}"/>
-                                            <TextBlock Text="Generating Waveform..." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize10}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Generating Waveform..." Foreground="{DynamicResource AppOnOverlayTextBrush}" FontSize="{DynamicResource AppFontSize10}" HorizontalAlignment="Center"/>
                                             </StackPanel>
                                             </Border>
-                                            <!-- SONGLANE_01 — the song blocks. A Background makes the whole lane hit-testable, so
-                                                 this canvas owns lane B's pointer input (the lane's own seek surface is switched
-                                                 off in code): an edge press trims, any other press selects + seeks. -->
                                             <Canvas Name="SongLaneCanvas" Background="Transparent" ClipToBounds="True" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Cursor="Hand"
                                                     AutomationProperties.Name="Songs on the timeline"/>
                                         </Panel>
                                     </Panel>
                                 </Grid>
 
-                                <!-- SLIDER_01 - ZIndex MUST STAY ABOVE THE LANES ROW.
-                                     The knobs grow to scale(2.0) while held: a 44px thumb RENDERS 88px and
-                                     overflows by 22px in every direction. This row was ZIndex="5" while the
-                                     lanes Grid above it is ZIndex="10", so the lanes painted over the overflow
-                                     and the knob looked sliced off. Do not lower it below the lanes row.
-
-                                     SLIDER_02 - both sliders live in one framed "MIX LEVELS" card. The frame's
-                                     horizontal Padding is what stops the knob being clipped at 0% and 100%: the
-                                     dot centre sits 22px inside the slider, and at scale(2.0) the 52px dot reaches
-                                     4px PAST the slider edge, so it needs real clearance to paint into. Do not
-                                     reduce that padding below ~16.
-
-                                     SLIDER_03 - they sit SIDE BY SIDE inside that card, not stacked. See the note
-                                     on the inner Grid: this screen is short of vertical space and has horizontal
-                                     space to spare. -->
-                                <!-- SLIDER_01 - ZIndex MUST STAY ABOVE THE LANES ROW.
-                                     The knobs grow to scale(2.0) while held and overflow their row vertically.
-                                     This was ZIndex="5" while the lanes Grid above is ZIndex="10", so the lanes
-                                     painted over the overflow and the knob looked sliced off at the top.
-
-                                     SLIDER_05 - ONE ROW, NOT THREE. This screen is the tightest in the suite for
-                                     vertical space (video preview + ruler + two 60px lanes + transport + nav all
-                                     compete), so MIX LEVELS is now a SINGLE row: the frame caption sits inline on
-                                     the left and each label sits inline beside its own slider. That removed the
-                                     separate caption row and the separate label row - roughly 45px back.
-                                     The labels are also short ("Video 100%" not "Video Volume: 100%") so they steal
-                                     as little width as possible from the sliders. -->
-                                <!-- ═══════════════════════════════════════════════════════════════════════
-                                     LAYOUT_02 — THE MIX LEVELS ROW IS GONE. THE SLIDERS ARE NOW VERTICAL,
-                                     IN A COLUMN TO THE RIGHT OF THE WHOLE PHASE.
-
-                                     Phase 3 is starved of HEIGHT and has plenty of WIDTH. Two horizontal
-                                     sliders in a framed card cost a full bottom row (~60px) purely to move
-                                     two values that only need one dimension. Rotated 270 degrees they cost
-                                     ~90px of width — which was going spare — and give that height back to
-                                     the video, the only elastic row in the panel.
-
-                                     ⚠️ THE SLIDERS ARE THE SAME CONTROLS WITH THE SAME NAMES. VideoVolSlider
-                                     and MusicVolSlider are still found by FindControl, still 0-100, still
-                                     wired to the same handlers. ONLY the orientation and position changed.
-                                     ⚠️ ClipToBounds="False" IS LOAD-BEARING (SLIDER_02/04). The 52px thumb
-                                     paints outside its own track at 0% and 100%; a clipping parent shears the
-                                     knob off at the extremes. Do not "tidy" it away.
-                                     ⚠️ The ducking toggle that used to sit beside these is now in Settings —
-                                     see AUDIO_09.
-                                     ═══════════════════════════════════════════════════════════════════════ -->
-                                <!-- ══════════════════════════════════════════════════════════════
-                                     LAYOUT_03 — ANCHORED TO THE VIDEO BOX, TOP AND BOTTOM.
-
-                                     This was Grid.Row="0" Grid.RowSpan="4": it started level with
-                                     the CONFIRM MUSIC heading (visibly taller than the picture it
-                                     sits beside) and ran down through the lanes row, pushing the
-                                     timeline off the right-hand side of the window.
-
-                                     It is now Grid.Row="1" ONLY — the video preview's own row — so
-                                     VerticalAlignment="Stretch" makes its top and bottom edges land
-                                     exactly on the top and bottom of VideoHostBorder. The bottom
-                                     margin matches that row's own Margin="0,0,0,10" so the two
-                                     boxes end on the same line rather than the slider frame hanging
-                                     10px lower.
-
-                                     ⚠️ Do NOT restore a RowSpan here. The lanes row now spans both
-                                     columns (LAYOUT_03) and would render underneath this panel.
-                                     ══════════════════════════════════════════════════════════════ -->
-                                <!-- ══════════════════════════════════════════════════════════════
-                                     SLIDER_06 — TWO TRAYS IN ONE RACK, AND NARROW.
-
-                                     The two faders shared a single open panel with 14px of air
-                                     between them and nothing to say where one channel ended and the
-                                     next began. Each now sits in its OWN inset compartment — a
-                                     darker AppSurfaceBrush well inside the lighter AppPanelBrush
-                                     rack — so the pair still reads as one MIX control while each
-                                     channel is unmistakably its own slot.
-
-                                     WIDTH. This column is pure overhead: every pixel it takes comes
-                                     off the video preview beside it (LAYOUT_02). The old width was
-                                     driven by the LABELS, not the sliders — "Video 100%" measures
-                                     wider than the 44px fader it sat under, so the text set the
-                                     column width and the fader wasted the rest. Split in two, the
-                                     channel name moves to a caption ABOVE the fader and the value
-                                     below is just the number, so nothing in the tray is wider than
-                                     the fader itself. With the gap at 5px and the rack padding at
-                                     5px the whole rack is roughly a quarter narrower than before.
-
-                                     ⚠️ ClipToBounds="False" IS STILL LOAD-BEARING, on the trays as
-                                     well as the rack (SLIDER_02/04). The thumb grows to scale(2.0)
-                                     while held and paints outside its own track; a clipping tray
-                                     would shear the knob off at the sides. Do not "tidy" it away,
-                                     and do not give the trays ClipToBounds="True" to stop the
-                                     overflow — the overflow is the press feedback.
-                                     ══════════════════════════════════════════════════════════════ -->
                                 <Border Grid.Row="1" Grid.Column="1" ZIndex="20"
                                         HorizontalAlignment="Right" VerticalAlignment="Stretch"
                                         Margin="6,0,0,10" Padding="3,5,3,5"
                                         Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
                                         BorderThickness="1" CornerRadius="7" ClipToBounds="False">
-                                    <!-- SLIDER_08: the spacer column is gone — the two trays now SHARE an
-                                         edge. Their own 1px borders are what separates them, which is a
-                                         cleaner read than a border, a gap and another border, and it is the
-                                         last horizontal pixel available without touching the faders. -->
                                     <Grid RowDefinitions="Auto,*" ColumnDefinitions="Auto,Auto" ClipToBounds="False">
 
                                         <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="MIX" HorizontalAlignment="Center"
                                                    Foreground="{DynamicResource AppTextMutedBrush}"
                                                    FontSize="{DynamicResource AppFontSize9}" FontWeight="Bold" Margin="0,0,0,5"/>
 
-                                        <!-- VIDEO tray -->
                                         <Border Grid.Row="1" Grid.Column="0" VerticalAlignment="Stretch"
                                                 Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
                                                 BorderThickness="1" CornerRadius="4" Padding="0,4,0,4" ClipToBounds="False" ZIndex="10"
                                                 ToolTip.Tip="Volume of the original video audio">
                                             <Grid RowDefinitions="Auto,*,Auto" ClipToBounds="False">
-                                                <!-- SLIDER_08: the caption is spelled out again. It was abbreviated
-                                                     under SLIDER_07 to keep it narrower than a 30px fader; the
-                                                     fader is a CompactSlider now (~44px), so "VIDEO" fits inside
-                                                     the width the slider already costs and abbreviating it buys
-                                                     nothing. It is NOT clipped — it never was; it was short on
-                                                     purpose, which read as clipping, which is its own kind of bug. -->
                                                 <TextBlock Grid.Row="0" Text="VIDEO" HorizontalAlignment="Center"
                                                            Foreground="{DynamicResource AppTextMutedBrush}"
                                                            FontSize="{DynamicResource AppFontSize9}" FontWeight="Bold"
@@ -439,31 +262,6 @@
                                                            Foreground="{DynamicResource AppTextPrimaryBrush}"
                                                            FontSize="{DynamicResource AppFontSize9}" IsHitTestVisible="False"/>
 
-                                                <!-- ══════════════════════════════════════════════════════
-                                                     SLIDER_09 — PAINT ORDER IS DECLARATION ORDER. ZIndex WAS
-                                                     THE WRONG LEVER.
-                                                     The knob grows past the ends of its own track at 0% and
-                                                     100%, into the rows the caption and the value occupy. A
-                                                     high ZIndex on the Slider did NOT lift it above them: it
-                                                     stayed declared BETWEEN the two TextBlocks, and the one
-                                                     after it kept painting over the overflow.
-                                                     The reliable rule among siblings of one panel is the
-                                                     order they are WRITTEN, so the Slider is now the LAST
-                                                     child of this Grid while keeping Grid.Row="1" — its
-                                                     LAYOUT slot is unchanged, only its place in the paint
-                                                     sequence moved. ZIndex stays as agreement, not as the
-                                                     mechanism.
-                                                     The labels are also IsHitTestVisible="False": their
-                                                     layout slots are real rectangles that would otherwise
-                                                     swallow a press aimed at the knob where it overlaps them.
-                                                     ⚠️ KEEP THE SLIDER LAST. Moving it back above either
-                                                     TextBlock re-breaks this, silently and invisibly in code.
-                                                     ══════════════════════════════════════════════════════ -->
-                                                <!-- SLIDER_07: NO Width, NO MinWidth. A vertical Slider must be
-                                                     left to size itself to its own track — anything wider puts
-                                                     the rail against one edge and slices the knob in half (the
-                                                     fault this replaced). CompactSlider is the suite's narrow
-                                                     thumb and its own note names vertical volume as its case. -->
                                                 <Slider Grid.Row="1" Name="VideoVolSlider" Classes="CompactSlider" Orientation="Vertical"
                                                         Minimum="0" Maximum="100" Value="100"
                                                         VerticalAlignment="Stretch" HorizontalAlignment="Center"
@@ -473,18 +271,11 @@
                                             </Grid>
                                         </Border>
 
-                                        <!-- MUSIC tray -->
                                         <Border Grid.Row="1" Grid.Column="1" VerticalAlignment="Stretch"
                                                 Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
                                                 BorderThickness="1" CornerRadius="4" Padding="0,4,0,4" ClipToBounds="False" ZIndex="10"
                                                 ToolTip.Tip="Volume of the background music">
                                             <Grid RowDefinitions="Auto,*,Auto" ClipToBounds="False">
-                                                <!-- SLIDER_08: the caption is spelled out again. It was abbreviated
-                                                     under SLIDER_07 to keep it narrower than a 30px fader; the
-                                                     fader is a CompactSlider now (~44px), so "MUSIC" fits inside
-                                                     the width the slider already costs and abbreviating it buys
-                                                     nothing. It is NOT clipped — it never was; it was short on
-                                                     purpose, which read as clipping, which is its own kind of bug. -->
                                                 <TextBlock Grid.Row="0" Text="MUSIC" HorizontalAlignment="Center"
                                                            Foreground="{DynamicResource AppTextMutedBrush}"
                                                            FontSize="{DynamicResource AppFontSize9}" FontWeight="Bold"
@@ -494,31 +285,6 @@
                                                            Foreground="{DynamicResource AppTextPrimaryBrush}"
                                                            FontSize="{DynamicResource AppFontSize9}" IsHitTestVisible="False"/>
 
-                                                <!-- ══════════════════════════════════════════════════════
-                                                     SLIDER_09 — PAINT ORDER IS DECLARATION ORDER. ZIndex WAS
-                                                     THE WRONG LEVER.
-                                                     The knob grows past the ends of its own track at 0% and
-                                                     100%, into the rows the caption and the value occupy. A
-                                                     high ZIndex on the Slider did NOT lift it above them: it
-                                                     stayed declared BETWEEN the two TextBlocks, and the one
-                                                     after it kept painting over the overflow.
-                                                     The reliable rule among siblings of one panel is the
-                                                     order they are WRITTEN, so the Slider is now the LAST
-                                                     child of this Grid while keeping Grid.Row="1" — its
-                                                     LAYOUT slot is unchanged, only its place in the paint
-                                                     sequence moved. ZIndex stays as agreement, not as the
-                                                     mechanism.
-                                                     The labels are also IsHitTestVisible="False": their
-                                                     layout slots are real rectangles that would otherwise
-                                                     swallow a press aimed at the knob where it overlaps them.
-                                                     ⚠️ KEEP THE SLIDER LAST. Moving it back above either
-                                                     TextBlock re-breaks this, silently and invisibly in code.
-                                                     ══════════════════════════════════════════════════════ -->
-                                                <!-- SLIDER_07: NO Width, NO MinWidth. A vertical Slider must be
-                                                     left to size itself to its own track — anything wider puts
-                                                     the rail against one edge and slices the knob in half (the
-                                                     fault this replaced). CompactSlider is the suite's narrow
-                                                     thumb and its own note names vertical volume as its case. -->
                                                 <Slider Grid.Row="1" Name="MusicVolSlider" Classes="CompactSlider" Orientation="Vertical"
                                                         Minimum="0" Maximum="100" Value="100"
                                                         VerticalAlignment="Stretch" HorizontalAlignment="Center"
@@ -530,21 +296,15 @@
                                     </Grid>
                                 </Border>
 
-                                <!-- ══════════════════════════════════════════════════════════════════
-                                     COVERSTRIP_01 — ONE LINE THAT ALWAYS SAYS WHETHER THE WHOLE VIDEO HAS MUSIC.
-                                     Replaces the coverage pop-up that fired the moment the old step 2 opened,
-                                     and the coverage panel that only appeared in some cases. The fixes sit on
-                                     the same line as the problem: loop the songs, add a song, or fill the rest.
-                                     ══════════════════════════════════════════════════════════════════ -->
                                 <Border Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Padding="10,6" Margin="0,0,0,8" CornerRadius="6"
                                         Background="{DynamicResource AppOverlayBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
                                     <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
                                         <TextBlock Grid.Column="0" Text="{Binding CoverageIcon}" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{Binding CoverageBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding CoverageHeadline}" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" TextWrapping="Wrap"/>
-                                            <TextBlock Text="{Binding CoverageDetail}" FontSize="{DynamicResource AppFontSize10}" Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"/>
+                                            <TextBlock Text="{Binding CoverageHeadline}" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppOnOverlayTextBrush}" TextWrapping="Wrap"/>
+                                            <TextBlock Text="{Binding CoverageDetail}" FontSize="{DynamicResource AppFontSize10}" Foreground="{DynamicResource AppOnOverlayMutedTextBrush}" TextWrapping="Wrap"/>
                                         </StackPanel>
-                                        <CheckBox Grid.Column="2" Name="LoopMusicCheckBox" Content="Loop songs" IsChecked="False" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" Margin="10,0,0,0"
+                                        <CheckBox Grid.Column="2" Name="LoopMusicCheckBox" Content="Loop songs" IsChecked="False" Foreground="{DynamicResource AppOnOverlayTextBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" Margin="10,0,0,0"
                                                   ToolTip.Tip="When your songs run out before the video ends, play them again from the top until the video ends."/>
                                         <Button Grid.Column="3" Name="AddSongBtn" Classes="Secondary" Content="+ Add a song" Command="{Binding AddSongCommand}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" Margin="10,0,0,0"
                                                 ToolTip.Tip="Go back to the song list and add another song. Your songs and settings are kept."/>
@@ -553,13 +313,6 @@
                                     </Grid>
                                 </Border>
 
-                                <!-- ══════════════════════════════════════════════════════════════════
-                                     SONGCARD_01 — THE SELECTED SONG, WHOLE, WITH THE PART THAT PLAYS LIT UP.
-                                     The bright box is the part of the song that is heard. Drag the box to choose a
-                                     different part; drag either edge to trim; click anywhere else to start there.
-                                     "Start at" puts the box at the beginning, on the strongest part, or so the song
-                                     ends right as the video ends (FITEND_01, last song only).
-                                     ══════════════════════════════════════════════════════════════════ -->
                                 <Border Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Name="SongCard" Padding="10,8" CornerRadius="6"
                                         Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
                                     <Grid RowDefinitions="Auto,Auto,Auto">
@@ -574,11 +327,9 @@
                                             <TextBlock Grid.Column="4" Text="Start at:" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                             <Button Grid.Column="5" Classes="Secondary" Content="Beginning" Command="{Binding StartAtBeginningCommand}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" ToolTip.Tip="Play this song from its first note."/>
                                             <Button Grid.Column="6" Name="SmartFitBtn" Classes="Secondary" Content="★ Best part" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" Margin="4,0,0,0" ToolTip.Tip="Jump to the strongest, most energetic part of this song that fits your video."/>
-                                            <!-- FITEND_01: works backwards from the song's real ending (last song only). -->
                                             <Button Grid.Column="7" Name="FitByEndBtn" Classes="Secondary" Content="End with the video" IsVisible="{Binding CanEndWithVideo}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" Margin="4,0,0,0"
                                                     ToolTip.Tip="Line the END of this song up with the END of your video.&#x0a;&#x0a;It finds where the song really finishes — the last moment there is still something to hear, not the silence after it — and works backwards from there.&#x0a;&#x0a;Your video then finishes on the song's last note instead of cutting off mid-verse."/>
                                         </Grid>
-                                        <!-- ISSUE_5: MinHeight, not Height (Font-Scale Sizing Rule). -->
                                         <Border Grid.Row="1" Background="{DynamicResource AppSurfaceBrush}" CornerRadius="4" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" MinHeight="64">
                                             <Panel>
                                                 <Image Name="WaveformImage" Stretch="Fill"/>
@@ -599,7 +350,6 @@
                         </Panel>
                     </Border>
 
-                    <!-- Navigation -->
                     <Grid Grid.Row="2" Grid.Column="0" Margin="0,12,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
@@ -607,8 +357,6 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <!-- ISSUE_03 (audit round 5): TIER 2 cancel — Danger + confirm flyout, because it discards
-                             the whole music selection/mix. Do not demote without also removing the flyout. -->
                         <Button Grid.Column="0" Name="CancelBtn" Content="CANCEL" Classes="Danger" MinWidth="90" HorizontalContentAlignment="Center" ToolTip.Tip="Cancel and close the wizard without saving">
                             <Button.Flyout>
                                 <Flyout Placement="Top">
@@ -619,13 +367,10 @@
                                 </Flyout>
                             </Button.Flyout>
                         </Button>
-                        <!-- PREVIEWSTOP_01: the transport belongs to the Fit & Mix screen only; on the song list every
-                             row has its own ▶. -->
                         <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10" IsVisible="{Binding TransportVisible}">
                             <Button Name="SkipBackBtn" Classes="Secondary" MinWidth="70" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" ToolTip.Tip="Skip back 30 seconds" AutomationProperties.Name="Skip back 30 seconds">
                                 <TextBlock Text="-30s" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextPrimaryBrush}" />
                             </Button>
-                            <!-- ISSUE_08: transport Play is Primary (blue) so it reads distinctly from the green NEXT. -->
                             <Button Name="PlayBtn" Classes="Primary" MinWidth="70" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" AutomationProperties.Name="Play or Pause" ToolTip.Tip="Play your video with the music (Space)">
                                 <Panel Width="{DynamicResource AppFontSize16}" Height="{DynamicResource AppFontSize16}">
                                     <Path Name="PlayIcon" Data="{DynamicResource AppPlayIconGeometry}" Fill="{DynamicResource AppOnAccentTextBrush}" Stretch="Uniform"/>

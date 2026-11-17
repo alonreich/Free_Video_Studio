@@ -1,5 +1,4 @@
-﻿
-#nullable disable
+﻿#nullable disable
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -23,7 +22,6 @@ namespace FreeVideoStudio.App
         public DeploymentProgressWindow()
         {
             InitializeComponent();
-
         }
 
         public DeploymentProgressWindow(string title) : this(title, null)
@@ -64,12 +62,6 @@ namespace FreeVideoStudio.App
             Topmost = true;
         }
 
-        /// <summary>
-        /// Centers the installer on the MAIN (primary) display, regardless of which monitor the
-        /// cursor is on. Avalonia's built-in CenterScreen follows the cursor's monitor, so we
-        /// position explicitly against Screens.Primary's working area (physical px), converting
-        /// the window's DIP size through the screen scaling.
-        /// </summary>
         private void CenterOnPrimaryScreen()
         {
             try
@@ -116,12 +108,6 @@ namespace FreeVideoStudio.App
             Close();
         }
 
-        /// <summary>
-        /// ISSUE_01: this window removes the OS title bar (ExtendClientAreaTitleBarHeightHint="0"),
-        /// so without this handler the user cannot move the setup window at all.
-        /// Dragging starts anywhere on the background EXCEPT interactive controls
-        /// (Finish button, selectable log TextBox).
-        /// </summary>
         private void OnRootPointerPressed(object sender, PointerPressedEventArgs e)
         {
             if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || e.ClickCount >= 2) return;
@@ -206,12 +192,12 @@ namespace FreeVideoStudio.App
                 {
                     _titleText.Foreground = Infrastructure.ThemeResources.Brush(this, "AppDangerBrush", Avalonia.Media.Brushes.Red);
                 }
-                
+
                 AppendLogLine("========================================");
                 AppendLogLine("FAILURE REASON:");
                 AppendLogLine(reason);
                 AppendLogLine("========================================");
-                
+
                 if (_finishButton != null) 
                 {
                     _finishButton.Content = "Close";

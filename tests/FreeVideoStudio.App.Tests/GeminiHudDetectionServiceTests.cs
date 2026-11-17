@@ -1,4 +1,3 @@
-
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -10,14 +9,9 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// AIHUD_01 — the Gemini Magic Wand provider and its place in the Crop Tool, with EVERY network
-/// call mocked through an <see cref="HttpMessageHandler"/>. Nothing here reaches the internet.
-/// </summary>
 public sealed class GeminiHudDetectionServiceTests
 {
     private const string SecretKey = "AIzaSy-dummy-test-key-000000000000";
-
 
     private sealed class FakeHandler : HttpMessageHandler
     {
@@ -82,7 +76,6 @@ public sealed class GeminiHudDetectionServiceTests
 
     private static HudDetectionRequest Request() => new(_ => Task.FromResult(LocalSet), Frame(), 1920, 1080);
 
-
     [Fact]
     public async Task ValidResponse_ParsesIntoValidatedCandidates_AndSendsOneFrameOnly()
     {
@@ -105,7 +98,6 @@ public sealed class GeminiHudDetectionServiceTests
         Assert.Contains("Do NOT report: people", parts[0].GetProperty("text").GetString());
     }
 
-
     [Theory]
     [InlineData("I think the minimap is top right.")]
     [InlineData("{\"boxes\":[]}")]
@@ -124,7 +116,6 @@ public sealed class GeminiHudDetectionServiceTests
         Assert.Equal(AiHudOutcome.MalformedResponse, (await service.DetectAsync(Frame(), CancellationToken.None)).Outcome);
     }
 
-
     [Fact]
     public async Task InvalidGeometry_IsFilteredBeforeTheCallerSeesIt()
     {
@@ -139,7 +130,6 @@ public sealed class GeminiHudDetectionServiceTests
         Assert.Equal(AiHudOutcome.Success, result.Outcome);
         Assert.Equal("ammo", Assert.Single(result.Candidates).Label);
     }
-
 
     [Theory]
     [InlineData(null)]
@@ -159,7 +149,6 @@ public sealed class GeminiHudDetectionServiceTests
         Assert.DoesNotContain(faults.Faults, f => f.Tier == FaultTier.Degraded);
     }
 
-
     [Fact]
     public async Task Timeout_FallsBackToLocal()
     {
@@ -177,7 +166,6 @@ public sealed class GeminiHudDetectionServiceTests
         Assert.Equal(AiHudOutcome.Timeout, result.AiOutcome);
         Assert.Contains(faults.Faults, f => f.Tier == FaultTier.Degraded && f.UserMessage.Contains("timed out"));
     }
-
 
     [Fact]
     public async Task RateLimit_FallsBackToLocal_WithoutRetry()
@@ -211,7 +199,6 @@ public sealed class GeminiHudDetectionServiceTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.DetectAsync(Frame(), cts.Token));
         Assert.Empty(faults.Faults);
     }
-
 
     [Fact]
     public async Task SlowGeminiAnswer_NeverOverwritesNewerScan()
@@ -248,7 +235,6 @@ public sealed class GeminiHudDetectionServiceTests
         Assert.DoesNotContain(faults.Faults, f => f.Tier != FaultTier.Recoverable);
     }
 
-
     [Fact]
     public async Task SameFrame_IsCached_OtherFrameOrModel_IsNot()
     {
@@ -276,7 +262,6 @@ public sealed class GeminiHudDetectionServiceTests
         Assert.Equal(GeminiHudDetectionService.Endpoint + GeminiHudDetectionService.DefaultModel + ":generateContent",
             Assert.Single(handler.Requests).Uri.ToString());
     }
-
 
     [Fact]
     public async Task ApiKey_NeverAppearsInUrlLogsFaultsOrResults()
@@ -353,7 +338,6 @@ public sealed class GeminiHudDetectionServiceTests
             Assert.DoesNotContain(t.GetProperties(), p => p.Name.Contains("Key", StringComparison.OrdinalIgnoreCase) && p.Name != "FrameKey" && p.Name != "RoleKey");
     }
 
-
     [Fact]
     public void MagicWand_NeverCommitsACrop()
     {
@@ -389,7 +373,6 @@ public sealed class GeminiHudDetectionServiceTests
         string service = File.ReadAllText(Path.Combine(RepoRoot.Path, "src", "FreeVideoStudio.App", "Services", "GeminiHudDetectionService.cs"));
         Assert.DoesNotMatch(@"using\s+Avalonia", service);
     }
-
 
     [Theory]
     [InlineData(3840, 2160)]

@@ -11,10 +11,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// EDITSTATE_01 — the Crop Tool's durable edit state, constructed and driven with no window, no
-/// canvas and no detector. Numbers follow the task's required-test list (7–13, 15).
-/// </summary>
 public class CropEditSessionTests
 {
     private static CropEditSession New()
@@ -41,7 +37,6 @@ public class CropEditSessionTests
         return layer;
     }
 
-
     [Fact]
     public void T07_ConstructibleWithoutAWindow()
     {
@@ -54,7 +49,6 @@ public class CropEditSessionTests
         Assert.Equal(CropLayoutSnapshot.Empty, s.Capture());
         Assert.Equal(5, s.AllRoles.Count());
     }
-
 
     [Fact]
     public void T08_LayoutCaptureApplyRoundtrip()
@@ -72,7 +66,6 @@ public class CropEditSessionTests
         Assert.Equal(s.Layers.Select(l => l.SourceRect).OrderBy(r => r.X), other.Layers.Select(l => l.SourceRect).OrderBy(r => r.X));
         Assert.True(other.Dirty);
     }
-
 
     [Fact]
     public void T09_LayerOrderRoundtrip_AndOnePressIsOnePlace()
@@ -104,7 +97,6 @@ public class CropEditSessionTests
         Assert.Null(s.MoveSelectedLayer(+1));
     }
 
-
     [Fact]
     public void T10_SelectionIsIdentity_SurvivesARestoreThatRebuildsEveryLayer()
     {
@@ -126,7 +118,6 @@ public class CropEditSessionTests
         Assert.Null(s.Selected);
         Assert.Null(s.SelectedRoleKey);
     }
-
 
     [Fact]
     public void T11_ProfilePersistence_WriteThenReadIsTheSameLayout()
@@ -221,7 +212,6 @@ public class CropEditSessionTests
         Assert.Null(s.ValidateNewProfileName("Warzone"));
     }
 
-
     [Fact]
     public void T12_ACommittedMagicWandCropFlowsIntoTheEdit_AsOneStep_ReplacingItsTwin()
     {
@@ -252,7 +242,6 @@ public class CropEditSessionTests
         Assert.Contains("loot_area", s.DeletedRoleKeys);
         Assert.Equal("loot", s.Layers.Single().RoleKey);
     }
-
 
     private static readonly Type[] LogicalStateTypes =
     {

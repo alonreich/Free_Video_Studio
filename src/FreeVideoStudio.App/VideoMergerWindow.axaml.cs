@@ -31,7 +31,6 @@ internal sealed record VideoFileFingerprint(string Path, long SizeBytes, DateTim
 
 public partial class VideoMergerWindow : Window, Services.IToolNavigationResultSource
 {
-
     public double MergerVolume { get; set; } = 100;
     private MpvVideoView? _videoHost;
     private bool _isSeeking = false;
@@ -121,7 +120,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         WireUpEvents();
         InitializeSliders();
         _ = LoadOutputDirectoryAsync();
-
 
         Win32FileDropInterop.Attach(this, paths => _ = AddExternalVideosAsync(paths));
     }
@@ -363,50 +361,13 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             };
         }
 
-        var flyoutScrim = this.FindControl<Border>("FlyoutScrim");
         var removeBtn = this.FindControl<Button>("RemoveVideoButton");
         if (removeBtn != null)
         {
-            if (removeBtn.Flyout != null)
-            {
-                removeBtn.Flyout.Opened += (s, e) =>
-                {
-                    OnToolbarRemoveFlyoutOpened();
-                    if (flyoutScrim != null) flyoutScrim.IsVisible = true;
-                };
-                removeBtn.Flyout.Closed += (s, e) =>
-                {
-                    if (flyoutScrim != null) flyoutScrim.IsVisible = false;
-                };
-            }
-
-            if (flyoutScrim != null)
-            {
-                flyoutScrim.PointerPressed += (s, e) =>
-                {
-                    removeBtn.Flyout?.Hide();
-                };
-            }
-
             removeBtn.Click += (s, e) =>
             {
-                if (!FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.ConfirmVideoMergerRemove)
-                {
-                    removeBtn.Flyout?.Hide();
-                    if (flyoutScrim != null) flyoutScrim.IsVisible = false;
-                    ExecuteRemoveSelected();
-                }
-            };
-        }
-        
-        var confirmRemoveBtn = this.FindControl<Button>("ConfirmRemoveVideoButton");
-        if (confirmRemoveBtn != null)
-        {
-            confirmRemoveBtn.Click += (s, e) =>
-            {
-                removeBtn?.Flyout?.Hide();
-                if (flyoutScrim != null) flyoutScrim.IsVisible = false;
-                ExecuteRemoveSelected();
+                OnToolbarRemoveFlyoutOpened();
+                _ = RequestRemoveClipsAsync(TakeToolbarRemoveIds());
             };
         }
 
@@ -419,7 +380,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         var mergeBtn = this.FindControl<Button>("MergeButton");
         if (mergeBtn != null) mergeBtn.Click += async (s, e) => await OnMergeClicked(mergeBtn);
 
-
         WireQueueContextMenu();
         InitializeScraper();
 
@@ -428,8 +388,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         AddHandler(Avalonia.Input.InputElement.KeyDownEvent, MergerKeyDownHandler, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         UpdateQueueState();
     }
-    
-    /// <summary>REMOVEUX_01 — removal routes through stable ClipId operations.</summary>
+
     private void ExecuteRemoveSelected()
     {
         var ids = TakeToolbarRemoveIds();
@@ -447,11 +406,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         PublishQueueToProject();
     }
 
-    /// <summary>
-    /// PROJ_11 — hands the current queue to <see cref="Services.ToolNavigator"/>, which is where
-    /// <c>ProjectSession.Capture</c> reads it from. Called on every queue change AND once on close,
-    /// because the case being fixed is precisely "the user closed the Merger and then saved".
-    /// </summary>
     private void PublishQueueToProject()
         => NoteEdlChanged();
 
@@ -503,15 +457,8 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         UpdateNormalizeInfo();
     }
 
-    /// <summary>
-    /// ISSUE_010: shared worker coalesces rapid edits and reuses cached media details.
-    /// </summary>
     private void DebouncedQualityProbe() => UpdateEstimatedSize();
 
-    /// <summary>
-    /// ISSUE_001: Called when the video queue changes. If music was already set up for
-    /// a different queue, marks it as stale and warns the user.
-    /// </summary>
     private void InvalidateMusicIfStale()
     {
         if (_musicResult == null) return;
@@ -535,9 +482,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         UpdateEstimatedSize();
     }
 
-    /// <summary>
-    /// ISSUE_005: Shows normalization info so the user knows the merge normalizes to 1080p60.
-    /// </summary>
     private void UpdateNormalizeInfo()
     {
         var info = this.FindControl<TextBlock>("NormalizeInfoText");
@@ -548,9 +492,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             info.Text = "";
     }
 
-    /// <summary>
-    /// ISSUE_004: Updates the output path display.
-    /// </summary>
     private void UpdateOutputPathDisplay()
     {
         var pathText = this.FindControl<TextBlock>("OutputPathText");
@@ -559,9 +500,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             pathText.Text = "→ " + System.IO.Path.GetFileName(_outputDirectory);
     }
 
-    /// <summary>
-    /// ISSUE_006: Shows/hides the no-video overlay and enables/disables transport controls.
-    /// </summary>
     private void UpdatePreviewAvailable()
     {
         var vl = VideoListCtl;
@@ -577,7 +515,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         if (playBtn != null) playBtn.IsEnabled = hasVideo;
         if (ffBtn != null) ffBtn.IsEnabled = hasVideo;
         if (fbBtn != null) fbBtn.IsEnabled = hasVideo;
-
     }
 
     private void ApplySpeedPreset(double speed)
@@ -653,7 +590,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         label.Text = $"{quality}% — {description}";
     }
 
-    /// <summary>MERGERESTIMATE_01 — total duration in h:mm:ss, or m:ss below one hour.</summary>
     private static string FormatDuration(double seconds)
     {
         if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds <= 0) return "\u2014";
@@ -664,12 +600,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             : $"{ts.Minutes}:{ts.Seconds:00}";
     }
 
-    /// <summary>
-    /// SPEEDLABEL_01 — the speed → description/colour ladder was duplicated BYTE FOR BYTE between
-    /// this window and the other one, control name included. It is a product decision the user
-    /// reads ("1.2x — Slight Boost"), so the two windows must never be able to disagree about it.
-    /// One ladder now, in <see cref="Infrastructure.SpeedLabel"/>.
-    /// </summary>
     private void UpdateSpeedLabel() { Infrastructure.SpeedLabel.Apply(this, _baseSpeed); NoteEdlChanged(); }
 
     private void WireUpVolumeSlider()
@@ -979,14 +909,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
-    /// <summary>
-    /// ISSUE_04 — the Merger's default output folder.
-    /// Order: the folder saved in the Merger's OWN settings, then the shell-resolved Downloads
-    /// folder (correct when Downloads has been moved or OneDrive-redirected — the old
-    /// %USERPROFILE%\Downloads guess was not), then Videos, then Documents.
-    /// Returns empty when nothing is usable; callers then prompt via OutputFolderResolver
-    /// instead of writing to a folder that does not exist.
-    /// </summary>
     private static string GetDownloadsPath()
     {
         string configured = Infrastructure.SettingsManager.Instance.MergerOutputDirectory;
@@ -1002,20 +924,12 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         return Directory.Exists(documents) ? documents : string.Empty;
     }
 
-    /// <summary>
-    /// SETABOUTSAVE_01 — everything the merger shows from Settings, re-read after a SAVE from either the
-    /// Settings menu or the About menu (About opens the same window).
-    /// </summary>
     private void SyncFromSavedSettings()
     {
         SyncScraperFromSettings();
         SyncOutputFolderFromSettings();
     }
 
-    /// <summary>
-    /// SETMERGERDIR_01 — Settings › Files &amp; Folders changed the merger's save folder while this
-    /// window was open: show the new folder now, not only after the next merge resolves it.
-    /// </summary>
     private void SyncOutputFolderFromSettings()
     {
         string next = GetDownloadsPath();
@@ -1129,7 +1043,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
                 bootScanResult: null,
                 ffmpegPath: FreeVideoStudio.Core.Infrastructure.BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries"));
 
-            var worker = new FreeVideoStudio.Core.Media.MergerWorker { InputFiles = new List<string>(VideoQueue), OutputDirectory = _outputDirectory, OutputBaseName = FreeVideoStudio.Core.Media.OutputFileNaming.MergerBaseFor(Infrastructure.SettingsManager.Instance.MainOutputBaseName) /* SETNAMEONE_01 */, SpeedFactor = _baseSpeed, QualityPercent = qualityPercent, OutputRatio = targetRatio, AutoSpikeFlattening = FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.Defaults.AutoSpikeFlattening, MatchClipLoudness = FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.MergerMatchClipLoudness /* CLIPLEVEL_01 */, HardwareStrategy = mergerStrategy };
+            var worker = new FreeVideoStudio.Core.Media.MergerWorker { InputFiles = new List<string>(VideoQueue), OutputDirectory = _outputDirectory, OutputBaseName = FreeVideoStudio.Core.Media.OutputFileNaming.MergerBaseFor(Infrastructure.SettingsManager.Instance.MainOutputBaseName) , SpeedFactor = _baseSpeed, QualityPercent = qualityPercent, OutputRatio = targetRatio, AutoSpikeFlattening = FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.Defaults.AutoSpikeFlattening, MatchClipLoudness = FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.MergerMatchClipLoudness , HardwareStrategy = mergerStrategy };
 
             worker.ClipTrims = BuildClipTrimList();
             if (targetRatio == FreeVideoStudio.Core.Media.MergerWorker.TargetAspectRatio.Portrait9x16)
@@ -1211,11 +1125,11 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
                     if (success)
                     {
                         SetQueueStatus("Merge completed successfully.", false);
+                        MarkMergeFinishedClean();
                         string? attribution = FreeVideoStudio.App.Infrastructure.MusicAttributionHelper.ResolveAttribution(
                             _musicResult?.MusicFilePaths != null && _musicResult.MusicFilePaths.Count > 0
                                 ? _musicResult.MusicFilePaths
                                 : (_musicResult?.MusicFilePath != null ? new[] { _musicResult.MusicFilePath } : null));
-
 
                         var dlg = new FreeVideoStudio.App.Controls.FinishedDialogWindow();
                         dlg.SetOutputPath(msg);
@@ -1350,16 +1264,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         UpdatePreviewAvailable();
     }
 
-    /// <summary>
-    /// ISSUE_09 — writes the queue status line AND floats the suite-wide notice.
-    /// The line stays because it is the durable record of the queue's state; the notice is what
-    /// makes a change register while the user is looking at the video, not at the list.
-    /// Every call site here is a discrete queue event, and FloatingNotice dedupes the one message
-    /// that RefreshActionButtons re-emits on every selection change.
-    ///
-    /// ISSUE_10 — the two literal hexes that used to be here (#fecaca / #94a3b8) are gone. They were
-    /// pale-on-dark by construction and unreadable on the Light theme's near-white panel.
-    /// </summary>
     private void SetQueueStatus(string message, bool isError)
     {
         var status = this.FindControl<TextBlock>("QueueStatusText");
@@ -1416,56 +1320,22 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
 
     private void InitializeComponent() { AvaloniaXamlLoader.Load(this); }
 
-
-    /// <summary>
-    /// Sticky. Starts muted; the first deliberate transport or audio action clears it for good.
-    /// </summary>
     private bool _previewMuted = true;
 
-    /// <summary>
-    /// The clip whose midpoint seek has not landed yet, or null. Doubles as the "a load is still in
-    /// flight" flag that stops <see cref="PlaybackTimer_Tick"/> mistaking a stale EOF for the end of
-    /// the new clip.
-    /// </summary>
     private string? _pendingMiddleSeekPath;
 
-    /// <summary>
-    /// Tick budget for the midpoint seek. mpv reports Duration within a tick or two of opening a
-    /// local file; if it has not after this many, the clip is unusual (a stream, a broken index)
-    /// and playing it from the start is a better outcome than never playing it.
-    /// </summary>
     private int _middleSeekTicksLeft;
 
     private const int MiddleSeekTickBudget = 40;
 
-    /// <summary>True while an auto-preview is running and EOF should advance to the next clip.</summary>
     private bool _autoAdvanceArmed;
 
-    /// <summary>
-    /// Ticks to ignore EOF for after a load. mpv's IsEof belongs to whatever file it last finished,
-    /// and it stays true across the gap between loadfile being sent and the new file actually being
-    /// open — so without this, selecting a clip while the previous one had ended would read that
-    /// stale EOF on the very next tick and skip straight past the clip the user just clicked.
-    /// Covers both load paths: the cached-duration one clears the pending-seek flag immediately and
-    /// would otherwise have no guard at all.
-    /// </summary>
     private int _autoAdvanceGraceTicks;
 
     private const int AutoAdvanceGraceTickCount = 8;
 
-    /// <summary>
-    /// Per-clip durations in seconds, filled by <see cref="PaintSizeEstimate"/> (which already
-    /// measures every clip for the size estimate) and topped up from mpv whenever a clip plays. It
-    /// exists so the midpoint seek can usually be handed to loadfile directly instead of being
-    /// performed after the fact — that is the difference between opening at the middle and visibly
-    /// jumping there half a second in.
-    /// </summary>
     private readonly Dictionary<string, double> _clipDurations = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// AUTOPREVIEW_01 — loads a clip and starts it playing, muted (unless the user has taken
-    /// control) and from its midpoint.
-    /// </summary>
     private void StartAutoPreview(string path)
     {
         if (StartMergedPreview(path)) return;
@@ -1496,16 +1366,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         _ = ipc.SetPropertyAsync("pause", "no");
     }
 
-    /// <summary>
-    /// AUTOPREVIEW_01 — the user has stopped browsing and started watching, so the sound comes on.
-    ///
-    /// Called from every transport control and every audio control. NOT called from the list
-    /// selection, which is the browsing gesture this whole mode exists to serve, and not from a
-    /// timeline scrub either — hunting for a frame is still looking, not watching.
-    ///
-    /// Sticky by design: having asked for sound once, the user should not have to ask again on the
-    /// next clip they click.
-    /// </summary>
     private void TakeManualControl()
     {
         if (!_previewMuted) return;
@@ -1516,17 +1376,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         Controls.FloatingNotice.Show(this, "Sound on.", Controls.NoticeKind.Info);
     }
 
-    /// <summary>
-    /// AUTOPREVIEW_01 — moves the highlight to the next clip in the list when the current one ends.
-    ///
-    /// Moves the SELECTION rather than loading the next path directly, for two reasons: the list
-    /// then shows what is playing (otherwise the highlight and the picture disagree, which is worse
-    /// than not advancing at all), and the selection handler is already the one road into
-    /// <see cref="StartAutoPreview"/>, so there is no second copy of the open-a-clip logic to drift.
-    ///
-    /// Stops at the end of the list. It does not wrap: a queue that loops forever is a queue the
-    /// user has to actively stop, and there is no obvious control here for stopping it.
-    /// </summary>
     private void AdvanceToNextClip()
     {
         _autoAdvanceArmed = false;
@@ -1621,12 +1470,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         if (_videoHost?.IpcClient != null) await _videoHost.IpcClient.SendCommandAsync("seek", time, "absolute");
     }
 
-    /// <summary>
-    /// MPVSHUTDOWN_01 — now awaitable: the preview teardown is two-phase and asynchronous, so the
-    /// UI thread never joins a render thread on the way back to the editor. In-process (the only
-    /// live configuration, TOOLNAV_04) the close path does the teardown; the legacy standalone
-    /// branch awaits it explicitly because the process exits right after.
-    /// </summary>
     private async Task ReturnToMainAppAsync()
     {
         _recovery.ReleaseLockOnly();
@@ -1682,7 +1525,7 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
 
     public void OnSuccessAction(string action)
     {
-        if (action == "whatsapp") Process.Start(new ProcessStartInfo("whatsapp://send?text=CheckOutThisVideo") { UseShellExecute = true });   // NOCMD_01 — shell opens the link; no hidden "cmd /c start" (SYS-AVCLEAN).
+        if (action == "whatsapp") Process.Start(new ProcessStartInfo("whatsapp://send?text=CheckOutThisVideo") { UseShellExecute = true });
         else if (action == "folder") Process.Start(new ProcessStartInfo("explorer.exe", _outputDirectory ?? ".") { CreateNoWindow = true });
         Close();
     }
@@ -1742,21 +1585,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         finally { _isSafeToClose = true; this.Close(); }
     }
 
-    /// <summary>
-    /// MERGERBOTTOM_01 — one trim entry per clip, all of them full-length.
-    ///
-    /// WHAT WAS HERE. A <c>_clipTrims</c> dictionary plus SetClipIn / SetClipOut / ClearClipTrim /
-    /// UpdateTrimStatus / SetTrimStatus / SelectedQueuePath, driven by the SET IN, SET OUT and FULL
-    /// CLIP buttons and reported in a ClipTrimStatusText line. All of that UI is gone from this
-    /// screen, so the dictionary could only ever have been empty and every one of those methods was
-    /// unreachable code writing to a TextBlock that no longer exists.
-    ///
-    /// <see cref="MergerWorker"/> still takes a trim list and still expects exactly one entry per
-    /// queued clip — its indexing is positional — so the list itself stays. A
-    /// <c>ClipTrim(0, 0)</c> means "use the whole clip", which is what every clip now does.
-    /// If per-clip trimming ever returns, it returns as a real editor on the preview, not as three
-    /// buttons that silently mutate a dictionary the user cannot see.
-    /// </summary>
     private List<FreeVideoStudio.Core.Media.MergerWorker.ClipTrim> BuildClipTrimList()
     {
         var list = new List<FreeVideoStudio.Core.Media.MergerWorker.ClipTrim>(VideoQueue.Count);
@@ -1767,22 +1595,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         return list;
     }
 
-    /// <summary>
-    /// QUEUEMENU_01 — wires the three buttons inside the right-click menu.
-    ///
-    /// NOT via <c>this.FindControl</c>, and that is the whole point of this method existing. A
-    /// Flyout's content is constructed when the AXAML loads but is never attached to the window's
-    /// VISUAL tree until the flyout is first opened, and whether its names reach the window's
-    /// NameScope is an implementation detail of the XAML loader rather than a contract. A
-    /// FindControl that silently returns null gives three menu items that look perfectly normal and
-    /// do nothing at all — the exact failure mode this codebase has been bitten by before (see
-    /// ISSUE_09's dead `TextBox.error` class in AvaloniaApp.axaml).
-    ///
-    /// Walking the flyout content's own LOGICAL tree needs no name scope and cannot be defeated by
-    /// virtualisation: the Border, its StackPanel and the Buttons are real objects from the moment
-    /// the AXAML is parsed. Matching on Button.Name keeps the AXAML the single place the names are
-    /// written down.
-    /// </summary>
     private void WireQueueContextMenu()
     {
         var list = VideoListCtl;
@@ -1814,15 +1626,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         }
     }
 
-    /// <summary>
-    /// QUEUEMENU_01 — closes the right-click menu after one of its buttons has been pressed.
-    ///
-    /// A <see cref="Flyout"/> hosting hand-built content (rather than a MenuFlyout hosting
-    /// MenuItems) has no idea that a click on one of its buttons means "the user is finished", so
-    /// without this the menu stays open over the list it has just reordered — which looks exactly
-    /// like the click did nothing. Walks up from the button to the flyout's popup host rather than
-    /// holding a field, because the flyout is created by the AXAML and belongs to the ListBox.
-    /// </summary>
     private void CloseQueueContextFlyout()
     {
         var list = VideoListCtl;
@@ -1831,7 +1634,9 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
 
     protected override void OnClosed(EventArgs e)
     {
-        CaptureEdlNow(flush: true);
+        _freezeSound.Dispose();
+        if (_mergedCleanSinceLastEdit) WipeFinishedMergeForExit();
+        else CaptureEdlNow(flush: true);
 
         _mergerSizeWorker?.Dispose();
         ShutdownMergerMusicPreview();
@@ -2061,11 +1866,6 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
         }
     }
 
-    /// <summary>
-    /// Adds externally provided video files (Explorer drag &amp; drop via OLE or the
-    /// WM_DROPFILES fallback) to the queue with the exact same validation and
-    /// duplicate detection as the Upload Files button.
-    /// </summary>
     private async Task AddExternalVideosAsync(string[] paths)
     {
         await _externalDropGate.WaitAsync();

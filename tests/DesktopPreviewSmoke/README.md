@@ -1,4 +1,4 @@
-# Interactive desktop preview regressions
+﻿# Interactive desktop preview regressions
 
 Run from the repository root on an unlocked Windows desktop with hardware preview available.
 Keep the test window visible until it closes; another window covering the sampled preview makes
@@ -8,11 +8,13 @@ the merger check fail with an explicit obstruction message.
 dotnet run --project tests/DesktopPreviewSmoke/DesktopPreviewSmoke.csproj -c Release
 dotnet run --project tests/DesktopPreviewSmoke/DesktopPreviewSmoke.csproj -c Release -- --merger
 dotnet run --project tests/DesktopPreviewSmoke/DesktopPreviewSmoke.csproj -c Release -- --merger --silent-middle
+dotnet run --project tests/DesktopPreviewSmoke/DesktopPreviewSmoke.csproj -c Release -- --speed-editor
 ```
 
 `tests/run-all-tests.cmd` includes all three checks. The ordinary full A/V gate does not run this
 interactive tier; its null-video player tests cannot prove which pixels the desktop displays.
 
+- The Speed Editor check opens a real main video view and the production `GranularSpeedEditorWindow` on a 1080p hardware-decoded clip: Play must move the editor's playhead at the edit's 1.1x, closing must finish with a verified teardown and the main preview must play afterwards (PREVIEWSPEED_02: a speed command sent while the editor's GPU pipeline was loading froze its preview).
 - The default check exercises the production WGL/D3D video control, paused seeks, playback,
   resize, detach/reattach and repeated shutdown.
 - The merger check opens the production `VideoMergerWindow`, adds three separate colored files

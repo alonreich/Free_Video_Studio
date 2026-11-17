@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -10,14 +9,8 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// AIHUD_01..04 — the AI-assisted Magic Wand's pure core: response validation, the single
-/// normalized→source conversion, deterministic local+AI fusion, and the run coordinator's
-/// fallback / cancellation / staleness guarantees. No network: the AI side is a fake.
-/// </summary>
 public sealed class AiHudDetectionTests
 {
-
     [Fact]
     public void ValidStructuredResult_Parses()
     {
@@ -51,7 +44,6 @@ public sealed class AiHudDetectionTests
         Assert.Single(result.Candidates);
     }
 
-
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
@@ -84,7 +76,6 @@ public sealed class AiHudDetectionTests
         Assert.Equal(4, result.Rejected);
         Assert.Equal("ammo", Assert.Single(result.Candidates).Label);
     }
-
 
     public static IEnumerable<object[]> InvalidGeometry() => new[]
     {
@@ -131,7 +122,6 @@ public sealed class AiHudDetectionTests
         Assert.Equal(4, result.Rejected);
     }
 
-
     [Fact]
     public void NormalizedToSource_IsExact()
     {
@@ -168,7 +158,6 @@ public sealed class AiHudDetectionTests
         Assert.Equal(1920, r.X + r.Width);
         Assert.Equal(1080, r.Y + r.Height);
     }
-
 
     private static HudCandidate Local(int x, int y, int w, int h, string? role)
         => new(x, y, w, h, role, string.Empty, 0.0, HudCandidateSource.Local);
@@ -251,7 +240,6 @@ public sealed class AiHudDetectionTests
         Assert.Equal(HudCandidateFusion.MaxCandidates, a.Count);
         Assert.Equal(5, a.Count(c => c.Source == HudCandidateSource.Local));
     }
-
 
     private sealed class RecordingFaultSink : IFaultSink
     {
@@ -432,7 +420,6 @@ public sealed class AiHudDetectionTests
             Assert.Empty(t.GetEvents());
         }
     }
-
 
     [Fact]
     public void Cache_IsKeyedBySourceFrameAndModel_AndStoresSuccessOnly()

@@ -5,7 +5,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>MERGEEDIT_01 — Video-Merger-Migration.md P6.2 (whole-merge editor bridge, D16–D19).</summary>
 public class MergeEditorBridgeTests
 {
     private static readonly EdlClip A = new() { Path = @"C:\c\a.mp4", DurationUs = 10_000_000 };

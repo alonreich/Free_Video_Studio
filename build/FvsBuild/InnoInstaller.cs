@@ -1,15 +1,5 @@
 namespace FvsBuild;
 
-/// <summary>
-/// NODROPPER_01 — compiles build\installer\FreeVideoStudio.iss with Inno Setup into the single
-/// download, .\compiled\FreeVideoStudio.exe. Spec: docs/09_DISTRIBUTION_AND_RELEASE.md #DIST-INSTALLER.
-///
-/// <para>Replaces the embedded payload.zip: the release is no longer a program that carries compressed
-/// copies of other programs in its own resources (the dropper pattern antivirus engines flag), but a
-/// standard installer package whose every file antivirus can unpack, name and scan. Inno Setup is free;
-/// version 6.3 or newer is required (winget install JRSoftware.InnoSetup). <c>FVS_ISCC</c> may name
-/// ISCC.exe explicitly.</para>
-/// </summary>
 internal static class InnoInstaller
 {
     public const string ScriptPath = @"build\installer\FreeVideoStudio.iss";

@@ -9,19 +9,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// Direct libmpv C API client. All method calls, property lookups, and event
-/// notifications are routed through the native <c>libmpv-2.dll</c> via
-/// <see cref="MpvWrapper"/> using the active <c>_mpvHandle</c> pointer.
-///
-/// <para><b>Event-Driven Architecture:</b> Instead of a 30fps polling timer,
-/// this client spawns a dedicated background thread that blocks on
-/// <c>mpv_wait_event</c>. Properties are observed via
-/// <c>mpv_observe_property</c>, and <c>MPV_EVENT_PROPERTY_CHANGE</c> events
-/// are intercepted in real-time. The <see cref="TimePosChanged"/> event fires
-/// on the background thread — subscribers on the Avalonia UI thread must
-/// marshal via <c>Dispatcher.UIThread.Post</c>.</para>
-/// </summary>
 public class MpvIpcClient : IDisposable
 {
     private nint _mpvHandle;
@@ -45,12 +32,10 @@ public class MpvIpcClient : IDisposable
     private ulong _eofObsId;
     private ulong _fpsObsId;
 
-
     public static int GlobalMasterVolume { get; private set; } = 100;
     public static bool GlobalMuted { get; private set; }
     public static bool MasterAppliedBySystem { get; private set; }
 
-    /// <summary>Fired (with the level) on ANY change of level, mute or where the master is applied.</summary>
     public static event Action<int>? GlobalMasterVolumeChanged;
 
     public static void SetGlobalMasterVolume(int volume)
@@ -73,28 +58,18 @@ public class MpvIpcClient : IDisposable
         GlobalMasterVolumeChanged?.Invoke(GlobalMasterVolume);
     }
 
-    /// <summary>VOLCURVE_01 — linear gain of a slider position (0-100).</summary>
     public static double PerceptualGain(double percent)
     {
         double p = Math.Clamp(double.IsFinite(percent) ? percent : 0.0, 0.0, 100.0) / 100.0;
         return p * p * p;
     }
 
-    /// <summary>VOLCURVE_01 — inverse of <see cref="PerceptualGain"/>: the slider position of a linear gain.</summary>
     public static double PositionForGain(double gain) =>
         100.0 * Math.Cbrt(Math.Clamp(double.IsFinite(gain) ? gain : 0.0, 0.0, 1.0));
 
-    /// <summary>
-    /// The linear gain a NON-mpv player (NAudio voice-over takes) must apply for the master: 0 when
-    /// muted, 1 when the Windows session already applies it, the perceptual gain otherwise.
-    /// </summary>
     public static double MasterLinearGain =>
         GlobalMuted ? 0.0 : MasterAppliedBySystem ? 1.0 : PerceptualGain(GlobalMasterVolume);
 
-    /// <summary>
-    /// The mpv `volume` property for a player whose own LINEAR balance is <paramref name="balanceLinear"/>
-    /// (1.0 = the Music Wizard fader at 100%, or no fader at all).
-    /// </summary>
     public static double PlayerMpvVolume(double balanceLinear = 1.0)
     {
         if (GlobalMuted) return 0.0;
@@ -126,11 +101,8 @@ public class MpvIpcClient : IDisposable
     internal static readonly TimeSpan NativeWorkTimeout = TimeSpan.FromSeconds(10);
     public event Action<string>? PlaybackFaulted;
 
-    /// <summary>True from seek submission until mpv has finished seeking, including paused seeks.</summary>
     public bool IsSeeking => _seekInProgress;
-    /// <summary>Thread-safe pause state (updated by event loop, read by UI).</summary>
     public bool IsPaused { get => _isPaused; private set => _isPaused = value; }
-    /// <summary>Thread-safe EOF state (updated by event loop, read by UI).</summary>
     public bool IsEof { get => _isEof; private set => _isEof = value; }
 
     internal bool IsSimulatedForTesting { get; set; }
@@ -144,25 +116,8 @@ public class MpvIpcClient : IDisposable
         IsEof = isEof;
     }
 
-    /// <summary>
-    /// THROTTLE_01 — true while ANY live <see cref="MpvIpcClient"/> has a file loaded and is
-    /// actively playing it (unpaused, not at EOF). One volatile read, safe from any thread.
-    /// Background media work — the film-lane prewarm — polls this so background FFmpeg
-    /// extraction yields to whatever the user is watching.
-    ///
-    /// ⚠️ WHY NOT JUST IsPaused: mpv's default pause state is FALSE, so an idle client with no
-    /// file loaded would read as "playing" forever and would freeze every prewarm permanently.
-    /// Counting a client only while <c>Duration &gt; 0 &amp;&amp; !IsPaused &amp;&amp; !IsEof</c>
-    /// says "video is being decoded right now", which is exactly the thing background work must
-    /// not fight for disk and CPU.
-    /// </summary>
     public static bool AnyPlaybackActive => Volatile.Read(ref _playingClientCount) > 0;
 
-    /// <summary>
-    /// THROTTLE_01 — recomputes this client's contribution to <see cref="AnyPlaybackActive"/>.
-    /// Called on the event-loop thread whenever pause/duration/eof changes, and once from
-    /// <see cref="Dispose"/> so a dying player can never leave the count stuck above zero.
-    /// </summary>
     private void UpdatePlaybackContribution()
     {
         lock (_playbackGate)
@@ -178,40 +133,14 @@ public class MpvIpcClient : IDisposable
     public int VideoWidth { get; private set; }
     public int VideoHeight { get; private set; }
 
-    /// <summary>
-    /// THUMB_01 — the loaded file's frame rate, or 0 until mpv reports it.
-    ///
-    /// Added so "move one frame" can mean ONE FRAME. The thumbnail marker's keyboard nudge used a
-    /// hard-coded 60, which is a frame and a half on 30 fps footage and two thirds of one at 120 —
-    /// so a step that claims to be frame-accurate silently was not on most real recordings.
-    /// Callers must still handle 0 (nothing loaded yet) and fall back themselves.
-    /// </summary>
     public double VideoFps { get; private set; }
 
-    /// <summary>
-    /// Fires on the event-loop thread whenever <c>time-pos</c> changes.
-    /// Subscribers running on a UI thread must marshal via
-    /// <c>Dispatcher.UIThread.Post</c>.
-    /// </summary>
     public event Action<double>? TimePosChanged;
 
-    /// <summary>
-    /// Fires after mpv's playback-restart confirms a seek has landed, or when a seek
-    /// is abandoned by an end-file/rejected command. May run on the mpv event thread.
-    /// The position cache is refreshed before a successful completion is published.
-    /// </summary>
     public event Action? SeekCompleted;
 
-    /// <summary>
-    /// Fires when the <c>pause</c> property changes.
-    /// </summary>
     public event Action<bool>? PauseChanged;
 
-
-    /// <summary>
-    /// Wraps an existing mpv handle (created by MpvVideoView / OpenGL path).
-    /// The caller retains ownership of the handle lifecycle.
-    /// </summary>
     public MpvIpcClient(nint mpvHandle) : this()
     {
         _mpvHandle = mpvHandle;
@@ -219,11 +148,6 @@ public class MpvIpcClient : IDisposable
         StartEventLoop();
     }
 
-    /// <summary>
-    /// Parameterless constructor for audio-only mode (Music Wizard).
-    /// Call <see cref="StartAudioOnlyAsync"/> to create and initialize the
-    /// underlying mpv handle. Until then, all command/property calls are no-ops.
-    /// </summary>
     public MpvIpcClient()
     {
         _commands = new MpvCommandQueue(OnCommandFinished);
@@ -231,12 +155,6 @@ public class MpvIpcClient : IDisposable
         _ownsHandle = false;
     }
 
-
-    /// <summary>
-    /// Creates a headless audio-only mpv instance using the native libmpv C API.
-    /// Sets <c>vid=no</c> and <c>vo=null</c> so no video decode or output occurs.
-    /// The client owns the handle and will terminate it on <see cref="Dispose"/>.
-    /// </summary>
     public Task StartAudioOnlyAsync(string mpvPath)
     {
         _mpvHandle = MpvWrapper.mpv_create();
@@ -275,7 +193,6 @@ public class MpvIpcClient : IDisposable
         }
     }
 
-
     private void StartEventLoop()
     {
         if (_mpvHandle == nint.Zero) return;
@@ -288,7 +205,6 @@ public class MpvIpcClient : IDisposable
         _eofObsId     = MpvWrapper.ObserveProperty(_mpvHandle, "eof-reached", MpvWrapper.MpvFormat.Double);
         _fpsObsId     = MpvWrapper.ObserveProperty(_mpvHandle, "container-fps", MpvWrapper.MpvFormat.Double);
 
-
         _eventLoopThread = new Thread(EventLoopWorker)
         {
             Name = "MpvEventLoop",
@@ -298,10 +214,6 @@ public class MpvIpcClient : IDisposable
         _eventLoopThread.Start(_cts.Token);
     }
 
-    /// <summary>
-    /// Background thread that blocks on mpv_wait_event and dispatches
-    /// property-change events to subscribers.
-    /// </summary>
     private void EventLoopWorker(object? obj)
     {
         var token = (CancellationToken)obj!;
@@ -521,10 +433,6 @@ public class MpvIpcClient : IDisposable
         if (notify) SeekCompleted?.Invoke();
     }
 
-    /// <summary>
-    /// Dispatches a property-change event to the appropriate state property
-    /// and fires the corresponding C# event.
-    /// </summary>
     private void HandlePropertyChange(MpvWrapper.MpvEvent ev)
     {
         MpvWrapper.MpvEventProperty prop = MpvWrapper.ReadEventProperty(ev);
@@ -572,9 +480,6 @@ public class MpvIpcClient : IDisposable
         }
     }
 
-    /// <summary>
-    /// Lazily reads width/height from the native handle (infrequent).
-    /// </summary>
     private async Task PollDimensionsAsync()
     {
         if (_disposed || _requiresReload) return;
@@ -584,12 +489,9 @@ public class MpvIpcClient : IDisposable
         if (int.TryParse(height.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int h)) VideoHeight = h;
     }
 
-    /// <summary>
-    /// Reads an mpv property as a UTF-8 string via
-    /// <c>mpv_get_property_string</c> + <c>mpv_free</c>.
-    /// </summary>
     public string? GetPropertyString(string name)
     {
+        using var blocking = BlockingCallTracker.Enter($"mpv get_property_string({name})");
         lock (_nativeReadGate)
         {
             if (_disposed || _mpvHandle == nint.Zero) return null;
@@ -597,10 +499,15 @@ public class MpvIpcClient : IDisposable
         }
     }
 
+    public async Task<string?> ReadPropertyAsync(string name)
+    {
+        var result = await GetPropertyStringAsync(name).ConfigureAwait(false);
+        return result.Succeeded ? result.Value : null;
+    }
+
     public Task<MpvCommandResult> GetPropertyStringAsync(string name) =>
         Enqueue(["get", name], readProperty: name);
 
-    /// <summary>MPVQUEUE_01 — bounded ordered admission. No native function runs on this caller.</summary>
     public Task<MpvCommandResult> SendCommandAsync(params object[] args)
     {
         if (args.Length == 0) return Task.FromResult(new MpvCommandResult(MpvCommandStatus.Rejected));
@@ -634,7 +541,6 @@ public class MpvIpcClient : IDisposable
                 }
                 return Task.FromResult(new MpvCommandResult(MpvCommandStatus.Unavailable));
             }
-
 
             bool seek = readProperty == null && args[0] == "seek";
             bool absolute = seek && args.Length > 2 && args[2].Contains("absolute", StringComparison.Ordinal);
@@ -670,7 +576,6 @@ public class MpvIpcClient : IDisposable
         }
     }
 
-    /// <summary>Sets a property on the same ordered queue as seeks and file loads.</summary>
     public Task<MpvCommandResult> SetPropertyAsync(string name, string value)
     {
         lock (_seekGate)
@@ -681,22 +586,12 @@ public class MpvIpcClient : IDisposable
         }
     }
 
-    /// <summary>
-    /// Applies the suite master (level, mute, curve) times this player's LINEAR balance
-    /// (<paramref name="balanceLinear"/>, 1.0 = unity). See <see cref="PlayerMpvVolume"/>.
-    /// </summary>
     public Task ApplyPreviewGainAsync(double balanceLinear = 1.0) =>
         SetPropertyDoubleAsync("volume", PlayerMpvVolume(balanceLinear));
 
-    /// <summary>Sets a raw mpv double property using invariant number formatting.</summary>
     public Task<MpvCommandResult> SetPropertyDoubleAsync(string name, double value) =>
         SetPropertyAsync(name, value.ToString("R", CultureInfo.InvariantCulture));
 
-    /// <summary>
-    /// Loads a media file into the mpv player.
-    /// Sets the <c>start</c> property BEFORE issuing <c>loadfile</c>
-    /// (per project IPC rule: start must be set independently).
-    /// </summary>
     public Task<MpvCommandResult> LoadFileAsync(string path, double? startTime = null)
     {
         lock (_seekGate)
@@ -719,15 +614,10 @@ public class MpvIpcClient : IDisposable
         return result;
     }
 
-    /// <summary>AICAPTION_EXPORT_01 — ordered subtitle commands use argv, preserving paths verbatim.</summary>
     public Task<MpvCommandResult> AddSubtitlesAsync(string path, bool select = true) =>
         SendCommandAsync("sub-add", path, select ? "select" : "auto");
     public Task<MpvCommandResult> RemoveSubtitlesAsync() => SendCommandAsync("sub-remove");
 
-    /// <summary>
-    /// ISSUE_13 — set by <see cref="EventLoopWorker"/>'s finally block. This is the ONLY reliable
-    /// signal that the background thread has genuinely stopped touching <c>_mpvHandle</c>.
-    /// </summary>
     private volatile bool _eventLoopExited;
     public bool IsHandleAbandoned { get; private set; }
 
@@ -739,7 +629,6 @@ public class MpvIpcClient : IDisposable
 
         UpdatePlaybackContribution();
 
-        bool loopStopped = true;
         if (_cts != null)
         {
             try { _cts.Cancel(); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
@@ -748,7 +637,22 @@ public class MpvIpcClient : IDisposable
             {
                 try { MpvWrapper.mpv_wakeup(_mpvHandle); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
             }
+        }
 
+        if (_ownsHandle && SynchronizationContext.Current != null)
+        {
+            new Thread(ReleaseNative) { IsBackground = true, Name = "mpv-teardown" }.Start();
+            return;
+        }
+        ReleaseNative();
+    }
+
+    private void ReleaseNative()
+    {
+        using var blocking = BlockingCallTracker.Enter("mpv player teardown");
+        bool loopStopped = true;
+        if (_cts != null)
+        {
             if (_eventLoopThread != null)
             {
                 try { loopStopped = _eventLoopThread.Join(TimeSpan.FromSeconds(3)); }

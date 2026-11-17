@@ -1,33 +1,10 @@
-﻿
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Numerics;
 using System.Security.Cryptography;
 
 namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>
-/// BINDELTA_01 — a binary patch: "the new file = the old file + these differences".
-///
-/// <para>The main program file changes in every release, but most of its bytes only MOVE (new code
-/// shifts everything after it). A plain copy-or-insert diff loses those; this one follows bsdiff:
-/// it finds long matches between old and new, then extends each match ALLOWING byte differences,
-/// stored as (new − old). Shifted code turns into long runs of zero differences, which Brotli
-/// compresses to almost nothing. Matches are found with a hash index over the old file instead of
-/// bsdiff's suffix array (memory: one int per 4 old bytes).</para>
-///
-/// <para>⚠️ A patch is never trusted on its own. The header names the exact old and new files by
-/// length and SHA-256; <see cref="Apply(Stream, Stream, Stream, CancellationToken)"/> refuses any
-/// other old file and re-hashes what it built. A wrong, damaged or malicious patch therefore produces
-/// an error, never a wrong file.</para>
-///
-/// <para>BINDELTA_02 — applying never holds a whole program file in memory: old file and patch are
-/// streamed through 64 KiB buffers (<see cref="StreamBufferSize"/>) into the output stream.</para>
-///
-/// <para>Format: "FVSDELTA1", old length (8), old SHA-256 (32), new length (8), new SHA-256 (32),
-/// then a Brotli stream of blocks: varint diffLength, varint extraLength, zig-zag varint seek,
-/// diffLength difference bytes, extraLength literal bytes.</para>
-/// </summary>
 public static class BinaryDelta
 {
     private static readonly byte[] Magic = "FVSDELTA1"u8.ToArray();
@@ -36,11 +13,8 @@ public static class BinaryDelta
     private const int Step = 4;
     private const int MinMatch = 16;
 
-    /// <summary>Header of a patch: which file it applies to and which file it makes.</summary>
     public readonly record struct Header(long OldLength, string OldSha256, long NewLength, string NewSha256);
 
-
-    /// <summary>Writes a patch that turns <paramref name="oldFile"/> into <paramref name="newFile"/>.</summary>
     public static void Create(byte[] oldFile, byte[] newFile, Stream output, int brotliQuality = 9)
     {
         output.Write(Magic);
@@ -137,7 +111,6 @@ public static class BinaryDelta
         return table;
     }
 
-    /// <summary>The longest exact match for neu[scan..] among the indexed candidate and the last offset.</summary>
     private static (int Pos, int Len) Search(byte[] old, byte[] neu, int scan, int[] table, int mask, int lastOffset)
     {
         int bestPos = 0, bestLen = 0;
@@ -176,7 +149,6 @@ public static class BinaryDelta
         return (int)(h ^ (h >> 29));
     }
 
-
     public static Header ReadHeader(Stream patch)
     {
         Span<byte> head = stackalloc byte[HeaderLength];
@@ -191,12 +163,6 @@ public static class BinaryDelta
         return new Header(oldLength, oldSha, newLength, newSha);
     }
 
-    /// <summary>
-    /// Rebuilds the new file in memory. Kept for small inputs and existing callers; it runs the SAME
-    /// streaming decoder as <see cref="Apply(Stream, Stream, Stream, CancellationToken)"/>. Throws
-    /// <see cref="InvalidDataException"/> when the old file is not the one the patch was made for,
-    /// the patch is damaged, or the result is not the promised file.
-    /// </summary>
     public static byte[] Apply(byte[] oldFile, Stream patch)
     {
         using var old = new MemoryStream(oldFile, writable: false);
@@ -205,21 +171,8 @@ public static class BinaryDelta
         return result.ToArray();
     }
 
-
-    /// <summary>
-    /// BINDELTA_02 — size of every managed buffer the streaming apply uses. Peak memory is
-    /// 3 × this + the Brotli decoder's window (≤ 16 MB, <see cref="BrotliFile.Window"/>), whatever
-    /// the size of the program file. The old whole-file path held old EXE + new EXE in RAM.
-    /// </summary>
     public const int StreamBufferSize = 64 * 1024;
 
-    /// <summary>
-    /// BINDELTA_02 — rebuilds the new file from a seekable <paramref name="oldFile"/> and
-    /// <paramref name="patch"/> into <paramref name="output"/>, through bounded 64 KiB buffers.
-    /// The old file is hashed and length-checked BEFORE anything is written; the result is hashed
-    /// while it is written and checked against the header at the end. On any exception the
-    /// output holds an unverified partial file and must be discarded (see <see cref="ApplyFile"/>).
-    /// </summary>
     public static Header Apply(Stream oldFile, Stream patch, Stream output, CancellationToken cancel = default)
     {
         ArgumentNullException.ThrowIfNull(oldFile);
@@ -302,13 +255,6 @@ public static class BinaryDelta
         return header;
     }
 
-    /// <summary>
-    /// BINDELTA_02 — streams <paramref name="oldPath"/> + <paramref name="patchPath"/> into a NEW file
-    /// <paramref name="outputPath"/> (replaced if present) and flushes it to disk. When anything fails
-    /// (damaged patch, wrong old file, wrong result, cancellation) the output file is deleted, so a
-    /// file at <paramref name="outputPath"/> after a normal return is complete and header-verified.
-    /// Callers still verify it against the signed manifest and publisher before promoting it.
-    /// </summary>
     public static Header ApplyFile(string oldPath, string patchPath, string outputPath, CancellationToken cancel = default)
     {
         using var old = new FileStream(oldPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 0);
@@ -343,7 +289,6 @@ public static class BinaryDelta
         output.Write(buffer, 0, count);
     }
 
-    /// <summary>target[i] = (byte)(target[i] + old[i]) — vectorised, wraps modulo 256.</summary>
     private static void AddModulo256(Span<byte> target, ReadOnlySpan<byte> old)
     {
         int i = 0;
@@ -362,10 +307,6 @@ public static class BinaryDelta
         return string.Equals(Convert.ToHexString(actual), expectedHex, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Bounded read-ahead over the decompressed patch. Tolerates streams that return any number of
-    /// bytes per Read (fragmented input); a premature end is a damaged patch, never a short file.
-    /// </summary>
     private sealed class PatchReader(Stream source, int size)
     {
         private readonly byte[] _buffer = new byte[size];

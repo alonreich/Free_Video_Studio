@@ -1,18 +1,10 @@
-﻿
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using System;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// Momentum & inertia physics controller for the timeline scrubber.
-/// Samples pointer velocity during drag; on release, enters a fling phase
-/// with friction decay until |v| < epsilon or a boundary is hit.
-/// Uses a fixed 60Hz DispatcherTimer (mirrors FluidVolumeSlider pattern).
-/// Honors the Playhead-Follow Rule: fling only seeks when PAUSED.
-/// </summary>
 public sealed class KineticScrubController : IDisposable
 {
     private const double PhysicsHz = 60.0;
@@ -30,13 +22,8 @@ public sealed class KineticScrubController : IDisposable
     private bool _isFlinging;
     private bool _disposed;
 
-    /// <summary>
-    /// Called every physics tick with the new seek target (in milliseconds).
-    /// The consumer should clamp and apply the seek.
-    /// </summary>
     public event Action<double>? SeekRequested;
 
-    /// <summary>Fired when the fling has fully settled.</summary>
     public event Action? FlingSettled;
 
     public KineticScrubController()
@@ -45,13 +32,6 @@ public sealed class KineticScrubController : IDisposable
         _timer.Tick += OnTick;
     }
 
-    /// <summary>
-    /// Call on PointerReleased to potentially start a fling.
-    /// </summary>
-    /// <param name="currentMs">Position at release in ms.</param>
-    /// <param name="minMs">Timeline lower bound (usually 0).</param>
-    /// <param name="maxMs">Timeline upper bound (video duration in ms).</param>
-    /// <param name="isPlaying">If true, the fling is suppressed (Playhead-Follow Rule).</param>
     public void Release(double currentMs, double minMs, double maxMs, bool isPlaying)
     {
         _currentMs = currentMs;
@@ -74,7 +54,6 @@ public sealed class KineticScrubController : IDisposable
         _timer.Start();
     }
 
-    /// <summary>Immediately cancel any active fling.</summary>
     public void Cancel()
     {
         _timer.Stop();

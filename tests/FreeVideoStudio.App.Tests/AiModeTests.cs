@@ -11,7 +11,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>AIMODE_01 — docs/04 UI-AIMODE.</summary>
 public sealed class AiModeTests
 {
     private const string FakeKey = "AIzaSy-dummy-test-key-000000000000";

@@ -6,10 +6,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// DIST-SMART — an update downloads only files whose CONTENT changed, never trusts a name, and never
-/// trusts a list that is not signed by the pinned publisher root.
-/// </summary>
 public sealed class SmartUpdateTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "fvs-smart-tests-" + Guid.NewGuid().ToString("N"));
@@ -17,7 +13,6 @@ public sealed class SmartUpdateTests : IDisposable
     private static void Put(string root, string name, string text)
     { string path = Path.Combine(root, name); Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, text); }
 
-    /// <summary>A release whose files are given as path → content, plus its smart manifest.</summary>
     private SmartUpdateManifest Release(string folder, params (string Path, string Text)[] files)
     {
         foreach ((string path, string text) in files) Put(folder, path, text);
@@ -117,7 +112,6 @@ public sealed class SmartUpdateTests : IDisposable
         Assert.Equal("mpv", File.ReadAllText(Path.Combine(result, "frontend", "mpv.dll")));
     }
 
-    /// <summary>NODROPPER_01 — the Inno Setup installer's unpacked folder (real names) installs; a changed byte still fails.</summary>
     [Fact]
     public void NoDropper01_TheInstallerFolderWithRealFileNamesInstallsAndIsStillHashChecked()
     {

@@ -3,9 +3,6 @@ using System.IO;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// PEAKMATH_01 — scratch-file hygiene lifted out of <c>MusicWizardWindow</c>.
-/// </summary>
 internal static class AudioPeakMath
 {
     internal static void DeleteTempFile(ref string? path)

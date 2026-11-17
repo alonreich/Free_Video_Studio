@@ -1,11 +1,7 @@
-﻿
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// Canvas math constants and exact backend rounding helpers.
-/// </summary>
 public static class CanvasMath
 {
     public static Frac BackendScale => CoordinateConstants.BackendScale;

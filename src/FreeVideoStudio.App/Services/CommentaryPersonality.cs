@@ -3,7 +3,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>COMMENTARYMIX_01 — the four one-click styles of the options window.</summary>
 public enum CommentaryPreset
 {
     HypeStreamer,
@@ -12,7 +11,6 @@ public enum CommentaryPreset
     RoastMe
 }
 
-/// <summary>COMMENTARYMIX_01 — how often the commentary speaks.</summary>
 public enum CommentaryChattiness
 {
     Quiet,
@@ -20,12 +18,6 @@ public enum CommentaryChattiness
     Busy
 }
 
-/// <summary>
-/// COMMENTARYMIX_01 — the commentary "brain": four amounts from 0 (Off) to 4 (Max) — Funny, Sarcastic,
-/// Energetic (0 = calm and quiet … 4 = maximum hype; it never means "technical") and Tactical — plus how
-/// often it talks and whether swearing is allowed. The AI receives each amount as WORDS ("A lot"), never as
-/// a number: models follow "strongly" far more reliably than "3 of 4".
-/// </summary>
 public sealed record CommentaryPersonality(
     int Funny,
     int Sarcastic,
@@ -37,22 +29,16 @@ public sealed record CommentaryPersonality(
     public const int MinLevel = 0;
     public const int MaxLevel = 4;
 
-    /// <summary>COMMENTARYMIX_01 — the five steps every slider has, in order.</summary>
     public static readonly string[] LevelNames = ["Off", "A little", "Some", "A lot", "Max"];
 
-    /// <summary>The Energetic slider's own five steps (calm … hype).</summary>
     public static readonly string[] EnergyNames = ["Calm", "Relaxed", "Normal", "Excited", "Max hype"];
 
-    /// <summary>TACTICAL_02 — from this Tactical amount on, lines may be longer and stay on screen longer.</summary>
     public const int LongLinesFromTactical = 3;
 
-    /// <summary>TACTICAL_02 — words per line: 8 normally, 12 when Tactical is "A lot" or "Max".</summary>
     public int MaxWordsPerLine => Tactical >= LongLinesFromTactical ? 12 : 8;
 
-    /// <summary>TACTICAL_02 — shortest time a line stays on screen in the finished video.</summary>
     public double MinReadableSec => Tactical >= LongLinesFromTactical ? 2.0 : CommentaryService.MinReadableOutputSec;
 
-    /// <summary>The same amounts, each clamped into 0…4.</summary>
     public CommentaryPersonality Normalized() => this with
     {
         Funny = Clamp(Funny),
@@ -67,7 +53,6 @@ public sealed record CommentaryPersonality(
 
     public static string EnergyName(int level) => EnergyNames[Clamp(level)];
 
-    /// <summary>COMMENTARYMIX_01 — the slider amounts each one-click style sets.</summary>
     public static CommentaryPersonality FromPreset(CommentaryPreset preset) => preset switch
     {
         CommentaryPreset.ChillFriend => new(Funny: 2, Sarcastic: 1, Energy: 0, Tactical: 1),
@@ -76,7 +61,6 @@ public sealed record CommentaryPersonality(
         _ => new(Funny: 1, Sarcastic: 0, Energy: 4, Tactical: 1),
     };
 
-    /// <summary>The style that matches an older single-tone choice (used before COMMENTARYMIX_01 existed).</summary>
     public static CommentaryPreset PresetForTone(CaptionTone tone) => tone switch
     {
         CaptionTone.Chill => CommentaryPreset.ChillFriend,
@@ -85,10 +69,6 @@ public sealed record CommentaryPersonality(
         _ => CommentaryPreset.HypeStreamer,
     };
 
-    /// <summary>
-    /// The single tone that best describes this mix — kept on the caption track for older readers
-    /// (<see cref="CaptionTrack.Tone"/>) and the "last tone" setting.
-    /// </summary>
     public CaptionTone DominantTone
     {
         get
@@ -101,9 +81,6 @@ public sealed record CommentaryPersonality(
         }
     }
 
-    /// <summary>
-    /// COMMENTARYMIX_01 — the prompt paragraph describing this mix in plain words for the AI. Pure.
-    /// </summary>
     public string DescribeForPrompt()
     {
         var p = Normalized();
@@ -132,13 +109,8 @@ public sealed record CommentaryPersonality(
     };
 }
 
-/// <summary>REWRITELINE_01 — the commentary mix the options window remembered last time.</summary>
 public static class CommentaryPersonalitySettings
 {
-    /// <summary>
-    /// The remembered style + slider amounts + how often + swearing. Never chosen → the one-click style matching
-    /// <paramref name="fallbackTone"/>.
-    /// </summary>
     public static CommentaryPersonality Remembered(Infrastructure.AppSettings s, CaptionTone fallbackTone)
     {
         CommentaryPreset preset = Enum.TryParse(s.AiCommentaryLastPreset, true, out CommentaryPreset p)

@@ -92,10 +92,6 @@ public sealed class CropConfigStore
         return Clone(healed);
     }
 
-    /// <summary>
-    /// SILENTRESET_01 — names the first failed precondition so the thrown message and the log line
-    /// say WHICH one, instead of the useless "unusable".
-    /// </summary>
     private static string DescribeUnusable(JsonObject config)
     {
         if (!TryGetInt(config["schema_version"], out int schemaVersion))

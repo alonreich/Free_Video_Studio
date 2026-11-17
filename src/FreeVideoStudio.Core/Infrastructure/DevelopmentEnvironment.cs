@@ -3,7 +3,6 @@ using System.Text;
 
 namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>DEVISOLATION_01: one storage/IPC boundary; application behaviour stays shared.</summary>
 public static class DevelopmentEnvironment
 {
     public const string MarkerFileName = ".fvs-development";
@@ -30,7 +29,6 @@ public static class DevelopmentEnvironment
             Guid.TryParseExact(Path.GetFileName(full), "N", out _) ? full : null;
     }
 
-    /// <summary>Keep direct launches and companion processes inside the same sandbox too.</summary>
     public static void InitializeFromRuntimeMarker()
     {
         Environment.SetEnvironmentVariable(SystemTempEnvironmentVariable, SystemTempRoot);

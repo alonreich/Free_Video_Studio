@@ -6,9 +6,6 @@ using SkiaSharp;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// AICAPTION_LAYOUT_01 — one laid-out subtitle line with exact positioning and wrapped words.
-/// </summary>
 public sealed record CaptionLayoutLine(
     double X,
     double Y,
@@ -17,9 +14,6 @@ public sealed record CaptionLayoutLine(
     string Text,
     IReadOnlyList<MappedCaptionWord> Words);
 
-/// <summary>
-/// AICAPTION_LAYOUT_01 — complete layout result for one caption line on the target canvas.
-/// </summary>
 public sealed record CaptionLayout(
     int LineId,
     double OutputStartSec,
@@ -31,11 +25,6 @@ public sealed record CaptionLayout(
     int FontSize,
     IReadOnlyList<CaptionLayoutLine> Lines);
 
-/// <summary>
-/// AICAPTION_LAYOUT_01 — Pure geometric layout engine for live commentary captions.
-/// Handles font measurement, word-wrapping (max 8 words/line, max 2 lines), portrait/landscape canvas
-/// rules (avoiding 150 px top/bottom voids in portrait), and dynamic collision avoidance over HUD rects.
-/// </summary>
 public static class CaptionLayoutEngine
 {
     public const int PortraitWidth = 1080;
@@ -49,31 +38,16 @@ public static class CaptionLayoutEngine
     public const int MaxWordsPerLine = 8;
     public const int MaxLinesOnScreen = 2;
 
-    /// <summary>AICAPTION_LAYOUT_02 — default caption font size on a 1080x1920 portrait canvas (was 54).</summary>
     public const int PortraitFontSize = 76;
 
-    /// <summary>AICAPTION_LAYOUT_02 — default caption font size on a 1920x1080 landscape canvas (was 58).</summary>
     public const int LandscapeFontSize = 64;
 
-    /// <summary>
-    /// AICAPTION_LAYOUT_02 — where the DEFAULT (BottomContent) caption's CENTRE sits, as a fraction of the canvas
-    /// height: exactly on the line between the upper two-thirds and the lower third. Above the bottom HUD band
-    /// (health / shield / stamina / hotbar) and below the action in the middle of the screen. HUD pieces that
-    /// still overlap push it further up (<see cref="AvoidHudCollisions"/>).
-    /// </summary>
     public const double DefaultCenterFraction = 2.0 / 3.0;
 
-    /// <summary>AICAPTION_LAYOUT_02 — the gap kept between a caption and a HUD piece it was moved off.</summary>
     public const double HudGapPx = 24.0;
 
-    /// <summary>
-    /// CAPTIONPLACE_01 — the TOP of a <see cref="CaptionPosition.Middle"/> caption box, as a fraction of the canvas
-    /// height: just under the centre, so the crosshair / aim point in the middle of the screen stays clear while
-    /// the text still sits where the eyes are. HUD pieces it overlaps push it DOWN.
-    /// </summary>
     public const double MiddleTopFraction = 0.54;
 
-    /// <summary>CAPTIONSIZE_01 — text size multiplier. Medium (1.0) is the size used before the option existed.</summary>
     public static double SizeScale(CaptionSize size) => size switch
     {
         CaptionSize.Small => 0.8,
@@ -81,14 +55,9 @@ public static class CaptionLayoutEngine
         _ => 1.0,
     };
 
-    /// <summary>CAPTIONSIZE_01 — the base font size for a canvas and a size choice.</summary>
     public static int BaseFontSize(bool isPortrait, CaptionSize size) =>
         (int)Math.Round((isPortrait ? PortraitFontSize : LandscapeFontSize) * SizeScale(size));
 
-    /// <summary>
-    /// Computes the layout for a single <see cref="MappedCaptionLine"/> given canvas dimensions, mode,
-    /// placement preset, and optional active HUD bounding boxes in output canvas pixels.
-    /// </summary>
     public static CaptionLayout ComputeLayout(
         MappedCaptionLine captionLine,
         int outputW,
@@ -174,10 +143,6 @@ public static class CaptionLayoutEngine
             positionedLines);
     }
 
-    /// <summary>
-    /// CAPTIONFIT_01 — clamps Y into [lo, hi]; on a frame too short for both margins (hi &lt; lo, e.g. a
-    /// 180p clip) the box is centred instead. Math.Clamp threw there and the whole export failed.
-    /// </summary>
     private static double Fit(double value, double lo, double hi, int outputH, double boxHeight) =>
         hi >= lo ? Math.Clamp(value, lo, hi) : Math.Max(0.0, (outputH - boxHeight) / 2.0);
 

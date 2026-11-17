@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -10,7 +9,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>Vertical level zone of a lit bar segment. Colour = level, never frequency.</summary>
 public enum SpectrumZone
 {
     Normal,
@@ -18,29 +16,13 @@ public enum SpectrumZone
     Peak,
 }
 
-/// <summary>One coloured, lit piece of a bar.</summary>
 public readonly record struct SpectrumSegment(Rect Rect, SpectrumZone Zone);
 
-/// <summary>One frequency band's column: its full slot and the lit segments inside it.</summary>
 public readonly record struct SpectrumBarGeometry(int BandIndex, Rect Slot, double Level, IReadOnlyList<SpectrumSegment> Segments)
 {
-    /// <summary>Top of the lit part (== Slot.Bottom when the bar is empty).</summary>
     public double LitTop => Segments.Count == 0 ? Slot.Bottom : Segments[^1].Rect.Top;
 }
 
-/// <summary>
-/// SPECTRUM_03 — the Voice Over studio's microphone frequency meter.
-///
-/// Many narrow, tall, bottom-aligned bars: one per <see cref="SpectrumBand"/>, low frequencies on
-/// the left, high on the right. A bar's HEIGHT is that band's level on the analyzer's dBFS scale
-/// (−60..0 dBFS); its COLOUR is the level zone: green below −18 dBFS, warning to −6 dBFS, red
-/// above. Unlit space stays the dark meter face. Nothing here is random and nothing moves without
-/// a fresh snapshot: silence draws empty bars, and when snapshots stop the bars release to zero
-/// (<see cref="SpectrumMeterBallistics"/>) and the control stops repainting.
-///
-/// Drawn directly in <see cref="Render"/> — no child controls, no per-tick layout. Colours come
-/// only from named theme tokens resolved in this control's own theme context (invariant #5).
-/// </summary>
 public sealed class MicrophoneSpectrumControl : Control
 {
     public const string BackgroundBrushKey = "AppMeterBackgroundBrush";
@@ -50,10 +32,8 @@ public sealed class MicrophoneSpectrumControl : Control
     public const string PeakBrushKey = "AppMeterPeakBrush";
     public const string LabelBrushKey = "AppMeterLabelBrush";
 
-    /// <summary>Level (0..1) where the warning zone starts: −18 dBFS on the −60..0 scale.</summary>
     public static readonly double WarningLevel = MicrophoneSpectrumAnalyzer.DbfsToLevel(-18.0);
 
-    /// <summary>Level (0..1) where the red zone starts: −6 dBFS.</summary>
     public static readonly double PeakLevel = MicrophoneSpectrumAnalyzer.DbfsToLevel(-6.0);
 
     public const double HorizontalPadding = 4.0;
@@ -64,7 +44,6 @@ public sealed class MicrophoneSpectrumControl : Control
     private readonly SpectrumMeterBallistics _ballistics = new();
     private readonly Stopwatch _clock = Stopwatch.StartNew();
 
-    /// <summary>The production band layout, so labels are truthful before the first snapshot arrives.</summary>
     private static readonly Lazy<IReadOnlyList<SpectrumBand>> DefaultBands =
         new(() => new MicrophoneSpectrumAnalyzer().Bands);
 
@@ -80,26 +59,17 @@ public sealed class MicrophoneSpectrumControl : Control
         ActualThemeVariantChanged += (_, _) => InvalidateVisual();
     }
 
-    /// <summary>The meter's current per-band display levels (after ballistics), 0..1.</summary>
     public IReadOnlyList<double> DisplayedLevels => _ballistics.Levels;
 
-    /// <summary>True when every bar is empty and nothing live is driving the meter (no repaint needed).</summary>
     public bool IsSettled => _ballistics.IsSettled;
 
-    /// <summary>Number of repaint requests issued by <see cref="Advance(MicrophoneSpectrumSnapshot?, double)"/>.</summary>
     public int InvalidationCount { get; private set; }
 
-    /// <summary>
-    /// Advances the meter with the newest snapshot (or null when there is no live input) using the
-    /// control's own monotonic clock. Call from the UI thread's studio tick.
-    /// </summary>
     public void Advance(MicrophoneSpectrumSnapshot? snapshot)
         => Advance(snapshot, _clock.Elapsed.TotalSeconds);
 
-    /// <summary>The input of the most recent <see cref="Advance(MicrophoneSpectrumSnapshot?, double)"/> (null = no live input).</summary>
     public MicrophoneSpectrumSnapshot? LastInput { get; private set; }
 
-    /// <summary>Deterministic variant for tests: <paramref name="nowSeconds"/> is monotonic time.</summary>
     public void Advance(MicrophoneSpectrumSnapshot? snapshot, double nowSeconds)
     {
         LastInput = snapshot;
@@ -110,7 +80,6 @@ public sealed class MicrophoneSpectrumControl : Control
         }
     }
 
-    /// <summary>Drops every bar to empty at once (window closing, device switch).</summary>
     public void Clear()
     {
         _ballistics.Reset();
@@ -118,7 +87,6 @@ public sealed class MicrophoneSpectrumControl : Control
         InvalidateVisual();
     }
 
-    /// <summary>The bar area inside <paramref name="size"/>: above the label strip, inside the padding.</summary>
     public static Rect GetBarArea(Size size)
     {
         double w = Math.Max(0, size.Width - 2 * HorizontalPadding);
@@ -126,10 +94,6 @@ public sealed class MicrophoneSpectrumControl : Control
         return new Rect(HorizontalPadding, TopPadding, w, h);
     }
 
-    /// <summary>
-    /// SPECTRUM_03 — pure layout: one bottom-aligned slot per band, equal widths, constant gaps,
-    /// lit segments split at the warning/peak thresholds. Used by <see cref="Render"/> and tests.
-    /// </summary>
     public static IReadOnlyList<SpectrumBarGeometry> ComputeBars(Size size, IReadOnlyList<double> levels)
     {
         var bars = new List<SpectrumBarGeometry>(levels.Count);
@@ -173,7 +137,6 @@ public sealed class MicrophoneSpectrumControl : Control
         into.Add(new SpectrumSegment(new Rect(x, top, width, low - top), zone));
     }
 
-    /// <summary>Resource key of a zone's brush.</summary>
     public static string ZoneBrushKey(SpectrumZone zone) => zone switch
     {
         SpectrumZone.Peak => PeakBrushKey,
@@ -181,10 +144,6 @@ public sealed class MicrophoneSpectrumControl : Control
         _ => NormalBrushKey,
     };
 
-    /// <summary>
-    /// Resolves a named token in THIS control's theme context (its ActualThemeVariant, its
-    /// ancestors' resources). Falls back to a named system brush only if the token is missing.
-    /// </summary>
     public IBrush ResolveBrush(string key)
     {
         if (this.TryFindResource(key, ActualThemeVariant, out object? value) && value is IBrush brush)
@@ -200,7 +159,6 @@ public sealed class MicrophoneSpectrumControl : Control
         };
     }
 
-    /// <summary>Text of the three range labels, from the actual band edges.</summary>
     public static (string Low, string Mid, string High) FormatRangeLabels(IReadOnlyList<SpectrumBand> bands)
     {
         if (bands.Count == 0) return ("LOW", "1 kHz", "HIGH");

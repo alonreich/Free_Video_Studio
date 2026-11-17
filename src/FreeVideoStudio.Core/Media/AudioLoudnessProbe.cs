@@ -1,98 +1,30 @@
-﻿
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// One loudness measurement of a source file, in the units FFmpeg's <c>loudnorm</c> analysis
-/// reports them.
-///
-/// LOUDSTD_REMOVED_01 — there is NO loudness standard in this app any more. The old
-/// "too quiet / too loud versus -14 LUFS" verdict, its prompt, its setting and the dead
-/// normalisation pipeline behind it were deleted. A reading exists for exactly three consumers:
-/// harsh-peak detection (<see cref="HasHarshPeaks"/>), the peak tamer's threshold
-/// (<see cref="PeakSafety.TamerThresholdDb"/>), and matching a meme / a Merger clip to the
-/// gameplay it sits in (<see cref="MemeLoudness"/>). None of them moves the gameplay level.
-/// </summary>
-/// <param name="IntegratedLufs">Average perceived loudness over the measured window (LUFS).</param>
-/// <param name="TruePeakDbtp">Highest true peak (dBTP). Above 0 clips.</param>
-/// <param name="LoudnessRangeLu">Spread between the quiet and loud parts (LU).</param>
 public sealed record LoudnessReading(
     double IntegratedLufs,
     double TruePeakDbtp,
     double LoudnessRangeLu)
 {
-    /// <summary>
-    /// Crest factor: how far the loudest instant sticks out above the average body of the
-    /// audio. A conversational clip sits near 10-14 LU; a gameplay capture with an explosion
-    /// or a scream spikes far higher, and that spike is what hurts a viewer wearing headphones.
-    /// </summary>
     public double PeakAboveAverageLu => TruePeakDbtp - IntegratedLufs;
 
-    /// <summary>
-    /// True when the file contains sudden peaks far above its own average AND those peaks
-    /// actually reach the danger zone — the "quiet video, then an explosion takes your head off"
-    /// problem, which the peak tamer fixes.
-    /// </summary>
     public bool HasHarshPeaks =>
         PeakAboveAverageLu > AudioLoudnessProbe.CrestWarnLu &&
         TruePeakDbtp > AudioLoudnessProbe.HarshPeakFloorDbtp;
 }
 
-/// <summary>
-/// Measures a media file's loudness and peaks (EBU R128, via FFmpeg's <c>loudnorm</c> in pure
-/// analysis mode — its output is discarded into the null muxer, nothing is ever normalised).
-/// </summary>
 public static class AudioLoudnessProbe
 {
-    /// <summary>
-    /// A true peak above this counts towards <see cref="LoudnessReading.HasHarshPeaks"/>.
-    /// </summary>
     public const double HarshPeakFloorDbtp = -1.5;
 
-    /// <summary>
-    /// BEDSEG_01 — the shortest window worth measuring on its own.
-    ///
-    /// EBU R128 integrated loudness gates in 400 ms blocks and then applies a relative gate across
-    /// them; with only a second or two of material the relative gate has almost nothing to work on
-    /// and loudnorm reports a figure that swings wildly or comes back as -70 (silence). Anything
-    /// shorter than this falls back to measuring the whole file — a known-imperfect answer beats a
-    /// random one.
-    /// </summary>
     public const double MinSegmentSec = 5.0;
 
-    /// <summary>
-    /// Crest factor above which peaks count as "harsh". Speech and music normally land around
-    /// 10-14 LU above their own average; beyond 15 LU there is a genuine bang in the file.
-    /// </summary>
     public const double CrestWarnLu = 15.0;
 
-    /// <summary>
-    /// Measures <paramref name="inputPath"/> end to end.
-    ///
-    /// Integrated loudness is only meaningful over a WHOLE CONTIGUOUS STRETCH — a clip that is
-    /// silent for a minute and then deafening averages out to something neither half resembles —
-    /// so this decodes the entire window rather than sampling within it. By default that window is
-    /// the whole file; BEDSEG_01 added the option to narrow it to the part that will actually be
-    /// used (the exported range of a clip).
-    /// Video, subtitles and data streams are dropped
-    /// (<c>-vn -sn -dn</c>) so only the audio is touched, which keeps it fast enough to run in
-    /// the background while the user is already working.
-    ///
-    /// Returns null when the file has no audio, when FFmpeg fails, or when cancelled. A null
-    /// return must never block the user — it simply means "we could not tell", and the caller
-    /// stays silent rather than guessing.
-    /// </summary>
-    /// <param name="segmentStartSec">
-    /// BEDSEG_01 — optional: measure only from this point in the file. See <see cref="MinSegmentSec"/>.
-    /// </param>
-    /// <param name="segmentDurationSec">
-    /// BEDSEG_01 — optional: measure only this many seconds. Ignored together with
-    /// <paramref name="segmentStartSec"/> when the window is shorter than <see cref="MinSegmentSec"/>.
-    /// </param>
     public static async Task<LoudnessReading?> MeasureAsync(
         string ffmpegPath,
         string inputPath,
@@ -133,7 +65,6 @@ public static class AudioLoudnessProbe
         double segmentStartSec,
         double segmentDurationSec)
     {
-
         bool useSegment = segmentDurationSec >= MinSegmentSec && segmentStartSec >= 0;
 
         Process? process = null;
@@ -221,10 +152,6 @@ public static class AudioLoudnessProbe
         }
     }
 
-    /// <summary>
-    /// Pulls the final JSON object out of loudnorm's stderr. The filter prints its report last,
-    /// so the LAST braces in the stream are the ones that matter.
-    /// </summary>
     private static LoudnessReading? ParseJsonBlock(string stdErr)
     {
         if (string.IsNullOrWhiteSpace(stdErr)) return null;

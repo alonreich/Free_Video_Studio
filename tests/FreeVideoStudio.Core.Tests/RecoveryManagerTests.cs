@@ -173,7 +173,6 @@ public class RecoveryManagerTests : IDisposable
         Assert.Equal(5800, item["zoom_end_ms"]?.GetValue<double>());
     }
 
-
     [Fact]
     public void WriteOrder_AQueuedSaveThatLosesTheRaceToAClearIsDropped()
     {
@@ -210,7 +209,6 @@ public class RecoveryManagerTests : IDisposable
         Assert.NotNull(loaded["granular_session"]);
     }
 
-
     private const int DeadPid = 2147483645;
 
     private byte[] WriteSnapshot()
@@ -219,7 +217,6 @@ public class RecoveryManagerTests : IDisposable
         return File.ReadAllBytes(_paths.RecoveryStateFile);
     }
 
-    /// <summary>Rewrites the live restore marker as if its owner process had died, keeping the attempt number.</summary>
     private void KillRestoreOwner()
     {
         string[] parts = File.ReadAllText(_paths.SafeModeSentinelFile).Trim().Split(':');
@@ -397,7 +394,6 @@ public class RecoveryManagerTests : IDisposable
         Assert.Null(_recovery.QuarantinedSnapshotFile);
     }
 
-    /// <summary>RESTOREFAIL_01 regression sentinel: a failed (non-crashing) restore must not ClearState() a valid snapshot.</summary>
     [Fact]
     public void RestoreFail_RegressionSentinel_RestorePathNeverClearsAfterApplyOrException()
     {
@@ -417,7 +413,6 @@ public class RecoveryManagerTests : IDisposable
         Assert.DoesNotContain("ClearState()", applyToFinally);
     }
 
-    /// <summary>RESTORECRASH_01 regression sentinel: the stale-owner branch must never delete the snapshot again.</summary>
     [Fact]
     public void RestoreCrash_RegressionSentinel_StaleOwnerBranchNeverDeletesSnapshot()
     {
@@ -431,7 +426,6 @@ public class RecoveryManagerTests : IDisposable
         Assert.True(start >= 0 && end > start);
         string body = src.Substring(start, end - start);
 
-        Assert.Contains("RESTORECRASH_01", body);
         Assert.DoesNotContain("RecoveryStateFile", body);
         Assert.DoesNotContain("AppSessionLockFile", body);
     }

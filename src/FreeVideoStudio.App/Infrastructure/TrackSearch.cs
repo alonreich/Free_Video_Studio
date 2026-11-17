@@ -2,17 +2,6 @@
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// TRACKSEARCH_01 — the music-library filter predicate, lifted out of <c>MusicWizardWindow</c>.
-///
-/// Three private statics on a 5,782-line class in which the identifier <c>Phase</c> appears 322
-/// times. Matching a search box against a track is not a wizard-phase concern and needs no window
-/// to test: given a query and a track, does it match. Bodies moved verbatim.
-///
-/// ⚠️ MATCHING IS DELIBERATELY FORGIVING. Users type part of an artist, part of a title, or a
-/// fragment in the wrong case. Tightening this to a prefix or exact match would make the library
-/// feel broken rather than precise.
-/// </summary>
 internal static class TrackSearch
 {
     internal static string NormalizeSearchQuery(string query)

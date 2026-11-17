@@ -4,16 +4,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// SECRETSCAN_01 (docs/05 SYS-AISETTINGS) — nothing that would let a stranger use the developer's
-/// accounts may be committed: Google API keys, private keys, GitHub tokens, or the code-signing
-/// certificate's private half and password. CI runs this on every push, so a pasted key fails the
-/// build BEFORE it reaches a public release.
-///
-/// <para>Only files git tracks (or would add) are scanned — the developer's own git-ignored
-/// <c>ssl-certificate/*.pfx</c>, <c>*.key.pem</c> and <c>*.password.txt</c> stay on their machine and
-/// are deliberately not read. A line can opt out with the marker <c>SECRETSCAN_ALLOW</c> (fake test keys).</para>
-/// </summary>
 public sealed class SecretLeakTests
 {
     private static readonly (string Name, Regex Pattern)[] Patterns =
@@ -32,7 +22,6 @@ public sealed class SecretLeakTests
         ".7z", ".pdf", ".ttf", ".otf", ".woff", ".woff2", ".bin", ".dat", ".so", ".pdb", ".cer",
     };
 
-    /// <summary>Files git tracks plus untracked files it would add (respects .gitignore). Null without git.</summary>
     private static IReadOnlyList<string>? GitCandidateFiles()
     {
         try
@@ -61,7 +50,6 @@ public sealed class SecretLeakTests
         }
     }
 
-    /// <summary>Fallback without git: the source, test, docs and build trees (never ssl-certificate/).</summary>
     private static IReadOnlyList<string> FallbackFiles()
     {
         var roots = new[] { "src", "tests", "docs", "build", ".github" }.Select(r => Path.Combine(RepoRoot.Path, r)).Where(Directory.Exists);

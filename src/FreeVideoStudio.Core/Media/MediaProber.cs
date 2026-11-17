@@ -1,6 +1,4 @@
-﻿
-
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json.Nodes;
 using System.Threading;
 using FreeVideoStudio.Core.Infrastructure;
@@ -20,7 +18,6 @@ public class MediaProber
     {
     }
 
-    /// <summary>LIBAVPROBE_03 — <paramref name="backend"/> pins the metadata source (tests, parity, benchmarks).</summary>
     public MediaProber(string ffprobePath, string videoPath, MediaProbeBackend backend)
     {
         _ffprobePath = ffprobePath;
@@ -28,15 +25,8 @@ public class MediaProber
         _backend = backend;
     }
 
-    /// <summary>"libav" or "ffprobe" — which backend produced the cached data; null before a successful probe.</summary>
     public string? AnsweredBy { get; private set; }
 
-    /// <summary>
-    /// ffprobe-shaped <c>-show_format -show_streams</c> JSON, memoised on success.
-    /// LIBAVPROBE_03: served by <see cref="MediaMetadataProbe"/> (native libav, ffprobe fallback).
-    /// The caching contract is unchanged: a failed probe or a timeout returns an empty object and
-    /// is NOT cached (the next call retries); an unexpected exception caches the empty object.
-    /// </summary>
     public async Task<JsonObject> ProbeAsync(CancellationToken ct = default)
     {
         if (_probeData != null) return _probeData;
@@ -134,7 +124,6 @@ public class MediaProber
         return $"{w}x{h}";
     }
 
-    /// <summary>COLOR_01 — colour description of the first video stream (see <see cref="ExportColorPolicy"/>).</summary>
     public async Task<VideoColorInfo> GetVideoColorInfoAsync()
     {
         var data = await ProbeAsync();
@@ -149,7 +138,6 @@ public class MediaProber
         return VideoColorInfo.Unknown;
     }
 
-    /// <summary>TIMINGTAG_02 — frame-exact timing tag (v2), or the v1 seconds tag, or null.</summary>
     public async Task<ExportTiming?> GetExportTimingAsync()
     {
         var data = await ProbeAsync();
@@ -195,10 +183,6 @@ public class MediaProber
         return 192;
     }
 
-    /// <summary>
-    /// Returns the source video stream bitrate in kbps. Falls back to the container
-    /// bitrate minus a nominal audio bitrate when the stream tag is missing.
-    /// </summary>
     public async Task<double> GetVideoBitrateKbpsAsync()
     {
         var data = await ProbeAsync();
@@ -238,11 +222,6 @@ public class MediaProber
         return 0;
     }
 
-
-    /// <summary>
-    /// Calculate video bitrate to hit target file size.
-    /// Port of calculate_video_bitrate().
-    /// </summary>
     public static int CalculateVideoBitrate(
         double durationSec, int audioKbps, double? targetMb,
         bool keepHighestRes, int qualityLevel,
@@ -256,14 +235,9 @@ public class MediaProber
         double videoBudgetBytes = targetBytes - audioTotalBytes;
         double videoKbps = (videoBudgetBytes * 8.0 / 1000.0) / durationSec;
 
-
         return Math.Max(300, Math.Min(EncoderManager.MaxBitrateKbps, (int)videoKbps));
     }
 
-    /// <summary>
-    /// Choose audio bitrate based on source quality and target file size.
-    /// Port of choose_audio_bitrate().
-    /// </summary>
     public static int ChooseAudioBitrate(int sourceAudioKbps, double durationSec, double? targetMb)
     {
         if (targetMb.HasValue && targetMb < 10)

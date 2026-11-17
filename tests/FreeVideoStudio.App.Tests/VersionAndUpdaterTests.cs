@@ -117,7 +117,6 @@ public sealed class VersionAndUpdaterTests : IDisposable
         Assert.Equal(string.Empty, cleared);
     }
 
-
     [Fact]
     public void DownloadProgressShowsPercentSizeSpeedAndTimeLeft()
     {
@@ -286,10 +285,6 @@ public sealed class VersionAndUpdaterTests : IDisposable
         }
     }
 
-    /// <summary>
-    /// UPDATECONSENT_01 — the startup check asks first (nothing is sent before the answer) and never
-    /// contacts GitHub sooner than five minutes after the window opens.
-    /// </summary>
     [Fact]
     public void UpdateConsent01_NoNetworkAtStartupBeforeConsentAndBeforeFiveMinutes()
     {

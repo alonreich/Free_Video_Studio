@@ -1,62 +1,12 @@
-﻿
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 
 namespace FreeVideoStudio.Core.Media.Native;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// LIBAVFRAME_01 — ffmpeg's <c>-ss T -i FILE -frames:v 1 [-vf scale=W:-2]</c>, without the process.
-///
-/// <para>
-/// Every step mirrors fftools at 1e5c65f539 (the bundled N-119166 build), so the SAME frame comes out:
-///   1. OPEN — the shared LibAvMediaBackend.OpenInputBlocking (scan_all_pmts=1, interrupt callback,
-///      find_stream_info). Layout guards as LIBAVPROBE_01, plus AVFrame/AVPacket default guards.
-///   2. SEEK (ffmpeg_demux.c ifile_open) — timestamp = T + ic->start_time; when the demuxer lacks
-///      AVFMT_SEEK_TO_PTS and any stream has video_delay, seek 3/23 s earlier (the dts heuristic);
-///      avformat_seek_file(ic, -1, INT64_MIN, ts, ts, 0). A failed seek is ignored, as ffmpeg does.
-///   3. STREAM (ffmpeg_mux_init.c map_auto_video) — score = w·h + 1e8·NEW_PACKETS + 5e6·DEFAULT,
-///      attached pictures score 1; highest wins, first on ties. All other streams → AVDISCARD_ALL
-///      (ffmpeg discards unused inputs the same way, after the seek).
-///   4. DECODE (ffmpeg_dec.c) — avcodec_find_decoder(codec_id), threads=auto, pkt_timebase =
-///      stream time_base; flushed after the seek; send/receive until a frame is SELECTED.
-///   5. SELECT (ffmpeg_demux ts_offset + ffmpeg_filter insert_trim + trim.c) — frame pts is
-///      best_effort_timestamp; ffmpeg shifts every packet by av_rescale_q(-timestamp, 1/1e6, tb)
-///      and its trim filter (start 0) keeps the FIRST frame with shifted pts ≥ 0. So: the first
-///      decoded frame with best_effort + offset ≥ 0. Real timestamps and time_base only — never a
-///      nominal frame rate. End of stream before such a frame → NoFrame (ffmpeg writes nothing).
-///   6. ORIENT (ffmpeg_filter.c autorotate) — the frame's DISPLAYMATRIX side data gives transpose
-///      clock / cclock / *_flip, hflip+vflip, or a lone vflip, exactly as ffmpeg chooses them; any
-///      other angle needs the rotate filter → MediaError (subprocess).
-///   7. SCALE (vf_scale.c + scale_eval.c) — out size from the ORIENTED size: W wide, height
-///      av_rescale(W, h, w·2)·2 for -2. ONE sws_scale_frame from the decoded format straight to rgb24 (ffmpeg's png format; widened to BGRA)
-///      at that size (swscale defaults = bicubic; interlaced flag cleared and chroma location
-///      reset exactly as vf_scale's defaults do), so an 8K source never becomes an 8K managed buffer.
-///      The 90° transposes are applied to the small BGRA result in managed code.
-/// </para>
-///
-/// <para>
-/// Deliberately NOT reproduced (→ MediaError → ffmpeg subprocess, so the outcome is unchanged):
-/// attached-picture streams, container-level cropping (AV_PKT_DATA_FRAME_CROPPING), non-90°
-/// rotation, frames without any timestamp. Not handled at all (same as most players): MPEG-TS
-/// timestamp wrap/discontinuity correction.
-/// </para>
-///
-/// <para>
-/// ⚠️ OWNERSHIP — ALL ON ONE POOL THREAD, ALL DETERMINISTIC, REVERSE ORDER OF CREATION:
-/// SwsContextHandle → dst FrameHandle → decode FrameHandle → PacketHandle → CodecContextHandle →
-/// FormatContextHandle → CancellationTokenRegistration → InterruptStateHandle (LAST, after the
-/// context that points at it is closed). Each SafeHandle is created only from a non-NULL pointer
-/// and frees with the matching libav *_free(&amp;p). The pixels are COPIED into a managed array before
-/// any handle is released; nothing native escapes this method.
-/// </para>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public sealed class LibAvFrameDecoder : INativeFrameDecoder
 {
     public static LibAvFrameDecoder Instance { get; } = new();
 
-    /// <summary>Largest output this path will allocate (16384² BGRA = 1 GiB is already absurd for a still).</summary>
     private const long MaxOutputPixels = 8192L * 8192L;
 
     public async Task<NativeFrameResult> DecodeAsync(string ffmpegPath, string mediaPath, VideoFrameRequest request, TimeSpan timeout, CancellationToken cancellationToken)
@@ -282,7 +232,6 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
             throw new OperationCanceledException("Native frame decode timed out.");
     }
 
-    /// <summary>ffmpeg_mux_init.c map_auto_video for ONE input file and an image output (qcr ≠ APIC).</summary>
     private static unsafe int SelectVideoStream(AVFormatContextView* ic)
     {
         int best = -1;
@@ -313,7 +262,6 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
         return (c[0] | c[1] | c[2] | c[3]) != 0;
     }
 
-    /// <summary>Guards for the fields only this tier reads (on top of LibAvMediaBackend.ValidateLayout).</summary>
     private static unsafe bool ValidateFrameTierLayout(AVFormatContextView* ic, out string problem)
     {
         if (ic->iformat == null || ic->iformat->name == null) { problem = "AVFormatContext.iformat"; return false; }
@@ -327,7 +275,6 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
         return true;
     }
 
-    /// <summary>libavcodec/packet.c get_packet_defaults: pts = dts = AV_NOPTS_VALUE, no data.</summary>
     private static unsafe bool ValidateFreshPacket(AVPacketView* p, out string problem)
     {
         bool ok = p->pts == LibAvConstants.AV_NOPTS_VALUE && p->dts == LibAvConstants.AV_NOPTS_VALUE
@@ -336,7 +283,6 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
         return ok;
     }
 
-    /// <summary>libavutil/frame.c get_frame_defaults — a shifted AVFrame layout cannot pass all of these.</summary>
     private static unsafe bool ValidateFreshFrame(AVFrameView* f, out string problem)
     {
         bool ok = f->extended_data == (void*)f
@@ -354,13 +300,8 @@ public sealed class LibAvFrameDecoder : INativeFrameDecoder
     }
 }
 
-/// <summary>
-/// LIBAVFRAME_01 — the integer math ffmpeg uses, reproduced exactly (pure managed, unit-tested
-/// without the DLLs).
-/// </summary>
 internal static class FrameMath
 {
-    /// <summary>libavutil/mathematics.c av_rescale_rnd(a, b, c, AV_ROUND_NEAR_INF): half away from zero.</summary>
     public static long RescaleNearInf(long a, long b, long c)
     {
         if (c <= 0 || b < 0) throw new ArgumentOutOfRangeException(nameof(c));
@@ -369,14 +310,9 @@ internal static class FrameMath
         return (long)(r / c);
     }
 
-    /// <summary>av_rescale_q(a, bq, cq) = av_rescale_rnd(a, bq.num·cq.den, cq.num·bq.den, NEAR_INF).</summary>
     public static long RescaleQ(long a, int bNum, int bDen, int cNum, int cDen)
         => RescaleNearInf(a, (long)bNum * cDen, (long)cNum * bDen);
 
-    /// <summary>
-    /// libavfilter/scale_eval.c ff_scale_adjust_dimensions for <c>scale=W:-1</c> / <c>scale=W:-2</c>
-    /// (w_adj = 1, no force_original_aspect_ratio). targetWidth 0 = keep the input size.
-    /// </summary>
     public static bool TryOutputSize(int inW, int inH, int targetWidth, bool evenHeight, out int outW, out int outH)
     {
         outW = inW;
@@ -392,14 +328,8 @@ internal static class FrameMath
     }
 }
 
-/// <summary>
-/// LIBAVFRAME_01 — ffmpeg's autorotate decision (fftools/ffmpeg_filter.c configure_input_video_filter
-/// + cmdutils.c get_rotation + libavutil/display.c av_display_rotation_get) and the matching pixel
-/// remaps of vf_transpose / vf_hflip / vf_vflip, applied to a packed 32-bit image.
-/// </summary>
 internal readonly record struct FrameOrientation(int TransposeDir, bool HFlip, bool VFlip, bool Unsupported)
 {
-    /// <summary>vf_transpose dir values: 0 cclock_flip, 1 clock, 2 cclock, 3 clock_flip; -1 = none.</summary>
     public static readonly FrameOrientation Identity = new(-1, false, false, false);
 
     public bool SwapsAxes => TransposeDir >= 0;
@@ -416,7 +346,6 @@ internal readonly record struct FrameOrientation(int TransposeDir, bool HFlip, b
         return Identity;
     }
 
-    /// <summary>fftools/cmdutils.c get_rotation (C round() = half away from zero).</summary>
     internal static double GetRotation(int[] m)
     {
         double theta = -Math.Round(DisplayRotationGet(m), MidpointRounding.AwayFromZero);
@@ -424,7 +353,6 @@ internal readonly record struct FrameOrientation(int TransposeDir, bool HFlip, b
         return theta;
     }
 
-    /// <summary>libavutil/display.c av_display_rotation_get (16.16 fixed point).</summary>
     internal static double DisplayRotationGet(int[] m)
     {
         static double Fp(int x) => x / 65536.0;
@@ -435,11 +363,6 @@ internal readonly record struct FrameOrientation(int TransposeDir, bool HFlip, b
         return -rotation;
     }
 
-    /// <summary>
-    /// Applies the filters ffmpeg would insert, in ffmpeg's order (transpose, or hflip then vflip),
-    /// to a packed width×height image of 4-byte pixels. Returns a new buffer (or the same one when
-    /// nothing applies).
-    /// </summary>
     public byte[] Apply(byte[] src, int w, int h, out int outW, out int outH)
     {
         outW = w;

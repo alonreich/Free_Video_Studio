@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Avalonia.Threading;
 using FreeVideoStudio.App.Abstractions;
@@ -8,45 +7,10 @@ using FreeVideoStudio.Core.Abstractions;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// FAULTTIER_01 — the single routing table from a caught exception to what the user sees.
-///
-/// <para>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// THE RULE THIS ENFORCES: <b>silence is not one of the options.</b> A fault arrives here, is
-/// classified once, and leaves by exactly one of three doors — debug log, floating pill, or modal
-/// dialog. There is no fourth door and no early return. The previous arrangement had 917 catch
-/// blocks each making this decision privately, and the decision they overwhelmingly made was
-/// "log it and say nothing", which is how a broken thumbnail, a dead ffprobe and a failed
-/// settings write all became indistinguishable from a user mis-click.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </para>
-///
-/// <para>
-/// <b>FAULTSTORM_01 — a fault reporter needs its own flood control.</b> Degraded faults are raised
-/// from worker threads, and a failing per-frame operation raises the same one at frame rate.
-/// <c>FloatingNotice</c> already dedupes identical TEXT inside 1.4s (F4), but a fault whose message
-/// embeds a changing value defeats that. The gate here is keyed on <c>(Tier, Area, UserMessage)</c>
-/// and is deliberately WIDER than the notice's own: <see cref="DegradedRepeatWindowSeconds"/>. A
-/// suppressed repeat still reaches the log, so nothing is lost for diagnosis — only the user is
-/// spared the pile.
-/// </para>
-///
-/// <para>
-/// <b>This class must never throw.</b> Anything that can fail inside it is wrapped, because a
-/// reporter that can fault is a reporter that call sites will wrap in <c>try { } catch { }</c>,
-/// and that is precisely the shape being retired.
-/// </para>
-/// </summary>
 public sealed class UserFacingFaultSink : IFaultSink
 {
-    /// <summary>FAULTSTORM_01 — how long an identical Degraded fault stays suppressed on screen.</summary>
     private const int DegradedRepeatWindowSeconds = 8;
 
-    /// <summary>
-    /// FAULTSTORM_01 — a Fatal dialog is MODAL, so a repeat is not merely noisy, it is a trap the
-    /// user cannot click out of. Identical fatals are collapsed for far longer than degraded ones.
-    /// </summary>
     private const int FatalRepeatWindowSeconds = 60;
 
     private readonly IUserNotifier _notifier;
@@ -115,11 +79,6 @@ public sealed class UserFacingFaultSink : IFaultSink
         }
     }
 
-    /// <summary>FAULTSTORM_01 — true when this exact fault has not been shown inside the window.</summary>
-    /// <summary>
-    /// LOGVIS_01 — Swallowed() details start "File.cs:123 Member() — …". That prefix identifies the
-    /// call site. Other details are keyed by their first 48 characters.
-    /// </summary>
     private static string CallSiteKey(string detail)
     {
         int dash = detail.IndexOf(" — ", StringComparison.Ordinal);
@@ -159,7 +118,6 @@ public sealed class UserFacingFaultSink : IFaultSink
         }
     }
 
-    /// <summary>Turns the log's uppercase subsystem tag into a dialog caption a person can read.</summary>
     private static string TitleFor(string area) => area switch
     {
         "EXPORT"  => "The export could not continue",
@@ -170,11 +128,6 @@ public sealed class UserFacingFaultSink : IFaultSink
     };
 }
 
-/// <summary>
-/// INJSEAM_03 — the shipping <see cref="IUserNotifier"/>: a thin adapter over the existing
-/// <c>FloatingNotice</c> and <c>NativeDialog</c>, resolving the target window at call time through
-/// <see cref="IActiveWindowProvider"/>.
-/// </summary>
 public sealed class AvaloniaUserNotifier : IUserNotifier
 {
     private readonly IActiveWindowProvider _windows;

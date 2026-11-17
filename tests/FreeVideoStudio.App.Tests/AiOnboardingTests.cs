@@ -41,11 +41,20 @@ public sealed class AiOnboardingTests
     }
 
     [Fact]
+    public void StartScreen_HasNoAiTagline_AndNoKeyWarningButton()
+    {
+        string xaml = Read("FreeVideoStudio.App", "MainWindow.axaml");
+        string quick = Read("FreeVideoStudio.App", "MainWindow.QuickStart.cs");
+        Assert.DoesNotContain("AI can zoom, write captions", xaml + quick);
+        Assert.DoesNotContain("AiSetupHintButton", xaml + quick);
+        Assert.DoesNotContain("AI key needs attention", xaml + quick);
+    }
+
+    [Fact]
     public void AiButtonsWithoutAnAiOpenTheSetupInsteadOfAnError()
     {
         Assert.DoesNotContain("API Key Missing", Read("FreeVideoStudio.App", "GranularSpeedEditorWindow.CaptionsLane.cs"));
         Assert.Contains("SetUpAiThenScanAsync", Read("FreeVideoStudio.App", "MainWindow.AiElimination.cs"));
-        Assert.Contains("AiModeWindow.EnsureSetUpAsync", Read("FreeVideoStudio.App", "MainWindow.QuickStart.cs"));
     }
 
     [Fact]

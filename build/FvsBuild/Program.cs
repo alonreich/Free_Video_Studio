@@ -2,17 +2,6 @@
 
 namespace FvsBuild;
 
-/// <summary>
-/// FvsBuild - structured replacement for the old monolithic Build.cmd.
-/// Pipeline: [release gate: preflight -> version commit + tag (RELGATE_01)] -> stop this repository's
-/// processes (BUILDKILL_01) -> clean -> detect MSVC toolchain -> NativeAOT publish to staging -> PE identity
-/// (PEIDENTITY_01) -> sign the program -> stage backend/frontend/starter files -> manifests -> smart-update
-/// assets + signed file list -> Inno Setup installer into .\compiled (NODROPPER_01) -> sign it -> release
-/// update.json -> validate exactly one file -> cleanup -> [push commit + tag -> GitHub release from that tag
-/// -> promote the release notes (RELNOTES_01)].
-/// Exit codes (consumed by CI and by Build.cmd): 0 = OK, 1 = BUILD FAILED (or the release gate refused),
-/// 2 = build OK but the GitHub publish did not complete.
-/// </summary>
 internal static class Program
 {
     private const int ExitOk = 0;
@@ -237,10 +226,6 @@ internal static class Program
         }
     }
 
-    /// <summary>
-    /// RELRESUME_01 — finishes the last release from what its own run left behind: publishes it (or replaces
-    /// its unverified draft) and records its notes. Builds and stamps nothing.
-    /// </summary>
     private static int RunResume(BuildLog log, bool beta, bool assumeYes, DateTimeOffset started)
     {
         ReleaseGate.ResumePlan? resume = ReleaseGate.PreflightResume(beta, assumeYes, log);
@@ -268,17 +253,12 @@ internal static class Program
         return ExitOk;
     }
 
-    /// <summary>RELGATE_01 — a failed release build takes its version commit and tag back with it.</summary>
     private static int FailRelease(ReleasePlan? plan, BuildLog log, DateTimeOffset started)
     {
         if (plan is not null) ReleaseGate.Undo(plan, log);
         return FailBuild(log, started);
     }
 
-    /// <summary>
-    /// The :BUILD_NATIVE ladder. NODROPPER_01: ONE NativeAOT publish (the program); the release is
-    /// packed by Inno Setup, not embedded in a second program.
-    /// </summary>
     private static bool RunNativeAotStages(BuildLog log, string buildVersion)
     {
         Staging.PurgeTempArtifacts(log);

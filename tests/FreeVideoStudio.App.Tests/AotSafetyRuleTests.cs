@@ -1,5 +1,4 @@
-﻿
-using System.IO;
+﻿using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -7,23 +6,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// AOTSAFETY_03 / AOTCLEAN_01 — pins the release-build analyser policy in FreeVideoStudio.App.csproj.
-///
-/// <para>
-/// AOTCLEAN_01 (2026-09-25) replaced the interim policy described below. Every IL finding is now
-/// fatal and none is muted or collapsed: the findings were fixed at the source (Avalonia 11.3,
-/// SkiaSharp 3, NAudio.Core/WinMM only, first-party D3D11 interop instead of Vortice/SharpGen).
-/// </para>
-///
-/// <para>
-/// From 2026-09-20 every Build.cmd run failed. AOTSAFETY_01 turned the trim/AOT analysers on, and
-/// Staging.Publish runs with TreatWarningsAsErrors=true. Third-party summary warnings (IL2104/IL3053)
-/// and two IL2026 lines from inside Avalonia 11.0 became fatal. The fix keeps first-party findings
-/// fatal and lets third-party summaries through. These tests stop either half from drifting: re-muting the
-/// analysers, or widening the non-fatal list until first-party findings slip through too.
-/// </para>
-/// </summary>
 public sealed class AotSafetyRuleTests
 {
     private static XDocument LoadAppProject()
@@ -41,7 +23,6 @@ public sealed class AotSafetyRuleTests
         }
     }
 
-    /// <summary>AOTCLEAN_01 — no IL code is ever downgraded from an error.</summary>
     [Fact]
     public void NoTrimOrAotCodeIsNonFatal()
     {
@@ -54,7 +35,6 @@ public sealed class AotSafetyRuleTests
         Assert.Empty(codes);
     }
 
-    /// <summary>AOTCLEAN_01 — no IL code is muted anywhere (global NoWarn or inside a target).</summary>
     [Fact]
     public void NoTrimOrAotCodeIsMuted()
     {
@@ -67,7 +47,6 @@ public sealed class AotSafetyRuleTests
         Assert.Empty(muted);
     }
 
-    /// <summary>AOTCLEAN_01 — third-party findings are never collapsed into a summary line.</summary>
     [Fact]
     public void ThirdPartyFindingsAreNeverCollapsed()
     {
@@ -75,7 +54,6 @@ public sealed class AotSafetyRuleTests
         Assert.DoesNotContain(doc.Descendants("TrimmerSingleWarn"), e => e.Value.Trim().Equals("true", System.StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>AOTCLEAN_02/03 — the packages whose code NativeAOT cannot run stay out.</summary>
     [Theory]
     [InlineData("NAudio")]
     [InlineData("NAudio.Wasapi")]
@@ -90,11 +68,6 @@ public sealed class AotSafetyRuleTests
         }
     }
 
-    /// <summary>MICHEALTH_02 — NAudio.WinMM below 3.1.0 marshals WAVEHDR as a class; under NativeAOT
-    /// each P/Invoke gets a temporary copy, the driver's header updates are lost, and capture dies
-    /// with "WaveHeaderUnprepared calling waveInAddBuffer" (field log 2026-10-05) while JIT tests stay
-    /// green. Both projects must reference Core and WinMM at the SAME version, never below 3.1.0.
-    /// A version check does not prove capture works — the opt-in NativeAOT smoke does (MICSMOKE_01).</summary>
     [Fact]
     public void NAudioWinMmStaysAtTheNativeAotFixedRelease()
     {

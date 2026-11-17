@@ -1,8 +1,6 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using FvsVerify;
-
 
 string start = args.Length > 0 ? args[0] : Environment.CurrentDirectory;
 

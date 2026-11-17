@@ -17,6 +17,8 @@ internal static class ChatGptPlanTransport
 {
     internal const string Tag = "CHATGPTPLAN_01";
     internal const string ResponsesEndpoint = "https://api.openai.com/v1/responses";
+
+    internal const string AnswerLogTag = "AITRACE_03";
     internal const string ModelsEndpoint = "https://api.openai.com/v1/models";
 
     private static volatile bool s_formatRejected;
@@ -116,13 +118,23 @@ internal static class ChatGptPlanTransport
         return buffer.WrittenSpan.ToArray();
     }
 
-    internal readonly record struct StreamResult(string Text, bool Incomplete, long Input, long Output, long Reasoning, string ErrorCode, string ErrorMessage, string ErrorParam);
+    internal readonly record struct StreamResult(string Text, bool Incomplete, long Input, long Output, long Reasoning, string ErrorCode, string ErrorMessage, string ErrorParam, bool Finished = true, bool Refused = false);
+
+    internal const string RefusalStreamTag = "AIPLANREFUSAL_01";
+
+    internal const string StreamFailureTag = "AIPLANFAIL_01";
+
+    internal const string StreamEndTag = "AIPLANSTREAM_01";
+
+    internal const string InterruptedFinishReason = "interrupted";
 
     internal static StreamResult ReadEvents(IEnumerable<string> dataLines)
     {
         var text = new StringBuilder();
         string? finalText = null;
         bool incomplete = false;
+        bool finished = false;
+        bool refused = false;
         long input = 0, output = 0, reasoning = 0;
         string code = "", message = "", param = "";
         foreach (string data in dataLines)
@@ -143,12 +155,25 @@ internal static class ChatGptPlanTransport
                     case "response.output_text.done":
                         if (r.TryGetProperty("text", out var done) && done.ValueKind == JsonValueKind.String) finalText = done.GetString();
                         break;
+                    case "response.refusal.delta":
+                    case "response.refusal.done":
+                        refused = true;
+                        break;
                     case "response.completed":
                     case "response.incomplete":
                     case "response.failed":
                         if (r.TryGetProperty("response", out var resp) && resp.ValueKind == JsonValueKind.Object)
                         {
-                            if (type == "response.incomplete") incomplete = true;
+                            finished = true;
+                            if (type == "response.incomplete")
+                            {
+                                if (resp.TryGetProperty("incomplete_details", out var why) && why.ValueKind == JsonValueKind.Object
+                                    && why.TryGetProperty("reason", out var reason) && reason.ValueKind == JsonValueKind.String
+                                    && reason.GetString() == "content_filter")
+                                    refused = true;
+                                else
+                                    incomplete = true;
+                            }
                             ReadUsage(resp, ref input, ref output, ref reasoning);
                             if (type == "response.failed" && resp.TryGetProperty("error", out var fe) && fe.ValueKind == JsonValueKind.Object)
                                 ReadError(fe, ref code, ref message, ref param);
@@ -161,7 +186,7 @@ internal static class ChatGptPlanTransport
                 }
             }
         }
-        return new StreamResult(finalText ?? text.ToString(), incomplete, input, output, reasoning, code, message, param);
+        return new StreamResult(finalText ?? text.ToString(), incomplete, input, output, reasoning, code, message, param, finished, refused);
     }
 
     private static void ReadUsage(JsonElement resp, ref long input, ref long output, ref long reasoning)
@@ -193,7 +218,7 @@ internal static class ChatGptPlanTransport
             w.WriteString("role", "assistant");
             w.WriteString("content", r.Text);
             w.WriteEndObject();
-            w.WriteString("finish_reason", r.Incomplete ? "length" : "stop");
+            w.WriteString("finish_reason", r.Refused ? "content_filter" : r.Incomplete ? "length" : r.Finished ? "stop" : InterruptedFinishReason);
             w.WriteEndObject();
             w.WriteEndArray();
             w.WriteStartObject("usage");
@@ -225,6 +250,10 @@ internal static class ChatGptPlanTransport
                 $"ChatGPT plan usage does not support part of this request{(param.Length > 0 ? $" ({param})" : "")}.", "unsupported_capability " + detail, status),
             "subscription_sharing_invalid_user" => new AiProviderException(AiVendor.OpenAI, AiProviderErrorKind.InvalidKey,
                 "Your ChatGPT sign-in has ended. Sign in again: Settings › AI › Continue with ChatGPT.", detail, status),
+            "server_error" => new AiProviderException(AiVendor.OpenAI, AiProviderErrorKind.Overloaded,
+                "ChatGPT is busy right now. Trying again…", $"{StreamFailureTag}: {detail}", status),
+            "rate_limit_exceeded" => new AiProviderException(AiVendor.OpenAI, AiProviderErrorKind.RateLimited,
+                "ChatGPT is limiting requests right now. Waiting a moment…", $"{StreamFailureTag}: {detail}", status),
             "model_not_found" => new AiProviderException(AiVendor.OpenAI, AiProviderErrorKind.ModelNotFound,
                 "This AI model is not available on your ChatGPT plan. Another one is picked automatically.", detail, status),
             _ => status switch
@@ -300,9 +329,14 @@ internal static class ChatGptPlanTransport
                         if (line.StartsWith("data:", StringComparison.Ordinal)) lines.Add(line[5..].TrimStart());
                 }
                 StreamResult result = ReadEvents(lines);
+                AiDiagnostics.Write(diagnosticId, $"HTTP {status} answer={result.Text} usage=in:{result.Input} out:{result.Output} reasoning:{result.Reasoning}{(result.Incomplete ? " incomplete" : "")}", token);
                 AiDiagnostics.End(diagnosticId, $"HTTP {status} stream events={lines.Count} {result.ErrorCode}", clock.Elapsed, token);
+                if (result.Refused)
+                    RuntimeLog.Info("OPENAI", $"{RefusalStreamTag}: ChatGPT plan declined to answer.");
                 if (result.ErrorCode.Length > 0 || (result.Text.Length == 0 && !result.Incomplete && result.ErrorMessage.Length > 0))
                     throw Classify(result.ErrorCode == "subscription_sharing_usage_limit_exceeded" ? 429 : 400, result.ErrorCode, result.ErrorMessage, result.ErrorParam, null);
+                if (!result.Finished)
+                    throw Interrupted($"{StreamEndTag}: stream ended without a finish event after {lines.Count} events");
 
                 AiUsageMeter.Record(AiVendor.OpenAI, model, result.Input, Math.Max(0, result.Output - result.Reasoning), result.Reasoning, null, ChatGptAuth.CredentialMarker);
                 long total = result.Input + result.Output;
@@ -326,7 +360,15 @@ internal static class ChatGptPlanTransport
             AiDiagnostics.End(diagnosticId, "kind=Network", clock.Elapsed, ChatGptAuth.CredentialMarker);
             throw new AiProviderException(AiVendor.OpenAI, AiProviderErrorKind.Network, "Could not reach ChatGPT. Check your internet connection.", ex.GetType().Name);
         }
+        catch (IOException ex)
+        {
+            AiDiagnostics.End(diagnosticId, "kind=Network", clock.Elapsed, ChatGptAuth.CredentialMarker);
+            throw Interrupted($"{StreamEndTag}: {ex.GetType().Name} while reading the answer");
+        }
     }
+
+    internal static AiProviderException Interrupted(string detail)
+        => new(AiVendor.OpenAI, AiProviderErrorKind.Network, "ChatGPT's answer stopped part-way. Trying again…", detail);
 
     internal static IReadOnlyList<string> ParseModels(string? body)
     {

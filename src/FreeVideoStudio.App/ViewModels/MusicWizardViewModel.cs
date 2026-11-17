@@ -4,18 +4,6 @@ using Avalonia.Media;
 
 namespace FreeVideoStudio.App.ViewModels;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// MVVM_01 (step) — WHAT THE ADD MUSIC WIZARD'S NEW SCREENS SHOW, AS BINDABLE STATE.
-///
-/// The song list's "Your songs" panel, the coverage line and the song card on Fit &amp; Mix are
-/// all text, visibility and enabled-state that change together whenever the song list changes.
-/// They are BOUND to this view-model rather than looked up by name (MVVM_01 ratchet): the window
-/// computes the values in one place (<c>RefreshPlaylistViews</c> / <c>RefreshSongCard</c>) and the
-/// XAML follows. Button clicks reach the window through <see cref="RelayCommand"/>s it supplies.
-/// No Avalonia control lives here.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public sealed class MusicWizardViewModel : ViewModelBase
 {
     public ObservableCollection<MusicPlaylistRow> PlaylistRows { get; } = new();
@@ -24,7 +12,6 @@ public sealed class MusicWizardViewModel : ViewModelBase
     public string MusicFolderText { get => _musicFolderText; set => SetProperty(ref _musicFolderText, value); }
 
     private bool _playlistVisible;
-    /// <summary>"Your songs" panel: always in the merger, in the Main App once the user adds a second song.</summary>
     public bool PlaylistVisible { get => _playlistVisible; set => SetProperty(ref _playlistVisible, value); }
 
     private bool _playlistEmpty = true;
@@ -37,7 +24,6 @@ public sealed class MusicWizardViewModel : ViewModelBase
     public string PlaylistTotals { get => _playlistTotals; set => SetProperty(ref _playlistTotals, value); }
 
     private double _coveragePercent;
-    /// <summary>0..100 for both coverage bars.</summary>
     public double CoveragePercent { get => _coveragePercent; set => SetProperty(ref _coveragePercent, value); }
 
     private string _coveragePercentText = "";
@@ -53,11 +39,9 @@ public sealed class MusicWizardViewModel : ViewModelBase
     public string CoverageIcon { get => _coverageIcon; set => SetProperty(ref _coverageIcon, value); }
 
     private IBrush _coverageBrush = Brushes.LimeGreen;
-    /// <summary>Green when the whole video has music, amber when part of it is silent, red when none of it has.</summary>
     public IBrush CoverageBrush { get => _coverageBrush; set => SetProperty(ref _coverageBrush, value); }
 
     private bool _hasGap;
-    /// <summary>True while part of the video has no music: shows the "fill the rest" buttons.</summary>
     public bool HasGap { get => _hasGap; set => SetProperty(ref _hasGap, value); }
 
     private string _songCardTitle = "";
@@ -73,11 +57,9 @@ public sealed class MusicWizardViewModel : ViewModelBase
     public bool CanMoveLater { get => _canMoveLater; set => SetProperty(ref _canMoveLater, value); }
 
     private bool _isMultiSong;
-    /// <summary>More than one song: shows the order and remove buttons on the song card.</summary>
     public bool IsMultiSong { get => _isMultiSong; set => SetProperty(ref _isMultiSong, value); }
 
     private bool _canEndWithVideo = true;
-    /// <summary>FITEND_01 applies to the song that ends the video, i.e. the last one.</summary>
     public bool CanEndWithVideo { get => _canEndWithVideo; set => SetProperty(ref _canEndWithVideo, value); }
 
     private bool _snapToBeat = true;
@@ -94,7 +76,6 @@ public sealed class MusicWizardViewModel : ViewModelBase
     public RelayCommand? StartAtBeginningCommand { get; set; }
 }
 
-/// <summary>PLAYLIST_01 — one row of "Your songs". Rebuilt whenever the list changes, so it needs no change notification.</summary>
 public sealed class MusicPlaylistRow
 {
     public int Index { get; init; }

@@ -109,7 +109,7 @@
 
 * **`UserFacingFaultSink` must never throw.** A reporter that can fault is a reporter that call sites wrap in `try { } catch { }` — the exact shape being retired. Its outermost guard writes through `RuntimeLog.EmergencyWrite` and returns.
 
-* **Migration is a ratchet, not a sweep.** 59 unexplained empty catches could not be triaged correctly in one change; each needs a human decision about tier. `ArchitectureRuleTests.UnexplainedEmptyCatchBlocksDoNotIncrease` is green at its baseline (now **25**, §3) and can only get stricter. **A permanently red test gets deleted, so no rule here starts red.**
+* **Migration is a ratchet, not a sweep.** 59 unexplained empty catches could not be triaged correctly in one change; each needs a human decision about tier. `ArchitectureRuleTests.UnexplainedEmptyCatchBlocksDoNotIncrease` is green at its baseline (now **33**, §3) and can only get stricter — one user-approved exception: raised 25→33 by NOCOMMENTS_02, when 8 empty catches lost their explaining comment (text in `docs/CODE_NOTES_*.md`). **A permanently red test gets deleted, so no rule here starts red.**
 
 ---
 
@@ -165,7 +165,7 @@ plumbing change does not happen. The vocabulary was right and the route was miss
 
 * **Entry criterion for a rule here:** a machine can check it and a reviewer reliably cannot. Rules requiring judgement stay in prose.
 
-* **The rules run on source TEXT, deliberately** — every defect they catch is something the compiler is happy with. They strip comments and string literals first (`BlankCommentsAndStrings`), because this codebase documents its rules by quoting the offending pattern; without that, the docs trip the tests that enforce them.
+* **The rules run on source TEXT, deliberately** — every defect they catch is something the compiler is happy with. They blank comments and string literals first (`BlankCommentsAndStrings`), because string literals quote the banned patterns (comments are themselves banned, NOCOMMENTS_02); without that, the quotes trip the tests that enforce them.
 
 * **Current rules and their standing** (selected rules; current results come from the test runner):
 
@@ -175,20 +175,20 @@ plumbing change does not happen. The vocabulary was right and the route was miss
   | `NoControlCarriesBothCommandAndClick` | `DOUBLEFIRE_01` (04 §4) | **clean — 0** |
   | `NoRawHexColoursInSharedStyling` | Invariant #5 (04 §1) | **clean — 0** (10 fixed; see §4) |
   | `ZoompanFilterIsNeverEmitted` | Invariant #4 | **clean — 0** |
-  | `UnexplainedEmptyCatchBlocksDoNotIncrease` | `FAULTTIER_01` | ratchet, baseline **25** |
+  | `UnexplainedEmptyCatchBlocksDoNotIncrease` | `FAULTTIER_01` | ratchet, baseline **33** |
   | `EveryCatchBlockReportsSomewhere` | `FAULTTIER_02` | ratchet, baseline **7** (seven reporting-path files exempt by name; injected `IFaultSink` `.Recoverable/.Degraded/.Fatal(` calls count as reporting) |
   | Repeated source-header presence rule | `SPEC_GOVERNANCE.md` §4 | Retired by SPECROUTING_02; domain maps and fix sentinels remain required. |
   | `BlockingWaitsOnAsyncCodeDoNotIncrease` | `ASYNCUI_01` | ratchet, baseline **5** |
-  | `AsyncVoidMethodsDoNotIncrease` | `ASYNCUI_02` | ratchet, baseline **31** |
+  | `AsyncVoidMethodsDoNotIncrease` | `ASYNCUI_02` | ratchet, baseline **24** |
   | `ServiceLocatorUsageDoesNotIncrease` | `COMPOSITION_02` | ratchet, baseline **3** |
-  | `ImperativeControlLookupsDoNotIncrease` | `MVVM_01` (§3a) | ratchet, baseline **700** (lowered from 973 by `MVVM_03`) |
+  | `ImperativeControlLookupsDoNotIncrease` | `MVVM_01` (§3a) | ratchet, baseline **630** (lowered from 973) |
   | `WindowCodeBehindDoesNotGrow` | `MVVM_02` (§3a) | 8 grandfathered ceilings; **1,000** for new files |
   | `EveryFixSentinelStillResolves` | `SYS-DEVBUILD` / `SYS-VERIFYTOOL` | **clean** — every `build/sentinels.txt` entry |
   | `DevCmdDelegatesTheSentinelCheckRatherThanParsingIt` | `SYS-VERIFYTOOL` / `VERIFYHALT_01` | **clean** — `dev.cmd` runs `build/FvsVerify` and reads its exit code |
 
-* **Sentinel or test?** When a fix earns a `TAG=path` line in `build/sentinels.txt` (checked by `build/FvsVerify`), ask whether it could be a test instead. **A sentinel proves a fix has not been DELETED; a test proves it has not been BROKEN.** Prefer the test. Keep the sentinel when the fix is a configuration value or a comment-documented ordering that no assertion can see.
+* **Sentinel or test?** When a fix earns a `TAG=path` line in `build/sentinels.txt` (checked by `build/FvsVerify`), ask whether it could be a test instead. **A sentinel proves a fix has not been DELETED; a test proves it has not been BROKEN.** Prefer the test. Keep the sentinel when the fix is a configuration value or an ordering that no assertion can see.
 
-* **`ASYNCUI_01` / `ASYNCUI_02`.** 5 blocking waits (`.Result` / `.Wait()` / `GetAwaiter().GetResult()`) and 31 `async void` methods, against 106 `Dispatcher.UIThread` call sites. On the UI thread a blocking wait is a deadlock of exactly the shape `SEEKSTORM_01` describes: the UI thread waiting on work that needs the UI thread. An `async void` that throws bypasses every catch in the stack and lands in `AppDomain.UnhandledException` — the process goes down from a background continuation, with nothing on screen. An `async void` that survives review must be an event handler bound directly to an Avalonia event, **and its whole body must sit inside one try/catch reporting through `IFaultSink`**.
+* **`ASYNCUI_01` / `ASYNCUI_02`.** 5 blocking waits (`.Result` / `.Wait()` / `GetAwaiter().GetResult()`) and 24 `async void` methods, against 106 `Dispatcher.UIThread` call sites. On the UI thread a blocking wait is a deadlock of exactly the shape `SEEKSTORM_01` describes: the UI thread waiting on work that needs the UI thread. An `async void` that throws bypasses every catch in the stack and lands in `AppDomain.UnhandledException` — the process goes down from a background continuation, with nothing on screen. An `async void` that survives review must be an event handler bound directly to an Avalonia event, **and its whole body must sit inside one try/catch reporting through `IFaultSink`**.
 
 ---
 
@@ -226,7 +226,7 @@ plumbing change does not happen. The vocabulary was right and the route was miss
   represent.
 
 * **Both rules are RATCHETS, enforced by `ArchitectureRuleTests`.** Hundreds of call sites (baseline
-  **700**) cannot be converted without a compiler in the loop, and a sweep that cannot be built and run is a sweep
+  **630**) cannot be converted without a compiler in the loop, and a sweep that cannot be built and run is a sweep
   that ships a broken editor. The numbers may only fall; lower the baseline in the same change
   that lowers the count.
 

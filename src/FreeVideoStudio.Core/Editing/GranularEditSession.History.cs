@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Immutable;
 using System.Linq;
 using FreeVideoStudio.Core.Infrastructure;
@@ -7,27 +6,10 @@ using FreeVideoStudio.Core.Undo;
 
 namespace FreeVideoStudio.Core.Editing;
 
-/// <summary>One undo or redo as the editor has to present it: where it came from, where it went, what it was.</summary>
 public sealed record GranularRestoreStep(GranularEditorSnapshot From, GranularEditorSnapshot To, string Label);
 
-/// <summary>
-/// UNDO_25 — THE ONE SLOT a closed Granular editor's history waits in for its clip to reopen.
-///
-/// <para>
-/// ⚠️ PROCESS-LIFETIME ONLY, DELIBERATELY: it survives closing the WINDOW, not closing the APP —
-/// cross-restart history is the sidecar's job (UNDO_24). ⚠️ ONE SLOT, NOT A DICTIONARY: holding
-/// history for every clip ever opened is an unbounded leak in a process that also holds decoded
-/// video frames.
-/// </para>
-///
-/// <para>
-/// An instance, not a static field, so the window passes it in explicitly (08 COMPOSITION_02) and
-/// a test can use its own without leaking into another. The window uses <see cref="Shared"/>.
-/// </para>
-/// </summary>
 public sealed class GranularHistoryParking
 {
-    /// <summary>The process-wide slot the editor window uses.</summary>
     public static GranularHistoryParking Shared { get; } = new();
 
     public ParkedGranularHistory? Slot { get; set; }
@@ -35,23 +17,12 @@ public sealed class GranularHistoryParking
 
 public sealed partial class GranularEditSession
 {
-
-    /// <summary>UNDO_26 — this editor's history.</summary>
     public GranularEditHistory History { get; } = new();
 
-    /// <summary>
-    /// UNDO_26 — the state this session OPENED on (the accepted project revision the history is
-    /// built from), and what a parked history must match to be replayed.
-    /// </summary>
     public GranularEditorSnapshot? HistoryBaseline { get; private set; }
 
-    /// <summary>True while a restore is being applied and re-rendered: nothing may record history.</summary>
     public bool IsRestoring { get; private set; }
 
-    /// <summary>
-    /// Guards a restore AND the window's re-render that follows it (07 §3 re-entrancy): controls
-    /// repopulated from the restored state raise change events that would otherwise checkpoint.
-    /// </summary>
     public IDisposable BeginRestore()
     {
         IsRestoring = true;
@@ -63,25 +34,14 @@ public sealed partial class GranularEditSession
         public void Dispose() => owner.IsRestoring = false;
     }
 
-    /// <summary>U1 — plain data only: immutable arrays of records, doubles and the selection.</summary>
     public GranularEditorSnapshot Capture() => new(
         ImmutableArray.CreateRange(Segments),
         ImmutableArray.CreateRange(Cuts),
         ImmutableArray.CreateRange(Memes),
         BaseSpeed, FreezeTimeMs, FreezeDurationS, SelectedSegmentIndex, CaptionTrack);
 
-    /// <summary>
-    /// Raised after every recorded checkpoint — by a window call or by any command here — with
-    /// whether it burned a redo branch (U3). The window refreshes its undo buttons and arms the
-    /// RECOVERY_03 debounce from it, exactly where the old <c>PushUndo</c> did.
-    /// </summary>
     public event Action<bool>? Checkpointed;
 
-    /// <summary>
-    /// UNDO_01 — records the state BEFORE a change. Call at the TOP of any action that alters
-    /// segments, cuts, memes, base speed or the freeze. No-op while restoring.
-    /// </summary>
-    /// <param name="coalesceKey">UNDO_02 — non-null for continuous controls; null for discrete clicks.</param>
     public void Checkpoint(string label, string? coalesceKey = null)
     {
         if (IsRestoring) return;
@@ -90,16 +50,13 @@ public sealed partial class GranularEditSession
         Checkpointed?.Invoke(hadRedo && !History.CanRedo);
     }
 
-    /// <summary>UNDO_02 — pointer released: commit the gesture so the next drag is its own step.</summary>
     public void EndGesture()
     {
         if (!IsRestoring) History.EndGesture(Capture());
     }
 
-    /// <summary>Steps back one entry and applies it. Null when there is nothing to undo.</summary>
     public GranularRestoreStep? Undo() => Step(undo: true);
 
-    /// <summary>Steps forward one entry and applies it. Null when there is nothing to redo.</summary>
     public GranularRestoreStep? Redo() => Step(undo: false);
 
     private GranularRestoreStep? Step(bool undo)
@@ -111,9 +68,6 @@ public sealed partial class GranularEditSession
         return new GranularRestoreStep(current, s.State, s.Label);
     }
 
-    /// <summary>
-    /// UNDO_01 — puts project data back from a snapshot. Data only; the window re-renders.
-    /// </summary>
     public void ApplySnapshot(GranularEditorSnapshot snap)
     {
         ArgumentNullException.ThrowIfNull(snap);
@@ -136,10 +90,6 @@ public sealed partial class GranularEditSession
         ClearPendingMarks();
     }
 
-    /// <summary>
-    /// UNDO_01 / UNDO_26 — THE APPLY BOUNDARY. Drops the history after APPLY (07 §7.1). Returns the
-    /// sizes dropped, or null when there was nothing to drop.
-    /// </summary>
     public (int Undo, int Redo)? ClearHistory()
     {
         if (!History.CanUndo && !History.CanRedo) return null;
@@ -148,10 +98,6 @@ public sealed partial class GranularEditSession
         return dropped;
     }
 
-    /// <summary>
-    /// UNDO_02 (rule 7) — plain-English description of what a restore actually does, worked out by
-    /// DIFFING the two states rather than from a hand-written string per call site.
-    /// </summary>
     public static string DescribeRestore(GranularEditorSnapshot from, GranularEditorSnapshot to, string label)
     {
         int segDelta = to.Segments.Length - from.Segments.Length;
@@ -191,13 +137,6 @@ public sealed partial class GranularEditSession
         return $"Undid {label}";
     }
 
-
-    /// <summary>
-    /// UNDO_25 / UNDO_26 — takes back the history this clip had when its editor was last closed.
-    /// Call ONCE, after seeding, so the baseline is the state the session opened on. Returns true
-    /// when a parked history was replayed. A parked history for the SAME clip but another revision
-    /// is stale and is discarded for good; one for another clip is left for that clip.
-    /// </summary>
     public bool AdoptParkedHistory()
     {
         var opening = Capture();
@@ -222,11 +161,6 @@ public sealed partial class GranularEditSession
         return true;
     }
 
-    /// <summary>
-    /// UNDO_25 — parks the history on the way out, in place of throwing it away, then clears the
-    /// live one. An empty history clears the slot rather than parking an empty one, so reopening a
-    /// clip with no history does not resurrect a stale slot belonging to another.
-    /// </summary>
     public void ParkHistory()
     {
         if (string.IsNullOrEmpty(HistoryKey)) { _parking.Slot = null; History.Clear(); return; }

@@ -12,11 +12,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// QUEUEOCCURRENCE_01 / CLIPACTIONS_01 — queue operations target the EXACT selected occurrence:
-/// moving, removing, key-deleting, or dragging duplicate file paths (e.g. [A, B, A]) operates on the
-/// targeted copy, preserving duplicate instances, identities, multiselection relative order, and effects.
-/// </summary>
 public sealed class VideoMergerQueueOccurrenceTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "FvsMergerQueueTests_" + Guid.NewGuid().ToString("N"));

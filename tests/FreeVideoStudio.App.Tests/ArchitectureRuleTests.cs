@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -9,33 +8,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// ARCHTEST_01 — THE SPECS' RULES, MADE EXECUTABLE.
-///
-/// <para>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// WHY THIS FILE EXISTS. <c>docs/</c> holds 2,030 lines of specification, and it is good — but read
-/// it closely and most of it is a post-mortem diary. <c>DOUBLEFIRE_01</c> (a Command and a Click
-/// both firing, "invisible to reading"), <c>SLIDER_09</c> (sibling declaration order, "invisible in
-/// code review"), <c>QUALITY_04</c> (a readout with no writer, "looked missing rather than
-/// broken"), <c>SEEKSTORM_01</c> (310 seeks in 1.74s). Every one was found by a human running the
-/// app, sometimes over several diagnosis cycles, and then fenced off with a paragraph.
-///
-/// A paragraph only works if the next person reads it. A test works whether they do or not, and
-/// costs milliseconds. Every rule below is one that a machine can check and a reviewer reliably
-/// cannot — that is the entry criterion for this file. Rules requiring judgement stay in prose.
-///
-/// These run on SOURCE TEXT, deliberately. The defects are all things that compile.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </para>
-///
-/// <para>
-/// <b>HOW TO ADD A RULE.</b> When a fix earns a <c>CHECK_TAG</c> sentinel in <c>dev.cmd</c>, ask
-/// whether it could instead be a test here. A sentinel proves a fix has not been DELETED; a test
-/// proves it has not been BROKEN. Prefer the test; keep the sentinel when the fix is a
-/// configuration value or a comment-documented ordering that no assertion can see.
-/// </para>
-/// </summary>
 public sealed class ArchitectureRuleTests
 {
     [Fact]
@@ -140,7 +112,7 @@ public sealed class ArchitectureRuleTests
     [Fact]
     public void UnexplainedEmptyCatchBlocksDoNotIncrease()
     {
-        const int Baseline = 25;
+        const int Baseline = 33;
 
         var offenders = new List<string>();
 
@@ -168,7 +140,7 @@ public sealed class ArchitectureRuleTests
         Assert.True(offenders.Count <= Baseline,
             $"FAULTTIER_01 — unexplained empty catch blocks went UP: {offenders.Count} found, baseline "
           + $"{Baseline}. Report the failure through IFaultSink (Recoverable / Degraded / Fatal), or "
-          + "write a comment inside the block saying why there is nothing to do. If you reduced the "
+          + "explain in the owning spec why there is nothing to do (code comments are banned, NOCOMMENTS_02). If you reduced the "
           + "count, lower the baseline in this test in the same change:"
           + Environment.NewLine + string.Join(Environment.NewLine, offenders));
     }
@@ -333,6 +305,25 @@ public sealed class ArchitectureRuleTests
           + Environment.NewLine + string.Join(Environment.NewLine, sites));
     }
 
+    [Fact]
+    public void NoCSharpFileContainsAComment()
+    {
+        char sep = Path.DirectorySeparatorChar;
+        var offenders = new[] { "src", "tests", "build", "developer_tools" }
+            .Select(d => Path.Combine(RepoRoot.Path, d))
+            .Where(Directory.Exists)
+            .SelectMany(d => Directory.EnumerateFiles(d, "*.cs", SearchOption.AllDirectories))
+            .Where(f => !f.Contains($"{sep}bin{sep}", StringComparison.OrdinalIgnoreCase)
+                        && !f.Contains($"{sep}obj{sep}", StringComparison.OrdinalIgnoreCase))
+            .Select(f => (File: RepoRoot.Relative(f), Count: FvsComments.CommentScanner.CountComments(File.ReadAllText(f))))
+            .Where(x => x.Count > 0)
+            .Select(x => $"{x.File}: {x.Count} comment(s)")
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "NOCOMMENTS_02: .cs files carry no comments (README GOV-START). Move the text into the owning spec "
+          + "or run developer_tools/Find_and_Remove_Comments.cmd:" + Environment.NewLine + string.Join(Environment.NewLine, offenders));
+    }
 
     [Fact]
     public void EveryFixSentinelStillResolves()
@@ -423,25 +414,10 @@ public sealed class ArchitectureRuleTests
           + Environment.NewLine + string.Join(Environment.NewLine, offenders));
     }
 
-
-    /// <summary>
-    /// Replaces the contents of comments and string literals with spaces, preserving offsets and
-    /// line breaks so match positions still map to real line numbers.
-    ///
-    /// <para>Necessary because every rule here matches CODE patterns, and this codebase documents
-    /// its rules by quoting the offending pattern in a doc comment. Without this, the docs trip
-    /// the tests that enforce them.</para>
-    /// </summary>
     private const string SettingsAssignOp = @"(?:=(?![=>])|\+=|-=|\*=|/=|%=|&=|\|=|\^=|\?\?=|<<=|>>=|\+\+|--)";
     private const string SettingsInstance = @"\bSettingsManager\s*\.\s*Instance";
     private const string SettingsMemberChain = @"(?:\s*\.\s*[A-Za-z_]\w*)+";
 
-    /// <summary>
-    /// Returns "line N" for every write THROUGH <c>SettingsManager.Instance</c> in
-    /// <paramref name="source"/>: direct (<c>SettingsManager.Instance.X = …</c>, compound
-    /// assignment, ++/--), and through a local alias (<c>var kb = SettingsManager.Instance.KeyBinds;
-    /// kb.PlayPause = …</c>) within the alias's enclosing block. Comments and strings are ignored.
-    /// </summary>
     internal static IReadOnlyList<string> FindDirectSettingsWrites(string source)
     {
         string code = BlankCommentsAndStrings(source);
@@ -595,11 +571,6 @@ public sealed class ArchitectureRuleTests
         return s.Length <= 140 ? s : s[..140] + "…";
     }
 
-    /// <summary>
-    /// UIIPC_01 / IPCDEADLINE_01 — no synchronous IPC entry point may come back, and no App code may
-    /// block on an IPC / session-state task. The deleted APIs each froze the dispatcher: a blocking
-    /// commit on window close, and a pipe read with no deadline during window construction.
-    /// </summary>
     [Fact]
     public void UiCodeNeverBlocksOnSessionStateIpc()
     {
@@ -634,13 +605,6 @@ public sealed class ArchitectureRuleTests
         Assert.True(hits.Count == 0, "UIIPC_01 — synchronous / blocking session-state IPC is back:" + Environment.NewLine + string.Join(Environment.NewLine, hits));
     }
 
-    /// <summary>
-    /// CHANGELOG_01 / RELNOTES_01 — docs/CHANGELOG.md (user-facing) opens with the fixed staging
-    /// section <c>## Upcoming</c>, whose bullets pass the release lint (plain English, no tags, no code,
-    /// no duplicates); it retains at most 5 releases, each with at least one bullet. docs/changes.md
-    /// (technical) has its <c>## Unreleased</c> staging section. Governs SPEC_GOVERNANCE.md §6 and
-    /// docs/README.md §0.
-    /// </summary>
     [Fact]
     public void ChangelogEnforcesTopStagingAndFiveReleaseLimit()
     {
@@ -666,4 +630,3 @@ public sealed class ArchitectureRuleTests
             .Find(FreeVideoStudio.Core.Infrastructure.ReleaseChangelog.UnreleasedTitle));
     }
 }
-

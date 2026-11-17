@@ -1,6 +1,3 @@
-# TESTGATE_01 / TESTCLEAN_01. docs/README.md#GOV-AVGATE, 05#SYS-STORAGE-TABLE.
-# Definitions only: importing this file never launches a suite or deletes output.
-# TESTOUT_01: the ONLY place test output may live is logs\<Suite>_Results\ (console.log, <Suite>.trx, work\).
 function Get-TestSuiteRoot([string]$RepositoryRoot, [string]$Suite) {
     if ($Suite -cnotmatch '^[A-Za-z]+$') { throw "Not a test suite name: $Suite" }
     [IO.Path]::GetFullPath((Join-Path $RepositoryRoot "logs\${Suite}_Results"))
@@ -16,7 +13,6 @@ function Assert-TestOutputPath([string]$RepositoryRoot, [string]$Path) {
     $logs = [regex]::Escape((Join-Path $repo 'logs'))
     $allowed = @($full | Where-Object { $_ -imatch "^$logs\\[A-Za-z]+_Results(\\.+)?$" })
     if ($allowed.Count -eq 0) { throw "Not a test-output directory: $full" }
-    # A root/ancestor junction would redirect even an apparently safe absolute path.
     $parent = [IO.DirectoryInfo]::new($full)
     while ($null -ne $parent) {
         if ($parent.Exists -and ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
@@ -33,8 +29,6 @@ function Remove-TestOutput([string]$RepositoryRoot, [string]$Path) {
     function Remove-OwnedTree([IO.DirectoryInfo]$Directory) {
         foreach ($entry in $Directory.GetFileSystemInfos()) {
             if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-                # Delete the link itself, never enumerate its target. DevSandbox deliberately
-                # creates junction fixtures; recursive Remove-Item must never follow those.
                 if ($entry.Attributes -band [IO.FileAttributes]::Directory) { [IO.Directory]::Delete($entry.FullName) }
                 else { Remove-Item -LiteralPath $entry.FullName -Force -ErrorAction Stop }
             } elseif ($entry -is [IO.DirectoryInfo]) { Remove-OwnedTree $entry }
@@ -46,7 +40,6 @@ function Remove-TestOutput([string]$RepositoryRoot, [string]$Path) {
 }
 
 function Enter-TestRun([string]$RepositoryRoot) {
-    # Outside cleaned roots. FileShare.None prevents a second runner from erasing a live run.
     $lockPath = Join-Path $RepositoryRoot 'tests\.test-run.lock'
     try { return [IO.File]::Open($lockPath, 'OpenOrCreate', 'ReadWrite', 'None') }
     catch { throw 'Another test run owns the output folders, or the test lock cannot be opened.' }
@@ -54,13 +47,10 @@ function Enter-TestRun([string]$RepositoryRoot) {
 
 function Reset-TestOutputs([string]$RepositoryRoot, [string[]]$Suites) {
     $paths = @($Suites | ForEach-Object { Get-TestSuiteRoot $RepositoryRoot $_ })
-    # Validate ALL destinations before the first deletion.
     foreach ($path in $paths) { $null = Assert-TestOutputPath $RepositoryRoot $path }
     foreach ($path in $paths) { Remove-TestOutput $RepositoryRoot $path }
 }
 
-# A suite started on its own replaces its whole folder; under the gate (FVS_TEST_OUTPUT_MANAGED=1) the
-# gate already emptied it and is writing console.log there, so only work\ is replaced. Returns work\.
 function Enter-SuiteOutput([string]$RepositoryRoot, [string]$Suite) {
     $suiteRoot = Get-TestSuiteRoot $RepositoryRoot $Suite
     $work = Join-Path $suiteRoot 'work'
@@ -82,7 +72,6 @@ function Read-TestResults([string]$Path, [string]$Suite, [int]$ExitCode,
         return @($records) + @(New-TestFailure $Suite 'Missing test results; suite did not complete.')
     }
     try {
-        # No DTD/entity expansion, even for an unexpected/corrupt result file.
         $settings = [Xml.XmlReaderSettings]::new()
         $settings.DtdProcessing = [Xml.DtdProcessing]::Prohibit
         $reader = [Xml.XmlReader]::Create($Path, $settings)

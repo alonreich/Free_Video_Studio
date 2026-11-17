@@ -1,9 +1,3 @@
-<!-- Shared failure dialog. WindowStartupLocation="CenterOwner" is an INTENTIONAL exception to
-     the suite-wide "no CenterOwner" rule (same rationale as ConfirmDialogWindow): this is a
-     transient, non-persisted modal and is NOT one of the 8 WindowBoundsHelper-tracked windows.
-     Every user-visible failure in the suite routes through this window via ErrorReporter, so
-     the user always gets: what failed, the single root-cause line from the log, OKAY and
-     SHOW LOGS. Do not add a third action and do not bypass it with a bare toast. -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
         x:Class="FreeVideoStudio.App.Controls.ErrorDialogWindow"
@@ -26,7 +20,6 @@
                                Foreground="{DynamicResource TitleBarForeground}" />
                 </Border>
 
-                <!-- Plain-English summary -->
                 <Border Grid.Row="1" Padding="25,20,25,10">
                     <StackPanel Orientation="Horizontal" Spacing="14">
                         <TextBlock Text="&#x26A0;"
@@ -41,7 +34,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Root-cause line lifted straight out of the log -->
                 <Border Grid.Row="2" Name="DetailContainer" Padding="25,0,25,18" IsVisible="False">
                     <StackPanel Spacing="6">
                         <TextBlock Text="ROOT CAUSE"
@@ -65,8 +57,6 @@
 
                 <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center"
                             Spacing="15" Margin="0,4,0,25">
-                    <!-- ISSUE_04 (audit round 5): MinHeight="34" removed — it overrode the global
-                         AppButtonMinHeight token (44) and blocked font-scale growth. -->
                     <Button Name="OkayBtn" ToolTip.Tip="Close this message and return to the app." Classes="Primary" Content="OKAY"
                             MinWidth="140" Cursor="Hand" IsDefault="True"
                             AutomationProperties.Name="Acknowledge the error" />

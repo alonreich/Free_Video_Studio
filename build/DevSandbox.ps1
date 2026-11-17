@@ -1,15 +1,9 @@
-# [SPEC CONTRACT] STRICT GOVERNANCE:
-# Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-DEVBUILD).
-# Invariants, constants, and threading models must match spec bit-for-bit.
-# DEVDATA_01 / DEVCLEAN_01: only disposable paths are removed. Never import production settings.
-
 function Assert-DevOwnedPath([string]$Path, [string]$Root) {
     $full = [IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
     $boundary = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
     if (-not $full.StartsWith($boundary, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Refusing path outside development boundary: $full"
     }
-    # Inspect every existing ancestor as well as descendants: junctions must not escape the sandbox.
     $cursor = $full
     while ($cursor) {
         if (Test-Path -LiteralPath $cursor) {
@@ -40,7 +34,6 @@ function Remove-DevCache([string]$Path, [string]$Root) {
 }
 
 function Clear-DevManagedOutput([string]$App, [string]$Output) {
-    # DEVINCREMENTAL_01: republish into a clean managed output, retaining only stager-owned assets.
     $null = Assert-DevOwnedPath $App $Output
     if (Test-Path -LiteralPath $App) {
         Get-ChildItem -LiteralPath $App -Force | Where-Object {
@@ -50,8 +43,6 @@ function Clear-DevManagedOutput([string]$App, [string]$Output) {
 }
 
 function New-DevHelperScratch([string]$HelperRoot, [string]$Boundary) {
-    # DEVHELPERTEMP_01: consoles/native helpers may retain OS temp handles after UI exit.
-    # Never reuse their directory, kill their owner, or weaken ordinary app-cache cleanup.
     $checked = Assert-DevOwnedPath $HelperRoot $Boundary
     $deferred = 0
     if (Test-Path -LiteralPath $checked) {
@@ -84,7 +75,6 @@ function New-DevHelperScratch([string]$HelperRoot, [string]$Boundary) {
 function Initialize-DevSandbox([string]$DevData, [string]$OldDevData, [string]$KeepDir, [string]$OldMedia) {
     $null = Assert-DevOwnedPath $DevData (Split-Path -Parent $DevData)
     New-Item -ItemType Directory -Path $DevData -Force | Out-Null
-    # Recover only earlier DEVELOPMENT preferences. Copy-only, absent destinations only.
     foreach ($name in @('settings.json', 'session_state.json')) {
         $target = Join-Path $DevData $name
         if (-not (Test-Path -LiteralPath $target)) {
@@ -98,7 +88,6 @@ function Initialize-DevSandbox([string]$DevData, [string]$OldDevData, [string]$K
             }
         }
     }
-    # Old dev media lived in TEMP. Preserve it outside the disposable scratch area.
     $media = Join-Path $DevData 'media'
     if (-not (Test-Path -LiteralPath $media) -and (Test-Path -LiteralPath $OldMedia)) {
         $null = Assert-DevOwnedPath $OldMedia (Split-Path -Parent $OldMedia)
@@ -115,8 +104,6 @@ function Clear-DevRuntimeCaches([string]$DevData) {
     $scratch = Join-Path $DevData 'scratch'
     $null = Assert-DevOwnedPath $scratch $DevData
     if (Test-Path -LiteralPath $scratch) {
-        # Voice recordings/recovery indexes and rescued exports are user work, even in scratch.
-        # Keep them AT THEIR ORIGINAL PATH so saved recovery references remain valid.
         Get-ChildItem -LiteralPath $scratch -File -Recurse -Force | Where-Object {
             $_.Name -notlike 'voiceover_*' -and $_.Name -notlike '*RECOVERED*' -and $_.Extension -ne '.wav'
         } | ForEach-Object { Remove-DevCache $_.FullName $scratch }

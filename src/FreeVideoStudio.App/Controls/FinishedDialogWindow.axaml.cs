@@ -1,4 +1,3 @@
-
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -14,7 +13,7 @@ public partial class FinishedDialogWindow : Window
 {
     private string _outputPath = "";
     private string? _attributionText;
-    
+
     public int DialogResult { get; private set; } = 0;
 
     public FinishedDialogWindow()
@@ -30,7 +29,7 @@ public partial class FinishedDialogWindow : Window
     {
         AvaloniaXamlLoader.Load(this);
     }
-    
+
     public void SetOutputPath(string path)
     {
         _outputPath = path;
@@ -76,11 +75,6 @@ public partial class FinishedDialogWindow : Window
         }
     }
 
-    /// <summary>
-    /// ISSUE_01: this window removes the OS title bar (ExtendClientAreaTitleBarHeightHint="0"),
-    /// so without this handler the user cannot move the dialog at all.
-    /// Dragging starts anywhere on the background EXCEPT interactive controls (buttons).
-    /// </summary>
     private void OnRootPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || e.ClickCount >= 2) return;
@@ -99,7 +93,7 @@ public partial class FinishedDialogWindow : Window
         DialogResult = 0;
         Close();
     }
-    
+
     private async void OnUploadNewClicked(object? sender, RoutedEventArgs e)
     {
         if (Infrastructure.SettingsManager.Instance.ConfirmFinishedDialogExit
@@ -114,7 +108,6 @@ public partial class FinishedDialogWindow : Window
         Close();
     }
 
-    /// <summary>Shared opt-in guard for the two session-ending buttons (ISSUE_04).</summary>
     private async System.Threading.Tasks.Task<bool> ConfirmAsync(string title, string message, string yesText)
     {
         var dlg = new ConfirmDialogWindow();
@@ -232,7 +225,7 @@ public partial class FinishedDialogWindow : Window
         DialogResult = 1;
         Close();
     }
-    
+
     private void OpenOutputFolder()
     {
         try

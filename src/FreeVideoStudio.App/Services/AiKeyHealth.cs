@@ -5,7 +5,7 @@ namespace FreeVideoStudio.App.Services;
 
 internal sealed class AiKeyHealthStore
 {
-    private sealed record Problem(AiProviderErrorKind Kind, string Message, DateTime Until);
+    private sealed record Problem(AiProviderErrorKind Kind, string Message, DateTime Until, AiAccountProblem Reason);
 
     private readonly object Gate = new();
     private readonly Dictionary<string, Problem> Problems = new(StringComparer.Ordinal);
@@ -18,10 +18,14 @@ internal sealed class AiKeyHealthStore
 
     internal T Observe<T>(T ex, string? key) where T : AiProviderException
     {
+        if (AiAccountFix.KindFor(ex.Kind) != AiFixKind.None) AiUsageMeter.RequestRefused();
         if (string.IsNullOrWhiteSpace(key) || !Blocks(ex.Kind)) return ex;
-        DateTime until = ex.Kind == AiProviderErrorKind.InvalidKey ? DateTime.MaxValue : DateTime.UtcNow + AiKeyHealth.CreditPause;
-        lock (Gate) Problems[Id(ex.Vendor, key)] = new Problem(ex.Kind, ex.Message, until);
-        RuntimeLog.Info("AI", $"{AiKeyHealth.Tag}: {ex.Vendor} key marked {(ex.Kind == AiProviderErrorKind.InvalidKey ? "not working" : "out of credit or quota")}; no more requests are sent with it {(ex.Kind == AiProviderErrorKind.InvalidKey ? "until it is replaced or tested again" : "for 5 minutes")}.");
+        DateTime now = DateTime.UtcNow;
+        DateTime until = ex.Kind == AiProviderErrorKind.InvalidKey ? DateTime.MaxValue
+            : ex.Problem == AiAccountProblem.DailyFreeLimit ? AiKeyHealth.NextDailyResetUtc(now)
+            : now + AiKeyHealth.CreditPause;
+        lock (Gate) Problems[Id(ex.Vendor, key)] = new Problem(ex.Kind, ex.Message, until, ex.Problem);
+        RuntimeLog.Info("AI", $"{AiKeyHealth.Tag}: {ex.Vendor} key marked {(ex.Kind == AiProviderErrorKind.InvalidKey ? "not working" : ex.Problem == AiAccountProblem.DailyFreeLimit ? "out of today's free limit" : "out of credit or quota")}; no more requests are sent with it {(ex.Kind == AiProviderErrorKind.InvalidKey ? "until it is replaced or tested again" : $"until {until:u}")}.");
         Changed?.Invoke(ex.Vendor);
         return ex;
     }
@@ -46,10 +50,12 @@ internal sealed class AiKeyHealthStore
             ? "Your ChatGPT sign-in has ended. Sign in again: Settings › AI › Continue with ChatGPT."
             : p.Kind == AiProviderErrorKind.InvalidKey
             ? $"Your {AiVisionProviders.DisplayName(vendor)} key stopped working (it may have expired or been deleted). Paste a new key in Settings › AI, or press Test there to try it again."
+            : p.Reason == AiAccountProblem.DailyFreeLimit
+            ? $"Today's free {AiVisionProviders.DisplayName(vendor)} limit is used up. It starts again tomorrow."
             : p.Message + " Nothing more is sent for a few minutes.";
         return vendor == AiVendor.Google
-            ? new GeminiException(p.Kind == AiProviderErrorKind.InvalidKey ? GeminiErrorKind.InvalidKey : GeminiErrorKind.QuotaExhausted, message, "blocked by " + AiKeyHealth.Tag)
-            : new AiProviderException(vendor, p.Kind, message, "blocked by " + AiKeyHealth.Tag);
+            ? new GeminiException(p.Kind == AiProviderErrorKind.InvalidKey ? GeminiErrorKind.InvalidKey : GeminiErrorKind.QuotaExhausted, message, "blocked by " + AiKeyHealth.Tag) { Problem = p.Reason }
+            : new AiProviderException(vendor, p.Kind, message, "blocked by " + AiKeyHealth.Tag) { Problem = p.Reason };
     }
 
     internal void ThrowIfBlocked(AiVendor vendor, string? key)
@@ -73,6 +79,22 @@ internal static class AiKeyHealth
     internal const string Tag = "AIKEYHEALTH_01";
 
     internal static readonly TimeSpan CreditPause = TimeSpan.FromMinutes(5);
+
+    internal const string DailyLimitTag = "AIDAILYLIMIT_01";
+
+    internal static DateTime NextDailyResetUtc(DateTime utcNow)
+    {
+        TimeZoneInfo pacific;
+        try { pacific = TimeZoneInfo.FindSystemTimeZoneById("Pacific Standard Time"); }
+        catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            RuntimeLog.Swallowed(ex);
+            return utcNow.Date.AddDays(1).AddHours(8);
+        }
+        DateTime local = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utcNow, DateTimeKind.Utc), pacific);
+        DateTime nextMidnight = DateTime.SpecifyKind(local.Date.AddDays(1), DateTimeKind.Unspecified);
+        return TimeZoneInfo.ConvertTimeToUtc(nextMidnight, pacific);
+    }
 
     internal static AiKeyHealthStore Shared { get; } = new();
 

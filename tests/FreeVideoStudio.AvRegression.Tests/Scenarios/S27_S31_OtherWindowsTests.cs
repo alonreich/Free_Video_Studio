@@ -7,15 +7,9 @@ using Xunit;
 
 namespace FreeVideoStudio.AvRegression.Tests;
 
-/// <summary>
-/// Voice-Over, Crop Tool, Music Wizard and the detached Preview Monitor: voice lined up with the
-/// picture it was recorded over, timing untouched by the portrait crop, fast song switching, and
-/// the preview popping out/in while it plays.
-/// </summary>
 [Collection(AvCollection.Name)]
 public sealed class S27_S31_OtherWindowsTests
 {
-    /// <summary>Voice pulses spoken over the preview's output clock (VOCLOCK_01), every ~1.3 s.</summary>
     private static async Task<(List<VoiceOverTake> Takes, double[] Spoken)> VoiceAsync(MainEdit edit, string work)
     {
         double total = edit.PreviewOut(edit.EndMs / 1000);

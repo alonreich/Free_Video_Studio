@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -10,14 +9,6 @@ namespace VoiceOverNativeSmoke;
 
 internal static class Program
 {
-    /// <summary>
-    /// MICSMOKE_02 — the mode label must be evidence, not a feature switch. A framework-dependent
-    /// run (dotnet run / apphost) is launched by hostfxr, which always publishes the FX_DEPS_FILE /
-    /// APP_CONTEXT_DEPS_FILES app-context properties; a NativeAOT executable has no host and no
-    /// deps file. RuntimeFeature.IsDynamicCodeSupported alone is NOT used: runtimeconfig switches
-    /// can set it false under the managed runtime. The exact executable path and SHA-256 are printed
-    /// so the run can be tied to the published artifact.
-    /// </summary>
     private static void ReportExecutionMode()
     {
         bool hosted = AppContext.GetData("FX_DEPS_FILE") != null || AppContext.GetData("APP_CONTEXT_DEPS_FILES") != null;

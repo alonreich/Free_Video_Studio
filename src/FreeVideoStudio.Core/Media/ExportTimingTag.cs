@@ -5,30 +5,15 @@ using System.Text.Json.Nodes;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// TIMINGTAG_02 — the frame-exact timing an export carries (Video-Merger-Migration.md P1, D11/D12).
-/// Frames are counted at the export's own constant frame rate (<see cref="FpsNum"/>/<see cref="FpsDen"/>).
-/// <para>
-/// Layout of an exported file, in frames: <c>[intro][fade-in ... body ... fade-out]</c>. The fade-in
-/// starts on the first frame AFTER the intro, and the fade-out ends on the last frame.
-/// </para>
-/// <para>
-/// A NULL fade means UNKNOWN (not written, e.g. a meme sits at that edge, or an older/merged file).
-/// ZERO means "this file has no such fade". Consumers must treat unknown as "no fade information",
-/// never as a fade.
-/// </para>
-/// </summary>
 public readonly record struct ExportTiming(int FpsNum, int FpsDen, int IntroFrames, int? FadeInFrames, int? FadeOutFrames)
 {
     public double Fps => FpsDen > 0 ? (double)FpsNum / FpsDen : 0;
     public double IntroSec => FramesToSec(IntroFrames);
     public double FramesToSec(int frames) => Fps > 0 ? frames / Fps : 0;
 
-    /// <summary>Whole frames for <paramref name="seconds"/> at <paramref name="fps"/> (nearest).</summary>
     public static int SecToFrames(double seconds, double fps)
         => seconds <= 0 || fps <= 0 ? 0 : (int)Math.Round(seconds * fps, MidpointRounding.AwayFromZero);
 
-    /// <summary>Parses an FFmpeg frame-rate expression ("60", "30000/1001", "59.94").</summary>
     public static bool TryParseFps(string? text, out int num, out int den)
     {
         num = 0; den = 1;
@@ -55,19 +40,12 @@ public readonly record struct ExportTiming(int FpsNum, int FpsDen, int IntroFram
     }
 }
 
-/// <summary>
-/// TIMINGTAG_02 — reads and writes the <c>fvs_timing</c> container tag:
-/// <c>v=2;fps=60/1;intro=6;fadein=30;fadeout=45</c>. Unknown keys are ignored (forward compatible);
-/// a missing <c>fadein</c>/<c>fadeout</c> key means unknown. Parsing is culture-invariant and never throws.
-/// </summary>
 public static class ExportTimingTag
 {
     public const string Key = "fvs_timing";
 
-    /// <summary>Largest intro accepted, in seconds (mirrors <see cref="IntroTag.MaxPlausibleIntroSec"/>).</summary>
     public const double MaxIntroSec = IntroTag.MaxPlausibleIntroSec;
 
-    /// <summary>Largest single fade accepted, in seconds. Anything longer is treated as corrupt.</summary>
     public const double MaxFadeSec = 30.0;
 
     public static string Format(ExportTiming t)
@@ -80,7 +58,6 @@ public static class ExportTimingTag
         return sb.ToString();
     }
 
-    /// <summary>Parses a tag value. False when absent, not v2, or implausible for a file of <paramref name="fileDurationSec"/>.</summary>
     public static bool TryParse(string? raw, double fileDurationSec, out ExportTiming timing)
     {
         timing = default;
@@ -129,11 +106,6 @@ public static class ExportTimingTag
         return true;
     }
 
-    /// <summary>
-    /// Reads timing from ffprobe's <c>format.tags</c>: the v2 key when present and valid, else the
-    /// v1 <see cref="IntroTag.Key"/> (seconds; fps unknown → returned as frames at 1000/1 "millisecond
-    /// frames", fades unknown). Null when the file carries neither.
-    /// </summary>
     public static ExportTiming? Read(JsonNode? formatTags, double fileDurationSec)
     {
         if (formatTags is not JsonObject tags) return null;

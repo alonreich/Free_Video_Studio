@@ -1,13 +1,4 @@
-﻿<#
-  AVREG_01 / TESTGATE_01 / TESTCLEAN_01 — docs/README.md#GOV-AVGATE.
-  full = A/V + Core/App + verifier + Python + harness checks.
-  all = full + standalone media exports + native decoder soak.
-  quick = iteration only, never the completion gate.
-  TESTOUT_01: every suite writes ONLY to logs\<Suite>_Results\ (console.log, <Suite>.trx, work\).
-  A suite's folder is replaced right before that suite runs, so each holds exactly its latest result;
-  suites this mode does not run keep their last result. Gate verdict: logs\Gate_Results\LAST_RESULT.txt.
-#>
-param([ValidateSet('full', 'quick', 'all')][string]$Mode = 'full')
+﻿param([ValidateSet('full', 'quick', 'all')][string]$Mode = 'full')
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'TestHarness.ps1')
@@ -32,7 +23,6 @@ function Invoke-Suite([string]$name, [string]$project, [string]$filter, [string[
     $dargs = @('test', (Join-Path $root $project), '-c', 'Release', '--nologo', '-v', 'q',
         '--logger', "trx;LogFileName=$name.trx", '--results-directory', $suiteDir)
     if ($filter) { $dargs += @('--filter', $filter) }
-    # Native stderr is diagnostic text, not a PowerShell exception (including under PS 5).
     $ErrorActionPreference = 'Continue'
     & dotnet @dargs *>> $runLog
     $code = $LASTEXITCODE
@@ -55,10 +45,14 @@ try {
     $null = Enter-Suite 'Gate'
     $env:FVS_TEST_NATIVE_MPV = '1'
     $all = @(Invoke-Check 'Harness' 'powershell' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'tests/TestHarness.Tests.ps1'))
-    $required = if ($Mode -eq 'quick') { @('S01','S02','S03','S04','S05','S06','S07','S08') } else { @(1..38 | ForEach-Object { 'S{0:D2}' -f $_ }) }
+    $required = if ($Mode -eq 'quick') { @('S01','S02','S03','S04','S05','S06','S07','S08') } else { @(1..45 | ForEach-Object { 'S{0:D2}' -f $_ }) }
     $filter = if ($Mode -eq 'quick') { 'Tier=Quick' } else { '' }
     $all += Invoke-Suite 'AV' 'tests/FreeVideoStudio.AvRegression.Tests/FreeVideoStudio.AvRegression.Tests.csproj' $filter $required
     if ($Mode -ne 'quick') {
+        $devPack = Join-Path $root 'developer_tools\local_ai_pack\out\pack'
+        $devOrt = Join-Path $root 'developer_tools\local_ai_pack\out\ort'
+        if (-not $env:FVS_TEST_LOCALAI_DIR -and (Test-Path (Join-Path $devPack 'sam2_small_encoder.onnx'))) { $env:FVS_TEST_LOCALAI_DIR = $devPack }
+        if (-not $env:FVS_TEST_ORT_DIR -and (Test-Path (Join-Path $devOrt 'tiny.onnx'))) { $env:FVS_TEST_ORT_DIR = $devOrt }
         $localAiReady = [bool]$env:FVS_TEST_ORT_DIR -and [bool]$env:FVS_TEST_LOCALAI_DIR
         $coreFilter = if ($localAiReady) { '' } else { 'Category!=LocalAiRuntime' }
         $all += Invoke-Suite 'Core' 'tests/FreeVideoStudio.Core.Tests/FreeVideoStudio.Core.Tests.csproj' $coreFilter
@@ -71,6 +65,7 @@ try {
     if ($Mode -eq 'all') {
         $all += Invoke-Check 'DesktopPreview' 'dotnet' @('run', '--project', 'tests/DesktopPreviewSmoke/DesktopPreviewSmoke.csproj', '-c', 'Release')
         $all += Invoke-Check 'MergerDesktop' 'dotnet' @('run', '--project', 'tests/DesktopPreviewSmoke/DesktopPreviewSmoke.csproj', '-c', 'Release', '--no-build', '--', '--merger')
+        $all += Invoke-Check 'SpeedEditorDesktop' 'dotnet' @('run', '--project', 'tests/DesktopPreviewSmoke/DesktopPreviewSmoke.csproj', '-c', 'Release', '--no-build', '--', '--speed-editor')
         $all += Invoke-Check 'MergerSilentDesktop' 'dotnet' @('run', '--project', 'tests/DesktopPreviewSmoke/DesktopPreviewSmoke.csproj', '-c', 'Release', '--no-build', '--', '--merger', '--silent-middle')
         $all += Invoke-Check 'Media' 'dotnet' @('run', '--project', 'tests/MediaPipelineChecks/MediaPipelineChecks.csproj', '-c', 'Release', '--', '--keep-artifacts')
         $all += Invoke-Check 'DecoderSoak' 'dotnet' @('run', '--project', 'tests/MediaPipelineChecks/MediaPipelineChecks.csproj', '-c', 'Release', '--no-build', '--', '--libav-soak', '--keep-artifacts')
@@ -86,7 +81,7 @@ try {
         $summary += "  $($group.Name): $ok passed / $($group.Count) results"
     }
     if ($Mode -ne 'quick' -and -not $localAiReady) {
-        $summary += "  LOCALAITEST_01: Local AI real-model tests NOT RUN (set FVS_TEST_ORT_DIR and FVS_TEST_LOCALAI_DIR to run them)"
+        $summary += "  LOCALAITEST_01: Local AI real-model tests NOT RUN (run developer_tools\local_ai_pack\Make_Local_AI_Pack.cmd once, or set FVS_TEST_ORT_DIR and FVS_TEST_LOCALAI_DIR)"
     }
     $lines = @()
     foreach ($failure in $failed) {

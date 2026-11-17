@@ -2,7 +2,6 @@
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>VOSPLICE_01: narration pauses for a cutaway even when the music keeps playing.</summary>
 public static class VoiceOverSplice
 {
     public readonly record struct Piece(double AudioStartSec, double OutputStartSec, double DurationSec);

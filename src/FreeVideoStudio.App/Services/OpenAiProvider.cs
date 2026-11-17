@@ -15,11 +15,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// OPENAIPROVIDER_01 / AIPROVIDER_01 (docs/05 SYS-AISETTINGS) — OpenAI implementation of <see cref="IAiVisionProvider"/>.
-/// Uses Chat Completions API with Authorization: Bearer headers, base64 images, json_schema structured outputs,
-/// and reasoning_effort controls. Enforces GEMINICLIENT_01 security and error handling invariants.
-/// </summary>
 public sealed class OpenAiProvider : IAiVisionProvider
 {
     public const string DefaultModelName = "gpt-6-luna";
@@ -183,6 +178,7 @@ public sealed class OpenAiProvider : IAiVisionProvider
         string resolvedModel = AiVisionProviders.EffectiveModel(Vendor, ResolveModel(model), key);
 
         if (reasoning != null && AiReasoningPolicy.IsRejectedBy(Vendor, resolvedModel)) reasoning = null;
+        using var calibration = AiThinkingCalibration.Use(reasoning, ReferenceEquals(_keyHealth, AiKeyHealth.Shared));
         AiJsonSchema.Translated schema = AiJsonSchema.Translate(jsonSchema, strict: true);
         bool plan = ChatGptAuth.IsMarker(key);
         byte[] Build() => plan
@@ -209,6 +205,11 @@ public sealed class OpenAiProvider : IAiVisionProvider
                 {
                     RuntimeLog.Fail("OPENAI_PARSE", AiDiagnostics.Tag + GeminiClient.Redact($"Model '{resolvedModel}' answer cut off at its length limit. Raw response: {GeminiClient.Truncate(responseBody, 1200)}", key));
                     throw AiAnswerGuard.Truncated(Vendor, AiAnswerGuard.StopReason(Vendor, responseBody));
+                }
+                if (AiAnswerGuard.IsRefusal(Vendor, responseBody))
+                {
+                    RuntimeLog.Fail("OPENAI_PARSE", AiDiagnostics.Tag + GeminiClient.Redact($"Model '{resolvedModel}' declined to answer. Raw response: {GeminiClient.Truncate(responseBody, 1200)}", key));
+                    throw AiAnswerGuard.Refused(Vendor, "OpenAI", AiAnswerGuard.StopReason(Vendor, responseBody));
                 }
                 if (TryExtractContent(responseBody, out string result, out string? error, out bool refused))
                 {
@@ -435,7 +436,6 @@ public sealed class OpenAiProvider : IAiVisionProvider
         return buffer.WrittenSpan.ToArray();
     }
 
-    /// <summary>True for chat models that accept a custom temperature: only the gpt-4 family (o-series and gpt-5+ are reasoning models).</summary>
     internal static bool SupportsTemperature(string model)
         => !string.IsNullOrEmpty(model)
            && Regex.IsMatch(model, @"^gpt-4", RegexOptions.IgnoreCase);
@@ -522,11 +522,16 @@ public sealed class OpenAiProvider : IAiVisionProvider
                 detail, status);
         }
 
+        if (status is 400 or 403 && AiAnswerGuard.LooksLikeRegion(openAiCode, openAiMsg))
+            return new AiProviderException(AiVendor.OpenAI, AiProviderErrorKind.PermissionDenied,
+                "OpenAI's AI service is not available in your country. Choose Google or Anthropic in Settings › AI.",
+                detail, status) { Problem = AiAccountProblem.RegionNotSupported };
+
         switch (status)
         {
             case 403:
                 return new AiProviderException(AiVendor.OpenAI, AiProviderErrorKind.PermissionDenied,
-                    $"Your OpenAI account is not permitted to use '{model}'.", detail, status);
+                    $"Your OpenAI account is not permitted to use '{model}'.", detail, status) { Problem = AiAccountProblem.ModelNotAllowed };
             case 404:
                 return new AiProviderException(AiVendor.OpenAI, AiProviderErrorKind.ModelNotFound,
                     $"The AI model '{model}' is not available on OpenAI (it may have been retired). Choose another model in Settings › AI.", detail, status);

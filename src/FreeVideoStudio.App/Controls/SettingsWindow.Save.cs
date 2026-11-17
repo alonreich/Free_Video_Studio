@@ -6,11 +6,6 @@ namespace FreeVideoStudio.App.Controls;
 
 public partial class SettingsWindow : Window
 {
-    /// <summary>
-    /// SETTX_01 — the view-model commits every pending value in ONE settings transaction (and writes
-    /// the state-store copies after it). SETTINGSDI_01: the window only applies what is visible —
-    /// the theme, the crop layout, the meme list — and closes.
-    /// </summary>
     internal void SaveAndClose()
     {
         if (!Vm.Commit())

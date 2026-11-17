@@ -3,7 +3,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.ViewModels;
 
-/// <summary>VOLEVEL_BIND_01: the durable voice gain, shared by the bound fader and export.</summary>
 public sealed class VoiceOverGainViewModel : ViewModelBase
 {
     private double _percent = 100;

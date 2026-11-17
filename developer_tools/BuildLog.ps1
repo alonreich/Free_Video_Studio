@@ -1,4 +1,3 @@
-# Mirrors Build.cmd console output to .\build.log (live console + ANSI-colored log file).
 param(
     [string]$BatchPath = '.\Build.cmd',
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -219,8 +218,6 @@ if (Test-Path -LiteralPath $legacyResultPath) {
 
 $started = Get-Date
 Write-LogHeader
-
-
 
 Push-Location $repoRoot
 try {

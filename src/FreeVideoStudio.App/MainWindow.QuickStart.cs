@@ -20,7 +20,6 @@ public partial class MainWindow
 
     private bool _killToggleBusy;
     private Button? _killTrackerQuickToggle;
-    private Button? _aiSetupHintButton;
 
     internal static string KillToggleText(bool on) => on ? "🎯 AI Kill Tracker: ON" : "🎯 AI Kill Tracker: OFF";
 
@@ -29,10 +28,10 @@ public partial class MainWindow
         Action<AppSettings> onCommit = _ => Dispatcher.UIThread.Post(() =>
         {
             SyncKillTrackerQuickToggle();
-            SyncAiSetupHint();
         });
         SettingsManager.Committed += onCommit;
         Closed += (_, _) => SettingsManager.Committed -= onCommit;
+        Opened += (_, _) => AiKeyStartupCheck.StartOnce(() => { });
     }
 
     private void OnUploadDropCardPressed(object? sender, PointerPressedEventArgs e)
@@ -56,38 +55,6 @@ public partial class MainWindow
     {
         try { await action(); }
         catch (Exception ex) { RuntimeLog.Swallowed(ex); }
-    }
-
-    private void OnAiSetupHintLoaded(object? sender, RoutedEventArgs e)
-    {
-        _aiSetupHintButton = sender as Button;
-        SyncAiSetupHint();
-    }
-
-    private void OnAiSetupHintClick(object? sender, RoutedEventArgs e)
-        => _ = RunQuickStartActionAsync(OpenAiSetupFromHintAsync);
-
-    private async Task OpenAiSetupFromHintAsync()
-    {
-        try
-        {
-            RuntimeLog.Info("AiSetup", $"{AiHintTag}: empty-screen hint opened the AI setup.");
-            await Controls.AiModeWindow.EnsureSetUpAsync(this);
-        }
-        finally
-        {
-            SyncAiSetupHint();
-            SyncKillTrackerQuickToggle();
-        }
-    }
-
-    private void SyncAiSetupHint()
-    {
-        if (_aiSetupHintButton is not { } hint) return;
-        bool ready;
-        try { ready = AiSetup.CurrentIsComplete(); }
-        catch (Exception ex) { RuntimeLog.Swallowed(ex); ready = true; }
-        hint.IsVisible = !ready;
     }
 
     private void SyncKillTrackerQuickToggle()
@@ -136,7 +103,6 @@ public partial class MainWindow
         {
             _killToggleBusy = false;
             SyncKillTrackerQuickToggle();
-            SyncAiSetupHint();
         }
     }
 }

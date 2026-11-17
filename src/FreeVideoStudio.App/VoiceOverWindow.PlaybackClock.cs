@@ -43,7 +43,6 @@ public partial class VoiceOverWindow
     private IReadOnlyList<MemePlacement> PreviewMemes => _playbackPlan == null ? _memes :
         _memes.Select(m => m with { AtSourceSecRelative = _playbackPlan.OutputAt(_trimStartSec + m.AtSourceSecRelative) }).ToArray();
 
-    /// <summary>VOCLOCK_01 — no readiness until the exact timed picture is loaded AND speed is verified.</summary>
     private async Task<VoiceOverPlaybackPlan> RenderRecordingProxyAsync(CancellationToken token)
     {
         UpdateApplyState("Preparing preview with your speeds, cuts and freezes…");
@@ -53,7 +52,8 @@ public partial class VoiceOverWindow
         double duration = await new MediaProber(ffprobe, _videoPath).GetDurationAsync().WaitAsync(token);
         if (_trimEndSec <= _trimStartSec) _trimEndSec = Math.Max(_trimStartSec + 0.1, duration);
         double effectiveEndSec = Math.Max(_trimStartSec + 0.1, Math.Min(duration, _trimEndSec));
-        var plan = new VoiceOverPlaybackPlan(_trimStartSec, effectiveEndSec, _speedSegments, _baseSpeed, _cuts);
+        double? freezeLufs = await VideoLoudnessCache.EnsureAsync(ffmpeg, _videoPath).WaitAsync(token);
+        var plan = new VoiceOverPlaybackPlan(_trimStartSec, effectiveEndSec, _speedSegments, _baseSpeed, _cuts) { FreezeVideoLufs = freezeLufs };
         _trimEndSec = plan.SourceEndSec;
         _timeline = plan.Timeline;
         string id = Guid.NewGuid().ToString("N");
@@ -172,7 +172,6 @@ public partial class VoiceOverWindow
         Math.Clamp(SessionOutputStart(session) + SessionOutputDuration(session) -
             (_timeline?.SourceToOutput(session.RenderEndSec) ?? session.RenderEndSec), 0, SessionOutputDuration(session));
 
-    /// <summary>VOSTALL_01 — retain the last known aligned part and stop the microphone on a clock failure.</summary>
     private void CheckRecordingClock()
     {
         if (_playbackPlan == null || !_isRecording || _recordPaused || _currentSession == null ||

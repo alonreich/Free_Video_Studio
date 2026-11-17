@@ -5,18 +5,10 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AIREUSE_04 (docs/05 SYS-AISETTINGS §7.7, SYS-STORAGE-TABLE) — a small disposable disk cache for AI answers that
-/// are worth keeping across launches. One file per answer under <see cref="ApplicationPaths.AiAnswerCacheDirectory"/>,
-/// named by a SHA-256 of the caller's key (the key holds file identity + company + model, never an API key).
-/// Atomic writes (<see cref="AtomicJsonFile.WriteText"/>); at most <see cref="MaxFiles"/> files, oldest removed first.
-/// A missing, unreadable or locked file is a cache miss, never an error the user sees.
-/// </summary>
 internal static class AiAnswerDiskStore
 {
     internal const int MaxFiles = 200;
 
-    /// <summary>Test seam: a folder inside the suite's own work folder (TESTOUT_01).</summary>
     internal static string? DirectoryOverrideForTests { get; set; }
 
     private static string Folder => DirectoryOverrideForTests ?? ApplicationPaths.CreateDefault().AiAnswerCacheDirectory;

@@ -2,13 +2,6 @@
 
 namespace FvsBuild;
 
-/// <summary>
-/// Mirrors every orchestrator line to the console AND .\build.log, preserving the
-/// historical log contract: after a run the FIRST line of build.log is the verdict
-/// (OK / WARN / FAIL). The old BuildLog.ps1 wrapper did this from outside the batch
-/// through a cmd pipe; doing it inside the orchestrator removes that shell coupling
-/// and keeps the log working identically in CI where no console exists.
-/// </summary>
 internal sealed class BuildLog : IDisposable
 {
     private enum Level { Info, Warning, Error, Success, Banner }
@@ -63,7 +56,6 @@ internal sealed class BuildLog : IDisposable
         }
     }
 
-    /// <summary>Writes the one-line verdict as the new first line of the log file.</summary>
     public void WriteVerdictAndClose(int exitCode, TimeSpan duration)
     {
         string label = exitCode != 0 || ErrorCount > 0 ? "FAIL"

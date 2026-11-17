@@ -1,27 +1,9 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// CACHEBOUND_02 (04 UI-MEMESELECT) — a byte-budgeted LRU that OWNS what it stores.
-///
-/// <list type="bullet">
-/// <item>Every stored value has exactly one owner: this cache. A caller never receives a raw value,
-/// only a <see cref="Lease"/>; the value stays alive while ANY lease on it is open.</item>
-/// <item>Eviction (budget, replacement of the same identity, <see cref="Remove"/>, <see cref="Clear"/>)
-/// drops the entry from the index at once, but the value is disposed only when its last lease closes.
-/// So a bitmap still bound to a UI control is never disposed under it.</item>
-/// <item>Leased (pinned) entries are never chosen for budget eviction; the budget therefore bounds
-/// everything NOT currently on screen, and what is on screen is bounded by the viewport.</item>
-/// <item>One live entry per identity (e.g. a file path): storing a new key for the same identity
-/// (the file was replaced, so size/mtime changed) retires the old one.</item>
-/// <item>A null value is a cached "no picture" answer (negative entry) with a small fixed cost.</item>
-/// </list>
-/// Thread-safe. Values are disposed outside the lock, on the thread that dropped the last reference.
-/// </summary>
 internal sealed class OwnedLruCache<T> where T : class, IDisposable
 {
     public enum Lookup { Miss, Negative, Hit }
@@ -42,7 +24,6 @@ internal sealed class OwnedLruCache<T> where T : class, IDisposable
         public LinkedListNode<Entry>? Node;
     }
 
-    /// <summary>An open reference to a cached value. Dispose exactly when the value is no longer shown.</summary>
     public sealed class Lease : IDisposable
     {
         private readonly OwnedLruCache<T> _owner;
@@ -87,7 +68,6 @@ internal sealed class OwnedLruCache<T> where T : class, IDisposable
     public int Count { get { lock (_gate) return _byKey.Count; } }
     public long Bytes { get { lock (_gate) return _bytes; } }
 
-    /// <summary>Indexed entries with at least one open lease.</summary>
     public int PinnedCount
     {
         get
@@ -101,7 +81,6 @@ internal sealed class OwnedLruCache<T> where T : class, IDisposable
         }
     }
 
-    /// <summary>Entries already evicted from the index whose value waits for its last lease (diagnostics/tests).</summary>
     public int RetiredAliveCount { get { lock (_gate) return _retiredAlive; } }
 
     public Lookup TryAcquire(string key, out Lease? lease)
@@ -118,11 +97,6 @@ internal sealed class OwnedLruCache<T> where T : class, IDisposable
         }
     }
 
-    /// <summary>
-    /// Stores <paramref name="value"/> (ownership passes to the cache, null = negative answer) and returns a
-    /// lease on what is now cached under <paramref name="key"/> (null for a negative answer). If a racing
-    /// producer stored the same key first, the first value wins and <paramref name="value"/> is disposed.
-    /// </summary>
     public Lease? AddAndAcquire(string key, string identity, T? value, long cost)
     {
         var dispose = new List<T>();
@@ -151,7 +125,6 @@ internal sealed class OwnedLruCache<T> where T : class, IDisposable
         return lease;
     }
 
-    /// <summary>Retires whatever is cached for <paramref name="identity"/> (e.g. the file disappeared).</summary>
     public void Remove(string identity)
     {
         var dispose = new List<T>();
@@ -162,7 +135,6 @@ internal sealed class OwnedLruCache<T> where T : class, IDisposable
         DisposeAll(dispose);
     }
 
-    /// <summary>Retires all entries whose identity starts with <paramref name="prefix"/> (e.g. all windows of a file).</summary>
     public void RemoveByIdentityPrefix(string prefix)
     {
         var dispose = new List<T>();

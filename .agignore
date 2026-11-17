@@ -1,4 +1,3 @@
-# Build Outputs & Node
 mp3/
 mp4/
 bin/
@@ -11,13 +10,11 @@ build/
 coverage/
 .npm/
 
-# IDE & Editor Settings
 .vs/
 .idea/
 *.user
 *.suo
 
-# Dependencies & Packages
 packages/
 *.nupkg
 node_modules/
@@ -25,7 +22,6 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
-# Binaries & Logs
 *.dll
 *.exe
 *.pdb
@@ -35,17 +31,14 @@ pnpm-lock.yaml
 *.mp3
 *.mp4
 
-# Generated Code
 **/Migrations/*
 *.g.cs
 *.designer.cs
 
-# Secrets & Local Configurations
 .env
 appsettings.Development.json
 appsettings.Local.json
 
-# Custom Project Folders
 compiled/
 temp_staging/
 .dev_data/

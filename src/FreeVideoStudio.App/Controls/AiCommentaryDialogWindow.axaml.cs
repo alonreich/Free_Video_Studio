@@ -7,10 +7,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// Result from the <see cref="AiCommentaryDialogWindow"/> modal. <see cref="Personality"/> (COMMENTARYMIX_01) is
-/// the slider mix; when it is null the <see cref="Tone"/>'s one-click style is used.
-/// </summary>
 public sealed record AiCommentaryDialogResult(
     CaptionTone Tone,
     CaptionStyle Style,
@@ -28,10 +24,6 @@ public sealed record AiCommentaryDialogResult(
         (Personality ?? CommentaryPersonality.FromPreset(CommentaryPersonality.PresetForTone(Tone))).Normalized();
 }
 
-/// <summary>
-/// AICOMMENTARY_UI_01 / COMMENTARYUI_02 — configuration dialog for AI Live Commentary Captions generation. All state is
-/// in <see cref="AiCommentaryOptionsViewModel"/> (bound, MVVM_01); this file only opens and closes the window.
-/// </summary>
 public partial class AiCommentaryDialogWindow : Window
 {
     public AiCommentaryDialogResult? Result { get; private set; }
@@ -56,7 +48,6 @@ public partial class AiCommentaryDialogWindow : Window
         };
     }
 
-    /// <summary>AIPROFILE_ONE_01 — the game-type list order (kept here for existing callers).</summary>
     internal static int ProfileToIndex(AiGameProfile p) => AiCommentaryOptionsViewModel.ProfileToIndex(p);
 
     public static async Task<AiCommentaryDialogResult?> ShowDialogAsync(
@@ -72,6 +63,5 @@ public partial class AiCommentaryDialogWindow : Window
         return dlg.Result;
     }
 
-    /// <summary>AICOMMENTARY_REMEMBER_01 — stores what the user just chose, for the next time the window opens.</summary>
     public static void Remember(AiCommentaryDialogResult r) => AiCommentaryOptionsViewModel.Remember(r);
 }

@@ -5,7 +5,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.AvRegression.Tests;
 
-/// <summary>What was found inside an exported file.</summary>
 internal sealed record ExportScan(
     string Path, string Work, double DurationSec,
     double[] Flashes, double[] GameplayPulses, double[] MusicPulses, double[] VoicePulses,
@@ -14,7 +13,6 @@ internal sealed record ExportScan(
     List<(double Start, double End)> CornerPicture,
     int[] FrameCodes, double[] BedEnvelope)
 {
-    /// <summary>The constant offset (intro still + fade-in pad) from the gameplay body to the file, estimated from the flashes.</summary>
     public double BodyOffset(IReadOnlyList<(double Source, double ExportBody)> expected)
     {
         double best = double.NaN; int bestHits = 0;
@@ -31,10 +29,8 @@ internal sealed record ExportScan(
     }
 }
 
-/// <summary>Runs the app's real exports (ProcessWorker / MergerWorker, CPU) and scans the result.</summary>
 internal static class ExportRig
 {
-    /// <summary>Main screen export: the payload goes through the app's own MainMediaController.ApplyPayload.</summary>
     public static async Task<ExportScan> MainAsync(MainEdit edit, string work)
     {
         string outDir = Directory.CreateDirectory(Path.Combine(work, "export")).FullName;

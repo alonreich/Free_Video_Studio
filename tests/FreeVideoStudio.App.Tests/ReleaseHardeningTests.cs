@@ -7,11 +7,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// WORKERSTAGE_01, UNSIGNEDDEV_01, BUILDKILL_01, UPDATESPACE_01, ASSETHASH_01, BETA_01, RECHECK_01,
-/// RELNOTES_03 — the update and release hardening from the 2026-10-17 release audit
-/// (05 SYS-UPGRADE-TRUST, SYS-AUTOUPDATE; 09 DIST-SMART, DIST-RELEASEGATE).
-/// </summary>
 public sealed class ReleaseHardeningTests
 {
     private static string Source(params string[] relative) => File.ReadAllText(RepoRoot.SourcePath(relative));
@@ -117,7 +112,6 @@ public sealed class ReleaseHardeningTests
         }
     }
 
-    /// <summary>SETNOBETA_01 — there is one release line: the updater has no Beta channel any more.</summary>
     [Fact]
     public void NoBetaChannel_TheUpdaterReadsTheLatestReleaseOnly()
     {

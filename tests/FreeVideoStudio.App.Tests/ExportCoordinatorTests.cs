@@ -1,5 +1,4 @@
-﻿
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using FreeVideoStudio.App.Services;
 using FreeVideoStudio.Core.Abstractions;
@@ -7,10 +6,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// EXPORTSESSION_02 — the export lifecycle owner, exercised with a fake runner. No FFmpeg, no
-/// window, no dispatcher: the lifecycle guarantees of EXPORTSESSION_01 are proven here directly.
-/// </summary>
 public sealed class ExportCoordinatorTests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
@@ -269,7 +264,6 @@ public sealed class ExportCoordinatorTests
         Assert.Contains(h.Faults.Captured, f => f.Tier == FaultTier.Degraded);
     }
 
-
     private sealed class Harness
     {
         public readonly RecordingFaultSink Faults = new();
@@ -300,7 +294,6 @@ public sealed class ExportCoordinatorTests
         }
     }
 
-    /// <summary>A pipeline that runs until the test says otherwise (ignoring its token by default).</summary>
     private sealed class FakeRunner : IExportRunner
     {
         private readonly TaskCompletionSource<ExportOutcome> _exit = new(TaskCreationOptions.RunContinuationsAsynchronously);

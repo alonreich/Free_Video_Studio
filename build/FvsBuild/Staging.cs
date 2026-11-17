@@ -1,29 +1,14 @@
 ﻿namespace FvsBuild;
 
-/// <summary>
-/// Step 1-2 of the pipeline: clean, stage the release (app publish output + backend/frontend
-/// native binaries + starter media) and write its manifests. NODROPPER_01: the staged folder is
-/// what the Inno Setup installer packs (InnoInstaller) — nothing is zipped into the program's own
-/// resources any more. Every filename here is a contract: the installer installs exactly this
-/// layout and MemeAssets.StarterFiles lists the starter names.
-/// </summary>
 internal static class Staging
 {
     private const string ProjectFile = @"src\FreeVideoStudio.App\FreeVideoStudio.App.csproj";
     private const string ProjectExe = "FreeVideoStudio.exe";
-    /// <summary>NODROPPER_01 — .\compiled holds exactly the Inno Setup installer.</summary>
     private const string OutputExe = InnoInstaller.SetupFileName;
     private const string OutputDir = @".\compiled";
-    /// <summary>
-    /// RELEASEASSETS_01 — release sidecars (runtime.manifest.json) live HERE, not in .\compiled.
-    /// MANDATE #2 says .\compiled holds exactly one file, and ValidateCompiledOutput enforces it; the
-    /// manifest used to be written into .\compiled and every build that reached validation failed.
-    /// </summary>
     private const string ReleaseAssetsDir = @".\obj\ReleaseAssets";
     private const string StagingDir = @".\obj\StandaloneTemp\Staging";
-    /// <summary>NODROPPER_01 — the signed file list packed into the installer beside the staged files.</summary>
     private const string InstallerListDir = @".\obj\StandaloneTemp\InstallerList";
-    /// <summary>Left by builds before NODROPPER_01; removed so it can never be embedded again.</summary>
     private const string LegacyPayloadZip = @"src\FreeVideoStudio.App\payload.zip";
 
     private static readonly string[] BackendExact =
@@ -60,17 +45,6 @@ internal static class Staging
     public static string InstallerListDirPath => InstallerListDir;
     public static string StagedProgramPath => Path.Combine(StagingDir, ProjectExe);
 
-    /// <summary>
-    /// BUILDKILL_01 — stops every process whose executable lives INSIDE this repository (a dev copy of
-    /// the app, its Merger/Crop windows, the mpv/ffmpeg children they started, a stale test host) and
-    /// the dotnet build servers, so locked files cannot survive a clean.
-    ///
-    /// <para>⚠️ It used to run <c>taskkill /F /IM FreeVideoStudio.exe /T</c>: every copy of the product on
-    /// the machine, by NAME. That included the INSTALLED app in Program Files with a real project open,
-    /// and <c>/F</c> skips the app's own "save your work?" question, so starting a build silently threw
-    /// away unsaved edits (and <c>/T</c> killed a running export with it). A copy outside the repository is
-    /// never touched now. This process (FvsBuild runs from build\FvsBuild\bin) is excluded.</para>
-    /// </summary>
     public static void TerminateProcesses(BuildLog log)
     {
         string root = Path.GetFullPath(Environment.CurrentDirectory).TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
@@ -101,7 +75,6 @@ internal static class Staging
         _ = Cli.RunQuiet("dotnet", ["build-server", "shutdown"]);
     }
 
-    /// <summary>Wipes bin/obj of both product projects and runs dotnet clean (parity with the old :CLEAN_ALL).</summary>
     public static void CleanAll(BuildLog log)
     {
         foreach (string directory in new[]
@@ -117,7 +90,6 @@ internal static class Staging
         _ = Cli.RunQuiet("dotnet", ["clean", ProjectFile, "-c", "Release", "-r", "win-x64", "--nologo", "-v", "q", "-nodeReuse:false"]);
     }
 
-    /// <summary>Release mode wipes .\compiled entirely; dev mode cleans any extra artifacts to ensure only the latest installer is kept.</summary>
     public static void PrepareCompiledDir(BuildLog log, bool devMode)
     {
         Directory.CreateDirectory(OutputDir);
@@ -135,7 +107,6 @@ internal static class Staging
         }
     }
 
-    /// <summary>Removes stale staging folders and any leftover payload.zip before the publish runs.</summary>
     public static void PurgeTempArtifacts(BuildLog log)
     {
         log.Info("[NativeAOT] 1. Purging old temp folders...");
@@ -145,13 +116,6 @@ internal static class Staging
         TryDeleteFile(LegacyPayloadZip);
     }
 
-    /// <summary>
-    /// ILCCRASH_01 — output that means ILC ITSELF crashed, as opposed to our code failing to compile.
-    /// ILC 9.0.x (dotnet/runtime#108743) can die with IL1013 / NullReferenceException inside
-    /// XNodeNavigator while its PARALLEL scanner processes a framework assembly's embedded
-    /// ILLink.Substitutions.xml. It is a race in the compiler: the identical inputs compile on the
-    /// next run. Nothing in FVS code or configuration triggers it, and nothing is suppressed for it.
-    /// </summary>
     private static readonly string[] IlcInternalCrashMarkers =
     [
         "ILCompiler.NativeAotFatalErrorException",
@@ -159,7 +123,6 @@ internal static class Staging
         "error IL1013",
     ];
 
-    /// <summary>Runs the NativeAOT publish of the program into the staging folder (the only publish since NODROPPER_01).</summary>
     public static bool Publish(string outputDir, string buildVersion, BuildLog log, string stepTitle)
     {
         log.Info($"[NativeAOT] {stepTitle}");
@@ -212,7 +175,6 @@ internal static class Staging
         return exit == 0;
     }
 
-    /// <summary>Step 2.5/2.6: stages backend codecs, the mpv frontend and the starter media next to the staged app.</summary>
     public static bool StageDependencies(BuildLog log, string? destination = null)
     {
         string stagingRoot = destination ?? StagingDir;
@@ -333,12 +295,6 @@ internal static class Staging
             }
     }
 
-    /// <summary>
-    /// Step 3: writes the release manifests into the staging folder (runtime.manifest.json, then
-    /// install.manifest.json over every staged file) and the release copy of runtime.manifest.json.
-    /// Debug symbols move to obj\ReleaseAssets\Symbols first, so they are never installed.
-    /// NODROPPER_01: nothing is zipped; the staged folder IS what the Inno Setup installer packs.
-    /// </summary>
     public static bool WriteManifests(BuildLog log)
     {
         log.Info("[NativeAOT] 3. Writing release manifests...");
@@ -373,11 +329,6 @@ internal static class Staging
         }
     }
 
-    /// <summary>
-    /// Verifies .\compiled contains EXACTLY FreeVideoStudio.exe (MANDATE #2, NODROPPER_01).
-    /// Strays are removed, then reported as a failure - same as the old
-    /// :PURGE_COMPILED_EXTRAS + :VALIDATE_COMPILED_OUTPUT pair.
-    /// </summary>
     public static bool ValidateCompiledOutput(BuildLog log)
     {
         bool invalid = !File.Exists(CompiledExePath);
@@ -400,7 +351,6 @@ internal static class Staging
         return true;
     }
 
-    /// <summary>Step 6: removes the staging folders.</summary>
     public static void CleanupTempArtifacts(BuildLog log)
     {
         log.Info("[NativeAOT] 6. Cleaning up temporary artifacts...");

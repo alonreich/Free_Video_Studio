@@ -6,18 +6,11 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// UNDO_10 / UNDO_11. These pin the four rules (U1..U4) that were lifted from the Granular Speed
-/// Editor's PushUndo. They were paid for in bug reports once; these tests are what stop the
-/// generalisation from quietly losing any of them.
-/// </summary>
 public class UndoStackTests
 {
-    /// <summary>Immutable with value equality — the contract UndoStack requires of its state type.</summary>
     private sealed record Doc(string Text, int Number = 0);
 
     private static UndoStack<Doc> NewStack(string initial = "a") => new(new Doc(initial));
-
 
     [Fact]
     public void Apply_ThenUndo_RestoresThePreviousState()
@@ -67,7 +60,6 @@ public class UndoStackTests
         s.Undo();
         Assert.Equal("delete segment", s.NextRedoLabel);
     }
-
 
     [Fact]
     public void U1_OneDragCollapsesToASingleUndoEntry()
@@ -127,7 +119,6 @@ public class UndoStackTests
         Assert.Equal(3, s.UndoCount);
     }
 
-
     [Fact]
     public void U2_DepthIsCappedAndTheOldestEntriesAreDropped()
     {
@@ -147,7 +138,6 @@ public class UndoStackTests
         Assert.Equal(40, NewStack().MaxDepth);
     }
 
-
     [Fact]
     public void U3_EditingAfterUndoDiscardsTheRedoBranch()
     {
@@ -163,7 +153,6 @@ public class UndoStackTests
         Assert.Null(s.Redo());
         Assert.Equal(new Doc("d"), s.Current);
     }
-
 
     [Fact]
     public void U4_ApplyingAnIdenticalStateDoesNotGrowTheStack()
@@ -187,7 +176,6 @@ public class UndoStackTests
         Assert.Equal(new Doc("a"), s.Current);
     }
 
-
     [Fact]
     public void RestoringDoesNotRecordHistory()
     {
@@ -201,11 +189,6 @@ public class UndoStackTests
         Assert.Equal(0, s.UndoCount);
     }
 
-    /// <summary>
-    /// UNDO_23 — the same re-entrancy trap on the REDO side. The guard was reset in a
-    /// <c>finally</c> that ran before <c>Changed</c> was raised, so the handler's write-back was
-    /// recorded as a fresh edit — which also wipes the redo branch (U3) and makes redo a one-shot.
-    /// </summary>
     [Fact]
     public void RedoingDoesNotRecordHistory()
     {
@@ -221,12 +204,6 @@ public class UndoStackTests
         Assert.Equal(0, s.RedoCount);
     }
 
-    /// <summary>
-    /// UNDO_23 — <c>Reset</c> raises <c>Changed</c> too, and the handler is repopulating controls
-    /// for a DIFFERENT document. Anything it echoes back is not an edit of that document; if it
-    /// were recorded, every project open would start with a phantom undo entry that reverts the
-    /// user to a document they never had.
-    /// </summary>
     [Fact]
     public void ResettingDoesNotRecordHistory()
     {
@@ -256,7 +233,6 @@ public class UndoStackTests
         Assert.Equal(4, fired);
     }
 
-
     [Fact]
     public void Reset_ClearsBothBranchesAndDoesNotRecordHistory()
     {
@@ -270,7 +246,6 @@ public class UndoStackTests
         Assert.False(s.CanUndo);
         Assert.False(s.CanRedo);
     }
-
 
     [Fact]
     public void Restore_RebuildsHistorySoUndoSurvivesAWindowClose()

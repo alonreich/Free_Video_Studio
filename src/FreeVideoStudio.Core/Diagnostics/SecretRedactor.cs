@@ -3,11 +3,6 @@ using System.Text.RegularExpressions;
 
 namespace FreeVideoStudio.Core.Diagnostics;
 
-/// <summary>
-/// Central secret redaction helper shared by Core diagnostics, RuntimeLog, and AI providers.
-/// Scrubs API keys (explicit and pattern-matched Google/Anthropic/OpenAI tokens), URL key query
-/// parameters, and sensitive authorization headers without mutating unrelated filtergraphs or paths.
-/// </summary>
 public static partial class SecretRedactor
 {
     private static readonly Regex UrlKeyParamPattern = new(@"(?i)(key=)[^&\s""']+", RegexOptions.Compiled);
@@ -18,7 +13,6 @@ public static partial class SecretRedactor
     private static readonly Regex AnthropicKeyShapePattern = new(@"sk-ant-[0-9A-Za-z_\-]{16,}", RegexOptions.Compiled);
     private static readonly Regex OpenAiKeyShapePattern = new(@"sk-[0-9A-Za-z_\-]{20,}", RegexOptions.Compiled);
 
-    /// <summary>Redacts API keys, query secrets, and auth headers from arbitrary log/error text.</summary>
     public static string RedactSecrets(string? text, params string?[] explicitSecrets)
     {
         if (string.IsNullOrEmpty(text)) return string.Empty;

@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -35,7 +34,7 @@ public static class AtomicJsonFile
 
             JsonNode? node = JsonNode.Parse(json);
             var obj = node as JsonObject;
-            
+
             if (obj != null)
             {
                 if (!obj.ContainsKey("schema_version") && !obj.ContainsKey("Version"))
@@ -66,25 +65,6 @@ public static class AtomicJsonFile
             writer.Flush();
         });
 
-    /// <summary>
-    /// ATOMICTEXT_01 — the SAME power-outage-safe protocol as <see cref="WriteObject"/>, for callers
-    /// that already hold a fully formed JSON document as text and must not have it reshaped.
-    ///
-    /// WHY THIS EXISTS: <c>SettingsManager</c>'s transaction (SETTX_02) serialises <c>AppSettings</c> through a
-    /// source-generated <c>JsonSerializerContext</c> (required for NativeAOT). Round-tripping that
-    /// output through <see cref="JsonObject"/> just to reach <see cref="WriteObject"/> would re-emit
-    /// the document from a different writer and risk silent formatting/ordering drift in a file the
-    /// migration tests compare against. This overload keeps the bytes the caller produced and gives
-    /// them the identical three-step guarantee that
-    /// <c>docs/05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-RECOVERY</c> mandates:
-    ///   1. unique GUID temp file in the TARGET directory, opened <see cref="FileOptions.WriteThrough"/>
-    ///   2. <c>stream.Flush(flushToDisk: true)</c> — the bytes are on the platter, not in the OS cache
-    ///   3. <c>File.Move(temp, path, overwrite: true)</c> — an atomic same-volume NTFS rename
-    ///
-    /// Writing a fixed-name temp file, or renaming before the flush, is what produces a correctly
-    /// named but ZERO-FILLED document after a power cut. Do not "simplify" this back to
-    /// File.WriteAllText.
-    /// </summary>
     public static void WriteText(string path, string contents)
         => WriteCore(path, stream =>
         {
@@ -92,12 +72,6 @@ public static class AtomicJsonFile
             stream.Write(bytes, 0, bytes.Length);
         });
 
-    /// <summary>
-    /// ATOMICBYTES_01 — the SAME power-outage-safe protocol for an opaque byte payload (cache files:
-    /// the Merger's lane PNG/peaks, CACHEBOUND_01). One implementation, not a copy at the call site
-    /// (<c>docs/05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-ATOMICWRITE</c>: "Never reimplement this sequence").
-    /// Takes no lock: callers that share the file across processes still hold their own mutex.
-    /// </summary>
     public static void WriteBytes(string path, byte[] data)
     {
         ArgumentNullException.ThrowIfNull(data);

@@ -9,14 +9,8 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// PREVIEWMIX_02 / AIPARITY_01 / CORNERPARITY_01 / VOPREVIEW_02 / PREVIEWFIDELITY_01 — what the preview
-/// shows or plays is derived from the EXPORT's own graph or math. Each test builds the export side with
-/// the export's builders and checks the preview side against it, never against a copied constant.
-/// </summary>
 public class RenderedMixParityTests
 {
-    /// <summary>An export-shaped graph: video chains, the shared music mix, a meme splice, a corner meme, the limiter.</summary>
     private static (string Graph, List<string> AudioChains, string Final) ExportLikeGraph(bool cornerSound)
     {
         var cfg = new JsonObject { ["ducking_enabled"] = true, ["carving_enabled"] = true, ["main_vol"] = 0.8, ["music_vol"] = 0.6 };
@@ -96,7 +90,6 @@ public class RenderedMixParityTests
         Assert.False(PreviewMixPolicy.NeedsRenderedMix(false, false, false, false, 1.0, new[] { 1.0 }));
     }
 
-    /// <summary>FREEZESFX_01 — a freeze carries the slow-motion sound, so the preview plays the rendered mix.</summary>
     [Fact]
     public void Freeze_NeedsTheRenderedMix_ForItsSound()
     {
@@ -231,7 +224,6 @@ public class RenderedMixGateTests
 
 public class VoiceProtectionPulseTests
 {
-    /// <summary>The export's pulse expression for these takes, built the way ProcessWorker builds it, evaluated at t.</summary>
     private static double ExportExpression(double t, params (double S, double E)[] takes)
     {
         double sum = 0;
@@ -272,7 +264,6 @@ public class ZoomParityTests
         return (P(1), P(2), P(3), P(4));
     }
 
-    /// <summary>The export's visible source region at progress p (BuildConstantZoomFilter → SnapZoomWindow).</summary>
     private static (double W, double H, double X, double Y) ExportRegion(SpeedSegment s, double p)
     {
         var (sw, sh) = CoordinateMath.GetResolutionInts(s.ZoomOrigRes!);
@@ -376,7 +367,6 @@ public class AiTrajectoryParityTests
         return t;
     }
 
-    /// <summary>Evaluates the export's crop filter text (the ffmpeg expressions) at time t on a 1920x1080 input.</summary>
     private static (double X, double Y, double W, double H) EvaluateExportFilter(string filter, double t)
     {
         const double inW = 1920, inH = 1080;
@@ -470,7 +460,6 @@ public class AiTrajectoryParityTests
         Assert.Contains(traj.ToFfmpegCropFilter(), held);
     }
 
-    /// <summary>A tiny evaluator for the subset of ffmpeg's expression language the crop filters use.</summary>
     private sealed class Expr
     {
         private readonly string _s; private int _i;

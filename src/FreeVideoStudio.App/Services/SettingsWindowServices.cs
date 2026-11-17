@@ -13,18 +13,13 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-
-/// <summary>SETTINGSDI_01 — the settings document: read the frozen snapshot, change it in one transaction.</summary>
 public interface ISettingsStore
 {
-    /// <summary>The published, read-only snapshot (SETTINGSFREEZE_01).</summary>
     AppSettings Current { get; }
 
-    /// <summary>One SETTX_01 transaction. False when it did not commit (nothing changed).</summary>
     bool TryUpdate(Action<AppSettings> patch);
 }
 
-/// <summary>Production <see cref="ISettingsStore"/>: <see cref="SettingsManager"/>.</summary>
 public sealed class SettingsManagerStore : ISettingsStore
 {
     public static readonly SettingsManagerStore Instance = new();
@@ -33,20 +28,15 @@ public sealed class SettingsManagerStore : ISettingsStore
     public bool TryUpdate(Action<AppSettings> patch) => SettingsManager.Update(patch);
 }
 
-/// <summary>SETTINGSDI_01 — the outcome of checking an AI key with its company.</summary>
 public sealed record KeyTestResult(bool Success, string Message, bool Cancelled = false, IReadOnlyList<string>? Models = null, bool Unverified = false);
 
-/// <summary>SETTINGSDI_01 — talks to the AI companies about keys and models.</summary>
 public interface IAiKeyValidator
 {
-    /// <summary>Checks <paramref name="key"/> with <paramref name="vendor"/>. Never throws; cancellation is a result.</summary>
     Task<KeyTestResult> TestAsync(AiVendor vendor, string key, string googleModel, CancellationToken ct);
 
-    /// <summary>The models <paramref name="key"/> may use. Empty on failure; never throws.</summary>
     Task<IReadOnlyList<string>> ListModelsAsync(AiVendor vendor, string key, CancellationToken ct);
 }
 
-/// <summary>Production <see cref="IAiKeyValidator"/>: GeminiClient / AiVisionProviders.</summary>
 public sealed class AiKeyValidator : IAiKeyValidator
 {
     public static readonly AiKeyValidator Instance = new();
@@ -130,17 +120,11 @@ public sealed class AiKeyValidator : IAiKeyValidator
     }
 }
 
-/// <summary>SETTINGSDI_01 / SETCHIPS_01 — which hardware video encoders this PC has.</summary>
 public interface IEncoderCatalog
 {
-    /// <summary>FFmpeg encoder names found (e.g. h264_nvenc). Null when detection failed. Never throws.</summary>
     Task<IReadOnlyCollection<string>?> DetectAsync();
 }
 
-/// <summary>
-/// Production <see cref="IEncoderCatalog"/>: probes FFmpeg ONCE per process, off the UI thread,
-/// and caches the answer (the hardware does not change while the app runs).
-/// </summary>
 public sealed class FfmpegEncoderCatalog : IEncoderCatalog
 {
     public static readonly FfmpegEncoderCatalog Instance = new();
@@ -162,26 +146,20 @@ public sealed class FfmpegEncoderCatalog : IEncoderCatalog
     public Task<IReadOnlyCollection<string>?> DetectAsync() => _detected.Value;
 }
 
-/// <summary>SETTINGSDI_01 / SETBACKUPIO_01 — reading and writing a settings backup file.</summary>
 public interface ISettingsBackupStore
 {
-    /// <summary>The largest file accepted as a backup.</summary>
     long MaxBytes { get; }
 
-    /// <summary>Validates size BEFORE reading, then reads asynchronously. Null + reason when refused.</summary>
     Task<(string? Json, string? Error)> ReadAsync(string path, CancellationToken ct);
 
-    /// <summary>Writes atomically (temp file + replace), asynchronously.</summary>
     Task WriteAsync(string path, string json, CancellationToken ct);
 }
 
-/// <summary>Production <see cref="ISettingsBackupStore"/> on the local file system.</summary>
 public sealed class FileSettingsBackupStore : ISettingsBackupStore
 {
     public static readonly FileSettingsBackupStore Instance = new();
     private FileSettingsBackupStore() { }
 
-    /// <summary>SETBACKUPIO_01 — shared limit: a real backup is a few kilobytes.</summary>
     public const long MaxBackupBytes = 2_000_000;
 
     public long MaxBytes => MaxBackupBytes;
@@ -213,7 +191,6 @@ public sealed class FileSettingsBackupStore : ISettingsBackupStore
     }
 }
 
-/// <summary>SETTINGSDI_01 — the manual update controls on the About tab.</summary>
 public interface IUpdateChecker
 {
     string CurrentVersion { get; }
@@ -227,7 +204,6 @@ public interface IUpdateChecker
     string ReleasesUrl { get; }
 }
 
-/// <summary>Production <see cref="IUpdateChecker"/>: <see cref="UpdateService"/>.</summary>
 public sealed class UpdateServiceChecker : IUpdateChecker
 {
     public static readonly UpdateServiceChecker Instance = new();
@@ -243,7 +219,6 @@ public sealed class UpdateServiceChecker : IUpdateChecker
     public string ReleasesUrl => UpdateService.ReleasesPageUrl;
 }
 
-/// <summary>SETTINGSDI_01 — the cross-process session-state store (last tab, music folder, merger folder).</summary>
 public interface ISessionStateSink
 {
     bool IsPrimed { get; }
@@ -251,7 +226,6 @@ public interface ISessionStateSink
     void Enqueue(JsonObject updates);
 }
 
-/// <summary>Production <see cref="ISessionStateSink"/>: <see cref="SessionStateWriter"/>.</summary>
 public sealed class SessionStateSink : ISessionStateSink
 {
     private readonly SessionStateWriter _writer;
@@ -261,11 +235,6 @@ public sealed class SessionStateSink : ISessionStateSink
     public void Enqueue(JsonObject updates) => _writer.Enqueue(updates);
 }
 
-/// <summary>
-/// SETTINGSDI_01 — the bundle the composition root hands the Settings window (and its view-model).
-/// <see cref="CreateDefault"/> exists for processes/places that have no composition root in reach
-/// (the Video Merger, the XAML previewer); it builds the same production adapters.
-/// </summary>
 public sealed record SettingsWindowServices(
     ApplicationPaths Paths,
     ISettingsStore Store,

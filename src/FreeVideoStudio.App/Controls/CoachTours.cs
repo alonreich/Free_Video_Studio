@@ -1,32 +1,9 @@
-﻿
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// ISSUE_04 — EVERY SCREEN'S WALKTHROUGH SCRIPT, IN ONE PLACE.
-///
-/// The engine that draws these is <see cref="CoachOverlay"/>. This file is deliberately nothing but
-/// copy, so the wording can be reviewed and improved without touching animation code, and so it is
-/// obvious at a glance which screens have onboarding and which do not.
-///
-/// WRITING RULES — these are what make the difference between a tour and a wall of jargon:
-///   (W1) Write for someone who has NEVER edited a video. No "trim", "segment", "render", "encode",
-///        "codec", "keyframe". Say "cut", "block", "save your video".
-///   (W2) Title: six words or fewer, in the user's language, not the button's label.
-///   (W3) Body: two sentences maximum. Say what the thing DOES and why they would want it.
-///   (W4) Every TargetName must be a real x:Name in that window's .axaml. A name that no longer
-///        exists does not crash — CoachOverlay dims the whole screen and shows the text as plain
-///        advice — but it silently loses the pointing, so check names when you rename a control.
-///   (W5) Keep tours to 5-7 steps. Past that people stop reading and hit SKIP, which burns their
-///        remaining automatic showings for that screen.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public static class CoachTours
 {
-    /// <summary>Screen keys double as the UiStateStore counter filenames. Do not rename casually —
-    /// a changed key resets everyone's "already seen this" state and the tour reappears.</summary>
     public const string MainAppKey = "mainapp";
     public const string MergerKey = "merger";
     public const string CropToolKey = "croptool";

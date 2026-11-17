@@ -1,7 +1,5 @@
 ﻿namespace FreeVideoStudio.Core.Media;
 
-/// <summary>VOSAMPLE_01: immutable output anchor established immediately before capture starts.
-/// Opening buffers spend the same budget as all later buffers; UI delivery never moves the anchor.</summary>
 public sealed class VoiceCaptureBudget(double outputEnd, Func<double> readOutputClock)
 {
     public double? OutputStart { get; private set; }

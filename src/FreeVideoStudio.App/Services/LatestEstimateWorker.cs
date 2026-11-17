@@ -2,7 +2,6 @@
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>SIZEESTIMATE_01 — one worker and one pending snapshot per window; never blocks the UI.</summary>
 public sealed class LatestEstimateWorker<T> : IDisposable
 {
     private readonly Channel<(long Version, T Snapshot)> _requests = Channel.CreateBounded<(long, T)>(

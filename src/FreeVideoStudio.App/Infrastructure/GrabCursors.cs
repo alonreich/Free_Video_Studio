@@ -6,13 +6,6 @@ using Avalonia.Media.Imaging;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// GRABCURSOR_01 — the open hand ("you can pick this up") and the closed hand ("you are holding it")
-/// cursors of a draggable item (Video-Merger-Migration.md D23). Windows has no stock grab cursors,
-/// so both are drawn once from vector shapes (white hand, dark outline, 24×24, hotspot in the palm)
-/// and cached. If drawing fails for any reason the stock Hand / SizeAll cursors are used instead —
-/// a missing custom cursor must never leave the pointer invisible.
-/// </summary>
 internal static class GrabCursors
 {
     private static Cursor? _open;
@@ -50,7 +43,6 @@ internal static class GrabCursors
 
     private static Geometry R(double x, double y, double w, double h, double r) => new RectangleGeometry(new Rect(x, y, w, h), r, r);
 
-    /// <summary>Palm, four raised fingers and the thumb out to the side.</summary>
     private static Geometry OpenHand() => Union(
         R(6.5, 10.5, 12.5, 11, 3.5),
         R(6.5, 4.0, 3.0, 10, 1.5),
@@ -59,7 +51,6 @@ internal static class GrabCursors
         R(16.2, 5.0, 2.8, 9, 1.4),
         R(2.8, 10.0, 5.5, 3.2, 1.6));
 
-    /// <summary>A closed fist: palm with the knuckles on top and the thumb folded across.</summary>
     private static Geometry Fist() => Union(
         R(5.5, 9.0, 13.5, 11.5, 3.5),
         R(6.0, 7.0, 3.2, 4.5, 1.6),

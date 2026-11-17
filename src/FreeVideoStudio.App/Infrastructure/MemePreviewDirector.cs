@@ -10,96 +10,24 @@ using CoreMeme = FreeVideoStudio.Core.Media.MemePlacement;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// MEME_07 — THE MEME CUTAWAY, SHOWN IN THE PREVIEW EXACTLY AS IT WILL BE EXPORTED.
-///
-/// <para>
-/// <b>The problem this solves.</b> A meme occupies ZERO source seconds and its whole length in
-/// OUTPUT seconds, so <see cref="OutputTimeline.OutputToSourceRelative"/> answers every instant
-/// inside the block with the anchor frame. That is mathematically right and visually useless: the
-/// preview parked on one still while the finished video plays a whole meme, and the user could not
-/// see what they had built until they exported it.
-/// </para>
-///
-/// <para>
-/// <b>The approach (option B — one host, swap the file).</b> Every preview in this app is a single
-/// <c>MpvVideoView</c> that owns a libmpv render context, a D3D11 device, WGL/DXGI interop and a
-/// 16-texture shared swap chain. A SECOND one, layered over the first, would give a seamless
-/// cutaway and would also double that stack in every window and add a disposal-ordering hazard to
-/// four of them. So instead the ONE host is re-pointed: park the gameplay on the anchor frame,
-/// load the meme, play it through, load the gameplay back at the same anchor frame, carry on.
-/// </para>
-///
-/// <para>
-/// <b>The cost, and why it is announced rather than hidden.</b> Two <c>loadfile</c> round-trips per
-/// meme, a few hundred milliseconds each, during which the picture is black. Hiding that would read
-/// as a stutter or a crash. So each swap raises a blocking, unmissable overlay that says what is
-/// happening and clears itself the moment the picture is live again. The user asked for exactly
-/// this: stall visibly, then be flawless.
-/// </para>
-///
-/// <para>
-/// <b>⚠️ THE RULE EVERY HOST WINDOW MUST FOLLOW.</b> While this director is active, mpv is showing
-/// the MEME, so <c>CurrentTime</c>, <c>Duration</c> and <c>IsEof</c> describe the meme file and NOT
-/// the gameplay. Every consumer of those — cut-skip, trim-end-stop, music sync, voice-take sync,
-/// the zoom crop updater, the end-of-video handler — would misfire. So the host's playback tick
-/// must begin with:
-/// <code>
-///     if (_memePreview != null &amp;&amp; _memePreview.IsActive) { /* hold the caret */ return; }
-/// </code>
-/// That single early return is what makes this safe, and it is why the caret hold is the only
-/// thing a host is allowed to do while a meme is on screen.
-/// </para>
-///
-/// <para>
-/// <b>What deliberately does NOT trigger a cutaway.</b> Only forward PLAYBACK crossing an anchor
-/// does. Scrubbing, dragging the caret, and every programmatic seek are excluded — detected as a
-/// jump larger than <see cref="SeekJumpSec"/> or a backwards move — because a cutaway that fired
-/// while the user dragged the playhead would make the timeline impossible to scrub, which is the
-/// opposite of the point.
-/// </para>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public sealed class MemePreviewDirector
 {
-    /// <summary>Where the one mpv host currently is.</summary>
     public enum Phase
     {
-        /// <summary>Showing the gameplay. The host's normal tick logic is valid.</summary>
         Idle,
-        /// <summary>Swapping the gameplay out for the meme. Picture is black; overlay is up.</summary>
         LoadingMeme,
-        /// <summary>The meme is on screen and running. mpv's clock is the MEME's clock.</summary>
         PlayingMeme,
-        /// <summary>Swapping the gameplay back in. Picture is black; overlay is up.</summary>
         Returning
     }
 
-    /// <summary>A one-tick move larger than this is a seek, not playback, and never fires a meme.</summary>
     private const double SeekJumpSec = 1.5;
 
-    /// <summary>Tolerance for "the playhead crossed the anchor this tick".</summary>
     private const double CrossEps = 0.001;
 
-    /// <summary>
-    /// After returning from a meme the playhead sits ON its anchor, which would re-arm the very
-    /// meme that just played. Suppression clears once the gameplay has moved this far past it.
-    /// </summary>
     private const double ReArmGuardSec = 0.30;
 
-    /// <summary>
-    /// MEMEPREV_02 — when playback (re)starts right ON a meme's point (MARK START, the end of a
-    /// deleted part the player just jumped, the end of a freeze, a play after a pause or seek) there
-    /// is no "crossing": the first tick already sits at or just past the anchor. A meme at most this
-    /// far behind the playhead on that first tick is played. The re-arm guard keeps it from replaying.
-    /// </summary>
     private const double FreshStartWindowSec = 0.15;
 
-    /// <summary>
-    /// MEMEPREV_02 — the player parks a little before MARK END (TL-ENDSTOP), so a meme placed AT the
-    /// end can never be crossed; it plays once the playhead is this close to it.
-    /// </summary>
     private const double EndWindowSec = 0.15;
 
     private const int LoadTimeoutMs = 4000;
@@ -122,7 +50,6 @@ public sealed class MemePreviewDirector
     private string? _savedMute;
     private readonly Func<double>? _trimEndSec;
 
-    /// <summary>MEMELEVEL_03 — measured loudness per file (memes and the gameplay), shared by every director.</summary>
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, double?> _lufs = new(StringComparer.OrdinalIgnoreCase);
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _measuring = new(StringComparer.OrdinalIgnoreCase);
     private string? _suppressId;
@@ -134,33 +61,23 @@ public sealed class MemePreviewDirector
     private string? _savedSpeed;
     private int _inFlight;
 
-    /// <summary>Raised on the UI thread the moment the gameplay is handed over to a meme.</summary>
     public event Action? MemeStarted;
 
-    /// <summary>Raised on the UI thread once the gameplay is back and playable.</summary>
     public event Action? MemeEnded;
 
     public Phase CurrentPhase { get; private set; } = Phase.Idle;
 
-    /// <summary>True whenever mpv is NOT showing the gameplay. Host ticks must early-return on this.</summary>
     public bool IsActive => CurrentPhase != Phase.Idle;
 
-    /// <summary>Absolute source seconds of the gameplay frame the current cutaway is parked on.</summary>
     public double AnchorAbsSourceSec { get; private set; }
 
-    /// <summary>How far into the current meme playback is, in seconds. Zero when idle.</summary>
     public double MemeElapsedSec { get; private set; }
 
-    /// <summary>The current meme's length — the placement's own value, which is what the export uses.</summary>
     public double MemeDurationSec { get; private set; }
 
     public string? ActiveMemeId { get; private set; }
     public string? ActiveMemeFile { get; private set; }
 
-    /// <summary>
-    /// Set by the host while the user is scrubbing, recording, or otherwise owns the playhead.
-    /// A suspended director never STARTS a cutaway; one already running still finishes cleanly.
-    /// </summary>
     public bool Suspended { get; set; }
 
     public MemePreviewDirector(
@@ -179,10 +96,6 @@ public sealed class MemePreviewDirector
         _logTag = logTag;
     }
 
-    /// <summary>
-    /// Replaces the placement list. Safe to call as often as the host likes — it only rebuilds when
-    /// the set genuinely changed, and it never interrupts a cutaway that is already running.
-    /// </summary>
     public bool SetMemes(IReadOnlyList<CoreMeme>? memes)
     {
         string before = Signature();
@@ -222,16 +135,11 @@ public sealed class MemePreviewDirector
         return sb.ToString();
     }
 
-    /// <summary>
-    /// Tells the director the playhead was moved deliberately (a seek, a scrub, a jump out of a
-    /// cut). Resets the crossing tracker so the move itself cannot be mistaken for playback.
-    /// </summary>
     public void NotifySeek()
     {
         _lastSourceSec = double.NaN;
     }
 
-    /// <summary>Drives the state machine. Call once per playback tick, on the UI thread.</summary>
     public void Tick()
     {
         var ipc = _client();
@@ -319,18 +227,18 @@ public sealed class MemePreviewDirector
             try { await ipc.SetPropertyDoubleAsync("time-pos", anchorAbs); }
             catch (Exception ex) { RuntimeLog.Swallowed(ex); }
 
-            _savedCrop = SafeGet(ipc, "video-crop");
-            _savedVf = SafeGet(ipc, "vf");
-            _savedImageDuration = SafeGet(ipc, "image-display-duration");
+            _savedCrop = await SafeGet(ipc, "video-crop");
+            _savedVf = await SafeGet(ipc, "vf");
+            _savedImageDuration = await SafeGet(ipc, "image-display-duration");
             await SafeSet(ipc, "video-crop", "");
             await SafeSet(ipc, "vf", "");
 
-            _savedSpeed = SafeGet(ipc, "speed");
+            _savedSpeed = await SafeGet(ipc, "speed");
             await SafeSet(ipc, "speed", "1.0");
 
-            _savedVolume = SafeGet(ipc, "volume");
-            _savedVolumeMax = SafeGet(ipc, "volume-max");
-            _savedMute = SafeGet(ipc, "mute");
+            _savedVolume = await SafeGet(ipc, "volume");
+            _savedVolumeMax = await SafeGet(ipc, "volume-max");
+            _savedMute = await SafeGet(ipc, "mute");
             if (!meme.PlaySound)
             {
                 await SafeSet(ipc, "mute", "yes");
@@ -423,10 +331,6 @@ public sealed class MemePreviewDirector
         }
     }
 
-    /// <summary>
-    /// Puts mpv back on the gameplay unconditionally. Called when a window closes or when the
-    /// placements change underneath a running cutaway.
-    /// </summary>
     public async Task AbortAsync()
     {
         if (CurrentPhase == Phase.Idle) return;
@@ -436,7 +340,6 @@ public sealed class MemePreviewDirector
         await ReturnToSourceAsync(ipc);
     }
 
-    /// <summary>MEMELEVEL_03 — the export's gain for this meme (MEMELEVEL_02), or null while not measured yet.</summary>
     private double? GainDbFor(string memePath)
     {
         string? src = _sourcePath();
@@ -463,16 +366,12 @@ public sealed class MemePreviewDirector
         });
     }
 
-    private static string? SafeGet(MpvIpcClient ipc, string name)
+    private static async Task<string?> SafeGet(MpvIpcClient ipc, string name)
     {
-        try { return ipc.GetPropertyString(name); }
+        try { return await ipc.ReadPropertyAsync(name); }
         catch (Exception ex) { RuntimeLog.Swallowed(ex); return null; }
     }
 
-    /// <summary>
-    /// One bad property must never abort a swap half-finished — that would strand the user on a
-    /// black screen with the gameplay unloaded. Every property write is individually survivable.
-    /// </summary>
     private static async Task SafeSet(MpvIpcClient ipc, string name, string value)
     {
         try { await ipc.SetPropertyAsync(name, value); }

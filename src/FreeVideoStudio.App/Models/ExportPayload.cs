@@ -10,7 +10,6 @@ public record ExportPayload
     public string InputPath { get; init; } = string.Empty;
     public string OutputDirectory { get; init; } = string.Empty;
 
-    /// <summary>OUTNAME_01 — automatic file-name base (Settings › Output Files).</summary>
     public string OutputBaseName { get; init; } = FreeVideoStudio.Core.Media.OutputFileNaming.MainDefaultBaseName;
     public double TrimStartMs { get; init; }
     public double TrimEndMs { get; init; }
@@ -19,18 +18,17 @@ public record ExportPayload
     public bool ThumbnailSet { get; init; }
     public double ThumbnailPosMs { get; init; }
     public double ThumbnailDurationSec { get; init; }
-    
+
     public string? VoiceOverWavPath { get; init; }
     public double VoiceOverStartSec { get; init; }
     public List<VoiceOverTake>? VoiceOverTakes { get; init; }
     public bool VoiceOverDuckAudio { get; init; }
 
-    /// <summary>VOPROT_01 — duck + carve the MUSIC bed across the voice-over takes.</summary>
     public bool VoiceOverProtectFromMusic { get; init; }
-    
+
     public string HardwareMode { get; init; } = "Auto";
-    /// <summary>Upload-time measured gameplay loudness — fallback reference for the peak tamer and meme matching only.</summary>
     public double? GameplayLoudnessLufs { get; init; }
+    public double? FreezeVideoLufs { get; init; }
     public bool? ApplyPeakFlattening { get; init; }
     public bool IsMobileFormat { get; init; }
     public bool EnableFades { get; init; }
@@ -38,24 +36,14 @@ public record ExportPayload
     public bool ShowSpectating { get; init; } = true;
     public string? MemeFile { get; init; }
 
-    /// <summary>
-    /// MEME_03 — several memes, each at a chosen moment (CLIP-RELATIVE source seconds, already
-    /// snapped per D8). Empty means "fall back to the legacy single-meme fields".
-    /// </summary>
     public List<FreeVideoStudio.Core.Media.MemePlacement>? MemePlacements { get; init; }
 
-    /// <summary>MEME_02 — play the meme before the gameplay instead of after it.</summary>
     public bool MemeAtStart { get; init; }
     public string? PortraitText { get; init; }
     public List<SpeedSegment>? SpeedSegments { get; init; }
 
-    /// <summary>
-    /// CUT_01 — sections deleted from the middle of the clip, in ABSOLUTE source milliseconds
-    /// (the same frame of reference as <see cref="SpeedSegments"/> and the trim points).
-    /// Null or empty means one unbroken clip, which is the historical behaviour.
-    /// </summary>
     public List<CutRange>? Cuts { get; init; }
-    
+
     public int QualityLevel { get; init; } = 7;
     public double? TargetMbOverride { get; init; }
     public bool MusicLeadFadeIn { get; init; } = true;
@@ -64,11 +52,6 @@ public record ExportPayload
     public JsonObject? MusicConfig { get; init; }
     public bool KeepMusicDuringMeme { get; init; }
 
-    /// <summary>
-    /// AICAPTION_EXPORT_02 — the accepted AI Commentary captions (ABSOLUTE source seconds). Before this field the
-    /// captions lived only in the editor and the main window: the payload had no slot for them, the worker's
-    /// <c>CaptionTrack</c> was never set, and every export came out WITHOUT the captions the preview showed.
-    /// </summary>
     public CaptionTrack? CaptionTrack { get; init; }
 }
 

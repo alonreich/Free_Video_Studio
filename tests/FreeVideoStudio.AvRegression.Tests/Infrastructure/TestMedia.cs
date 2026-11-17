@@ -2,25 +2,13 @@
 
 namespace FreeVideoStudio.AvRegression.Tests;
 
-/// <summary>A generated clip and the exact source times of its markers.</summary>
 internal sealed record Clip(string Path, double DurationSec, double Fps, double[] Events, bool HasAudio, int Width, int Height);
 
-/// <summary>
-/// Generated marker media (cached under logs/AV_Results/work/media). Markers sit at IRREGULAR, seeded
-/// times so a drift of exactly one period can never look correct.
-/// <list type="bullet">
-/// <item>Gameplay: black picture, a 3-frame WHITE flash + a 50 ms 400 Hz pulse at every event, and the frame number as a barcode in the top strip (exposes skipped/repeated frames).</item>
-/// <item>Music: a 40 ms 2500 Hz pulse at every event over a continuous 3300 Hz bed (shows exactly where the music starts, stops and pauses).</item>
-/// <item>Meme: mid-GRAY picture with a continuous 1200 Hz tone (visible and audible as a block).</item>
-/// <item>Voice: 900 Hz pulses (voice-over takes).</item>
-/// </list>
-/// </summary>
 internal static class TestMedia
 {
     public const double GameplayHz = 400, MusicHz = 2500, MusicBedHz = 3300, MemeHz = 1200, VoiceHz = 900;
     private const int Version = 3;
 
-    /// <summary>Frame-number barcode: 12 cells along the top sixth of the picture, bit k = cell k.</summary>
     public const int CodeBits = 12;
     public const double CodeStripH = 1.0 / 6;
     private static readonly SemaphoreSlim Gate = new(1, 1);
@@ -61,7 +49,6 @@ internal static class TestMedia
         finally { Gate.Release(); }
     }
 
-    /// <summary>Gameplay clip; keyframe every second like a real recording (seeks must decode up to 59 frames).</summary>
     public static async Task<Clip> GameplayAsync(int seed = 1, double seconds = 20, double fps = 60, int width = 320, int height = 180, bool audio = true, string container = "mp4")
     {
         double[] ev = Events(seed, seconds, fps);
@@ -83,7 +70,6 @@ internal static class TestMedia
         return new Clip(path, seconds, fps, ev, audio, width, height);
     }
 
-    /// <summary>drawbox cells that spell the frame number (n) in binary across the top strip.</summary>
     private static string Barcode()
     {
         var sb = new StringBuilder();
@@ -92,7 +78,6 @@ internal static class TestMedia
         return sb.ToString();
     }
 
-    /// <summary>Variable frame rate: 3 s at 30 fps then 3 s at 60 fps, joined without re-timing.</summary>
     public static async Task<Clip> VariableFrameRateAsync()
     {
         var a = await GameplayAsync(seed: 41, seconds: 3, fps: 30, container: "mkv");
@@ -113,7 +98,6 @@ internal static class TestMedia
 
     public static double[] MusicEvents(int seed = 7, double seconds = 60) => Events(seed, seconds, 1000);
 
-    /// <summary>The beat times of a music file made by <see cref="MusicAsync"/> (seed and length are in its name).</summary>
     public static double[] MusicEventsFor(string path)
     {
         var m = System.Text.RegularExpressions.Regex.Match(System.IO.Path.GetFileName(path), @"music-s(\d+)-([\d.]+)s");
@@ -131,7 +115,6 @@ internal static class TestMedia
             $"aevalsrc=exprs='0.5*sin(2*PI*{Ff.N(GameplayHz)}*t)*({Windows(Events(seed, seconds, 1000), 0.05)})':s=48000:d={Ff.N(seconds)}",
             "-c:a", "aac", "-ac", "2", tmp));
 
-    /// <summary>A voice-over take in OUTPUT time: a 900 Hz pulse at each given output second.</summary>
     public static async Task<string> VoiceAsync(string work, double[] outputEvents, double seconds)
     {
         string path = System.IO.Path.Combine(work, "voice.wav");

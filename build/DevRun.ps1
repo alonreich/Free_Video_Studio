@@ -1,6 +1,3 @@
-# [SPEC CONTRACT] STRICT GOVERNANCE:
-# Forbidden to modify without reading: docs/05_SYSTEM_LIFECYCLE_STORAGE.md (SYS-DEVBUILD).
-# Invariants, constants, and threading models must match spec bit-for-bit.
 param([ValidateSet('', 'run', 'build', 'rebuild', 'fresh', 'trace', 'clean', 'restore')][string]$Mode = '')
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'DevSandbox.ps1')
@@ -17,7 +14,6 @@ try {
     $app = Join-Path $output 'app'
     $devHome = Join-Path $env:LOCALAPPDATA 'FreeVideoStudio_DEV'
     $data = Join-Path $devHome 'data'
-    # STORAGEPATHS_01: capture the original TMP before any helper redirection.
     $systemTemp = if ($env:FVS_SYSTEM_TEMP_ROOT) { $env:FVS_SYSTEM_TEMP_ROOT } elseif ($env:TMP) { $env:TMP } else { $env:TEMP }
     $systemTemp = [IO.Path]::GetFullPath($systemTemp)
     $oldTemp = Join-Path $systemTemp 'FreeVideoStudio_DEV'
@@ -28,8 +24,6 @@ try {
     $lockPath = Assert-DevOwnedPath (Join-Path $repo '.dev-run.lock') $repo
     $launchLock = [IO.File]::Open($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
 
-    # BUILDKILL_01: do not force-close unsaved work or stop shared build servers.
-    # Include old bin/Debug launches as well as the new isolated output.
     $repoPrefix = $repo.TrimEnd('\') + '\'
     $running = @(Get-CimInstance Win32_Process | Where-Object {
         $_.ExecutablePath -and $_.ExecutablePath.StartsWith($repoPrefix, [StringComparison]::OrdinalIgnoreCase) -and
@@ -37,14 +31,12 @@ try {
     })
     if ($running.Count) { throw 'Close the development app and its media tools normally, then run dev.cmd again. No process was stopped.' }
 
-    # DEVCLEAN_01: validate ALL cleanup boundaries before changing anything.
     $null = Assert-DevOwnedPath $output $repo
     $null = Assert-DevOwnedPath $data $devHome
     if ($Mode -eq 'restore') {
         Invoke-Dotnet @('restore', $project, '-r', 'win-x64')
         exit 0
     }
-    # DEVINCREMENTAL_01: retain compiler outputs and verified dependencies on ordinary runs.
     if ($Mode -in @('clean', 'fresh', 'rebuild')) { Remove-DevCache $output $repo }
     if ($Mode -eq 'clean') { exit 0 }
     Clear-DevManagedOutput $app $output
@@ -54,8 +46,6 @@ try {
     $helperTemp = New-DevHelperScratch $helperTemp $helperHome
     if ($Mode -eq 'fresh') { Write-Host '[DEV] Fresh code and caches; all saved preferences are preserved.' }
 
-    # DEVPARITY_01: Release compiler symbols and production staging; only AOT/trimming differ.
-    # Isolated intermediates include every reference; normal MSBuild dependency tracking rebuilds changed code.
     Invoke-Dotnet @('publish', $project, '-c', 'Release', '-r', 'win-x64',
         '--artifacts-path', (Join-Path $output 'build'), '-o', $app,
         '-p:PublishAot=false', '-p:PublishTrimmed=false', '-p:SelfContained=true',
@@ -64,7 +54,6 @@ try {
         '--', '--dev-runtime')
     $exe = Join-Path $app 'FreeVideoStudio.exe'
     if (-not (Test-Path -LiteralPath $exe)) { throw 'Published executable is missing. No app was launched.' }
-    # Direct launches and companion windows must never become production/installer hosts.
     [IO.File]::WriteAllText((Join-Path $app '.fvs-development'), 'DEVISOLATION_01')
     if ($Mode -eq 'build') { Write-Host "[DEV] Current source staged: $exe"; exit 0 }
 
@@ -80,7 +69,6 @@ try {
         $env:FVS_DEV_LOG_DIR = Join-Path $repo '.devlogs'
         Remove-DevCache $env:FVS_DEV_LOG_DIR $repo
     }
-    # Libraries and helpers using the OS temporary folder are sandboxed as well.
     $env:TEMP = $helperTemp
     $env:TMP = $env:TEMP
     New-Item -ItemType Directory -Path $env:TEMP, $env:FVS_DEV_LOG_DIR -Force | Out-Null

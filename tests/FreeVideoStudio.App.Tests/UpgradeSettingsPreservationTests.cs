@@ -3,10 +3,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// SYS-UPGRADE — unreadable or newer settings stop migration without touching them. (This file was
-/// CompactUpdateTests; its archive tests went with the retired app-only package, COMPACTGONE_01.)
-/// </summary>
 public sealed class UpgradeSettingsPreservationTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "fvs-patch-tests-" + Guid.NewGuid().ToString("N"));

@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using Avalonia.Controls;
@@ -7,12 +6,6 @@ using Avalonia.Markup.Xaml;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// The single user-facing failure surface for the whole suite.
-/// Shows WHAT failed in plain English, the ONE root-cause line lifted out of the log, and two
-/// actions: OKAY (acknowledge) and SHOW LOGS (open the log file in the OS default viewer).
-/// Never construct this directly from feature code — go through <see cref="ErrorReporter"/>.
-/// </summary>
 public partial class ErrorDialogWindow : Window
 {
     private string _logPath = string.Empty;
@@ -43,7 +36,6 @@ public partial class ErrorDialogWindow : Window
         if (msg != null) msg.Text = message;
     }
 
-    /// <summary>Root-cause line. Passing null/blank keeps the detail block collapsed.</summary>
     public void SetDetail(string? detail)
     {
         var container = this.FindControl<Border>("DetailContainer");

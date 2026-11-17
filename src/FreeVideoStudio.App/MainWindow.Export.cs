@@ -23,23 +23,6 @@ namespace FreeVideoStudio.App;
 
 public partial class MainWindow
 {
-    /// <summary>
-    /// EXPORTSESSION_01 — THE SINGLE-FLIGHT GATE AND THE CANCELLATION-TOKEN-SOURCE OWNER is now
-    /// <see cref="FreeVideoStudio.App.Services.ExportCoordinator"/> (EXPORTSESSION_02).
-    ///
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// Everything about an export's LIFETIME lives in the coordinator; everything about its CONTENT
-    /// lives in <see cref="ProcessVideoCoreAsync"/>. The three defects this split closed were all
-    /// lifetime defects: a second pipeline started while the first was still being cancelled; the
-    /// second export disposed the CancellationTokenSource the first worker was still registered on
-    /// (the CANCELREG_01 hang); nothing waited for the pipeline before window teardown.
-    ///
-    /// THE RULE, unchanged: the token source is disposed only after the pipeline Task has completed,
-    /// by the coordinator and by nothing else. This method restores the UI in exactly one place —
-    /// after StartAsync returns, i.e. after the coordinator reports Idle — so "the overlay is gone"
-    /// can never again mean anything except "the pipeline has stopped".
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
     private async Task ProcessVideoAsync(Button processButton)
     {
         if (!await CheckVoiceTimingBeforeExportAsync()) return;
@@ -119,7 +102,7 @@ public partial class MainWindow
         }
 
         await Task.Yield();
-        
+
         SetTimelinePopupsVisible(false);
         if (ActiveVideoHost != null) ActiveVideoHost.IsVisible = false;
         OverlayLayerCtl?.StartOverlay();
@@ -135,7 +118,6 @@ public partial class MainWindow
             }
         }
 
-        
         int qualityIdx = this.FindControl<FreeVideoStudio.App.Controls.SpinningWheelSlider>("QualitySlider")?.Value
                          ?? FreeVideoStudio.App.ViewModels.QualityLadder.DefaultIndex;
         int resolvedQuality = FreeVideoStudio.App.ViewModels.QualityLadder.ToWorkerQualityLevel(qualityIdx);
@@ -180,7 +162,7 @@ public partial class MainWindow
         RememberStartChoices(payload, qualityIdx);
 
         var controller = new FreeVideoStudio.App.Services.MainMediaController();
-        
+
         var result = await controller.ExecuteExportAsync(
             payload, 
             processToken,
@@ -219,7 +201,6 @@ public partial class MainWindow
                     ? _musicWizardResult.MusicFilePaths
                     : (_musicWizardResult?.MusicFilePath != null ? new[] { _musicWizardResult.MusicFilePath } : null));
 
-
             var dlg = new FreeVideoStudio.App.Controls.FinishedDialogWindow();
             dlg.SetOutputPath(result.OutputPath ?? string.Empty);
             if (!string.IsNullOrEmpty(attribution)) dlg.SetAttributionText(attribution);
@@ -250,19 +231,12 @@ public partial class MainWindow
                 await ErrorReporter.ShowAsync(this, "Export failed", "The video could not be exported.", result.ErrorMessage);
             }
         }
-        
+
         processButton.IsEnabled = true;
         processButton.Content = "PROCESS";
         return outcome;
     }
 
-    /// <summary>
-    /// ISSUE_08 — the export graph gives every speed/freeze chunk its own parallel FFmpeg
-    /// branch, and FFmpeg holds frames in memory for every branch `concat` has not read yet.
-    /// Past a certain number of segments that becomes a lot of RAM, so ask before committing
-    /// rather than letting the machine discover it mid-encode.
-    /// Returns true if the export should proceed.
-    /// </summary>
     private async Task<bool> ConfirmHighSegmentCountAsync()
     {
         var segments = BuildExportSpeedSegments();
@@ -307,12 +281,6 @@ public partial class MainWindow
         return dlg.Result;
     }
 
-
-    /// <summary>
-    /// The export payload for the current editor state. Shared by PROCESS and by the live
-    /// preview's rendered mix (PREVIEWMIX_01) — one composition, so the preview cannot hear a
-    /// different mix from the one that will be exported.
-    /// </summary>
     private async Task<FreeVideoStudio.App.Models.ExportPayload> ComposeExportPayloadAsync(
         string outputDirectory, string? memeFile, int resolvedQuality, double? resolvedTargetMb)
     {
@@ -331,14 +299,14 @@ public partial class MainWindow
             double outputEndSec = SourceMsToOutputSeconds(musicEndMs, allSegments);
             double dur = outputEndSec - startDelay;
             if (dur <= 0) dur = 1.0;
-            
+
             const double MarkerToleranceMs = 50.0;
             double rawMusicStartMs = _musicWizardResult.TimelineStartSeconds * 1000.0;
             double rawMusicEndMs = _musicWizardResult.TimelineEndSeconds * 1000.0;
 
             musicLeadIn = rawMusicStartMs <= _trimStartMs + MarkerToleranceMs;
             musicTailOut = rawMusicEndMs <= (_trimEndMs > 0 ? _trimEndMs : _loadedVideoDurationMs) + MarkerToleranceMs;
-            
+
             musicTracks = new System.Collections.Generic.List<FreeVideoStudio.Core.Media.MusicTrack>();
 
             var bedTracks = _musicWizardResult.ToBedTracks();
@@ -378,7 +346,7 @@ public partial class MainWindow
         {
             musicConfig = new System.Text.Json.Nodes.JsonObject { ["main_vol"] = _musicWizardResult?.VideoVolume ?? 1.0 };
         }
-        
+
         var payload = new FreeVideoStudio.App.Models.ExportPayload
         {
             InputPath = _loadedVideoPath,
@@ -392,6 +360,7 @@ public partial class MainWindow
             ThumbnailPosMs = _thumbnailPosMs,
             HardwareMode = ResolveHardwareMode(),
             GameplayLoudnessLufs = _gameplayLoudnessLufs,
+            FreezeVideoLufs = FreeVideoStudio.Core.Media.VideoLoudnessCache.TryGet(_loadedVideoPath),
             ApplyPeakFlattening = _applyPeakFlattening,
             IsMobileFormat = this.FindControl<Avalonia.Controls.ToggleSwitch>("PortraitModeCheckbox")?.IsChecked ?? true,
             EnableFades = this.FindControl<Avalonia.Controls.ToggleSwitch>("EnableFadeCheckbox")?.IsChecked ?? true,
@@ -422,7 +391,6 @@ public partial class MainWindow
         return payload;
     }
 
-    /// <summary>The meme picked on the main screen's legacy Start/End dropdown, or null.</summary>
     private string? SelectedLegacyMemeFile()
     {
         var addMemeCb = this.FindControl<Avalonia.Controls.ToggleSwitch>("AddMemeCheckbox");
@@ -435,12 +403,6 @@ public partial class MainWindow
         return null;
     }
 
-    /// <summary>
-    /// SETDEFAULTS_01 — Settings › Editing › "Same as last time" remembers what this export used,
-    /// so the next fresh video starts the same way. SETLASTALWAYS_01: written on EVERY export, so a row
-    /// switched to "Same as last time" later still starts from the latest export; a failed write is
-    /// logged and never blocks the export.
-    /// </summary>
     private static void RememberStartChoices(FreeVideoStudio.App.Models.ExportPayload payload, int qualityIdx)
     {
         try

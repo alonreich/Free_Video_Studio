@@ -8,16 +8,8 @@ using Avalonia.LogicalTree;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// SETHELP_01 (docs/04 UI-SETTINGS-ABOUT, SETTIPS_01) — the long plain-English help usually sits on a
-/// label row (or a panel), not on the input you Tab to, so keyboard and screen-reader users never
-/// reached it. At start-up every input gets the help that belongs to it as
-/// <see cref="AutomationProperties.HelpTextProperty"/>; F1 opens that help as a tooltip for the
-/// focused setting, and clicking an ⓘ opens it for its row.
-/// </summary>
 public partial class SettingsWindow
 {
-    /// <summary>Input → the control whose tooltip holds its help.</summary>
     private readonly Dictionary<Control, Control> _helpOwner = new();
     private Control? _openHelp;
 
@@ -81,7 +73,6 @@ public partial class SettingsWindow
             AutomationProperties.SetHelpText(input, TipOf(owner));
     }
 
-    /// <summary>F1 — opens the help of the focused setting. Returns true when there was help to show.</summary>
     private bool ShowHelpForFocused()
     {
         for (var c = FocusManager?.GetFocusedElement() as Control; c != null; c = c.Parent as Control)

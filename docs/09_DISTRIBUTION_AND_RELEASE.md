@@ -121,9 +121,7 @@ Two separate defects hide in that table, and they need separate fixes.
 ## 2. Why The Binary Is 322 MB  {#DIST-WHYBIG}
 
 Invariant #1 — *Single Binary Executable Mandate, zero loose companion assets* — is the direct
-cause. ~~`payload.zip` (FFmpeg, libmpv, starter media) is embedded as a managed resource in a
-NativeAOT executable and extracted to the install folder on first run.~~ **Superseded by
-NODROPPER_01 (2026-10-12, §3c):** the single download is now an Inno Setup package; nothing is
+cause. **NODROPPER_01 (2026-10-12, §3c):** the single download is now an Inno Setup package; nothing is
 embedded in the program. The size (FFmpeg + libmpv + starter media) is unchanged — LZMA2 packs it
 somewhat tighter than deflate did.
 
@@ -427,6 +425,7 @@ installer, upgrade path, signing story.
 * **Building it (human, never CI, never `Build.cmd`):**
   1. `developer_tools/local_ai_pack/export_sam2_onnx.py --checkpoint sam2.1_hiera_small.pt --out <folder>` (needs PyTorch + the `sam2` package; writes the two float16 `.onnx` files in the model contract of `LocalAiPackManifest`).
   2. `developer_tools/local_ai_pack/build_pack.py --pack <folder>` downloads `onnxruntime.dll` (NuGet `Microsoft.ML.OnnxRuntime.DirectML` 1.22.0) and `DirectML.dll` (NuGet `Microsoft.AI.DirectML` 1.15.4) from nuget.org, refuses either unless its Authenticode signature is valid and Microsoft's, writes `LocalAiPackFiles.cs`, and prints the `gh release create … --prerelease` / `gh release upload` commands. It publishes nothing.
+  0. One command does steps 1–3 (`LOCALAIPACK_02`): `developer_tools\local_ai_pack\Make_Local_AI_Pack.cmd` builds a private Python environment and the pack under `developer_tools\local_ai_pack\out\` (git-ignored), writes the pins and the runtime test folder `out\ort` (DLLs + `tiny.onnx`), then asks **Publish now? [Y/N]**; only Y creates the pre-release and uploads, downloads every file back and compares size and SHA-256, and only then writes `Released = true`. `-NoPublish` stops after the local build. Once `out\pack` and `out\ort` exist, `tests\run-av-tests.cmd` runs the Local AI real-model tests by itself (LOCALAITEST_01). `build_pack.py` writes `LocalAiPackFiles.cs` without comments (NOCOMMENTS_01).
   3. A human runs those two commands, then runs `build_pack.py --pack <folder> --released` (same files, same pins, `Released = true`) and commits `LocalAiPackFiles.cs` with a `changes.md` entry. Until `Released` is true the app says "not published yet", Install is disabled and online AI is used, even when the pins are already filled in.
 * **Antivirus hygiene:** the DLLs keep their Microsoft signatures; the `.onnx` files are data; nothing is unpacked from an archive, embedded in the program or started as a process; files land in the user's own AppData folder after a user click, and are loaded by full path.
 

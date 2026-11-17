@@ -147,13 +147,11 @@ public sealed class TimelineLanesTests
         window.Close();
     }
 
-
     private const double LaneH = 18;
 
     private static LaneClip Clip(int i, double mergedStart, double len)
         => new(i, $"c{i}.mp4", 0, len, mergedStart, mergedStart + len, 1000 + i, 2000 + i);
 
-    /// <summary>Back-to-back clips of the given lengths, in order.</summary>
     private static List<LaneClip> Clips(IEnumerable<double> lengths)
     {
         var list = new List<LaneClip>();
@@ -175,7 +173,6 @@ public sealed class TimelineLanesTests
         return map;
     }
 
-    /// <summary>Lets every off-thread reduction land and every coalesced dense rebuild run.</summary>
     private static void Settle(WaveformLanePresenter p)
     {
         for (int round = 0; round < 50; round++)
@@ -190,7 +187,6 @@ public sealed class TimelineLanesTests
         }
     }
 
-    /// <summary>Upper bound for a lane: every tile ≤ its device columns × hysteresis, never more than its peaks.</summary>
     private static int PointBudget(IEnumerable<LaneTile> tiles, double laneW, double scaling = 1)
         => tiles.Where(t => t.X1 > 0 && t.X0 < laneW)
                 .Sum(t => WaveformEnvelope.PointCount((int)Math.Ceiling(Math.Ceiling(t.Width * scaling) * WaveformEnvelope.RebuildRatio) + 1));
@@ -426,7 +422,7 @@ public sealed class TimelineLanesTests
     {
         string lanes = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "VideoMergerWindow.Lanes.cs"));
         string presenter = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "Infrastructure", "WaveformLanePresenter.cs"));
-        Assert.Contains("WAVEPIXEL_01", lanes);
+        Assert.Contains("_wavePeaks", lanes);
         Assert.DoesNotContain("wave.Children.Clear()", lanes);
         Assert.DoesNotContain("PlaceWaveTile", lanes);
         Assert.Contains("WavePeaks.GetAsync", lanes);
@@ -435,7 +431,6 @@ public sealed class TimelineLanesTests
         Assert.Contains("Task.Run(() => WaveformEnvelope.Reduce", presenter);
         Assert.DoesNotContain("Peaks.Length; i++", presenter);
     }
-
 
     private const double FilmH = 34;
     private static double FilmSlot => FilmH * 16.0 / 9.0;
@@ -626,15 +621,13 @@ public sealed class TimelineLanesTests
     public void FilmLane_SourceSentinel_NoClearedLane_SharedStream()
     {
         string lanes = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "VideoMergerWindow.Lanes.cs"));
-        Assert.Contains("FILMPIXEL_01", lanes);
+        Assert.Contains("_filmJobs", lanes);
         Assert.DoesNotContain("film.Children.Clear()", lanes);
         Assert.DoesNotContain("PlaceFilmTile", lanes);
         Assert.Contains("FilmJobs.GetAsync", lanes);
         Assert.Contains("FilmLane(film).Sync", lanes);
     }
 
-
-    /// <summary>A queue of occurrences: each entry is (source id, length, keep-start).</summary>
     private static List<LaneClip> Queue(params (int Src, double Len, double KeepStart)[] items)
     {
         var list = new List<LaneClip>();
@@ -903,7 +896,7 @@ public sealed class TimelineLanesTests
         foreach (var name in new[] { "FilmLanePresenter.cs", "WaveformLanePresenter.cs" })
         {
             string src = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "Infrastructure", name));
-            Assert.Contains("LANEINSTANCE_01", src);
+            Assert.Contains("_tiles", src);
             Assert.DoesNotContain("_tiles[plan.CacheKey]", src);
             Assert.DoesNotContain("_tiles[t.CacheKey]", src);
             Assert.DoesNotContain("_layout[t.CacheKey]", src);
@@ -965,7 +958,7 @@ public sealed class TimelineLanesTests
         string windowSource = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "GranularSpeedEditorWindow.axaml.cs"));
         Assert.Contains("Name = $\"ZoomGlideGuideIn_{i}\"", windowSource);
         Assert.Contains("Name = $\"ZoomGlideGuideOut_{i}\"", windowSource);
-        Assert.Contains("SLOWZOOMGLIDE_01", windowSource);
+        Assert.Contains("ClampZoomEdgeAgainstSlowNeighbours", windowSource);
     }
 
     [Fact]
@@ -992,4 +985,3 @@ public sealed class TimelineLanesTests
         Assert.Equal(8.0, finalDur, 1);
     }
 }
-

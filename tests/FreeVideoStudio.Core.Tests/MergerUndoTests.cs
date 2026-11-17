@@ -8,12 +8,10 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>MERGEUNDO_01 — Video-Merger-Migration.md P3.3 (T3.3a, T3.3b).</summary>
 public class MergerUndoTests
 {
     private static EdlClip C(string p) => new() { Path = p };
 
-    /// <summary>A queue whose ids track its events exactly like the window's.</summary>
     private static (ObservableCollection<string> Queue, ClipIdList Ids) Live()
     {
         var q = new ObservableCollection<string>();
@@ -138,7 +136,6 @@ public class MergerUndoTests
         Assert.Equal(4, stack.UndoCount);
     }
 
-    /// <summary>D20 regression — the list used RemoveAt+Insert to reorder, which re-identifies the clip (effects lost).</summary>
     [Fact]
     public void D20_ReorderMustUseMove_RemoveInsertLosesTheClipId()
     {

@@ -4,7 +4,6 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-# TESTOUT_01: output goes only to logs\NativeSmoke_Results\work, replaced on every run.
 . (Join-Path $PSScriptRoot '..\TestHarness.ps1')
 $testRoot = Enter-SuiteOutput ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))) 'NativeSmoke'
 $stateRoot = Join-Path $testRoot 'state'
@@ -30,7 +29,6 @@ function Invoke-NativeCommand([string]$Command, [string[]]$CommandArguments = @(
     $start.Environment['TEMP'] = $tempRoot
     $start.ArgumentList.Add($Command)
     foreach ($argument in $CommandArguments) { $start.ArgumentList.Add($argument) }
-    # CLI commands run first; this flag only skips the unrelated event-log sweep.
     $start.ArgumentList.Add('--merger')
     $process = [Diagnostics.Process]::Start($start)
     try {

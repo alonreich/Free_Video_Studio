@@ -1,17 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!--
-    SYS-VERIFYTOOL. The tests for the fix-sentinel checker. Portable net9.0 on purpose: the check
-    itself is file reads and string search, so it runs on any CI runner, and a developer on any
-    machine can prove the list is well formed without a Windows box.
-  -->
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <IsPackable>false</IsPackable>
-    <!-- TESTOUT_01: dotnet test writes results only to logs\Verifier_Results (docs/05 SYS-STORAGE-TABLE). -->
     <VSTestResultsDirectory>$(MSBuildThisFileDirectory)..\..\logs\Verifier_Results</VSTestResultsDirectory>
     <PublishAot>false</PublishAot>
   </PropertyGroup>

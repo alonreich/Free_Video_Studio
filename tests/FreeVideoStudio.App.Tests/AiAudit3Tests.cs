@@ -11,10 +11,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// AIAUDIT_04 (docs/05 SYS-AISETTINGS §7.7) — shared answer checks, per-task thinking, Claude's tool choice,
-/// list prices, the "Ready to send" rule, saved kill scans and Commentary's cut-footage filter.
-/// </summary>
 public sealed class AiAudit3Tests
 {
     private const string FakeOpenAiKey = "sk-" + "proj-dummy-test-openai-key-000000000";

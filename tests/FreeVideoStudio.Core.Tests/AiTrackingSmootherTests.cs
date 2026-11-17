@@ -6,7 +6,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>AITIME_01, AIHUDZONE_01, AIRESMOOTH_01, AIGAME_01, WANDPROGRESSIVE_01 (docs/01 TL-AITRACKING, TL-AIHUD).</summary>
 public sealed class AiTrackingSmootherTests
 {
     private static RawSubjectWaypoint Wp(double t, int cx = 500, int cy = 500, int w = 80, int h = 160, bool vis = true)

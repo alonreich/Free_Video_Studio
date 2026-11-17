@@ -9,11 +9,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// LOCALTRACK_01 — streams a stretch of a video as fixed-size RGB24 frames at a fixed rate through FFmpeg's stdout.
-/// Frame <c>i</c> sits at <c>i / fps</c> seconds after <c>startSec</c>. Only one frame is held at a time; the FFmpeg
-/// process is killed when the caller stops early or cancels.
-/// </summary>
 public static class RawVideoFrameReader
 {
     public static IReadOnlyList<string> BuildArguments(string videoPath, double startSec, double durationSec, double fps, int width, int height, string pixelFormat = "rgb24", bool hardwareDecode = false)
@@ -33,7 +28,6 @@ public static class RawVideoFrameReader
         return args;
     }
 
-    /// <summary>Calls <paramref name="onFrame"/> for every frame (index, bytes); it returns false to stop early.</summary>
     public static async Task<int> ReadAsync(string ffmpegPath, string videoPath, double startSec, double durationSec, double fps,
         int width, int height, Func<int, byte[], bool> onFrame, CancellationToken cancellationToken, int bytesPerPixel = 3, string pixelFormat = "rgb24", bool allowEmpty = false, bool hardwareDecode = false)
     {

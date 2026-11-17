@@ -8,8 +8,6 @@ using System.Threading.Tasks;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>AIREUSE_03 — bounded, session-only validated answers. Same-key work is serialized;
-/// a cancelled owner releases the lane without caching, so a waiting caller can retry safely.</summary>
 internal static class AiResultCache
 {
     private sealed record Entry(object Value, DateTime Expires);

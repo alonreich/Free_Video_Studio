@@ -20,15 +20,10 @@ namespace FreeVideoStudio.App;
 
 public partial class MainWindow
 {
-    /// <summary>SETTINGSDI_01 — the composition root's Settings services (set in the constructor).</summary>
     private SettingsWindowServices? _settingsServices;
 
     private SettingsWindowServices SettingsServices => _settingsServices ??= SettingsWindowServices.CreateDefault(_paths);
 
-    /// <summary>
-    /// FILEBACKUP_01 — every way into the Settings window (the Settings menu, File › Backup / Restore)
-    /// ends here, so a SAVE always refreshes the same parts of the main window.
-    /// </summary>
     private async Task OpenSettingsAsync(Func<Window, Task<bool>> show)
     {
         try
@@ -105,7 +100,6 @@ public partial class MainWindow
         this.Loaded += (s, e) => InitializeMpv();
 
         this.Loaded += (s, e) => Controls.CoachOverlay.Register(this, Controls.CoachTours.MainAppKey, Controls.CoachTours.MainApp);
-
 
         SettingsManager.Load();
         ThemeManager.ApplyFromSettings();
@@ -235,7 +229,6 @@ public partial class MainWindow
 
         FreeVideoStudio.App.WindowBoundsHelper.Track(this, "MainWindowBounds", fitDisplayOnFirstRun: true);
 
-
         InitializeUxInnovations();
 
         _playbackTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
@@ -301,6 +294,7 @@ public partial class MainWindow
         var cancelButton = CancelButtonCtl;
         if (cancelButton != null)
         {
+            Infrastructure.ConfirmFlyoutGate.Attach(cancelButton, () => SettingsManager.Instance.ConfirmMainAppCancel);
             cancelButton.Click += (s, e) =>
             {
                 if (!SettingsManager.Instance.ConfirmMainAppCancel)
@@ -344,7 +338,6 @@ public partial class MainWindow
             };
         }
 
-
         var granularButton = GranularButtonCtl;
         if (granularButton != null)
         {
@@ -372,10 +365,7 @@ public partial class MainWindow
                         _speedSegments.Clear();
                         _freezeTimeMs = -1;
                         SetGranularButtonActive(false);
-                        _lastAppliedSpeed = _baseSpeed;
-                        if (ActiveVideoHost?.IpcClient != null)
-                            _ = ActiveVideoHost.IpcClient.SetPropertyAsync("speed",
-                                _baseSpeed.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
+                        ForcePreviewSpeed();
                         InvalidateVoiceOverRecordingForTimingChange();
                         UpdateEstimatedQuality();
                         ShowTacticalFeedback("Speed segments removed");
@@ -423,6 +413,7 @@ public partial class MainWindow
                     _memePlacements,
                     existingCaptions: _viewModel.CaptionTrack);
 
+                editor.PreviewLayers = CurrentEditorPreviewLayers();
                 editor.AvailableMemes = _memeItems;
                 if (focusMemeId != null) editor.FocusMemeOnOpen(focusMemeId);
                 editor.SetAiEliminations(_aiEliminationTimestamps);
@@ -446,6 +437,7 @@ public partial class MainWindow
                     _speedSegments.Clear();
                     _speedSegments.AddRange(editor.ResultSegments);
                     _baseSpeed = editor.ResultBaseSpeed;
+                    ForcePreviewSpeed();
                     _freezeTimeMs = editor.ResultFreezeTimeMs;
                     _freezeDurationS = editor.ResultFreezeDurationS;
 
@@ -513,7 +505,6 @@ public partial class MainWindow
                 await SwitchToCompanionAppAsync("--crop-tool", "Crop Tools");
             };
         }
-
 
         var setThumbnailButton = SetThumbnailButtonCtl;
         if (setThumbnailButton != null)
@@ -599,6 +590,7 @@ public partial class MainWindow
                 };
                 dialog.IsPortraitPreview =
                     PortraitModeCheckboxCtl?.IsChecked == true;
+                dialog.PreviewLayers = CurrentEditorPreviewLayers();
                 try
                 {
                     await dialog.ShowDialog(this);
@@ -620,7 +612,6 @@ public partial class MainWindow
                 }
             };
         }
-
 
         var timelineSlider = TimelineSliderCtl;
         if (timelineSlider != null)
@@ -678,8 +669,7 @@ public partial class MainWindow
             {
                 double previousSpeed = _baseSpeed;
                 _baseSpeed = e / 10.0;
-                if (ActiveVideoHost?.IpcClient != null)
-                    _ = ActiveVideoHost?.IpcClient?.SetPropertyAsync("speed", _baseSpeed.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
+                ForcePreviewSpeed();
                 if (Math.Abs(previousSpeed - _baseSpeed) > 0.001)
                     InvalidateVoiceOverRecordingForTimingChange();
                 UpdateEstimatedQuality();
@@ -722,7 +712,6 @@ public partial class MainWindow
 
             UpdateEstimatedQuality();
         }
-
 
         var addMusicButton = AddMusicButtonCtl;
         if (addMusicButton != null)
@@ -840,7 +829,7 @@ public partial class MainWindow
                 UpdateTimelineMarkers();
             };
         }
-        
+
         var memeCb = MemeComboBoxCtl;
         WireMemePlacementCombo();
 
@@ -939,7 +928,6 @@ public partial class MainWindow
             var store = new FreeVideoStudio.Core.Ipc.StateTransferStore();
             var state = await store.LoadAsync();
 
-
             var newObj = new System.Text.Json.Nodes.JsonObject();
             var preserveKeys = new[] { "schema_version", "MainWindowBounds", "PreviewMonitorWindowBounds", "GranularPreviewMonitorBounds", "MusicWizardPreviewMonitorBounds", "VoiceOverPreviewMonitorBounds", "MergerPreviewMonitorBounds", "VideoMergerBounds", "CropToolBounds", "GranularBounds", "MusicWizardBounds", "SettingsBounds", "VoiceOverWindowBounds", "UploadVideoDirectory", "MergerUploadDirectory", "MergerOutputDirectory", "CropToolUploadDirectory", "CustomMusicDirectory", "WizardVideoVolume", "WizardMusicVolume", "MainVolume" };
             foreach (var key in preserveKeys) {
@@ -1021,10 +1009,6 @@ public partial class MainWindow
         };
     }
 
-    /// <summary>
-    /// MEMEMUSIC_01 — themed replacement for the old NativeDialog question (DIALOG_01). A dialog
-    /// that cannot be shown leaves the previous answer untouched rather than guessing one.
-    /// </summary>
     private bool _askingKeepMusic;
     private async Task AskKeepMusicDuringMemeAsync()
     {

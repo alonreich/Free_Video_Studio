@@ -11,22 +11,12 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AIFRAMESEQ_01 (docs/05 SYS-AISETTINGS) — frame-sequence fallback extraction for AI providers
-/// that lack native video file upload (Anthropic Claude, OpenAI).
-/// Samples video segments at a fixed frame rate (default 2 fps, 640 px width) and produces
-/// timestamp-labelled <see cref="AiImageInput"/> frames respecting provider image limits.
-/// </summary>
 public static class AiFrameSequenceExtractor
 {
     public const double DefaultFps = 2.0;
     public const int DefaultWidth = 640;
     public const int DefaultMaxImagesPerRequest = 60;
 
-    /// <summary>
-    /// Samples frames across [<paramref name="startSec"/>, <paramref name="startSec"/> + <paramref name="durationSec"/>]
-    /// at <paramref name="fps"/> rate, scaled to <paramref name="targetWidth"/> (maintaining aspect ratio).
-    /// </summary>
     public static async Task<IReadOnlyList<AiImageInput>> SampleFramesAsync(
         string videoPath,
         double startSec,
@@ -114,10 +104,6 @@ public static class AiFrameSequenceExtractor
         }
     }
 
-    /// <summary>
-    /// Partitions an image sequence into chunks of at most <paramref name="maxImagesPerChunk"/>
-    /// to respect vendor per-request constraints.
-    /// </summary>
     public static IReadOnlyList<IReadOnlyList<AiImageInput>> Partition(
         IReadOnlyList<AiImageInput> images,
         int maxImagesPerChunk = DefaultMaxImagesPerRequest)
@@ -136,9 +122,6 @@ public static class AiFrameSequenceExtractor
         return chunks;
     }
 
-    /// <summary>
-    /// Resolves max recommended images per request according to the vendor vision guidelines.
-    /// </summary>
     public static int GetMaxImagesPerRequest(AiVendor vendor) => vendor switch
     {
         AiVendor.Google => 100,
@@ -147,10 +130,6 @@ public static class AiFrameSequenceExtractor
         _ => DefaultMaxImagesPerRequest,
     };
 
-    /// <summary>
-    /// Samples frames from an in-memory MP4 video slice bytes at <paramref name="fps"/> rate,
-    /// scaled to <paramref name="targetWidth"/> (maintaining aspect ratio).
-    /// </summary>
     public static async Task<IReadOnlyList<AiImageInput>> SampleFramesFromMp4BytesAsync(
         byte[] mp4Bytes,
         double fps = DefaultFps,

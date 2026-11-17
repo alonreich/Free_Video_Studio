@@ -4,7 +4,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>TEXTTARGET_01, LOCALTRACK_01 — docs/04 UI-AIZOOM, docs/01 TL-LOCALTRACK.</summary>
 public sealed class LocalAiAppTests
 {
     [Fact]

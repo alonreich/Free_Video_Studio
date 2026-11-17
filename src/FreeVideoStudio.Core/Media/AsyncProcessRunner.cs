@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -73,20 +72,11 @@ public static class AsyncProcessRunner
             ? "?"
             : Path.GetFileNameWithoutExtension(psi.FileName)) + ")";
 
-    /// <summary>
-    /// FFmpeg-style interactive tools accept 'q' on stdin as a clean quit; anything else
-    /// (and any run without redirected stdin) goes straight to the hard-kill escalation.
-    /// </summary>
     private static bool WantsStdinQuitCommand(ProcessStartInfo psi) =>
         psi.RedirectStandardInput
         && !string.IsNullOrEmpty(psi.FileName)
         && psi.FileName.Contains("ffmpeg", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Waits for both pipe readers to finish, but never longer than
-    /// <see cref="GracefulProcessTerminator.HardKillConfirmMs"/> — a caller waiting on a
-    /// cancellation must stay strictly bounded.
-    /// </summary>
     private static async Task DrainReadersAsync(Task<string> outputTask, Task<string> stderrTask)
     {
         try
@@ -111,4 +101,3 @@ public static class AsyncProcessRunner
         }
     }
 }
-

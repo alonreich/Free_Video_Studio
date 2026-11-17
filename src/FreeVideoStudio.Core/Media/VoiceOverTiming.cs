@@ -4,16 +4,11 @@ using System.Text;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>VOTIMING_01: output placement and the timing of the picture a take was spoken over.</summary>
 public static class VoiceOverTiming
 {
     public static double OutputStart(VoiceOverTake take, Func<double, double> mapper) =>
         mapper(take.StartSec) + take.OutputOffsetSec;
 
-    /// <summary>
-    /// Only timing inside this take matters. A speed change before the take can safely move its
-    /// source anchor; zoom, colour, volume and changes after the take cannot desynchronise speech.
-    /// </summary>
     public static string Signature(OutputTimeline timeline, double trimStartSec, double trimEndSec,
         double startSec, double endSec)
     {

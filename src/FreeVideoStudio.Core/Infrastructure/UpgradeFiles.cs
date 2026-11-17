@@ -2,7 +2,6 @@
 
 namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>UPGRADE_02 — verified copies and bounded paths; never follow a link during cleanup.</summary>
 public static class UpgradeFiles
 {
     public static string FullPath(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));

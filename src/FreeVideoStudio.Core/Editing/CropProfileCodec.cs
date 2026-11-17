@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -10,27 +9,8 @@ using static FreeVideoStudio.Core.Editing.CropConfigJson;
 
 namespace FreeVideoStudio.Core.Editing;
 
-/// <summary>
-/// EDITSTATE_01 — the Crop Tool's layers as the crop-config document (a cross-process,
-/// cross-version contract read back by the Main App), and back. Pure: a document and a session in,
-/// layers or written sections out. The window keeps the I/O (<see cref="CropConfigStore"/>), the
-/// thumbnails and the profile-file sync.
-/// </summary>
 public static class CropProfileCodec
 {
-    /// <summary>
-    /// IDEA_1 — the saved elements of a (sanitised) config as editable layers, for every element
-    /// the session knows about that is neither already placed nor tombstoned. Registers every key
-    /// the profile contains first (ROLEPOPUP_01 / A3), so a custom element is not invisible on reopen.
-    ///
-    /// <para>
-    /// THE DRIFT TRAP: the saved <c>crops_1080p</c> rect is content space, and converting it back
-    /// and forth both round OUTWARD, growing the box every cycle. So the source rect is persisted
-    /// separately (<c>crops_source</c>) and read back verbatim; the inverse transform is only the
-    /// one-time migration for a pre-v4 file. RESGUESS_01 — clamped only against a REAL capture size;
-    /// otherwise the layer is marked unverified.
-    /// </para>
-    /// </summary>
     public static List<CropLayer> ReadSavedLayers(JsonObject config, CropEditSession s)
     {
         ArgumentNullException.ThrowIfNull(config);
@@ -104,13 +84,6 @@ public static class CropProfileCodec
         return layers;
     }
 
-    /// <summary>
-    /// Writes every placed layer and every tombstone into <paramref name="config"/> (MERGED: the
-    /// document may hold elements this session never touched). Re-quantises each verified layer's
-    /// size first. RESGUESS_01 — an unverified layer writes only its position and z order, never a
-    /// guess over its stored crop. DELETESET_01 — a tombstoned key still in the document is zeroed.
-    /// Returns how many layers were written position-only.
-    /// </summary>
     public static int WriteLayers(JsonObject config, CropEditSession s)
     {
         ArgumentNullException.ThrowIfNull(config);

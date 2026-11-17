@@ -5,7 +5,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>MERGEPREVIEW_01 — Video-Merger-Migration.md P8.1 (T8.1a: the preview schedule equals the export timing).</summary>
 public class MergerPreviewPlanTests
 {
     private static MergeEdl Edl(double baseSpeed = 1.5)

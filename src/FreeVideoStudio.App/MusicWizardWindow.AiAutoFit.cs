@@ -20,10 +20,8 @@ public partial class MusicWizardWindow
 
     private CancellationTokenSource? _aiAutoFitCts;
 
-    /// <summary>The status line under the toolbar — the AI button's sibling in the same grid (found once, no name lookup).</summary>
     private TextBlock? _aiAutoFitStatusText;
 
-    /// <summary>Cancels any in-flight AI Auto-Fit background tasks and extractions.</summary>
     public void CancelAiAutoFit()
     {
         try
@@ -52,7 +50,6 @@ public partial class MusicWizardWindow
         }
     }
 
-    /// <summary>AIMUSIC_PROGRESS_01 — the persistent line under the toolbar (a toast vanishes; this stays).</summary>
     private void SetAiAutoFitStatus(string? text, string brushKey = "AppTextMutedBrush")
     {
         if (_aiAutoFitStatusText is not { } status) return;
@@ -61,18 +58,6 @@ public partial class MusicWizardWindow
         status.Foreground = ThemeResources.Brush(this, brushKey, status.Foreground ?? Avalonia.Media.Brushes.Gray);
     }
 
-    /// <summary>
-    /// AI_AUTOFIT_01 / AIMUSIC_PROGRESS_01 / AIMUSIC_HONEST_01 — Auto-Fit with a visible, honest run:
-    /// <list type="bullet">
-    /// <item>A status line names each step (pictures → AI → song analysis) with a live seconds counter, so the
-    /// user always sees that something is happening; the button reads "✖ Cancel AI (12 s)" and cancels.</item>
-    /// <item>Hard limits: 45 s per AI request, one retry, 120 s for the whole run. It used to wait up to four
-    /// 180-second attempts (~12 minutes) behind a frozen "✨ Analyzing..." label.</item>
-    /// <item>Every ending is reported in that line: the pick and why, "cancelled", "took too long", or the
-    /// AI's own error. Nothing is changed unless a real song from the list was chosen.</item>
-    /// </list>
-    /// Invariant: zero local AI models (cloud vision + local FFmpeg maths only).
-    /// </summary>
     private async Task ApplyAiAutoFitAsync(Button button)
     {
         if (string.IsNullOrWhiteSpace(_videoPath) || !File.Exists(_videoPath))
@@ -93,7 +78,7 @@ public partial class MusicWizardWindow
 
         if (!await Controls.AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, vendor, AiUsage.MusicAutoFit))
         {
-            SetAiAutoFitStatus("AI Auto-Fit needs an AI key. Add one in Settings › AI.", "AppWarningBrush");
+            SetAiAutoFitStatus("AI Auto-Fit needs an AI connected. Press AI Auto-Fit again: a short window shows where to get a key.", "AppWarningBrush");
             return;
         }
 
@@ -139,6 +124,7 @@ public partial class MusicWizardWindow
         Refresh();
         RuntimeLog.Info("MUSIC_WIZARD", $"AI Auto-Fit started ({vendorName}, model {model}, {AvailableTracks.Count} songs).");
 
+        bool retryAfterFix = false;
         try
         {
             string ffmpegPath = ResolveFfmpegPath();
@@ -257,6 +243,8 @@ public partial class MusicWizardWindow
             ReportUsageNotice();
             SetAiAutoFitStatus($"⚠ AI Auto-Fit failed: {ex.Message} (Reference: {usage.Id})", "AppDangerBrush");
             RuntimeLog.Fail("MUSIC_WIZARD", GeminiClient.Redact($"AI Auto-Fit failed: {ex.Kind} {ex.Message} {ex.Detail}", apiKey));
+            if (AiAccountFix.KindFor(ex.Kind) != AiFixKind.None)
+                retryAfterFix = await AiAccountFix.OfferAsync(this, ex, AiUsage.MusicAutoFit);
         }
         catch (Exception ex)
         {
@@ -271,17 +259,13 @@ public partial class MusicWizardWindow
             button.Content = originalContent;
             button.IsEnabled = true;
         }
+        if (retryAfterFix)
+        {
+            SetAiAutoFitStatus("AI connected. Starting AI Auto-Fit again…", "AppTextMutedBrush");
+            Dispatcher.UIThread.Post(() => _ = ApplyAiAutoFitAsync(button));
+        }
     }
 
-    /// <summary>
-    /// AIMUSIC_SCENES_01 — the frames Auto-Fit sends and the finished-video length.
-    /// <list type="bullet">
-    /// <item>Main App: 4 moments of the FINISHED video (12 / 35 / 60 / 85 %), each mapped back to the source
-    /// second that shows then (speed changes, freezes and cuts honoured).</item>
-    /// <item>Merger: when a CompositeTimeline is present, maps through speed ramps, freezes and cuts per clip;
-    /// otherwise spreads frames over every clip's kept window in proportion to length (4–8 frames).</item>
-    /// </list>
-    /// </summary>
     private async Task<(System.Collections.Generic.List<AiMusicScene> Scenes, double OutputSec)> BuildAiMusicScenesAsync(
         string ffmpegPath,
         CancellationToken ct = default)

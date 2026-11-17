@@ -7,17 +7,6 @@ using System.Threading.Tasks;
 
 namespace FreeVideoStudio.Core.Ipc;
 
-/// <summary>
-/// Named-pipe client for the session-state server.
-///
-/// IPCDEADLINE_01 — every call is asynchronous and bounded end to end: connect, write and read run
-/// under ONE deadline (<see cref="IpcProtocol.ExchangeAsync"/>). There is deliberately NO synchronous
-/// variant: the former <c>GetStateSync</c>/<c>UpdatePropertiesSync</c>/<c>SaveStateSync</c>/
-/// <c>ClearStateSync</c>/<c>SendHandoffSync</c> bounded only <c>Connect()</c> and then blocked in
-/// <c>ReadFrame</c> with no deadline, and they were reachable from the UI thread (UIIPC_01).
-/// UI code reads through <see cref="SessionStateWriter.ReadSnapshot"/> and writes through
-/// <see cref="SessionStateWriter.Enqueue"/>.
-/// </summary>
 public static class NamedPipeStateClient
 {
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromMilliseconds(100);

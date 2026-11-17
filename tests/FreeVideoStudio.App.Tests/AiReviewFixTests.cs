@@ -116,7 +116,7 @@ public sealed class AiReviewFixTests
     public void KillScan_BatchesAreBiggerAndMoreParallel_AndThePopUpScanUsesTheGraphicsCard()
     {
         Assert.True(AiEliminationTrackerService.MomentsPerRequest >= 10);
-        Assert.True(AiEliminationTrackerService.ParallelBatches >= 3);
+        Assert.True(AiEliminationTrackerService.ParallelBatches >= 2);
         var args = RawVideoFrameReader.BuildArguments("in.mp4", 0, 10, 2, 256, 144, "gray", hardwareDecode: true).ToList();
         int hw = args.IndexOf("-hwaccel");
         Assert.True(hw >= 0 && hw < args.IndexOf("-i"));

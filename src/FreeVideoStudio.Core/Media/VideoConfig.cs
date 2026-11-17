@@ -1,6 +1,4 @@
-﻿
-
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
 
@@ -11,10 +9,6 @@ public class VideoConfig
     public int BaseFontSize = 110;
     public int MinFontSize = 36;
 
-    /// <summary>
-    /// Returns (keepHighestRes, targetMB, qualityLevel).
-    /// Exact port of get_quality_settings().
-    /// </summary>
     public (bool keepHighestRes, double? targetMB, int qualityLevel) GetQualitySettings(int qualityLevel, double? targetMbOverride = null)
     {
         int q = qualityLevel;
@@ -35,10 +29,6 @@ public class VideoConfig
         return (keepHighestRes, targetMB, q);
     }
 
-    /// <summary>
-    /// Load and validate mobile coordinates from crops_coordinations.conf.
-    /// Uses self-healing: if missing/corrupt, falls back to defaults → backup rotation.
-    /// </summary>
     public static async Task<JsonObject> GetMobileCoordinatesAsync(ApplicationPaths? paths = null)
     {
         paths ??= ApplicationPaths.CreateDefault();

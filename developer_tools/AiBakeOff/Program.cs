@@ -11,11 +11,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Tools.AiBakeOff;
 
-/// <summary>
-/// AIBAKEOFF_01 (P1.2 Quality Bake-Off Harness) — dev tool console evaluating
-/// U1 (Subject discovery), U2 (Dense tracking), and U3 (HUD detection) across vendors.
-/// Reads keys strictly from environment variables. Never writes keys to files or logs.
-/// </summary>
 public static class Program
 {
     public sealed record BakeOffResult(
@@ -30,8 +25,30 @@ public static class Program
 
     public sealed record Box(int YMin, int XMin, int YMax, int XMax);
 
+    private static int UsageReport(string path)
+    {
+        var files = Directory.Exists(path)
+            ? Directory.GetFiles(path, "*.log", SearchOption.TopDirectoryOnly).Concat(Directory.GetFiles(path, "*.txt", SearchOption.TopDirectoryOnly)).ToArray()
+            : File.Exists(path) ? new[] { path } : Array.Empty<string>();
+        if (files.Length == 0)
+        {
+            Console.WriteLine($"No log files found at {path}.");
+            return 1;
+        }
+        var lines = files.SelectMany(f =>
+        {
+            try { return File.ReadAllLines(f); }
+            catch (IOException ex) { Console.WriteLine($"Skipped {f}: {ex.Message}"); return Array.Empty<string>(); }
+        });
+        Console.Write(AiUsageReport.Render(AiUsageReport.Summarize(lines)));
+        return 0;
+    }
+
     public static async Task<int> Main(string[] args)
     {
+        if (args.Length >= 1 && args[0] == "--usage-report")
+            return UsageReport(args.Length >= 2 ? args[1] : ApplicationPaths.CreateDefault().LogsDirectory);
+
         Console.WriteLine("================================================================================");
         Console.WriteLine("Free Video Studio — AI Quality & Latency Bake-Off Harness (P1.2)");
         Console.WriteLine("================================================================================");
@@ -51,15 +68,15 @@ public static class Program
         var providers = new List<(IAiVisionProvider Provider, string Key, IReadOnlyList<string> Models)>();
         if (!string.IsNullOrEmpty(geminiKey))
         {
-            providers.Add((new GeminiProvider(), geminiKey, new[] { "gemini-2.5-flash", "gemini-3.8-flash" }));
+            providers.Add((new GeminiProvider(), geminiKey, AiVisionProviders.GetKnownModels(AiVendor.Google).Take(2).ToArray()));
         }
         if (!string.IsNullOrEmpty(anthropicKey))
         {
-            providers.Add((new ClaudeProvider(), anthropicKey, new[] { "claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022" }));
+            providers.Add((new ClaudeProvider(), anthropicKey, AiVisionProviders.GetKnownModels(AiVendor.Anthropic).Take(2).ToArray()));
         }
         if (!string.IsNullOrEmpty(openAiKey))
         {
-            providers.Add((new OpenAiProvider(), openAiKey, new[] { "o3-mini", "gpt-4o" }));
+            providers.Add((new OpenAiProvider(), openAiKey, AiVisionProviders.GetKnownModels(AiVendor.OpenAI).Take(2).ToArray()));
         }
 
         if (providers.Count == 0)
@@ -221,9 +238,6 @@ public static class Program
         }
     }
 
-    /// <summary>
-    /// Calculates Intersection over Union (IoU) for two 0-1000 normalized bounding boxes [ymin, xmin, ymax, xmax].
-    /// </summary>
     public static double CalculateIoU(Box a, Box b)
     {
         int interYMin = Math.Max(a.YMin, b.YMin);
@@ -284,7 +298,6 @@ public static class Program
         Console.WriteLine("================================================================================");
     }
 
-    /// <summary>Generates a minimal valid 1x1 JPEG byte stream for network ping/schema testing.</summary>
     private static byte[] CreateTestJpeg()
     {
         return new byte[]

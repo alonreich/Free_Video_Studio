@@ -8,10 +8,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// MUSICWIN_01 — the one reader that turns a saved music result into plan tracks for the Main App
-/// export, the Main App preview, the merger export and the merger preview.
-/// </summary>
 public sealed class MusicWizardResultPlanTests
 {
     [AvaloniaTheory]

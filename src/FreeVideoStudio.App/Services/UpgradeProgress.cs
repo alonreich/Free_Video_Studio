@@ -1,7 +1,5 @@
-﻿
-namespace FreeVideoStudio.App.Services;
+﻿namespace FreeVideoStudio.App.Services;
 
-/// <summary>What the user is watching happen. Decides the window's title and wording.</summary>
 internal enum UpgradeKind
 {
     Install,
@@ -9,10 +7,6 @@ internal enum UpgradeKind
     Recovery
 }
 
-/// <summary>
-/// UPGRADEUX_01 — the steps the user sees, in order. Each one is a plain-English line in the
-/// progress window; the broker moves through them and the elevated worker reports its share.
-/// </summary>
 internal enum UpgradeStep
 {
     CloseOldVersion,
@@ -26,49 +20,27 @@ internal enum UpgradeStep
     Start
 }
 
-/// <summary>The user's answer when another copy of the app is still open (UPGRADEUX_03).</summary>
 internal enum RunningAppChoice
 {
     CloseAndContinue,
     Cancel
 }
 
-/// <summary>
-/// UPGRADEUX_01 — how <see cref="UpgradeCoordinator"/> tells the user what is happening.
-///
-/// <para>Before this existed the broker ran with no window at all: after the app closed, the user
-/// saw a Windows permission prompt out of nowhere, then a minute or more of nothing while hundreds
-/// of MB were unpacked, copied and hashed, and then the app reappeared — or did not, with no
-/// explanation. Every call here is display-only. None of them may change what is installed, in
-/// which order, or whether a failure rolls back.</para>
-///
-/// <para>Implementations must be safe to call from any thread and must never throw.</para>
-/// </summary>
 internal interface IUpgradeProgress
 {
-    /// <summary>Sets the title and which steps are listed. Does not show anything yet.</summary>
     void Begin(UpgradeKind kind, bool waitsForApp);
 
-    /// <summary>Makes the window visible (it stays hidden while the user is still working).</summary>
     void Show();
 
-    /// <summary>Marks <paramref name="step"/> as the current one; every earlier step is done.</summary>
     void Step(UpgradeStep step, string? detail = null, double? fraction = null);
 
-    /// <summary>UPGRADEUX_03 — another copy of the app is open. Ask before Windows is asked.</summary>
     Task<RunningAppChoice> AskToCloseRunningAppAsync(int openHere, bool openInOtherAccount);
 
-    /// <summary>Shows the finished state. The window closes itself shortly afterwards.</summary>
     void Succeeded(string message);
 
-    /// <summary>Shows a failure in plain English and waits until the user has read it.</summary>
     Task FailedAsync(string title, string message);
 }
 
-/// <summary>
-/// UPGRADEUX_01 — used when no window can be shown (the UI libraries could not be loaded).
-/// Falls back to native Windows message boxes so a failure is still never silent.
-/// </summary>
 internal sealed class HeadlessUpgradeProgress : IUpgradeProgress
 {
     public static readonly HeadlessUpgradeProgress Instance = new();
@@ -96,7 +68,6 @@ internal sealed class HeadlessUpgradeProgress : IUpgradeProgress
     }
 }
 
-/// <summary>UPGRADEUX_01 — every user-facing sentence of the install/update window, in one place.</summary>
 internal static class UpgradeText
 {
     public static string Title(UpgradeKind kind) => kind switch
@@ -120,7 +91,6 @@ internal static class UpgradeText
         _ => step.ToString()
     };
 
-    /// <summary>UPGRADEUX_02 — said BEFORE the Windows prompt appears, so it is never a surprise.</summary>
     public static string PermissionDetail(UpgradeKind kind) =>
         "Windows will now ask: \"Do you want to allow this app to make changes to your device?\"  Click YES. "
       + (kind == UpgradeKind.Recovery

@@ -37,19 +37,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     public static readonly StyledProperty<string> RoleNameProperty =
         AvaloniaProperty.Register<CropToolWindow, string>(nameof(RoleName), defaultValue: "");
 
-    /// <summary>
-    /// ⚠️ NODUPES_02 — DISPLAY ONLY. NEVER DERIVE A ROLE KEY FROM THIS.
-    ///
-    /// This holds the LABEL of whatever element is currently being placed, for display. It is not
-    /// an identity and it cannot be turned back into one: not one of the five built-in elements has
-    /// a display name that maps back to its own key, so
-    /// <c>RoleName.ToLowerInvariant().Replace(" ", "_")</c> is wrong six times out of six. Code
-    /// that did exactly that is what produced duplicate same-named layers in the composer and wrote
-    /// crops under keys the exporter does not draw — see <see cref="ConfirmSelectionAsAsync"/> for
-    /// the full table.
-    ///
-    /// A role's identity travels as a <see cref="HudRole"/>. If you need the key, take the role.
-    /// </summary>
     public string RoleName
     {
         get => GetValue(RoleNameProperty);
@@ -67,23 +54,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
     public event System.EventHandler<System.ComponentModel.DataErrorsChangedEventArgs>? ErrorsChanged;
 
-    /// <summary>
-    /// ISSUE_01 (audit round 6) — THE PROFILE-NAME BOX NOW ACTUALLY VALIDATES.
-    ///
-    /// What was here before answered for <see cref="RoleName"/> and nothing else. RoleName is a
-    /// leftover: `grep RoleName CropToolWindow.axaml` returns zero hits, because ISSUE_04 deleted
-    /// the RoleTextBox that used to bind it. Meanwhile the one TextBox in this window that IS
-    /// wrapped in a <c>DataValidationErrors</c> host — NewMaskOverlayTextBox — binds
-    /// <see cref="NewMaskOverlayName"/>, and <c>GetErrors("NewMaskOverlayName")</c> fell straight
-    /// through to <c>yield break</c>. So Avalonia's binding plugin never saw an error, the
-    /// <c>TextBox:error</c> pseudo-class (AvaloniaApp.axaml, ISSUE_09) never fired, the error host
-    /// never rendered a message, and a user typing a blank or already-taken profile name got
-    /// nothing back but a SAVE AS NEW button that stayed grey for no stated reason.
-    ///
-    /// The rules below are the SAME rules <see cref="RefreshCreateMaskOverlayButton"/> uses to
-    /// decide whether that button lights up — deliberately one predicate, read from one place, so
-    /// the message on screen can never disagree with the button beside it.
-    /// </summary>
     public bool HasErrors => ValidateNewMaskOverlayName() != null;
 
     public System.Collections.IEnumerable GetErrors(string? propertyName)
@@ -95,21 +65,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-    /// <summary>
-    /// The single source of truth for "is this a usable new profile name" (EDITSTATE_01 — the rule
-    /// is the session's, NOMASK_01 included). Null when fine, else the message the user reads.
-    /// </summary>
     private string? ValidateNewMaskOverlayName() => _edit.ValidateNewProfileName(NewMaskOverlayName);
 
-    /// <summary>
-    /// ISSUE_01 — keeps SAVE AS NEW and the inline validation message telling the same story.
-    ///
-    /// The button lights up only when all four things are true at once: the profile gate is open,
-    /// a profile is actually selected (there is nothing to copy otherwise — see the guard in the
-    /// click handler), the box is not empty, and <see cref="ValidateNewMaskOverlayName"/> is happy.
-    /// Safe to call before InitializeComponent has run: SetEnabled no-ops on a missing control, and
-    /// styled-property defaults fire OnPropertyChanged during construction.
-    /// </summary>
     private void RefreshCreateMaskOverlayButton()
     {
         bool hasText = !string.IsNullOrWhiteSpace(NewMaskOverlayName);
@@ -117,11 +74,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             _edit.GateUnlocked && _edit.ActiveProfile != null && hasText && ValidateNewMaskOverlayName() == null);
     }
 
-    /// <summary>
-    /// ISSUE_01 — refreshes the "already taken" set the validator checks against. Called wherever
-    /// the profile list is read or rewritten, so a name created in this session starts colliding
-    /// immediately rather than after the next window open.
-    /// </summary>
     private void RefreshMaskOverlayNameCache(IEnumerable<string> profiles)
     {
         _edit.RefreshExistingProfileNames(profiles);
@@ -129,7 +81,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         ErrorsChanged?.Invoke(this, new System.ComponentModel.DataErrorsChangedEventArgs(nameof(NewMaskOverlayName)));
         RefreshCreateMaskOverlayButton();
     }
-
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -157,18 +108,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     private readonly ApplicationPaths _paths = ApplicationPaths.CreateDefault();
     private readonly FreeVideoStudio.Core.Infrastructure.RecoveryManager _recovery = new FreeVideoStudio.Core.Infrastructure.RecoveryManager(ApplicationPaths.CreateDefault());
     private readonly string? _initialVideoPath;
-    /// <summary>
-    /// EDITSTATE_01 — THE EDIT ITSELF: placed layers (source rect, layout, z), the selection by role
-    /// KEY, tombstones, the active profile and its name rules, the element catalogue, the capture
-    /// resolution, dirty and the UNDO_27 history (Core/Editing/CropEditSession). This window keeps
-    /// the view: canvases, element visuals, adorners, handles, hit testing, pointer capture, the
-    /// frozen-frame zoom, and the Magic Wand's transient scan and candidates.
-    /// </summary>
     private readonly CropEditSession _edit = new(Infrastructure.MaskOverlayManager.IsNoMask);
 
     private readonly ObservableCollection<LayerEntry> _layers = new();
 
-    /// <summary>The VISUALS of the placed layers, one per <see cref="CropEditSession.Layers"/> entry.</summary>
     private readonly List<CropEditorItem> _items = new();
     private readonly List<Control> _candidateControls = new();
     private readonly List<Control> _guideControls = new();
@@ -194,12 +137,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
     private Border? _profileGate;
 
-    /// <summary>ISSUE_07 — the composer's "nothing placed yet" panel and its two lines of copy.</summary>
     private Border? _composerEmptyState;
     private TextBlock? _composerEmptyStateTitle;
     private TextBlock? _composerEmptyStateBody;
 
-    /// <summary>ISSUE_08 — the dimming scrim behind the HUD-element chooser.</summary>
     private Border? _rolePopupScrim;
     private TextBlock? _profileStateLabel;
 
@@ -216,15 +157,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     private double _editStartWidth;
     private double _editStartHeight;
 
-    /// <summary>
-    /// RESIZEFEEL_01 — height ÷ width of the SOURCE crop, captured once when a resize gesture
-    /// starts and held for the whole gesture.
-    ///
-    /// Deliberately the SOURCE rectangle's ratio, not the placed item's. The placed size has been
-    /// through QuantizeItemSize, whose two axes are rounded independently, so the placed ratio is
-    /// always a slightly wrong copy of the real one — and locking a resize to it means every
-    /// resize starts from the last one's rounding error instead of from the truth.
-    /// </summary>
     private double _editSourceAspect = 1.0;
     private CropLayoutSnapshot? _editStartSnapshot;
 
@@ -247,8 +179,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     private bool _closeInProgress;
     private DispatcherTimer? _timelineTimer;
 
-
-    /// <summary>GATE_01 — the initial video is held until a profile exists to load it against.</summary>
     private string? _pendingInitialVideoPath;
 
     private bool _snapshotFitMode = true;
@@ -256,21 +186,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     private const double MinZoom = 0.05;
     private const double MaxZoom = 4.0;
 
-    /// <summary>
-    /// Set once the user drives the zoom themselves (the wheel, or any zoom button other than
-    /// FIT); FIT clears it.
-    ///
-    /// AUTOZOOM_02 — this is NO LONGER the auto-zoom gate. It used to be, and it was the wrong
-    /// question: it asks about HISTORY ("has the zoom been touched") when what matters is the
-    /// current state ("am I looking at the whole frame"). See AutoZoomToSelection for how that
-    /// went wrong in both directions. Its only remaining job is fidelity for CANCELSEL_01 — Escape
-    /// has to put the flag back exactly as it found it, or a cancel would silently change whether
-    /// the view counts as user-framed.
-    /// </summary>
     private bool _userZoomed;
 
-
-    /// <summary>EDITSTATE_01 — the selected element's visuals, resolved from the session's selection BY KEY.</summary>
     private CropEditorItem? SelectedView
     {
         get => _edit.Selected is { } layer ? _items.FirstOrDefault(i => ReferenceEquals(i.Model, layer)) : null;
@@ -412,7 +329,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         ButtonClick("WandAddAiButton", async (_, _) =>
         {
             var vendor = Infrastructure.SettingsManager.Instance.GetUsageConfig(Services.AiUsage.MagicWand).Vendor;
-            if (await Controls.AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, vendor, Services.AiUsage.MagicWand))
+            if (await Services.AiAccountFix.FixAsync(this, vendor, Services.AiUsage.MagicWand))
                 s_wandCloudDeclinedThisSession = false;
             UpdateMagicWandAvailabilityUi();
         });
@@ -463,7 +380,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                 if (btn != null && pnl != null) { btn.IsVisible = false; pnl.IsVisible = true; }
             }
         });
-        
+
         ButtonClick("ConfirmDeleteButton", (_, _) =>
         {
             DeleteSelectedItem();
@@ -478,12 +395,12 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             var pnl = DeleteConfirmPanelCtl;
             if (btn != null && pnl != null) { btn.IsVisible = true; pnl.IsVisible = false; }
         });
-        
+
         ButtonClick("UndoButton", (_, _) => Undo());
         ButtonClick("RedoButton", (_, _) => Redo());
         ButtonClick("RaiseButton", (_, _) => MoveSelectedLayer(1));
         ButtonClick("LowerButton", (_, _) => MoveSelectedLayer(-1));
-        
+
         ButtonClick("CropToolHelpButton", (_, _) => Controls.CoachOverlay.Replay(this));
 
         ButtonClick("RolePopupNewOk", async (_, _) => await CommitNewRoleAsync());
@@ -513,7 +430,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                 if (btn != null && pnl != null) { btn.IsVisible = false; pnl.IsVisible = true; }
             }
         });
-        
+
         ButtonClick("ConfirmResetButton", (_, _) =>
         {
             ResetWorkingState(tombstonePlacedElements: true);
@@ -532,7 +449,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         ButtonClick("SaveButton", async (button, _) => await SaveAndReturnAsync(button));
         BuildMaskOverlayUi();
 
-
         if (_timelineSlider != null)
         {
             _timelineSlider.PropertyChanged += (s, e) =>
@@ -547,7 +463,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                     }
                 }
             };
-            
+
             _timelineSlider.PointerReleased += (s, e) =>
             {
                 double duration = _videoHost?.IpcClient?.Duration ?? 0.0;
@@ -732,21 +648,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-    /// <summary>
-    /// GATE_01 (F3) - the one switch between "nothing chosen yet" and "editing a profile".
-    ///
-    /// WHY A GATE AND NOT JUST A DEFAULT. This window's save path is
-    /// SaveConfigAsync -> CropConfigStore.SaveAsync (live crops_coordinations.conf)
-    ///                 -> MaskOverlayManager.SyncActiveProfileFromCurrentConfig()
-    /// and that last call copies the live config straight over
-    /// SettingsManager.ActiveMaskOverlay's profile file. There is no undo on disk beyond the five
-    /// rotating .bak files. So "which profile am I editing" is not a convenience - it decides
-    /// which file gets overwritten, and it must never be answered by a leftover global.
-    ///
-    /// While locked: the overlay covers the whole working row, and every control that could start
-    /// work or write anything is disabled. The Active Profile bar (outer grid row 1) is NOT
-    /// covered - that is the entire reason it was lifted out of the right-hand panel.
-    /// </summary>
     private void SetProfileGate(bool unlocked)
     {
         _edit.GateUnlocked = unlocked;
@@ -794,13 +695,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         Avalonia.Input.DragDrop.SetAllowDrop(this, unlocked);
     }
 
-    /// <summary>
-    /// GATE_01 / CROPPROFILE_01 — loads and verifies a profile the user deliberately picked.
-    ///
-    /// Validates the profile identity and contents first. If loading fails (missing, corrupt,
-    /// sentinel, invalid), does NOT clear working state, unlock editing or relabel old data.
-    /// Only upon successful verified load is working state reset and editing unlocked.
-    /// </summary>
     private async Task<bool> OnProfileChosenAsync(string profileName)
     {
         try
@@ -863,7 +757,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-    /// <summary>ZOOM_01 (F2) - the scale currently applied to the frozen-frame surface.</summary>
     private double CurrentZoom()
     {
         if (_snapshotZoomHost?.LayoutTransform is ScaleTransform st && st.ScaleX > 0)
@@ -873,20 +766,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         return _snapshotZoomFactor;
     }
 
-    /// <summary>
-    /// ZOOM_01 (F2) - sets the frozen frame's zoom. Pass null for FIT.
-    ///
-    /// This scales the RENDER, never the coordinate space. SourceCanvas keeps its true capture
-    /// size (1920x1080, 2560x1440, ...) and Avalonia maps pointer positions back through the
-    /// LayoutTransform for us, so SourceCanvas_PointerPressed/Moved/Released, ClampToSnapshot and
-    /// ToSourceRect all keep working in real source pixels with no scaling maths of their own.
-    /// Resizing the canvas instead would have meant rewriting every one of those call sites AND
-    /// would have quantised selections to screen pixels.
-    ///
-    /// The selection rectangle's stroke is divided by the scale so that a 2px outline stays 2px on
-    /// screen: at FIT on a 4K capture the scale can be ~0.2, and an unadjusted stroke would render
-    /// sub-pixel and vanish - the box would look like it had not been drawn at all.
-    /// </summary>
     private void ApplySnapshotZoom(double? factor)
     {
         if (factor == null)
@@ -899,15 +778,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         ApplySnapshotZoomInternal(factor.Value, fitMode: false, markUserZoom: true);
     }
 
-    /// <summary>
-    /// ZOOM_01 - the single place the zoom scale is written.
-    /// </summary>
-    /// <param name="markUserZoom">
-    /// AUTOZOOM_01 - true when a HUMAN asked for this magnification (a zoom button, the wheel).
-    /// Once set, AutoZoomToSelection stops changing the zoom and only re-centres: overriding a
-    /// magnification the user deliberately chose is the fastest way to make a tool feel like it
-    /// is fighting back. AutoZoomToSelection's own call passes false.
-    /// </param>
     private void ApplySnapshotZoomInternal(double factor, bool fitMode, bool markUserZoom)
     {
         if (_snapshotZoomHost == null) return;
@@ -955,12 +825,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-    /// <summary>
-    /// ZOOM_01 (F2) - the scale that makes the whole capture fit the viewport, with a small margin
-    /// so the frame's edges are visibly inside the panel rather than flush against it (a selection
-    /// drawn hard against the edge is impossible to grab otherwise).
-    /// Capped at 1.0: a 1080p capture in a 4K window should show at 100%, not be blown up.
-    /// </summary>
     private double ComputeFitScale()
     {
         double viewportW = _snapshotScroll?.Bounds.Width ?? 0;
@@ -978,7 +842,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         return Math.Clamp(fit, MinZoom, 1.0);
     }
 
-    /// <summary>ISSUE_04 — stops the walkthrough timer when this window goes away.</summary>
     protected override void OnClosed(EventArgs e)
     {
         Controls.CoachOverlay.Cancel(this);
@@ -1016,10 +879,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         await _videoHost.StartMpvProcessAsync(mpvPath);
     }
 
-    /// <summary>
-    /// IDEA_7 — extensions accepted by drag-and-drop. Deliberately the SAME list as the file
-    /// picker's FileTypeFilter in <see cref="OpenVideoAsync"/>; if one changes, change both.
-    /// </summary>
     private static readonly string[] DroppableVideoExtensions =
         [".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v"];
 
@@ -1237,28 +1096,11 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         UpdatePlayPauseIcon(!currentlyPaused);
     }
 
-    /// <summary>
-    /// WIZCOLLAPSE_01 - folds the step tracker away once cropping starts.
-    ///
-    /// The four dots answer "where am I in this flow", which is a question you stop asking the
-    /// moment you are dragging boxes on a frozen frame. Keeping them costs ~34px of height on the
-    /// one screen where height is what lets you see the HUD you are cropping. GoalLabel and
-    /// StatusLabel stay in both states - those say what to do NEXT, which never stops mattering.
-    /// </summary>
     private void ApplyWizardChrome(bool cropping)
     {
         SetVisible("StepStrip", !cropping);
     }
 
-    /// <summary>
-    /// PLAYICON_01 - the ONE writer of the transport button's face, copied from the Main App
-    /// (MainWindow.axaml.cs, the playIcon/pauseIcon pair).
-    ///
-    /// Two Paths with one visible at a time, rather than swapping the button's Content between
-    /// the strings "PLAY" and "PAUSE". Swapping Content re-measures the button on every toggle,
-    /// so it visibly changed width mid-playback, and a 110px button with a word in it was the
-    /// only transport control in the suite that did not look like a transport control.
-    /// </summary>
     private void UpdatePlayPauseIcon(bool isPaused)
     {
         var play = this.FindControl<Avalonia.Controls.Shapes.Path>("PlayIcon");
@@ -1481,14 +1323,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         return output;
     }
 
-    /// <summary>
-    /// BACKTOVIDEO_01 - back to the moving video.
-    ///
-    /// The BACK TO VIDEO button that used to call this is deleted. PLAY calls it now: pressing play
-    /// while a frame is frozen means "show me the video again", which is the only thing play can
-    /// sensibly mean at that moment. Two controls for one idea, sitting next to each other, was the
-    /// reason the button read as pointless.
-    /// </summary>
     private void ShowVideoPanel()
     {
         SetVisible("VideoPanel", true);
@@ -1520,8 +1354,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         SetWizardState(3, "Refine Box", "Drag a box round one HUD piece, then pick what it is.");
     }
 
-
-    /// <summary>CROPCANVAS_01 — what a drag on the frozen frame is currently doing.</summary>
     private enum SourceDrag
     {
         None,
@@ -1540,12 +1372,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
     private Point _panAnchorViewport;
     private readonly List<Rectangle> _selectionHandles = new();
 
-    /// <summary>
-    /// CROPCANVAS_01 — handle box and grab tolerance, in SCREEN pixels. Divided by the zoom
-    /// scale wherever they are used, so a handle is the same physical size to grab whether the
-    /// frame is at Fit (~0.3x on a 4K capture) or at 400%. A constant in source pixels would be
-    /// invisible at Fit and enormous when zoomed in.
-    /// </summary>
     private const double HandleScreenPx = 14;
     private const double GrabScreenPx = 11;
 
@@ -1673,14 +1499,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         e.Handled = true;
     }
 
-    /// <summary>
-    /// DRAGFREE_01 — the body of an in-progress rubber-band gesture, in SOURCE pixels.
-    ///
-    /// Split out of SourceCanvas_PointerMoved so the edge-pan tick can drive the same code: when
-    /// the view scrolls under a stationary pointer, the source pixel beneath that pointer changes,
-    /// and the box has to follow it. Without that the box would freeze the instant the user stopped
-    /// moving the mouse at the edge — which is the confinement half of "the cursor gets trapped".
-    /// </summary>
     private void ApplySourceDragTo(Point p)
     {
         UpdateCrosshair(p);
@@ -1719,11 +1537,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-
-    /// <summary>DRAGFREE_01 — how close to the viewport edge starts a pan, in screen pixels.</summary>
     private const double EdgePanMargin = 34;
 
-    /// <summary>DRAGFREE_01 — fastest pan, in screen pixels per tick, right at the edge.</summary>
     private const double EdgePanMaxSpeed = 18;
 
     private DispatcherTimer? _edgePanTimer;
@@ -1781,14 +1596,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-    /// <summary>
-    /// DRAGFREE_01 — the ONE way a rubber-band gesture ends.
-    ///
-    /// Called by the release handler, by PointerCaptureLost, by Escape and by the self-heal in
-    /// PointerMoved. It leaves no gesture state behind and always puts the cursor back, which the
-    /// old code did only on the Panning and Moving paths — after a CORNER drag the cursor kept the
-    /// resize arrow until the pointer happened to move again over empty canvas.
-    /// </summary>
     private void EndSourceDrag()
     {
         _sourceDrag = SourceDrag.None;
@@ -1842,11 +1649,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         e.Handled = true;
     }
 
-    /// <summary>
-    /// CROPCANVAS_01 — which corner handle (if any) is under <paramref name="p"/>.
-    /// The tolerance is in screen pixels converted to source pixels, so the grab area is the
-    /// same physical size at every zoom level.
-    /// </summary>
     private SourceDrag HitTestSelectionCorner(Point p, SourceRect r)
     {
         double tol = GrabScreenPx / Math.Max(0.01, CurrentZoom());
@@ -1862,19 +1664,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         return SourceDrag.None;
     }
 
-    /// <summary>
-    /// CANCELSEL_01 - abandon the current selection and undo what drawing it did to the view.
-    ///
-    /// Cancel has to mean "pretend that never happened", and AUTOZOOM_01 makes that more than
-    /// clearing a rectangle: drawing a box MOVES THE VIEW, magnifying and re-centring on it. Without
-    /// restoring the zoom and the scroll, escaping from a mis-drawn box left the user stranded at
-    /// 300% somewhere they never asked to be, with no idea how they got there - which is worse than
-    /// the mistake they were trying to undo.
-    ///
-    /// The pre-zoom state is captured in AutoZoomToSelection, immediately before it changes
-    /// anything, and only when there is not already one saved - so a draw, a resize and another
-    /// resize all rewind to where the FIRST one started, not to the middle of the sequence.
-    /// </summary>
     private void CancelSourceSelection()
     {
         EndSourceDrag();
@@ -1897,12 +1686,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-    /// <summary>CANCELSEL_01 - the view as it was before auto-zoom touched it.</summary>
     private readonly record struct PreZoomState(double Scale, bool FitMode, bool UserZoomed, Vector Offset);
 
     private PreZoomState? _preZoomState;
 
-    /// <summary>CROPCANVAS_01 — the rect produced by dragging one corner to <paramref name="p"/>.</summary>
     private static Rect ResizeFromCorner(SourceRect origin, SourceDrag corner, Point p)
     {
         double l = origin.X, t = origin.Y, r = origin.X + origin.Width, b = origin.Y + origin.Height;
@@ -1916,10 +1703,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         return new Rect(new Point(Math.Min(l, r), Math.Min(t, b)), new Point(Math.Max(l, r), Math.Max(t, b)));
     }
 
-    /// <summary>
-    /// CROPCANVAS_01 — the cursor is the only thing telling the user the box can be grabbed at
-    /// all. Without this the selection looks like a drawing, not an object.
-    /// </summary>
     private void UpdateHoverCursor(Point p)
     {
         if (_sourceCanvas == null) return;
@@ -1941,15 +1724,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         SetSourceCursor(wanted);
     }
 
-    /// <summary>
-    /// CROPCANVAS_01 — the ONE writer of the frozen frame's cursor.
-    ///
-    /// Every cursor change goes through here for two reasons. Assigning a Cursor allocates and
-    /// invalidates, and PointerMoved fires continuously, so the no-op guard matters. And the
-    /// cursors forced during a drag (SizeAll while panning or moving) have to leave _hoverCursor
-    /// telling the truth, or the first hover after the drag sees "no change" and leaves the wrong
-    /// cursor on screen.
-    /// </summary>
     private void SetSourceCursor(StandardCursorType wanted)
     {
         if (_sourceCanvas == null || _hoverCursor == wanted) return;
@@ -1959,18 +1733,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
     private StandardCursorType _hoverCursor = StandardCursorType.Cross;
 
-    /// <summary>
-    /// WHEELZOOM_01 — wheel over the frozen frame zooms, anchored under the pointer.
-    ///
-    /// "Anchored" means the source pixel under the cursor stays under the cursor. Without it,
-    /// zooming in always drifts toward a corner and the user has to chase what they were looking
-    /// at with the scrollbars — which is the behaviour this whole pass is removing.
-    ///
-    /// The correction is MEASURED, not calculated: the zoom host is centred in the ScrollViewer,
-    /// so while the content is smaller than the viewport there is padding that no offset
-    /// arithmetic accounts for. Asking Avalonia where the point actually landed and correcting by
-    /// the difference is right in both cases.
-    /// </summary>
     private void OnSnapshotWheel(object? sender, PointerWheelEventArgs e)
     {
         if (_snapshotPath == null || _snapshotScroll == null || _sourceCanvas == null) return;
@@ -2001,10 +1763,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         e.Handled = true;
     }
 
-    /// <summary>
-    /// WHEELDRAG_01 — window-level wheel, live only while a frozen-frame gesture is in progress.
-    /// See the registration in the wiring block for why this exists at all.
-    /// </summary>
     private void OnWindowWheelDuringDrag(object? sender, PointerWheelEventArgs e)
     {
         if (_sourceDrag == SourceDrag.None) return;
@@ -2022,26 +1780,12 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-    /// <summary>
-    /// ZOOMKEEP_01 — puts the committed selection back in the middle of the viewport.
-    /// Used by the zoom buttons, which otherwise leave the box wherever the scroll offset happened
-    /// to be pointing after the scale changed.
-    /// </summary>
     private void RecenterOnSelection()
     {
         if (_sourceSelection is not { } sel) return;
         CenterOnSourcePoint(new Point(sel.X + sel.Width / 2.0, sel.Y + sel.Height / 2.0));
     }
 
-    /// <summary>
-    /// CROPCANVAS_01 — arrow-key nudge for the SOURCE selection.
-    ///
-    /// The window already nudged SelectedView, which is a PORTRAIT item, so on the frozen frame
-    /// the arrow keys did nothing at all. Getting the last two or three pixels of a HUD box right
-    /// with a mouse is unreasonable; this is how that is meant to be done.
-    /// Plain arrows move the box, Ctrl+arrows resize its bottom-right corner, Shift multiplies
-    /// the step - the same shape as the portrait item's nudge, so there is one thing to learn.
-    /// </summary>
     private bool NudgeSourceSelection(Key key, KeyModifiers modifiers)
     {
         if (_sourceSelection is not { } r) return false;
@@ -2073,39 +1817,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         return true;
     }
 
-    /// <summary>
-    /// AUTOZOOM_01 — after a box is drawn or resized at roughly FIT, zoom so it fills ~70% of the
-    /// viewport width and scroll it to the centre.
-    ///
-    /// WHY IT EXISTS. Drawing a pixel-accurate rectangle on a 1920- or 3840-wide frame shown at
-    /// ~30% is not possible. The user drags a ROUGH box, the app magnifies it, and the edges are
-    /// then nudgeable. It is the interaction that made the old Python tool feel precise
-    /// (crop_widgets.py:_auto_zoom_to_selection).
-    ///
-    /// AUTOZOOM_02 — WHEN IT MUST NOT FIRE, and why the old test was wrong.
-    /// The gate used to be the _userZoomed flag: "has the user touched the zoom this session".
-    /// That is a HISTORY question, and it got the two cases that matter backwards.
-    ///   * A user already zoomed to 300% on one corner draws a small box there. _userZoomed is
-    ///     true, so no re-magnify — but the view was still RE-CENTRED on the box, which slides the
-    ///     frame under someone who had deliberately framed it. Tearing them away from their work.
-    ///   * Worse: auto-zoom does not set the flag (markUserZoom: false), so after the FIRST
-    ///     auto-zoom the flag is still false. Draw a second box and it magnifies again, from an
-    ///     already-magnified view, and again on the third. It compounded.
-    ///
-    /// The right question is about the CURRENT STATE, not the history: am I looking at the whole
-    /// frame? Auto-zoom only helps when the frame is small enough that accurate work is impossible,
-    /// which is exactly "at or near FIT". So the test is now the live zoom against the fit scale,
-    /// with a little headroom for someone who nudged the wheel a notch or two and is still
-    /// essentially looking at the whole picture.
-    ///
-    /// This also fixes the compounding for free: one auto-zoom lands far above the threshold, so
-    /// the second box cannot trigger another. Pressing FIT genuinely re-arms it, because FIT is
-    /// what puts the zoom back near the fit scale — no flag to reset, no way for the two to
-    /// disagree.
-    ///
-    /// When it does not fire, NOTHING happens: no zoom and no re-centre. A user working zoomed in
-    /// has already framed the view they want.
-    /// </summary>
     private void AutoZoomToSelection()
     {
         if (_sourceSelection is not { } sel || _snapshotScroll == null) return;
@@ -2145,21 +1856,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             sel.Y + sel.Height / 2.0));
     }
 
-    /// <summary>
-    /// AUTOZOOM_02 — how far above the fit scale the view may be and still count as "looking at the
-    /// whole frame". Above this the user has framed the view deliberately and auto-zoom keeps out.
-    /// </summary>
     private const double AutoZoomArmThreshold = 1.35;
 
-    /// <summary>
-    /// ZOOM_01 — scrolls so a given SOURCE pixel lands at the centre of the viewport.
-    ///
-    /// Deliberately measured rather than calculated. The zoom host is centred inside the
-    /// ScrollViewer, so when the content is smaller than the viewport there is padding that no
-    /// offset arithmetic accounts for. Asking Avalonia where the point actually IS
-    /// (TranslatePoint) and correcting by the difference is correct in both cases and survives
-    /// any future change to the alignment.
-    /// </summary>
     private void CenterOnSourcePoint(Point sourcePoint)
     {
         if (_snapshotScroll == null || _sourceCanvas == null) return;
@@ -2175,7 +1873,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             actual.Value.Y - _snapshotScroll.Viewport.Height / 2.0);
     }
 
-    /// <summary>ZOOM_01 — moves the scroll offset by a delta, clamped to the real extent.</summary>
     private void NudgeScrollBy(double dx, double dy)
     {
         if (_snapshotScroll == null) return;
@@ -2187,11 +1884,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             Math.Clamp(_snapshotScroll.Offset.Y + dy, 0, maxY));
     }
 
-
-    /// <summary>BANDCONTRAST_01 — the band's colour before any frame has been measured.</summary>
     private static readonly Color BandDefaultColour = Color.FromRgb(255, 42, 42);
 
-    /// <summary>BANDCONTRAST_01 — widest edge of the sampling copy, in pixels.</summary>
     private const int ContrastSampleMaxEdge = 640;
 
     private byte[]? _contrastSamples;
@@ -2249,10 +1943,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         _bandColour = BandDefaultColour;
     }
 
-    /// <summary>
-    /// BANDCONTRAST_01 — the band colour for a rectangle, averaged over the pixels its outline
-    /// actually crosses (not the whole interior: what has to stand out is the LINE).
-    /// </summary>
     private Color BandColourFor(Rect rect)
     {
         byte[] samples = _contrastSamples ?? Array.Empty<byte>();
@@ -2323,10 +2013,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         return chosen;
     }
 
-
-    /// <summary>
-    /// CROPCANVAS_01 — builds the selection rectangle and its four corner handles, once.
-    /// </summary>
     private void EnsureSelectionVisuals()
     {
         if (_sourceCanvas == null || _selectionRect != null)
@@ -2361,14 +2047,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-    /// <summary>
-    /// ANTS_01 - crawls the selection's dash pattern.
-    ///
-    /// One shared timer for the single selection rectangle, started when the rectangle is created
-    /// and stopped when it is cleared. It must be stopped: a DispatcherTimer holds a strong
-    /// reference to its handler, so leaving it running keeps this window alive after it closes and
-    /// keeps waking the dispatcher for a rectangle nobody can see.
-    /// </summary>
     private DispatcherTimer? _antTimer;
     private double _antOffset;
 
@@ -2392,10 +2070,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         _antTimer = null;
     }
 
-
     private readonly List<Line> _crosshairLines = new();
 
-    /// <summary>CROSSHAIR_01 — gap and dash in SCREEN pixels, divided by the zoom where used.</summary>
     private const double CrosshairGapPx = 9;
 
     private void EnsureCrosshair()
@@ -2423,12 +2099,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         foreach (Line line in _crosshairLines) line.IsVisible = visible;
     }
 
-    /// <summary>
-    /// CROSSHAIR_01 — redraws the four rays around <paramref name="p"/>, in SOURCE pixels.
-    /// Thickness and the centre gap are screen constants divided by the zoom, so the guides look
-    /// identical at FIT on a 4K capture and at 400% — a fixed source-pixel thickness would be
-    /// invisible at one end and a fat band at the other.
-    /// </summary>
     private void UpdateCrosshair(Point p)
     {
         if (_sourceCanvas == null || _snapshotPath == null) return;
@@ -2577,19 +2247,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-
-    /// <summary>ROLEPOPUP_01 — true while the inline "+ New element" row is open.</summary>
     private bool _rolePopupNewOpen;
 
-    /// <summary>
-    /// ROLEPOPUP_01 — builds and shows the element chooser next to the current selection.
-    ///
-    /// Ordering copies <c>_apply_role_priority</c> from the Python tool: the element most likely to
-    /// be the one just drawn goes FIRST, guessed from which quadrant of the frame the box sits in.
-    /// It is only a guess, so it is only an ordering — nothing is auto-assigned. Elements already
-    /// placed in this session are dimmed and sink to the bottom, because picking one REPLACES it,
-    /// which is occasionally what you want and usually not.
-    /// </summary>
     private void ShowRolePopup()
     {
         var popup = RolePopupCtl;
@@ -2653,66 +2312,12 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         PositionRolePopup();
     }
 
-    /// <summary>
-    /// POPUPCLEAR_01 — places the chooser NEXT TO the selection and never on top of it.
-    ///
-    /// WHAT WAS WRONG. The old version picked right-of-box, flipped to left-of-box if the right
-    /// overflowed, and then finished with an unconditional
-    ///     x = Math.Clamp(x, 4, viewportWidth - pw - 4);
-    ///     y = Math.Clamp(y, 4, viewportHeight - ph - 4);
-    /// That clamp knows about the PANEL EDGES and nothing whatever about the box. Three ways it
-    /// put the popup straight over the rubber band:
-    ///   * the left flip computes x = boxLeft - gap - popupWidth, which goes NEGATIVE for a box
-    ///     near the left edge — and the clamp then slams it back to 4, inside the box;
-    ///   * the flip only fires on right-overflow, so it never checked that the left actually fits;
-    ///   * y was the box's TOP, so a tall popup beside a short box low in the panel got clamped
-    ///     upward, across the box.
-    /// Covering the selection is destructive here in the literal sense: the popup swallows the
-    /// pointer, so the box underneath cannot be grabbed, resized or even seen while choosing.
-    ///
-    /// HOW THIS ONE WORKS. Four candidate placements are tried in order — right, left, below,
-    /// above — and the first that fits the viewport is taken. The ordering is deliberate: right
-    /// first because a right-handed drag ends with the pointer at the box's right edge, then left,
-    /// then the vertical pair for a box that spans the panel's width.
-    ///
-    /// The clamping is what makes the guarantee hold. For a LEFT or RIGHT placement only X decides
-    /// whether the popup overlaps, so Y is clamped freely and X is never touched again. For ABOVE
-    /// or BELOW only Y decides it, so X is clamped freely and Y is left alone. The axis that keeps
-    /// the popup clear of the box is never the axis that gets clamped — which is exactly the
-    /// mistake the old code made.
-    ///
-    /// If nothing fits (a box wider and taller than the panel can flank), the side with the most
-    /// free space wins and the popup is pinned flush against the box there. It may then run past
-    /// the panel edge, and that is the deliberate trade: a popup half off the edge is recoverable,
-    /// a popup welded over the thing you are trying to aim is not.
-    /// </summary>
-    /// <summary>
-    /// POPUPCLEAR_01 — the RolePopup's height ceiling, and the reason it is a FIELD.
-    ///
-    /// It used to be a `const double PopupMaxHeight = 340;` declared HALFWAY DOWN
-    /// <see cref="PositionRolePopup"/>, while the first thing that method does is reset
-    /// `popup.MaxHeight` to it — a read seventeen lines above the declaration. C# scopes a local
-    /// const to the whole enclosing block but forbids using it before its declaration point, so
-    /// that was a hard CS0841 build break, not a style problem.
-    ///
-    /// Class scope also puts it where it belongs: it is a contract with the AXAML
-    /// (`MaxHeight="340"` on the RolePopup Border), not a detail of one method. Change one and
-    /// change the other, or the "does it fit?" test in PositionRolePopup starts answering about a
-    /// box that is not the box on screen.
-    /// </summary>
     private const double PopupMaxHeight = 340;
 
-
-    /// <summary>Breathing room between the rubber band and the chooser. Never less than this, on
-    /// any side, in any branch — that is the "never too close to the rubberband" guarantee.</summary>
     private const double RolePopupGap = 12;
 
-    /// <summary>Breathing room between the chooser and the panel edge.</summary>
     private const double RolePopupEdge = 6;
 
-
-    /// <summary>Below this the element list is too short to choose from, so a vertical band this
-    /// small is not a placement, it is a worse overlap.</summary>
     private const double RolePopupMinHeight = 130;
 
     private void PositionRolePopup()
@@ -2836,21 +2441,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         popup.Margin = new Thickness(x, y, 0, 0);
     }
 
-    /// <summary>
-    /// ISSUE_09 (audit round 6) — the RolePopup drop shadow, in the theme's colour.
-    ///
-    /// The AXAML used to carry <c>BoxShadow="0 4 18 0 #66000000"</c>: the only raw colour literal
-    /// left in CropToolWindow.axaml, and a fixed 40%-black smear that stayed exactly the same after
-    /// a switch to Light, where it reads as dirt rather than depth. Every other colour in that file
-    /// is a DynamicResource that follows ResourceDictionary.ThemeDictionaries.
-    ///
-    /// It cannot be fixed in the markup: <c>BoxShadows</c> is parsed as a whole from one string, so
-    /// there is no way to put a DynamicResource on the colour stop alone. So the geometry stays
-    /// here in code — the same 0/4/18/0 the markup had — and only the COLOUR comes from the theme,
-    /// via the AppPopupShadowColor token now defined in both variant dictionaries. Re-run on
-    /// ActualThemeVariantChanged, because a shadow baked at construction would keep the old
-    /// variant's colour for the life of the window.
-    /// </summary>
     private void ApplyRolePopupShadow()
     {
         var popup = RolePopupCtl;
@@ -2897,13 +2487,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         _rolePopupNewOpen = false;
     }
 
-    /// <summary>
-    /// ROLEPOPUP_01 — commits the inline "+ New element" name.
-    ///
-    /// The name is registered in <see cref="_customRoles"/> BEFORE the layer is created, so it is
-    /// in the popup's list for every later box in this session. Without that the user would have
-    /// to retype it each time, which is how the old free-text field produced near-duplicate keys.
-    /// </summary>
     private async Task CommitNewRoleAsync()
     {
         var box = RolePopupNewNameCtl;
@@ -2919,40 +2502,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         await ConfirmSelectionAsAsync(role);
     }
 
-    /// <summary>
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// ROLEPOPUP_01 — one click in the popup = one finished layer.
-    ///
-    /// NODUPES_02 — IT TAKES THE ROLE. IT USED TO TAKE THE ROLE'S LABEL, AND THAT WAS THE BUG.
-    ///
-    /// The old signature was <c>ConfirmSelectionAsAsync(string displayName)</c>: the caller had the
-    /// HudRole in its hand, threw the key away, passed the display name, and AddCurrentSelection
-    /// then tried to reconstruct the key from that name with
-    /// <c>name.ToLowerInvariant().Replace(" ", "_")</c>.
-    ///
-    /// That reconstruction fails for EVERY built-in element, because not one of
-    /// their display names is their key:
-    ///
-    ///     loot        "Loot Area"                                    ->  loot_area
-    ///     stats       "Mini Map + Stats"                             ->  mini_map_+_stats
-    ///     normal_hp   "Own Health Bar (HP)"                          ->  own_health_bar_(hp)
-    ///     team        "Teammates health Bars (HP)"                   ->  teammates_health_bars_(hp)
-    ///     spectating  "Spectating Eye"                               ->  spectating_eye
-    ///
-    /// TryGetRole then missed, RegisterCustomRole minted a brand new role under the
-    /// mangled key, and the "replace what is already there" check in AddCurrentSelection compared
-    /// <c>loot_area</c> against the rehydrated profile's <c>loot</c>, found no match, and added a
-    /// SECOND layer — with the same words on its label. That is the reported duplicate.
-    ///
-    /// It was not only a UI defect. The mangled key is what got SAVED, so the crop was written to
-    /// <c>loot_area</c>, a key <see cref="HudConfig.HudKeys"/> does not know and the export filter
-    /// graph does not draw. The user's element was silently missing from the finished video.
-    ///
-    /// THE RULE, now enforced by the type system rather than by string handling: a role's KEY is
-    /// its identity and travels as a <see cref="HudRole"/> from the moment it is chosen to the
-    /// moment it is committed. A display name is for reading. It is never parsed back into a key.
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
     private async Task ConfirmSelectionAsAsync(HudRole role)
     {
         RoleName = role.DisplayName;
@@ -2961,15 +2510,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         await AddCurrentSelection(role);
     }
 
-    /// <param name="role">
-    /// NODUPES_02 — the element this box IS, handed in by the chooser that owns the decision.
-    ///
-    /// This method used to take no argument and rebuild the role from the window's RoleName string
-    /// (<c>RoleName.ToLowerInvariant().Replace(" ", "_")</c>), which produced a wrong key for all
-    /// built-in elements and is the whole reason duplicates could exist. See
-    /// <see cref="ConfirmSelectionAsAsync"/> for the full table of what that mangling produced.
-    /// The key now arrives intact and is never re-derived.
-    /// </param>
     private async Task AddCurrentSelection(HudRole role)
     {
         if (_sourceSelection == null || string.IsNullOrWhiteSpace(_snapshotPath))
@@ -3079,7 +2619,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         return output;
     }
 
-    /// <summary>Builds the VISUALS for one layer of the edit and mounts them on the composer.</summary>
     private CropEditorItem CreateItem(CropLayer snapshot)
     {
         var root = new Canvas
@@ -3182,15 +2721,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         return item;
     }
 
-    /// <summary>
-    /// ITEMMENU_01 - the per-element right-click menu.
-    ///
-    /// Built fresh per item rather than shared, because Avalonia's ContextMenu carries its own
-    /// placement target: one instance attached to several items would open against whichever it
-    /// was last attached to. The commands act on SelectedView, and opening the menu selects the
-    /// item first (the right-click is routed through Item_PointerPressed), so "the one I
-    /// right-clicked" and "the selected one" are always the same element.
-    /// </summary>
     private ContextMenu BuildItemContextMenu()
     {
         var bringForward = new MenuItem { Header = "Bring Forward" };
@@ -3326,20 +2856,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         e.Handled = true;
     }
 
-    /// <summary>RESIZEFEEL_01 — the ratio a HUD element must keep, taken from the SOURCE crop (the session's rule).</summary>
     private double SourceAspectOf(CropEditorItem item) => _edit.SourceAspectOf(item.Model);
 
-
-    /// <summary>
-    /// RESIZEFEEL_01 — resize to a target width with the TOP-LEFT corner pinned, ratio locked.
-    ///
-    /// Extracted so the pointer drag and the keyboard nudge share one body. They used to share a
-    /// method that read the drag-gesture fields directly, which is why the keyboard path was
-    /// quietly wrong — see <see cref="NudgeSelectedItemSize"/>. Everything either of them needs is
-    /// now a parameter, so neither can pick up the other's leftovers.
-    /// </summary>
-    /// <param name="anchorX">Portrait X the box grows from. Stays put.</param>
-    /// <param name="anchorY">Portrait Y the box grows from. Stays put.</param>
     private void ApplyResizeAnchoredTopLeft(CropEditorItem item, double width, double aspect, double anchorX, double anchorY)
     {
         width = Math.Max(MinItemSize, width);
@@ -3374,21 +2892,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             _editStartY);
     }
 
-    /// <summary>
-    /// RESIZEFEEL_01 — Ctrl+Arrow resize, from the keyboard.
-    ///
-    /// THIS USED TO CALL ResizeFromBottomRight DIRECTLY, AND THAT WAS A BUG, not just a signature
-    /// mismatch. That method sizes from <c>_editStartWidth</c> anchored at
-    /// <c>_editStartX/_editStartY</c> and locks to <c>_editSourceAspect</c> — and all four of those
-    /// fields are written by <see cref="Item_PointerPressed"/> and by nothing else. A keyboard
-    /// resize performed without a preceding mouse drag therefore sized the selected item from
-    /// whatever the LAST DRAGGED item's dimensions happened to be, anchored at that item's corner,
-    /// locked to that item's ratio. On a fresh window the fields are all zero, so the first
-    /// Ctrl+Arrow collapsed the box to the minimum size and moved it to the top-left corner.
-    ///
-    /// Reading everything from the item being resized, right now, is the fix. There is no gesture
-    /// in progress, so there is no gesture state to consult.
-    /// </summary>
     private void NudgeSelectedItemSize(CropEditorItem item, double widthDelta)
     {
         ApplyResizeAnchoredTopLeft(
@@ -3428,14 +2931,12 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         (item.X, item.Y) = CropEditSession.ClampOverlay(item.X, item.Y, item.Width, item.Height);
     }
 
-    /// <summary>Normalises the layer's layout (the session's rule) and places its visuals to match.</summary>
     private void ApplyItemLayout(CropEditorItem item)
     {
         _edit.NormalizeLayout(item.Model);
         RenderItemLayout(item);
     }
 
-    /// <summary>Places an element's VISUALS at its layer's layout. No logic: geometry is already settled.</summary>
     private void RenderItemLayout(CropEditorItem item)
     {
         item.Root.Width = item.Width;
@@ -3464,7 +2965,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         Canvas.SetTop(item.LabelHost, item.Y > PortraitHeight / 2 ? -34 : item.Height + 10);
         item.LabelText.Text = item.DisplayName.ToUpperInvariant();
     }
-
 
     private void SelectItem(CropEditorItem? item, bool updateLayerList = true)
     {
@@ -3496,7 +2996,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             : new SolidColorBrush(Color.FromArgb(210, 0, 0, 0));
     }
 
-
     private void DeleteSelectedItem()
     {
         CropEditorItem? view = SelectedView;
@@ -3508,7 +3007,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         PushHistory(CropHistoryLabels.DeleteElement);
     }
 
-    /// <summary>Releases an element's VISUALS. The layer itself is the session's to remove.</summary>
     private void RemoveItem(CropEditorItem item)
     {
         if (_portraitCanvas != null)
@@ -3526,11 +3024,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         _items.Remove(item);
     }
 
-
-    /// <summary>
-    /// ZCOLLIDE_01 — one press moves the element exactly one place, by swapping with its neighbour
-    /// (the rule is the session's; this repaints the two layers that changed).
-    /// </summary>
     private void MoveSelectedLayer(int delta)
     {
         if (_edit.MoveSelectedLayer(delta) is not { } swapped) return;
@@ -3564,12 +3057,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         RefreshActionButtons();
     }
 
-    /// <summary>
-    /// IDEA_1 — turns previously saved layers back into REAL, draggable items. EDITSTATE_01 — what
-    /// the document says (and the DRIFT TRAP / RESGUESS_01 rules for reading it) is
-    /// <see cref="CropProfileCodec.ReadSavedLayers"/>; this window loads the file, cuts each
-    /// thumbnail and builds the visuals. Safe to call more than once: a placed role is skipped.
-    /// </summary>
     private async Task RehydrateSavedLayersAsync(JsonObject? profileConfig = null)
     {
         if (_portraitCanvas == null) return;
@@ -3602,10 +3089,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-    /// <summary>
-    /// IDEA_1 — fills in the picture for any item rehydrated before a video was loaded.
-    /// Called after a snapshot is available. Items that already have an image are left alone.
-    /// </summary>
     private async Task RefreshRehydratedThumbnailsAsync()
     {
         if (_snapshotPath == null) return;
@@ -3634,19 +3117,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-
-    /// <summary>
-    /// ISSUE_07 (audit round 6) — shows the composer's empty state whenever nothing is placed.
-    ///
-    /// The landscape half of this window has had a large "UPLOAD VIDEO" hint since day one. The
-    /// portrait half had nothing at all: after a profile was chosen but before the first crop, the
-    /// whole right side was a blank 9:16 rectangle, and the only guidance anywhere near it was a
-    /// tooltip on the canvas that the user had to hover to find. An empty panel with no words in it
-    /// does not read as empty, it reads as broken.
-    ///
-    /// The wording changes with the stage, because "what do I do next" has two different answers
-    /// depending on whether a video is open yet.
-    /// </summary>
     private void UpdateComposerEmptyState()
     {
         if (_composerEmptyState == null) return;
@@ -3669,7 +3139,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                 : "This is the shape your viewers will see. Open a clip on the left to start picking out the HUD pieces that belong in it.";
         }
     }
-
 
     private async Task SaveAndReturnAsync(object? sender)
     {
@@ -3704,7 +3173,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
         var thinkingOverlay = this.FindControl<Grid>("ThinkingOverlay");
         if (thinkingOverlay != null) thinkingOverlay.IsVisible = true;
-        
+
         await Task.Yield();
 
         bool saved = await SaveConfigAsync();
@@ -3727,10 +3196,10 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                     {
                         summaryContent.Children.Add(new TextBlock { Text = $"  ✓  {item.DisplayName}", Foreground = SolidColorBrush.Parse("#94a3b8"), FontSize = Infrastructure.ThemeManager.ScaledFontSize(16) });
                     }
-                    
+
                     var existingKeys = _items.Select(x => x.RoleKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
                     var untouched = _edit.AllRoles.Where(r => !existingKeys.Contains(r.Key)).ToList();
-                    
+
                     if (untouched.Count > 0)
                     {
                         summaryContent.Children.Add(new Border { Height = 20 });
@@ -3743,7 +3212,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                         }
                     }
                 }
-                
+
                 summaryOverlay.IsVisible = true;
 
                 var returnNowButton = this.FindControl<Button>("ReturnNowButton");
@@ -3811,7 +3280,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             _isSaving = true;
             RuntimeLog.Info("CROP", $"Saving crop coordinates for '{targetProfile}'.");
             var store = new CropConfigStore(_paths);
-            
+
             JsonObject config = await store.LoadAsync();
 
             int unverifiedCount = CropProfileCodec.WriteLayers(config, _edit);
@@ -3897,7 +3366,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
                 SelectedClipPath = _videoPath
             });
 
-
             string exePath = Environment.ProcessPath ?? "FreeVideoStudio.exe";
 
             var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exePath, "run-ui") { UseShellExecute = false });
@@ -3931,13 +3399,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-    /// <param name="tombstonePlacedElements">
-    /// EMPTYSAVE_01 — true only for the RESET button. RESET is a deliberate "clear this profile"
-    /// gesture, so every element it removes gets a tombstone and the document is left dirty, which
-    /// is what lets the user press SAVE afterwards and actually empty the profile on disk.
-    /// A PROFILE SWITCH passes false: nothing was deleted there, the items merely belong to a
-    /// different document, and tombstoning them would zero the incoming profile's crops.
-    /// </param>
     private void ResetWorkingState(bool tombstonePlacedElements = false)
     {
         ClearSourceSelection();
@@ -3958,7 +3419,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             ? "Working crop items cleared. Press SAVE to apply the empty layout to this profile."
             : "Working crop items cleared.");
     }
-
 
     private void MarkDirty(bool pushHistory = false)
     {
@@ -4112,25 +3572,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         DrawTimelineRuler();
     }
 
-    /// <summary>
-    /// TICKRULER_01 - the tick ruler, ported from the Main App (MainWindow.Canvas.cs,
-    /// UpdateTimelineMarkers).
-    ///
-    /// This window already declared both canvases the Main App uses - CropTimelineScaleCanvas for
-    /// the time labels and CropTimelineMarkersCanvas for the hairlines - and FindControls has
-    /// always looked the first one up. NOTHING EVER DREW INTO EITHER. The result was a bare blue
-    /// line with a dot on it: no sense of scale, no way to judge where 30 seconds is, which is
-    /// what "naked/skinless" was describing.
-    ///
-    /// The interval ladder is copied exactly from the Main App so the two timelines read the same
-    /// way: a mark every 5s on a short clip, widening to 10/30/60/300s as the clip gets longer, so
-    /// the ruler never turns into a solid band of ink.
-    ///
-    /// Redrawn from the 100ms UI tick, so it is guarded three ways: nothing to draw without a
-    /// duration, nothing to draw before layout has given the canvas a width, and - the one that
-    /// matters - it returns immediately unless the width or the duration actually CHANGED. Without
-    /// that guard this would rebuild several dozen visuals ten times a second forever.
-    /// </summary>
     private double _rulerDrawnWidth = -1;
     private double _rulerDrawnDuration = -1;
 
@@ -4256,7 +3697,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         return (snappedX, snappedY);
     }
 
-
     private void DrawGuide(bool vertical, double value)
     {
         if (_portraitCanvas == null)
@@ -4300,7 +3740,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             Math.Max(0, Math.Min(point.Y, _edit.SnapshotHeight)));
     }
 
-
     private SourceRect ToSourceRect(Rect rect)
     {
         int x = CoordinateMath.ScaleRound(Frac.FromDouble(rect.X));
@@ -4309,7 +3748,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         int bottom = CoordinateMath.ScaleRound(Frac.FromDouble(rect.Bottom));
         return _edit.ClampSourceRect(new SourceRect(x, y, Math.Max(1, right - x), Math.Max(1, bottom - y)));
     }
-
 
     private HudRole SuggestRole(SourceRect rect)
     {
@@ -4320,7 +3758,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
         return new HudRole("custom_element", "Custom Element", 50, -1, -1);
     }
-
 
     private static string FormatTime(double millis)
     {
@@ -4335,13 +3772,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             : ts.ToString(@"mm\:ss", CultureInfo.InvariantCulture);
     }
 
-    /// <summary>
-    /// The internal wizard states, which are NOT the same thing as the header dots:
-    ///   0 Choose Profile   1 Upload Video   2 Find HUD Frame   3 Refine Box   4 Portrait Composer
-    /// <see cref="UpdateStepDots"/> owns the mapping onto the four header dots. Step 0 is new with
-    /// GATE_01 (F3) - before the gate existed the window opened straight on step 1 because it had
-    /// already silently picked a profile for the user.
-    /// </summary>
     private void SetWizardState(int step, string goal, string status)
     {
         if (_goalLabel != null)
@@ -4352,23 +3782,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         SetStatus(status);
     }
 
-    /// <summary>
-    /// ISSUE_03: drives the wizard tracker in the header. Nothing used to call into
-    /// Step1Dot/Step2Dot/Step3Dot at all, so the indicator sat frozen on "step 1" for the whole
-    /// session while <see cref="SetWizardState"/> silently tracked the real progress next to it.
-    ///
-    /// F6: the header carries FOUR dots now - Profile / Upload / Crop / Save - because GATE_01
-    /// put a real user-facing stage in front of Upload. The internal wizard still has five states,
-    /// so steps 2 and 3 (Find HUD Frame / Refine Box) both map onto the single "Crop" dot:
-    ///
-    ///   step 0        -> dot 0  Profile
-    ///   step 1        -> dot 1  Upload
-    ///   steps 2 and 3 -> dot 2  Crop
-    ///   step 4        -> dot 3  Save
-    ///
-    /// Keep this table and the AXAML dot count in step; a fifth dot with no mapping would simply
-    /// never light up, which is the failure the three-dot version shipped with.
-    /// </summary>
     private void UpdateStepDots(int step)
     {
         int stage = step <= 0 ? 0
@@ -4409,7 +3822,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-    /// <summary>Applies exactly one of a mutually exclusive class group to a control.</summary>
     private static void SwapClass(StyledElement target, string keep, params string[] group)
     {
         foreach (var c in group)
@@ -4420,18 +3832,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         if (!target.Classes.Contains(keep)) target.Classes.Add(keep);
     }
 
-    /// <summary>
-    /// ISSUE_09 — writes the persistent status line AND floats the suite-wide notice.
-    ///
-    /// The line is deliberately kept: it holds the last message on screen indefinitely, which is
-    /// what you want while you are reading a rejection ("Selection is too small") and deciding what
-    /// to do. What it could not do is CATCH THE EYE — a user watching the canvas never noticed a
-    /// sentence changing at the bottom of the window, which is why this screen felt unresponsive.
-    /// The notice supplies the attention; the line supplies the memory.
-    ///
-    /// Every call site in this window is a discrete event, so all of them float. FloatingNotice's
-    /// own dedupe absorbs the repeats from <see cref="SetWizardState"/>.
-    /// </summary>
     private void SetStatus(string text)
     {
         if (_statusLabel != null)
@@ -4441,7 +3841,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         Controls.FloatingNotice.Show(this, text);
     }
 
-    /// <summary>ISSUE_09 — same, in the "that worked" colour.</summary>
     internal static string DescribeSaveFailure(Exception ex, string logPath) => ex switch
     {
         InvalidOperationException =>
@@ -4496,13 +3895,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         }
     }
 
-    /// <summary>
-    /// BINPATH_01 — moved verbatim into <see cref="Infrastructure.BinaryPathProbe"/>.
-    ///
-    /// ⚠️ THIS WINDOW'S SEARCH ORDER IS NOT THE VOICE-OVER WINDOW'S — eight candidates rooted at
-    /// the process directory versus four rooted at AppContext.BaseDirectory. See BinaryPathProbe
-    /// for why that divergence matters and why it was NOT resolved in this step.
-    /// </summary>
     private static string ResolveBinaryPath(string fileName, string preferredSubdirectory)
         => Infrastructure.BinaryPathProbe.ResolveForCropTool(fileName, preferredSubdirectory);
 
@@ -4706,11 +4098,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
     private sealed record CandidateSpec(string RoleKey, SourceRect Rect, string Label = "", HudCandidateSource Source = HudCandidateSource.Local);
 
-    /// <summary>
-    /// EDITSTATE_01 — a placed element's VISUALS, pointed at its logical <see cref="CropLayer"/> in
-    /// the edit session. The geometry, provenance and identity are the model's; the properties below
-    /// only forward to it so the view code reads naturally. Nothing here is history or persistence.
-    /// </summary>
     private sealed class CropEditorItem
     {
         public required CropLayer Model { get; init; }
@@ -4724,7 +4111,6 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         public int Height { get => Model.Height; set => Model.Height = value; }
         public int Z { get => Model.Z; set => Model.Z = value; }
 
-        /// <summary>GHOSTKILL_01 / RESGUESS_01 — provenance lives on the model (see <see cref="CropLayer"/>).</summary>
         public bool GeometryVerified { get => Model.GeometryVerified; set => Model.GeometryVerified = value; }
 
         public required Canvas Root { get; init; }

@@ -20,10 +20,6 @@ public sealed record EditCaptionResult(
 
 public readonly record struct CaptionEditValidation(bool IsValid, double StartSec, double EndSec, string? Problem);
 
-/// <summary>
-/// AICAPTION_LANE_01 — Dialog window allowing users to edit text, adjust start/end timing,
-/// regenerate single line via AI, or delete an individual commentary caption cue.
-/// </summary>
 public partial class EditCaptionDialogWindow : Window
 {
     internal const double MinimumLineSeconds = 0.1;

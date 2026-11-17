@@ -9,12 +9,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// LOCALTRACK_01 (docs/01 TL-LOCALTRACK, docs/04 UI-AIZOOM) — AI SMART ZOOM's step 3 on the user's own computer:
-/// the picked box (AI discovery, a typed description, or the user's own zoom box) is followed by the Local AI pack's
-/// tracker, and the result goes through the SAME <see cref="AiTrajectorySmoother"/> as the online path, so camera
-/// settings, Re-frame, preview and export are unchanged. Nothing is sent anywhere.
-/// </summary>
 internal static class LocalTrackingService
 {
     public const string SlowPcNote = " (no fast graphics card found, so this is slow)";

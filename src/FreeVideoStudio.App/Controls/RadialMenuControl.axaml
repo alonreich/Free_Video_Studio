@@ -30,7 +30,6 @@
                     Background="{DynamicResource AppSurfaceAlpha80Brush}"
                     BorderBrush="{DynamicResource AppAccentBrush}" BorderThickness="2"
                     HorizontalAlignment="Center" VerticalAlignment="Center">
-                <!-- ISSUE_04 (audit round 4): token-scaled font size -->
                 <TextBlock Text="⚙" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize24}"/>
             </Border>
             <Canvas Name="SliceCanvas" Width="300" Height="300"/>

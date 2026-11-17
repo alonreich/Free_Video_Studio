@@ -9,24 +9,17 @@ using FreeVideoStudio.App.Services;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// AIELIM_02 — background kill scan for the loaded video. The timeline shows a small status chip
-/// (scanning / N kills found / why it failed) and a ✕ per kill; clicking a ✕ jumps the preview there.
-/// Times are ABSOLUTE source seconds.
-/// </summary>
 public partial class MainWindow
 {
     private readonly List<double> _aiEliminationTimestamps = new();
     private readonly List<AiEliminationMarker> _aiEliminationMarkers = new();
     private CancellationTokenSource? _aiEliminationScanCts;
 
-    /// <summary>AIELIM_02 — text of the timeline chip, null = hidden.</summary>
     private string? _aiEliminationStatus;
     private string? _aiEliminationDetail;
     private bool _aiEliminationStatusIsError;
     private bool _isAiEliminationScanning;
 
-    /// <summary>AIELIM_03 — the speed editor while it is open, so late scan results still reach it.</summary>
     private GranularSpeedEditorWindow? _openGranularEditor;
 
     public void SetAiEliminations(IEnumerable<double>? timestamps)
@@ -67,16 +60,12 @@ public partial class MainWindow
 
     internal const string AskBeforeScanTag = "AIELIMASK_01";
 
-    internal const double AutoScanUnderUsd = 0.05;
+    internal const double AutoScanUnderUsd = AiEliminationTrackerService.AutoScanUnderUsd;
 
     private Action? _aiEliminationStartAction;
 
     internal static bool ScanStartsByItself(bool userAsked, bool saved, AiEstimatedUsage est, AiVendor vendor, string model, double autoApproveUnderUsd)
-    {
-        if (userAsked || saved) return true;
-        if (!AiCostEstimator.HasReferenceRate(vendor, model)) return false;
-        return (double)est.EstimatedUsd < Math.Max(AutoScanUnderUsd, autoApproveUnderUsd);
-    }
+        => AiEliminationTrackerService.StartsByItself(userAsked, saved, est, vendor, model, autoApproveUnderUsd);
 
     internal const string ChipSetupTag = "AIELIMSETUP_01";
 
@@ -89,6 +78,18 @@ public partial class MainWindow
             return;
         }
         if (_loadedVideoPath == videoPath) _ = RunAiEliminationScanAsync(videoPath);
+    }
+
+    private async Task FixAiThenScanAsync(string videoPath, AiProviderException problem)
+    {
+        if (await AiAccountFix.OfferAsync(this, problem, AiUsage.EliminationTracker))
+        {
+            if (_loadedVideoPath == videoPath) _ = RunAiEliminationScanAsync(videoPath, userAsked: true);
+            return;
+        }
+        if (_loadedVideoPath != videoPath) return;
+        _aiEliminationStartAction = () => _ = FixAiThenScanAsync(videoPath, problem);
+        QueueTimelineRedrawPass(DispatcherPriority.Background);
     }
 
     private bool _aiEliminationSettingsHooked;
@@ -139,9 +140,12 @@ public partial class MainWindow
 
             var config = settings.GetUsageConfig(AiUsage.EliminationTracker);
             string apiKey = settings.GetApiKey(config.Vendor);
-            if (string.IsNullOrWhiteSpace(apiKey))
+            if (!AiAccountFix.IsUsable(settings, config.Vendor))
             {
-                RuntimeLog.Info("AIElimination", "AI Elimination Tracker enabled but no API key configured. Skipping scan.");
+                bool broken = AiAccountFix.IsBroken(settings, config.Vendor);
+                RuntimeLog.Info("AIElimination", broken
+                    ? $"{AiAccountFix.Tag}: the saved {config.Vendor} key does not work. Skipping scan; the chip offers the fix."
+                    : "AI Elimination Tracker enabled but no API key configured. Skipping scan.");
                 var setupVendor = config.Vendor;
                 Dispatcher.UIThread.Post(() =>
                 {
@@ -149,6 +153,8 @@ public partial class MainWindow
                     _aiEliminationStartAction = () => _ = SetUpAiThenScanAsync(videoPath, setupVendor);
                     _aiEliminationStatus = settings.AiMode == AiMode.LocalOnly
                         ? "AI kill scan needs online AI: click to change how AI works"
+                        : broken
+                        ? $"AI kill scan: your {AiVisionProviders.DisplayName(setupVendor)} key does not work. Click to fix"
                         : "AI kill scan: click to connect an AI";
                     _aiEliminationDetail = "Opens the short setup: pick an AI company, get a key from its page, paste it. Then the scan starts.";
                     _aiEliminationStatusIsError = true;
@@ -259,6 +265,21 @@ public partial class MainWindow
             string reason = ex is AiProviderException pe ? pe.Message : "something unexpected stopped it. Try reopening the video.";
             reference ??= AiUsageMeter.LastTaskId;
             RuntimeLog.Fail("AIElimination", $"Kill scan failed (reference {reference}): {ex.GetType().Name}: {ex.Message}");
+            if (AiAccountFix.Find(ex) is { } account)
+            {
+                string fixRef = reference;
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (cts.IsCancellationRequested || _loadedVideoPath != videoPath) return;
+                    _aiEliminationStartAction = () => _ = FixAiThenScanAsync(videoPath, account);
+                    _aiEliminationStatus = $"AI kill scan: {AiAccountFix.ShortProblem(account)}. Click to fix";
+                    _aiEliminationDetail = $"{account.Message}\n{AiAccountFix.NothingCharged}\nClick to fix it or pick another AI company. (Reference: {fixRef})";
+                    _aiEliminationStatusIsError = true;
+                    QueueTimelineRedrawPass(DispatcherPriority.Background);
+                    Controls.FloatingNotice.Error(this, $"AI Kill Tracker: {reason} Click the red chip above the timeline to fix it.");
+                });
+                return;
+            }
             SetAiEliminationStatus($"AI kill scan failed: {reason} (Reference: {reference})", true, videoPath);
             if (ex is AiProviderException)
                 Dispatcher.UIThread.Post(() =>
@@ -269,7 +290,6 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>AIELIM_02 — the ✕ markers and the status chip above the main (source-time) timeline.</summary>
     private void DrawAiEliminationOverlay(Canvas canvas, double duration, double canvasWidth)
     {
         if (duration <= 0) return;

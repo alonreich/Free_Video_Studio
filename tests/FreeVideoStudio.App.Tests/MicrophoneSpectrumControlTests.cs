@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -17,11 +16,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// SPECTRUM_03 / SPECTRUM_04 — the production spectrum control and its wiring, headless. Geometry
-/// and brush selection are asserted on the control's own layout model (a screenshot cannot prove
-/// that bar 7 is 150 Hz); the spectra fed in are real analyzer output from generated PCM.
-/// </summary>
 public sealed class MicrophoneSpectrumControlTests : IDisposable
 {
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "FvsSpectrumTest_" + Guid.NewGuid().ToString("N"));
@@ -100,7 +94,6 @@ public sealed class MicrophoneSpectrumControlTests : IDisposable
     {
         for (double end = t + seconds; t < end; t += 0.05) meter.Advance(s, t);
     }
-
 
     [AvaloniaFact]
     public void Meter_HasANonZeroDrawingArea()
@@ -227,7 +220,6 @@ public sealed class MicrophoneSpectrumControlTests : IDisposable
         finally { window.Close(); }
     }
 
-
     [AvaloniaFact]
     public void Brushes_ResolveInTheControlsOwnThemeContext()
     {
@@ -290,7 +282,6 @@ public sealed class MicrophoneSpectrumControlTests : IDisposable
         }
     }
 
-
     [AvaloniaFact]
     public void StaleSnapshot_DecaysToEmpty_AndStopsAnimating()
     {
@@ -334,7 +325,6 @@ public sealed class MicrophoneSpectrumControlTests : IDisposable
         }
         finally { window.Close(); }
     }
-
 
     [AvaloniaFact]
     public async Task VoiceOverWindow_FeedsTheMeterFromTheSession_AndDropsItOnFault()

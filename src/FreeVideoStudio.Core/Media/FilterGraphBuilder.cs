@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -20,9 +19,7 @@ public class RawFilterNode : FilterNode
 
 public class PadFilterNode : FilterNode
 {
-    /// <summary>ABSOLUTE output canvas width in pixels (not a delta — see the class remarks).</summary>
     public string Width { get; init; } = string.Empty;
-    /// <summary>ABSOLUTE output canvas height in pixels (not a delta — see the class remarks).</summary>
     public string Height { get; init; } = string.Empty;
     public string X { get; init; } = string.Empty;
     public string Y { get; init; } = string.Empty;
@@ -55,13 +52,6 @@ public class ScaleFilterNode : FilterNode
     public override string ToFFmpegString() => $"scale={Width}:{Height}";
 }
 
-/// <summary>
-/// DUCKMB_01 — one sidechain compressor stage of the music bed's multiband protection
-/// (AudioFilterChain). Two tunings: <see cref="Duck"/> (the bed steps back while the gameplay is loud)
-/// and <see cref="Carve"/> (an extra, gentler dip of the speech band only).
-/// Measured with a near-full-scale trigger: the old 0.15 / 1.13 tuning reduced the music by 1.2 dB
-/// (inaudible); threshold 0.1 / ratio 4 reduces it by about 8 dB.
-/// </summary>
 public class SidechainCompressNode : FilterNode
 {
     public const double TunedThreshold = 0.1;
@@ -75,7 +65,6 @@ public class SidechainCompressNode : FilterNode
     public const double CarveAttackMs = 10;
     public const double CarveReleaseMs = 250;
 
-    /// <summary>Legacy only: how "ducking off" was encoded before the explicit ducking_enabled flag.</summary>
     public const double BypassThreshold = 1.0;
     public const double BypassRatio = 1.0;
 
@@ -85,14 +74,6 @@ public class SidechainCompressNode : FilterNode
     public double Release { get; init; } = TunedReleaseMs;
     public string Detection { get; init; } = TunedDetection;
 
-    /// <summary>
-    /// DUCKSTRENGTH_01 — the user's strength handle (Settings › Sound &amp; Music), 0-100, middle = the
-    /// tuned value above. Only the RATIO moves, and it moves smoothly (exponential in the handle, no
-    /// steps): ratio = 1 + (tuned - 1) · 2^((handle - 50) / 50 · <see cref="StrengthSpanOctaves"/>).
-    /// Every notch changes the effect by the same small proportion, so there is never a jump; the
-    /// threshold, attack and release stay tuned. Ducking: 2.1 (gentlest) · 4 (middle) · 9.5 (strongest).
-    /// Carving: 1.5 · 2.5 · 5.2.
-    /// </summary>
     public const int DefaultStrength = 50;
     public const double StrengthSpanOctaves = 1.5;
 

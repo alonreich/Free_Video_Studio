@@ -1,5 +1,4 @@
-﻿
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -11,7 +10,6 @@ namespace FreeVideoStudio.App;
 
 internal static class DeploymentLifecycle
 {
-
     public static bool ShouldHandle(string[] args)
     {
         if (args.Any(a => a.Equals("--install-worker", StringComparison.OrdinalIgnoreCase) ||
@@ -143,25 +141,6 @@ internal static class DeploymentLifecycle
         }
     }
 
-    /// <summary>
-    /// ISSUE_02 — a DOWNGRADE is a deliberate choice, so confirm it. An upgrade and a same-version
-    /// reinstall both proceed without an extra prompt. Returns true to continue.
-    ///
-    /// <para>
-    /// ⚠️ INSTALL_02 — THE SAME-VERSION PROMPT WAS REMOVED ON PURPOSE. DO NOT PUT IT BACK.
-    /// It read "This exact version is already installed. … Continue and reinstall?" and it asked a
-    /// question whose answer was already given: the user double-clicked the installer, so YES is
-    /// the only thing they can have meant. Re-running the same version is also the normal way to
-    /// repair a damaged install, which the prompt made feel like a mistake. The one prompt that
-    /// genuinely still matters here is the PRESERVE SETTINGS question a few lines up — that one
-    /// has two real answers and is untouched.
-    /// </para>
-    /// <para>
-    /// The DOWNGRADE warning stays, and is a different thing entirely: it warns about a real,
-    /// irreversible consequence (settings written by a newer build can become unreadable), and the
-    /// user may well have launched an older installer without realising it was older.
-    /// </para>
-    /// </summary>
     internal static bool ConfirmVersionTransition(string? existingVersion)
     {
         string currentVer = GetCurrentVersion();
@@ -179,15 +158,6 @@ internal static class DeploymentLifecycle
             "Free Video Studio Setup");
     }
 
-    /// <summary>
-    /// <summary>
-    /// Represents a parsed version with full SemVer pre-release support.
-    /// Invariants:
-    /// - Normal versions have higher precedence than pre-release versions with the same core numbers:
-    ///   2026.10.14-beta.1 &lt; 2026.10.14
-    /// - Pre-release tags are compared identifier by identifier:
-    ///   2026.10.14-beta.1 &lt; 2026.10.14-beta.2
-    /// </summary>
     internal sealed record AppVersion(Version CoreVersion, string? Prerelease = null) : IComparable<AppVersion>
     {
         public int CompareTo(AppVersion? other)
@@ -279,11 +249,6 @@ internal static class DeploymentLifecycle
         return string.Compare(versionA, versionB, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Parses the numeric prefix out of a version-ish string ("v2026.09.06.0008" → 2026.9.6.8).
-    /// Internal so the in-app updater (<see cref="Services.UpdateService"/>) compares GitHub
-    /// release tags against the running build with the EXACT same rules the installer uses.
-    /// </summary>
     internal static bool TryParseVersion(string? value, out Version version)
     {
         if (TryParseSemanticVersion(value, out AppVersion semVer))
@@ -295,17 +260,6 @@ internal static class DeploymentLifecycle
         return false;
     }
 
-    /// <param name="includeUserData">
-    /// ISSUE_02 — false ONLY when the user asked to preserve their settings during an upgrade.
-    /// Gates every user-state root (see <see cref="DeploymentFootprint.GetDirectoryPurgeTargets"/>),
-    /// not just ProgramData. Uninstall always passes true.
-    /// </param>
-    /// <param name="invokingUserDesktop">
-    /// The real (possibly OneDrive/Group-Policy-redirected) desktop of the user who launched the
-    /// operation, resolved BEFORE elevation. Swept for our .lnk files in addition to the
-    /// shell-resolved and legacy locations, because an elevated worker's own per-user probe can
-    /// resolve to the administrator's profile instead. Null is fine.
-    /// </param>
     private static async Task PerformFullHostCleanupAsync(
         string operation,
         int start,
@@ -391,11 +345,6 @@ internal static class DeploymentLifecycle
         }
     }
 
-    /// <param name="invokingUserDesktop">
-    /// Extra folder to sweep — the launching user's real desktop, resolved before elevation. The
-    /// elevated worker cannot discover this itself (its own per-user probe may point at the
-    /// administrator's profile), and missing it leaves a dead icon behind after uninstall.
-    /// </param>
     private static async Task DeleteKnownShortcutsAsync(string? invokingUserDesktop = null)
     {
         var folders = new List<string>();
@@ -470,7 +419,6 @@ internal static class DeploymentLifecycle
         {
             await DeleteRegistrySubKeyTreeAsync(hive, view, appKey).ConfigureAwait(false);
         }
-
     }
 
     private static async Task DeleteRegistrySubKeyTreeAsync(RegistryHive hive, RegistryView view, string path)
@@ -665,27 +613,8 @@ internal static class DeploymentLifecycle
         }
     }
 
-    /// <summary>
-    /// Flag that carries the INVOKING user's real desktop folder across the UAC boundary.
-    /// See <see cref="ProbeInvokingUserDesktop"/> for why this cannot be resolved on the far side.
-    /// </summary>
     private const string DesktopShortcutArgument = "--user-desktop";
 
-    /// <summary>
-    /// Appends <c>--user-desktop "path"</c> to an elevated-worker command line.
-    ///
-    /// Appended LAST so <c>args.FirstOrDefault()</c> in Program.cs still sees the real command
-    /// ("--install" / "--uninstall"), and so ParseParentPid still finds the PID first.
-    ///
-    /// QUOTING NOTE: these command lines go to <c>ProcessStartInfo.Arguments</c> with
-    /// <c>UseShellExecute = true</c> and <c>Verb = "runas"</c>, so ArgumentList is NOT available —
-    /// a correctly quoted single string is mandatory. A plain pair of double quotes is sufficient
-    /// and safe here specifically because Windows forbids the <c>"</c> character in file and folder
-    /// names outright, so the path cannot contain a quote to break out with. The value is still
-    /// checked for one, and trailing separators are trimmed because a trailing <c>\</c> would
-    /// escape the closing quote and swallow the rest of the command line. The receiving side
-    /// re-validates via <see cref="ReadUserDesktopArgument"/>.
-    /// </summary>
     private static string AppendUserDesktopArgument(string args, string? userDesktop)
     {
         if (string.IsNullOrWhiteSpace(userDesktop))
@@ -702,26 +631,6 @@ internal static class DeploymentLifecycle
         return args + $" {DesktopShortcutArgument} \"{safe}\"";
     }
 
-    /// <summary>
-    /// Resolves the desktop folder of the user who actually launched the installer.
-    ///
-    /// ⚠️ THIS MUST ONLY BE CALLED BEFORE ELEVATION. ⚠️
-    ///
-    /// The installer relaunches itself with <c>Verb = "runas"</c>. When the person running it is a
-    /// standard user, Windows starts the elevated worker under a DIFFERENT (administrator) account.
-    /// From inside that worker, every per-user API — <c>SHGetKnownFolderPath</c>,
-    /// <c>Environment.GetFolderPath(SpecialFolder.DesktopDirectory)</c>, <c>%USERPROFILE%</c>,
-    /// HKCU — describes the ADMINISTRATOR, not the user. A desktop shortcut written from there
-    /// lands in a profile the user never opens, and to them the installer simply "didn't create
-    /// the icon".
-    ///
-    /// So the launcher (which still runs as the real user) probes the path here and passes it over
-    /// the command line. <c>KnownFolders.GetDesktop()</c> is used rather than
-    /// <c>Environment.GetFolderPath</c> because the latter reads a cached value that goes stale
-    /// exactly when it matters — OneDrive "Backup / Manage folders" moving Desktop into
-    /// <c>%USERPROFILE%\OneDrive\Desktop</c> (or a business variant like
-    /// <c>OneDrive - Contoso\Desktop</c>), and Group Policy redirection pointing it at a UNC share.
-    /// </summary>
     private static string? ProbeInvokingUserDesktop()
     {
         try
@@ -745,11 +654,6 @@ internal static class DeploymentLifecycle
         }
     }
 
-    /// <summary>
-    /// Reads the desktop path handed over by the pre-elevation launcher. Returns null when the
-    /// flag is absent (e.g. an already-elevated direct worker launch), in which case the install
-    /// falls back to the Public desktop.
-    /// </summary>
     private static string? ReadUserDesktopArgument(string[] args)
     {
         for (int i = 0; i < args.Length - 1; i++)
@@ -891,10 +795,6 @@ internal static class DeploymentLifecycle
         }
     }
 
-    /// <summary>
-    /// NOSELFDELETE_01 / CLEANUPBOUND_01: cleanup remains handle-bound on the final path too.
-    /// Locked running binaries are preserved and reported, never queued by a mutable pathname.
-    /// </summary>
     private static void QueueSelfCleanup(string directory)
     {
         try { SafeDirectoryCleanup.DeleteTree(Path.GetFullPath(directory)); }
