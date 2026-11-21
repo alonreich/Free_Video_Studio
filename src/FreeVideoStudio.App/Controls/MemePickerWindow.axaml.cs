@@ -137,6 +137,7 @@ public partial class MemePickerWindow : Window
     public MemePickerWindow()
     {
         InitializeComponent();
+        DialogFit.Apply(this, capFraction: 0.80, drag: true, sizeKey: "MemePickerSize");
         DataContext = Choice;
 
         var list = this.FindControl<ListBox>("MemeList");

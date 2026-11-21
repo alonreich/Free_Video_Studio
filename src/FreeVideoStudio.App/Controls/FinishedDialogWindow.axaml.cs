@@ -19,6 +19,7 @@ public partial class FinishedDialogWindow : Window
     public FinishedDialogWindow()
     {
         InitializeComponent();
+        DialogFit.Apply(this, sizeKey: "FinishedDialogSize", grip: false);
 
         Controls.WindowResizeGrip.Attach(this, "Drag to resize the Finished dialog");
 
@@ -38,7 +39,8 @@ public partial class FinishedDialogWindow : Window
         {
             txt.Text = $"File successfully saved to:\n{path}";
         }
-        StartViralPostGeneration(path);
+        var card = this.FindNameScope()?.Find("ViralPostCard") as Border;
+        if (card != null) card.IsVisible = false;
     }
 
     public void SetAttributionText(string? text)
@@ -137,6 +139,7 @@ public partial class FinishedDialogWindow : Window
     {
         try
         {
+            if (TryActivateViralPostForSocial("Instagram")) return;
             Services.ShellLauncher.Launch(new ProcessStartInfo
             {
                 FileName = "https://www.instagram.com/",
@@ -158,6 +161,7 @@ public partial class FinishedDialogWindow : Window
     {
         try
         {
+            if (TryActivateViralPostForSocial("YouTube")) return;
             if (!string.IsNullOrEmpty(_attributionText))
             {
                 _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(_attributionText);
@@ -186,6 +190,7 @@ public partial class FinishedDialogWindow : Window
     {
         try
         {
+            if (TryActivateViralPostForSocial("TikTok")) return;
             if (!string.IsNullOrEmpty(_attributionText))
             {
                 _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(_attributionText);

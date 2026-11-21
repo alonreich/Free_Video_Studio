@@ -28,10 +28,10 @@ public sealed class AiModeTests
     [Theory]
     [InlineData(AiMode.NotChosen, true, true, false)]
     [InlineData(AiMode.LocalOnly, false, true, true)]
-    [InlineData(AiMode.LocalOnly, true, false, false)]
+    [InlineData(AiMode.LocalOnly, true, false, true)]
     [InlineData(AiMode.OnlineOnly, true, false, true)]
     [InlineData(AiMode.OnlineOnly, false, true, false)]
-    [InlineData(AiMode.Hybrid, true, false, false)]
+    [InlineData(AiMode.Hybrid, true, false, true)]
     [InlineData(AiMode.Hybrid, false, true, false)]
     [InlineData(AiMode.Hybrid, true, true, true)]
     public void Setup_IsCompleteOnlyWhenEveryPartIsThere(AiMode mode, bool key, bool pack, bool expected)
@@ -77,12 +77,13 @@ public sealed class AiModeTests
         Assert.Contains("Free with Google's free plan", Texts(radios[1]));
         Assert.StartsWith("Recommended: Both", Texts(radios[2]));
         Assert.Contains("Cheap:", Texts(radios[2]));
+        Assert.True(radios[0].IsEnabled);
         Assert.True(radios[1].IsEnabled);
+        Assert.True(radios[2].IsEnabled);
         if (!LocalAiPackManifest.IsPublished && !LocalAiPackService.IsReady)
         {
-            Assert.False(radios[0].IsEnabled);
-            Assert.False(radios[2].IsEnabled);
-            Assert.Contains("Not available yet.", Texts(radios[2]));
+            Assert.Contains("built-in basic", Texts(radios[0]));
+            Assert.Contains("built-in basic", Texts(radios[2]));
         }
         Assert.False(w.Finished);
     }

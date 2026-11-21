@@ -42,4 +42,7 @@ public static class MusicPadAlignment
         foreach (var t in tracks) s += t.Duration;
         return s;
     }
+
+    public static bool MemeInsideMusicWindow(double memeCutSec, double windowStartSec, double windowEndSec, bool lastTrack)
+        => memeCutSec >= windowStartSec - 1e-9 && (memeCutSec < windowEndSec - 1e-9 || (lastTrack && memeCutSec <= windowEndSec + 1e-3));
 }

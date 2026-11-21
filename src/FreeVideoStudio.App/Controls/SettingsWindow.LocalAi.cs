@@ -17,20 +17,32 @@ public partial class SettingsWindow
     private Action? _showLocalAiCard;
     private Action? _showAiModeRow;
 
-    internal static string LocalAiStatusLine(LocalAiPackStatus s, AiMode mode, string size) => s.State switch
+    internal static string LocalAiStatusLine(LocalAiPackStatus s, AiMode mode, string size, LocalDetectorStatus? detector = null)
     {
-        LocalAiPackState.Ready when AiSetup.UsesPc(mode) => "Installed and in use. AI SMART ZOOM follows targets on this PC.",
-        LocalAiPackState.Ready => "Installed, but not in use: you chose 'Online only'. Press Change… at the top of this tab to use it.",
-        LocalAiPackState.Damaged => s.Message,
-        LocalAiPackState.NotPublished => s.Message,
-        _ => "Not installed. To use your PC for AI, press Change… at the top of this tab" + (size.Length > 0 ? $" ({size} download)." : "."),
-    };
+        string detSuffix = detector?.State switch
+        {
+            LocalDetectorState.Installed => " Object detector: installed.",
+            LocalDetectorState.Absent => " Object detector (yolov8n.onnx): not included (suggestions use motion & contrast).",
+            LocalDetectorState.Damaged => $" Object detector ({LocalAiPackManifest.DetectorFile}) is damaged.",
+            _ => "",
+        };
+        return s.State switch
+        {
+            LocalAiPackState.Ready when AiSetup.UsesPc(mode) => "Optional neural pack installed and in use. AI SMART ZOOM follows targets with SAM2 on this PC." + detSuffix,
+            LocalAiPackState.Ready => "Optional neural pack installed, but not in use: you chose 'Online only'. Press Change… above to use PC tracking." + detSuffix,
+            LocalAiPackState.Damaged => s.Message + detSuffix,
+            LocalAiPackState.NotPublished => AiSetup.UsesPc(mode)
+                ? "Built-in basic local Smart Zoom is active on this PC (100% free, zero cloud calls). Optional high-accuracy neural pack has not been published yet."
+                : "Built-in basic local Smart Zoom is available on this PC if needed. Optional neural pack has not been published yet.",
+            _ => "Not installed (built-in basic local Smart Zoom still works on this PC). Press Change… above to download" + (size.Length > 0 ? $" ({size} optional neural pack)." : "."),
+        };
+    }
 
     internal static string LocalAiRemoveQuestion(AiMode saved, bool hasKey) => AiSetup.AfterPackRemoved(saved, hasKey) switch
     {
-        AiMode.OnlineOnly when saved == AiMode.Hybrid => "Remove the PC AI from this computer?\n\nAI will then work online only. You can get it back any time with Change….",
-        AiMode.NotChosen when saved != AiMode.NotChosen => "Remove the PC AI from this computer?\n\nAI features will be switched off until you set them up again.",
-        _ => "Remove the PC AI from this computer? You can get it back any time with Change….",
+        AiMode.Hybrid when saved == AiMode.Hybrid => "Remove the optional neural PC AI pack from this computer?\n\nBoth (PC + online) stays active using built-in basic local Smart Zoom.",
+        AiMode.LocalOnly when saved == AiMode.LocalOnly => "Remove the optional neural PC AI pack from this computer?\n\nOn this PC only stays active using built-in basic local Smart Zoom.",
+        _ => "Remove the optional neural PC AI pack from this computer? You can reinstall it later.",
     };
 
     private void BuildLocalAiUi(INameScope scope)
@@ -46,14 +58,16 @@ public partial class SettingsWindow
         void Show()
         {
             var s = LocalAiPackService.Status();
+            var det = LocalAiPack.CheckDetector(s.Folder, LocalAiPackManifest.IsPublished ? LocalAiPackManifest.Files : System.Array.Empty<LocalAiPackFile>(), s);
             bool busy = _localAiCts != null;
             if (expander != null)
-                expander.IsVisible = AiSetup.PcAvailable || s.State is LocalAiPackState.Ready or LocalAiPackState.Damaged;
-            SetStatusText(status, LocalAiStatusLine(s, AiSetup.Current(), AiSetup.PackSizeText()), s.State switch
+                expander.IsVisible = true;
+            SetStatusText(status, LocalAiStatusLine(s, AiSetup.Current(), AiSetup.PackSizeText(), det), s.State switch
             {
+                LocalAiPackState.Damaged => StatusTone.Warning,
                 LocalAiPackState.Ready when AiSetup.UsesPc(AiSetup.Current()) => StatusTone.Success,
-                LocalAiPackState.Ready or LocalAiPackState.Damaged => StatusTone.Warning,
-                _ => StatusTone.Muted,
+                LocalAiPackState.Ready => StatusTone.Warning,
+                _ => det.State == LocalDetectorState.Damaged ? StatusTone.Warning : StatusTone.Muted,
             });
             install.Content = "Reinstall";
             install.IsVisible = s.State == LocalAiPackState.Damaged;

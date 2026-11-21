@@ -16,6 +16,65 @@ public sealed class AiCameraSmoothnessTests
 
     private static double CenterX(AiTrackingKeyframe k) => k.CropX + k.CropW / 2.0;
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SlowTarget_UsesMoreZoomAndStaysAboveBottomHud(bool portrait)
+    {
+        var raw = Enumerable.Range(0, 13).Select(i => Wp(i * 0.5)).ToList();
+        var path = AiTrajectorySmoother.SmoothTrajectory(raw, 6, W, H, portraitMode: portrait);
+        Assert.All(path.Keyframes, k => Assert.True(k.Scale > (portrait ? 1.65 : 2.2)));
+        for (double t = 0; t <= 6; t += 0.1)
+        {
+            var c = path.EvaluateExportCrop(t, W, H);
+            Assert.InRange((500 * H / 1000.0 - c.Y) / c.H, 0.30, 0.481);
+            Assert.True((580 * H / 1000.0 - c.Y) / c.H < 0.75);
+            Assert.True((420 * H / 1000.0 - c.Y) / c.H > 0.06);
+        }
+    }
+    [Fact]
+    public void BackAndForthWobble_IsNotAFastMove()
+    {
+        bool[] seen = { true, true, true, true };
+        double[] cx = { 300, 700, 380, 380 };
+        double[] cy = { 500, 500, 500, 500 };
+        double[] speed = { 800, 640, 0, 0 };
+        Assert.True(AiTrajectorySmoother.IsWobble(0, 4, seen, cx, cy, speed));
+        double[] jumpX = { 300, 700, 700, 700 };
+        Assert.False(AiTrajectorySmoother.IsWobble(0, 4, seen, jumpX, cy, new double[] { 800, 0, 0, 0 }));
+    }
+    [Fact]
+    public void FastMove_ZoomsOutBeforeMotionAndReturnsSmoothly()
+    {
+        var raw = Enumerable.Range(0, 21).Select(i => Wp(i * 0.5, i < 10 ? 300 : 700)).ToList();
+        var path = Smooth(raw, 10);
+        Assert.True(path.Keyframes.Single(k => k.TimeSec == 4).Scale < path.Keyframes[0].Scale - 0.1);
+        Assert.True(path.Keyframes[^1].Scale > path.Keyframes.Single(k => k.TimeSec == 4.5).Scale);
+        for (int i = 1; i < path.Keyframes.Count; i++)
+            Assert.True(Math.Abs(path.Keyframes[i].Scale - path.Keyframes[i - 1].Scale) <= 0.81);
+    }
+    [Fact]
+    public void DownwardMotion_KeepsFeetAboveHudWhenFrameAllows()
+    {
+        var raw = Enumerable.Range(0, 13).Select(i => Wp(i * 0.5, 500, 350 + i * 20)).ToList();
+        var path = Smooth(raw, 6);
+        foreach (var k in path.Keyframes)
+        {
+            double cy = 350 + k.TimeSec * 40;
+            Assert.True(((cy + 80) * H / 1000.0 - k.CropY) / k.CropH < 0.75);
+            Assert.True((cy * H / 1000.0 - k.CropY) / k.CropH <= 0.481);
+        }
+    }
+    [Fact]
+    public void LowResolutionAndLargeTargets_DoNotOverZoom()
+    {
+        var tiny = Enumerable.Range(0, 7).Select(i => Wp(i * 0.5)).ToList();
+        var low = AiTrajectorySmoother.SmoothTrajectory(tiny, 3, 640, 360, baseScale: 5);
+        Assert.All(low.Keyframes, k => Assert.True(k.Scale <= 1.21));
+        var large = tiny.Select(p => p with { H = 600, W = 300 }).ToList();
+        var path = Smooth(large, 3, 5);
+        Assert.All(path.Keyframes, k => Assert.True(k.Scale <= 1.09));
+    }
     [Fact]
     public void SlowDrift_IsFollowedEvenly_NotHeldAndThenJumped()
     {

@@ -1135,7 +1135,12 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
                         dlg.SetOutputPath(msg);
                         if (!string.IsNullOrEmpty(attribution)) dlg.SetAttributionText(attribution);
                         await dlg.ShowDialog(this);
-                        if (dlg.DialogResult == 1) Close();
+                        if (dlg.DialogResult == 1)
+                        {
+                            NavigationResult = new Services.ToolNavigationResult(
+                                "Video Merger", ReturnedToOwner: false, SelectedClipPath: null, ExitApplication: true);
+                            Close();
+                        }
                     }
                     else if (worker.WasCanceled)
                     {
@@ -1527,6 +1532,8 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
     {
         if (action == "whatsapp") Process.Start(new ProcessStartInfo("whatsapp://send?text=CheckOutThisVideo") { UseShellExecute = true });
         else if (action == "folder") Process.Start(new ProcessStartInfo("explorer.exe", _outputDirectory ?? ".") { CreateNoWindow = true });
+        NavigationResult = new Services.ToolNavigationResult(
+            "Video Merger", ReturnedToOwner: false, SelectedClipPath: null, ExitApplication: true);
         Close();
     }
 

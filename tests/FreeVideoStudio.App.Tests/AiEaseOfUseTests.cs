@@ -29,16 +29,16 @@ public sealed class AiEaseOfUseTests
     }
 
     [Theory]
-    [InlineData(AiMode.Hybrid, true, AiMode.OnlineOnly)]
-    [InlineData(AiMode.Hybrid, false, AiMode.NotChosen)]
-    [InlineData(AiMode.LocalOnly, true, AiMode.NotChosen)]
+    [InlineData(AiMode.Hybrid, true, AiMode.Hybrid)]
+    [InlineData(AiMode.Hybrid, false, AiMode.Hybrid)]
+    [InlineData(AiMode.LocalOnly, true, AiMode.LocalOnly)]
     [InlineData(AiMode.OnlineOnly, true, AiMode.OnlineOnly)]
     [InlineData(AiMode.NotChosen, true, AiMode.NotChosen)]
     public void RemovingThePcAi_LeavesAModeThatStillWorks(AiMode saved, bool hasKey, AiMode expected)
     {
         AiMode after = AiSetup.AfterPackRemoved(saved, hasKey);
         Assert.Equal(expected, after);
-        if (after != AiMode.NotChosen) Assert.True(AiSetup.IsComplete(after, hasKey, packReady: false));
+        if (hasKey && after != AiMode.NotChosen) Assert.True(AiSetup.IsComplete(after, hasKey, packReady: false));
     }
 
     [Theory]
@@ -59,8 +59,8 @@ public sealed class AiEaseOfUseTests
         string line = SettingsWindow.LocalAiStatusLine(missing, AiMode.OnlineOnly, "about 108 MB");
         Assert.Contains("Change…", line);
         Assert.Contains("108 MB", line);
-        Assert.Contains("online only", SettingsWindow.LocalAiRemoveQuestion(AiMode.Hybrid, true));
-        Assert.Contains("switched off", SettingsWindow.LocalAiRemoveQuestion(AiMode.LocalOnly, true));
+        Assert.Contains("Both (PC + online)", SettingsWindow.LocalAiRemoveQuestion(AiMode.Hybrid, true));
+        Assert.Contains("built-in basic", SettingsWindow.LocalAiRemoveQuestion(AiMode.LocalOnly, true));
     }
 
     [Fact]
@@ -119,22 +119,67 @@ public sealed class AiEaseOfUseTests
     }
 
     [AvaloniaFact]
-    public void SmartZoomStart_IsOneQuestionWithTheRightDefault()
+    public void SmartZoomStart_ShowsModeAppropriateActionsAndDefaults()
     {
-        Assert.Equal(AiZoomStartChoice.Reframe, AiZoomStartWindow.DefaultChoice(new AiZoomStartOptions(true, true, false, null, "a", "b")));
-        Assert.Equal(AiZoomStartChoice.FollowBox, AiZoomStartWindow.DefaultChoice(new AiZoomStartOptions(false, true, false, null, "a", "b")));
-        Assert.Equal(AiZoomStartChoice.FindForMe, AiZoomStartWindow.DefaultChoice(new AiZoomStartOptions(false, false, false, null, "a", "b")));
+        Assert.Equal(AiZoomStartChoice.FollowBox, AiZoomStartWindow.DefaultChoice(new AiZoomStartOptions(true, true, false, null, "a", "b", AiMode.Hybrid)));
+        Assert.Equal(AiZoomStartChoice.Reframe, AiZoomStartWindow.DefaultChoice(new AiZoomStartOptions(true, false, false, null, "a", "b", AiMode.Hybrid)));
+        Assert.Equal(AiZoomStartChoice.FindForMe, AiZoomStartWindow.DefaultChoice(new AiZoomStartOptions(false, false, false, null, "a", "b", AiMode.Hybrid)));
+        Assert.Equal(AiZoomStartChoice.LocalSelect, AiZoomStartWindow.DefaultChoice(new AiZoomStartOptions(false, false, true, null, "a", "", AiMode.LocalOnly, CanUseCloudDiscovery: false)));
 
-        var noBox = new AiZoomStartWindow(new AiZoomStartOptions(false, false, false, null, "follow cost", "find cost"));
-        var radios = noBox.GetLogicalDescendants().OfType<RadioButton>().ToList();
-        Assert.Equal(2, radios.Count);
-        Assert.True(radios[0].IsChecked);
-        Assert.Contains(noBox.GetLogicalDescendants().OfType<TextBlock>(), t => t.Text == "find cost");
-        Assert.Contains(noBox.GetLogicalDescendants().OfType<TextBlock>(), t => t.Text == "Let me aim a box myself");
+        var localOnly = new AiZoomStartWindow(new AiZoomStartOptions(false, false, true, "car", "follow cost", "", AiMode.LocalOnly, CanUseCloudDiscovery: false));
+        Assert.Empty(localOnly.GetLogicalDescendants().OfType<TextBox>());
+        var localRadios = localOnly.GetLogicalDescendants().OfType<RadioButton>().ToList();
+        Assert.Single(localRadios);
+        var localTexts = localOnly.GetLogicalDescendants().OfType<TextBlock>().Select(t => t.Text ?? "").ToList();
+        Assert.Contains(localTexts, t => t == AiZoomStartWindow.LocalSelectHeading);
+        Assert.DoesNotContain(localTexts, t => t.Contains("Draw a box") || t.Contains("What should the camera do"));
 
-        var all = new AiZoomStartWindow(new AiZoomStartOptions(true, true, true, null, "follow cost", "find cost"));
-        Assert.Equal(3, all.GetLogicalDescendants().OfType<RadioButton>().Count());
-        Assert.Equal(AiZoomStartChoice.Cancel, all.Result.Choice);
+        var hybrid = new AiZoomStartWindow(new AiZoomStartOptions(true, true, true, "red jacket", "follow cost", "find cost", AiMode.Hybrid, EligibleMultiBlockCount: 3));
+        Assert.Equal(5, hybrid.GetLogicalDescendants().OfType<RadioButton>().Count());
+        Assert.Empty(hybrid.GetLogicalDescendants().OfType<TextBox>());
+        var hybridTexts = hybrid.GetLogicalDescendants().OfType<TextBlock>().Select(t => t.Text ?? "").ToList();
+        Assert.Contains(hybridTexts, t => t == AiZoomStartWindow.CloudTrackerHeading);
+        Assert.Contains(hybridTexts, t => t == "Re-aim existing AI zoom");
+        Assert.Contains(hybridTexts, t => t == "Follow my zoom box");
+        Assert.DoesNotContain(hybridTexts, t => t.Contains("What should the camera do") || t.Contains("Nothing changes in your video until you accept"));
+        Assert.Equal(AiZoomStartChoice.Cancel, hybrid.Result.Choice);
+    }
+
+    [AvaloniaFact]
+    public void SubjectPicker_ShowsScrollableOptionCardsWithHandCursorAndGlow()
+    {
+        var subjects = new System.Collections.Generic.List<DiscoveredSubject>
+        {
+            new() { Id = 1, Label = "Moving Character #1 (Left)", FrameIndex = 1, Xmin = 120, Ymin = 200, Xmax = 280, Ymax = 650 },
+            new() { Id = 2, Label = "Moving Character #2 (Center)", FrameIndex = 2, Xmin = 420, Ymin = 220, Xmax = 580, Ymax = 680 },
+        };
+        var discovery = new AiDiscoveryResult(subjects, "", "", "", 1.0, 2.5, 4.0, 0);
+        var picker = new AiSubjectPickerWindow(discovery, 0, 5.0, isLocalFreeMode: true);
+        var scope = picker.FindNameScope()!;
+        var container = (StackPanel)scope.Find("SubjectsContainer")!;
+        Assert.Equal(2, container.Children.Count);
+        var firstCard = (Border)container.Children[0];
+        Assert.NotNull(firstCard.Cursor);
+        Assert.Equal(subjects[0], picker.SelectedSubject);
+    }
+
+    [AvaloniaFact]
+    public void ViralPostHelper_StaysHiddenOnFinishAndWhatsApp_AndCanBeTurnedOff()
+    {
+        var dlg = new FinishedDialogWindow();
+        var scope = dlg.FindNameScope()!;
+        var card = (Border)scope.Find("ViralPostCard")!;
+        Assert.False(card.IsVisible);
+
+        string aiZoomSrc = System.IO.File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "GranularSpeedEditorWindow.AiZoom.cs"));
+        Assert.Contains("if (_isAiPreviewLooping && _aiPreviewCandidateSegment != null)", aiZoomSrc);
+        Assert.Contains("EndAiPreviewLoop(accept: true);", aiZoomSrc);
+
+        string finSrc = System.IO.File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "Controls", "FinishedDialogWindow.axaml.cs"));
+        Assert.Contains("TryActivateViralPostForSocial(\"Instagram\")", finSrc);
+        Assert.Contains("TryActivateViralPostForSocial(\"YouTube\")", finSrc);
+        Assert.Contains("TryActivateViralPostForSocial(\"TikTok\")", finSrc);
+        Assert.DoesNotContain("TryActivateViralPostForSocial(\"WhatsApp\")", finSrc);
     }
 
     [Fact]

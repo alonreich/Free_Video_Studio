@@ -146,6 +146,8 @@ public sealed class MpvVideoView : Control, IDisposable
         RuntimeLog.Info(InteropLogStep, $"Native player initialized off UI in {Environment.TickCount64 - started}ms.");
         _mpvHandle = handle;
         IpcClient = new MpvIpcClient(handle);
+        if (RuntimeLog.IsDevMode && RuntimeLog.DevLogDir != null)
+            Infrastructure.MpvLogCap.Watch(IpcClient, System.IO.Path.Combine(RuntimeLog.DevLogDir, $"mpv_debug_{Environment.ProcessId}_{RuntimeLog.SessionId}.log"));
         started = Environment.TickCount64;
         if (OperatingSystem.IsWindows())
         {
@@ -408,6 +410,15 @@ public sealed class MpvVideoView : Control, IDisposable
         catch (Exception ex) { if (!_swPushErrLogged) { _swPushErrLogged = true; RuntimeLog.Fail(InteropLogStep, $"PushSoftwareFrame failed: {ex.Message}"); } }
     }
 
+    internal static Rect AspectFit(double srcW, double srcH, double boxW, double boxH)
+    {
+        if (srcW <= 0 || srcH <= 0 || boxW <= 0 || boxH <= 0) return new Rect(0, 0, Math.Max(0, boxW), Math.Max(0, boxH));
+        double scale = Math.Min(boxW / srcW, boxH / srcH);
+        double w = srcW * scale, h = srcH * scale;
+        if (Math.Abs(w - boxW) < 1.0 && Math.Abs(h - boxH) < 1.0) return new Rect(0, 0, boxW, boxH);
+        return new Rect((boxW - w) / 2, (boxH - h) / 2, w, h);
+    }
+
     public override void Render(DrawingContext context)
     {
         if (_swMode && _swBitmap != null)
@@ -417,7 +428,10 @@ public sealed class MpvVideoView : Control, IDisposable
             if (sw > 0 && sh > 0 && b.Width > 0 && b.Height > 0)
             {
                 if (!_swPaintLogged) { _swPaintLogged = true; RuntimeLog.Info(InteropLogStep, $"First software paint to screen (control {b.Width:0}x{b.Height:0}, bmp {sw:0}x{sh:0})."); }
-                context.DrawImage(_swBitmap, new Rect(0, 0, sw, sh), new Rect(0, 0, b.Width, b.Height));
+                var dest = AspectFit(sw, sh, b.Width, b.Height);
+                if (dest.Width < b.Width - 0.5 || dest.Height < b.Height - 0.5)
+                    context.FillRectangle(Brushes.Black, new Rect(0, 0, b.Width, b.Height));
+                context.DrawImage(_swBitmap, new Rect(0, 0, sw, sh), dest);
             }
             return;
         }

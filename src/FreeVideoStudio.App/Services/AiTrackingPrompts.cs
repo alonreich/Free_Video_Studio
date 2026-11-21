@@ -77,15 +77,24 @@ public static class AiTrackingPrompts
 
     public static string Tracking(
         AiGameProfile profile, string label, (int ymin, int xmin, int ymax, int xmax) box,
-        double observedAtSec, bool hasReferenceImage, double intervalSec, double clipDurationSec)
+        double observedAtSec, bool hasReferenceImage, double intervalSec, double clipDurationSec, bool anchorInThisSlice = true)
     {
         var ci = CultureInfo.InvariantCulture;
         var sb = new StringBuilder();
         sb.Append("You are a high-precision computer-vision subject tracker. ").Append(FootageSentence(profile).Replace("These come", "This video comes", System.StringComparison.Ordinal)).Append('\n');
         sb.Append("TARGET TO TRACK: '").Append(string.IsNullOrWhiteSpace(label) ? "selected subject" : label.Trim()).Append("'.\n");
-        sb.Append("At ").Append(observedAtSec.ToString("0.0", ci)).Append("s into this video the target is inside the box [ymin, xmin, ymax, xmax] = [")
-          .Append(box.ymin.ToString(ci)).Append(", ").Append(box.xmin.ToString(ci)).Append(", ")
-          .Append(box.ymax.ToString(ci)).Append(", ").Append(box.xmax.ToString(ci)).Append("] on a 0-1000 scale.\n");
+        if (anchorInThisSlice || !hasReferenceImage)
+        {
+            sb.Append("At ").Append(observedAtSec.ToString("0.0", ci)).Append("s into this video the target is inside the box [ymin, xmin, ymax, xmax] = [")
+              .Append(box.ymin.ToString(ci)).Append(", ").Append(box.xmin.ToString(ci)).Append(", ")
+              .Append(box.ymax.ToString(ci)).Append(", ").Append(box.xmax.ToString(ci)).Append("] on a 0-1000 scale.\n");
+        }
+        else
+        {
+            sb.Append("The reference target appears in another part of the segment inside [ymin, xmin, ymax, xmax] = [")
+              .Append(box.ymin.ToString(ci)).Append(", ").Append(box.xmin.ToString(ci)).Append(", ")
+              .Append(box.ymax.ToString(ci)).Append(", ").Append(box.xmax.ToString(ci)).Append("] on a 0-1000 scale. Track the target only during the times in THIS clip where the same target is actually visible.\n");
+        }
         if (hasReferenceImage)
             sb.Append("The attached still image is a close-up of exactly this target. Use it to keep the SAME subject through fast motion, weapon or outfit changes and crossings.\n");
         sb.Append(ExclusionRule(profile));

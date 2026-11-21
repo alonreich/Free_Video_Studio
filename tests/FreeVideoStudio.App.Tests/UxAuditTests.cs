@@ -49,6 +49,32 @@ public class UxAuditTests
         Assert.Equal(prompts, asked);
     }
 
+    [AvaloniaFact]
+    public async Task FinishedExport_ExitsWithoutAskingStopTheExport()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "ux-finish-exit-" + Guid.NewGuid().ToString("N"));
+        using var isolated = LiveCaptureDriver.IsolateProgramData(root);
+        FreeVideoStudio.App.Infrastructure.AppServices.Initialize(new ApplicationPaths(root));
+        var window = new MainWindow();
+        var coordinator = (IExportCoordinator)typeof(MainWindow).GetField("_exportCoordinator", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
+        int asked = 0;
+        window.StopExportDecisionSeam = () => { asked++; return Task.FromResult(false); };
+
+        ExportCompletion done = await coordinator.StartAsync(new ExportRequest("test",
+            new DelegateExportRunner(_ => Task.FromResult(ExportOutcome.Succeeded))));
+
+        Assert.Equal(ExportOutcome.Succeeded, done.Outcome);
+        Assert.Equal(ExportState.Idle, coordinator.State);
+        Assert.True(await AskStopExport(window));
+        Assert.Equal(0, asked);
+
+        string exportSrc = File.ReadAllText(Path.Combine(RepoRoot.Path, "src", "FreeVideoStudio.App", "MainWindow.Export.cs"));
+        int coreDecl = exportSrc.IndexOf("ProcessVideoCoreAsync(System.Threading.CancellationToken", StringComparison.Ordinal);
+        int runPostDecl = exportSrc.IndexOf("private async Task RunPostExportUiAsync(", StringComparison.Ordinal);
+        int finishedDlgIdx = exportSrc.IndexOf("new FreeVideoStudio.App.Controls.FinishedDialogWindow()", StringComparison.Ordinal);
+        Assert.True(coreDecl > 0 && runPostDecl > 0 && finishedDlgIdx > runPostDecl && finishedDlgIdx < coreDecl);
+    }
+
     [AvaloniaTheory]
     [InlineData("invalid")]
     [InlineData("lock")]

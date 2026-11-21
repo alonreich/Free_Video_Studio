@@ -32,7 +32,7 @@ public static class QualityLadder
 
     public static readonly int MaxIndex = Tiers.Length - 1;
 
-    public static readonly int DefaultIndex = 8;
+    public static readonly int DefaultIndex = 6;
 
     public static int ClampIndex(int index) => Math.Clamp(index, 0, MaxIndex);
 

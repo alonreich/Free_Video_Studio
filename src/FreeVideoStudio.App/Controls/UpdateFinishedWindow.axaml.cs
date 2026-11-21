@@ -9,6 +9,7 @@ public partial class UpdateFinishedWindow : Window
     public UpdateFinishedWindow()
     {
         AvaloniaXamlLoader.Load(this);
+        DialogFit.Apply(this, drag: true);
     }
 
     protected override void OnClosing(WindowClosingEventArgs e)

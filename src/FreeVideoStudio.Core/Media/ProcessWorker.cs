@@ -604,7 +604,8 @@ public class ProcessWorker : IDisposable
                         double windowEnd = windowStart + musicTracks[i].Duration;
                         double shift = MemeTimeInsertedBefore(
                             introDurationSec + musicTracks[i].TimelineStartDelay, landsAfter: false);
-                        double inside = memes.Where(m => m.CutOutputSec >= windowStart - 1e-9 && m.CutOutputSec < windowEnd - 1e-9)
+                        bool lastTrack = i == musicTracks.Count - 1;
+                        double inside = memes.Where(m => MusicPadAlignment.MemeInsideMusicWindow(m.CutOutputSec, windowStart, windowEnd, lastTrack))
                                              .Sum(m => m.DurationSec);
                         musicTracks[i] = musicTracks[i] with
                         {

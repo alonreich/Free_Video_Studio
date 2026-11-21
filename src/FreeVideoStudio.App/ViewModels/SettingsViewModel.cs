@@ -259,8 +259,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
         bool portrait = from.StartPortrait, teammates = from.StartShowTeammates, fade = from.StartEnableFade;
         to.DefaultSpeed = speed;
         to.QualityIndex = quality;
+        to.LastQualityIndex = quality;
         to.SpeedBehavior = ValueDefaultBehavior.FixedValue;
-        to.QualityBehavior = ValueDefaultBehavior.FixedValue;
+        to.QualityBehavior = ValueDefaultBehavior.RememberLast;
         to.PortraitBehavior = portrait ? CheckboxDefaultBehavior.AlwaysOn : CheckboxDefaultBehavior.AlwaysOff;
         to.ShowTeammatesBehavior = teammates ? CheckboxDefaultBehavior.AlwaysOn : CheckboxDefaultBehavior.AlwaysOff;
         to.EnableFadeBehavior = fade ? CheckboxDefaultBehavior.AlwaysOn : CheckboxDefaultBehavior.AlwaysOff;
@@ -276,7 +277,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public int QualityIndex
     {
         get => QualityLadder.ClampIndex(_p.Defaults.QualityIndex);
-        set { if (value < 0) return; int v = QualityLadder.ClampIndex(value); if (_p.Defaults.QualityIndex == v) return; _p.Defaults.QualityIndex = v; OnPropertyChanged(); }
+        set { if (value < 0) return; int v = QualityLadder.ClampIndex(value); if (_p.Defaults.QualityIndex == v && _p.Defaults.LastQualityIndex == v) return; _p.Defaults.QualityIndex = v; _p.Defaults.LastQualityIndex = v; OnPropertyChanged(); }
     }
 
     public bool DefaultPortrait { get => _p.Defaults.StartPortrait; set => SetFixedCheck(value, d => d.StartPortrait, (d, b) => d.PortraitBehavior = b); }

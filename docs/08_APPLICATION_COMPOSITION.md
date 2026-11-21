@@ -24,7 +24,7 @@
 | `tests/TestArtifactDirectory.cs`, `tests/*/TestOutputSuite.cs` | Test output owner | `TESTOUT_01`, `TESTCLEAN_02`, `SuiteWork`, `Begin`, `PrepareSuite`, `Reset` | C#/xUnit and standalone checks write only to their `logs\<Suite>_Results\work`; `TestArtifactDirectoryTests.NoTestWritesOutsideTheLogsSuiteFolders`. |
 | `tests/DesktopPreviewSmoke/Program.cs`, `tests/DesktopPreviewSmoke/MergerSmokeApp.cs` | Desktop smoke applications | `TESTDESKTOP_01`, `MERGERBOUNDARY_01` | Actual GPU output and actual merger window playback across joins; 01 TL-COMPOSITE, 04 UI-MERGERQUEUE/UI-GPUPRESENT2. |
 | `src/FreeVideoStudio.App/ViewModels/VoiceOverGainViewModel.cs` | `VoiceOverGainViewModel` | `Percent`, `Gain`, `ResetCommand`, `CanEdit` | Voice gain bindings; co-governed by 02 AUD-VOICEOVER and 04 UI-THEME. |
-| `build/FvsBuild/CodeSigning.cs` | `CodeSigning` | `SignIfNeeded`, `SIGNMANDATE_01` | Signing mandate. **⚠ CO-GOVERNED BY: 05** |
+| `build/FvsBuild/CodeSigning.cs` | `CodeSigning` | `SignIfNeeded`, `SIGNMANDATE_01` | Signing mandate. **⚠ CO-GOVERNED BY: 09** |
 | `dev.cmd` | Developer Harness | `DEVVERIFY_01`, `SYS-VERIFYTOOL`, `VERIFYHALT_01` | Direct FvsVerify invocation and failure propagation before cleanup. **⚠ CO-GOVERNED BY: 05** |
 | `src/FreeVideoStudio.Core/Abstractions/Faults.cs` | `Faults` | `Install`, `Recoverable`, `Degraded`, `Fatal`, `FAULTTIER_02` | Ambient fault channel installed once from the composition root. |
 | `src/FreeVideoStudio.App/Services/FaultCounters.cs` | `FaultCounters` | `Record`, `Describe`, `LOGVIS_01` | Per-session fault totals by tier and area, printed in the diagnostic bundle. |
@@ -32,7 +32,8 @@
 | `src/FreeVideoStudio.App/Services/ProjectSession.cs` | `ProjectSession` | `Capture`, `PushEdit`, `SaveAsync`, `OpenAsync`, `PROJSESSION_01` | The document being edited and its history. **⚠ CO-GOVERNED BY: 06, 07** |
 | `src/FreeVideoStudio.App/MainWindow.Project.cs` | `MainWindow` | `RefreshProjectTitle`, `OnProjectDocumentApplied`, `BeginProjectHistory`, `PushProjectEdit` | The main window's half of the document session. **⚠ CO-GOVERNED BY: 06, 07** |
 | `src/FreeVideoStudio.App/Services/ExportCoordinator.cs` | `ExportCoordinator`, `IExportCoordinator` | `StartAsync`, `Cancel`, `ShutdownAsync`, `EXPORTSESSION_02` | Export lifecycle owner, testable outside MainWindow; faults via `IFaultSink`. **⚠ CO-GOVERNED BY: 03** |
-| `src/FreeVideoStudio.App/Services/ToolNavigator.cs` | `ToolNavigator` | `OpenAsync`, `PublishMergeEdl`, `ReadMergeQueue`, `TOOLNAV_01` | Opens companion tools in-process and returns from them. **⚠ CO-GOVERNED BY: 05** |
+| `src/FreeVideoStudio.App/Services/ToolNavigator.cs` | `ToolNavigator` | `OpenAsync`, `PublishMergeEdl`, `ReadMergeQueue`, `TOOLNAV_01` | Opens companion tools in-process, returns to `MainWindow`, or exits cleanly when `Result.ExitApplication` is set (`MainWindow.MarkExportedCleanExitForTool`). **⚠ CO-GOVERNED BY: 05** |
+| `src/FreeVideoStudio.App/Services/ToolLaunchContracts.cs` | `ToolLaunchContext`, `CropToolLaunchContext`, `MergerLaunchContext`, `ToolNavigationResult`, `IToolNavigationResultSource` | `ExitApplication`, `Cancelled` | Typed launch inputs and completion results (`ReturnedToOwner`, `ExitApplication`) for in-process Crop Tool and Video Merger navigation. **⚠ CO-GOVERNED BY: 05** |
 | `src/FreeVideoStudio.App/MainWindow.ToolReturn.cs` | `MainWindow` | `RestoreVideoPipelineAfterTool`, `StartVideoHostAsync`, `TOOLRETURN_01` | Main App preview revival after a tool closes. **⚠ CO-GOVERNED BY: 05** |
 | `.github/workflows/ci.yml` | CI | `sentinels`, `build-and-test`, `aot-publish`, `CITEST_01` | Runs the sentinels, the tests and the ratchets. **⚠ CO-GOVERNED BY: 09** |
 
@@ -97,7 +98,7 @@
 
   | Tier | Bar for using it | What the user sees |
   | :--- | :--- | :--- |
-  | `Recoverable` | the user's **outcome is unchanged** — a retry worked, a documented default took over | nothing; DEBUG log only |
+  | `Recoverable` | the user's **outcome is unchanged** — a retry worked, a documented default took over | no UI; throttled `[RECOVERABLE]` INFO line (LOGVIS_01, COMP-LOGVIS) |
   | `Degraded` | something perceptible stopped; the session is intact | a `FloatingNotice` naming **what stopped AND what still works** |
   | `Fatal` | the thing they asked for cannot happen, or their work is at risk | a modal dialog with the message and the log path |
 
@@ -172,8 +173,8 @@ plumbing change does not happen. The vocabulary was right and the route was miss
   | Rule | Enforces | Standing |
   | :--- | :--- | :--- |
   | `ProductionNamespacesUseTheProductRoot` | production namespace declarations use `FreeVideoStudio.*` | **clean — 0** |
-  | `NoControlCarriesBothCommandAndClick` | `DOUBLEFIRE_01` (04 §4) | **clean — 0** |
-  | `NoRawHexColoursInSharedStyling` | Invariant #5 (04 §1) | **clean — 0** (10 fixed; see §4) |
+  | `NoControlCarriesBothCommandAndClick` | `DOUBLEFIRE_01` (04 UI-SAFEGUARDS) | **clean — 0** |
+  | `NoRawHexColoursInSharedStyling` | Invariant #5 (04 UI-THEME) | **clean — 0** (10 fixed; see COMP-ARCHTEST) |
   | `ZoompanFilterIsNeverEmitted` | Invariant #4 | **clean — 0** |
   | `UnexplainedEmptyCatchBlocksDoNotIncrease` | `FAULTTIER_01` | ratchet, baseline **33** |
   | `EveryCatchBlockReportsSomewhere` | `FAULTTIER_02` | ratchet, baseline **7** (seven reporting-path files exempt by name; injected `IFaultSink` `.Recoverable/.Degraded/.Fatal(` calls count as reporting) |
@@ -272,26 +273,7 @@ the contract lives in 05 SYS-CODEEXPORT.
 
 ---
 
-## 4. Findings Closed By This Specification  {#COMP-FINDINGS}
-
-* **SPECROUTING_02 (2026-11-01):** per user direction, repeated `[SPEC CONTRACT]` source headers and their presence-only architecture test are retired. Governing specs, the read-and-cite duty, file/domain maps, behavioral tests and fix-specific sentinels remain mandatory (SPEC_GOVERNANCE.md §4).
-
-* **`VERIFYHALT_01` — `VERIFY_PATCHES` was a no-op.** The subroutine built its `MISSING` list correctly and then returned. `MISSING` was **assigned in two places and read in none**, so all 133 fix sentinels were checked and the answer discarded. The mechanism `05` §4a calls "halts loudly if one is absent" could not halt, and could not be loud.
-  Two defects, both closed: the unread variable, and `exit /b 1` inside a `call`ed subroutine returning from the *subroutine* rather than the script — so the call site now tests `if errorlevel 1`.
-  ⚠️ `VERIFYLOOP_01` had already learned this exact lesson once, about two silently skipped entries, and its fix left the reporting half unwritten. **A guard that cannot fail is worse than no guard**, because it is trusted.
-
-* **`STRIPCOST_01` was stale and nothing could say so.** Its tag no longer existed in `GranularSpeedEditorWindow.axaml.cs`. Not a revert: commit `ad0b7bd` deleted the per-slot `Image` path entirely and replaced it with `Controls/TimelineFilmstrip`, which draws through `DrawingContext.DrawImage` with explicit source and destination rects — no layout box to oversize, no 32768px bitmap for Skia to rasterise. The defect is structurally unreachable, so the sentinel is **retired** with a note, following the `WIZPROGRESS_01` precedent.
-
-* **Invariant #5 had 10 live violations**, all raw hex in shared styling:
-  * Six scrims (`#E6000000` ×4, `#F0000000`, `#90000000`) across five windows, each window keeping its own copy of "dim what is behind this" with nothing enforcing that the four identical ones stayed identical. Now `AppScrimSoftBrush` / `AppScrimBrush` / `AppScrimStrongBrush`, deliberately **theme-invariant** like the existing `AppOverlayBrush`: a scrim's job is to push content away from the eye, and on a light ground a light scrim does not do that. Pick by intent — *soft* (flyout open, context still legible), *base* (blocking operation owns the window), *strong* (a rebuild is discarding what is behind it).
-  * Four `ZOOMCARD_01` states in the Granular editor's "How should the zoom arrive?" dialog (`#222234` rest, `#181824` bullet well, `#2f2f45` hover, `#3a2b48` checked) — **dark-theme values in a suite that ships a Light variant**, so in Light mode the dialog rendered as a block of near-black cards. Invisible to anyone who never switched theme. Now `AppZoomCard*Brush`, defined in both `ThemeDictionaries`. The Light `checked` state is a desaturated tint because the card border already carries the full accent, and two saturated accents stacked read as a rendering fault rather than a selection.
-
-* **`SIGNMANDATE_01` / `UPDATETRUST_02` — the signing gap.** See `05_SYSTEM_LIFECYCLE_STORAGE.md` §5 (SYS-SIGNING), amended by this change.
-
----
-
-### `LOGVIS_01` — RECOVERABLE MEANS "NO NOTICE", NOT "NO LOG"  {#COMP-LOGVIS}
+## 4. `LOGVIS_01` — Recoverable Means "No Notice", Not "No Log"  {#COMP-LOGVIS}
 * The `Recoverable` tier was `RuntimeLog.Debug`, which is a no-op unless `FVS_DEV_LOG_DIR` is set, so ~560 `Swallowed()` sites wrote NOTHING in shipped builds. Now each call site writes one `[RECOVERABLE]` INFO line per 30 s (with a held-back count) in every build. The stack trace stays dev-only. The user still sees nothing, which is the definition of the tier.
 * `CoreLogger.Warn` / `RuntimeLog.WarnThrottled`: handled FAILURE lines (e.g. "disk flush error", "StopRecording threw") are production-visible and throttled. `Debug` is for traces and full exception dumps only.
 * `FaultCounters` counts every fault by tier/area, and `DiagnosticBundle` prints it under `FAULTS`.
-* ⚠ This supersedes "DEBUG log only" in the tier table (§2): Recoverable = no UI + throttled INFO breadcrumb.

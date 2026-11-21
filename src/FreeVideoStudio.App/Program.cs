@@ -99,12 +99,31 @@ if (!isSiblingProcess)
     _ = CrashLogDigest.RunAsync();
     if (!args.Contains("--upgrade-health"))
         _ = Task.Run(FreeVideoStudio.Core.Infrastructure.LegacyResidueSweep.RunForCurrentUser);
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(45));
+            var report = FreeVideoStudio.Core.Infrastructure.TempHousekeeper.RunAtStartup(FreeVideoStudio.Core.Infrastructure.ApplicationPaths.CreateDefault());
+            if (!report.Skipped) RuntimeLog.Info("TEMP CLEANUP", $"Startup cleanup removed {report.Files} files and {report.Folders} folders ({report.Bytes / 1048576.0:F1} MB).");
+        }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+    });
 }
 
 string baseDir = System.IO.Path.GetDirectoryName(System.Environment.ProcessPath) ?? AppContext.BaseDirectory;
 NativeHelpers.SetDllDirectory(Path.Combine(baseDir, "frontend"));
 
 int exitCode = await RunAsync(args);
+if (!isSiblingProcess)
+{
+    try
+    {
+        var report = FreeVideoStudio.Core.Infrastructure.TempHousekeeper.RunAtShutdown(FreeVideoStudio.Core.Infrastructure.ApplicationPaths.CreateDefault());
+        if (report.Files > 0) RuntimeLog.Info("TEMP CLEANUP", $"Exit cleanup removed {report.Files} files ({report.Bytes / 1048576.0:F1} MB).");
+    }
+    catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+}
 SingleInstanceGuard.Release();
 RuntimeLog.Info("PROCESS EXIT", $"exitCode={exitCode}");
 return exitCode;

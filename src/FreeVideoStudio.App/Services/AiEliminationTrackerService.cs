@@ -80,9 +80,14 @@ public static class AiEliminationTrackerService
 
     internal const string SharedGateTag = "AIELIMGATE_01";
 
+    internal const string FreePlanGateTag = "AIFREEGATE_01";
+
+    public static bool MayUseFreeDailyLimit(AiVendor vendor) => vendor == AiVendor.Google;
+
     public static bool StartsByItself(bool userAsked, bool saved, AiEstimatedUsage est, AiVendor vendor, string? model, double autoApproveUnderUsd)
     {
         if (userAsked || saved) return true;
+        if (MayUseFreeDailyLimit(vendor)) return false;
         if (!AiCostEstimator.HasReferenceRate(vendor, model)) return false;
         return (double)est.EstimatedUsd < Math.Max(AutoScanUnderUsd, autoApproveUnderUsd);
     }

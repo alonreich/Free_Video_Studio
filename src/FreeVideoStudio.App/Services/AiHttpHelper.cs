@@ -38,7 +38,7 @@ internal static class AiHttpHelper
         int totalAttempts = Math.Max(1, maxRetries + 1);
         string attemptTag = totalAttempts > 1 ? $"attempt {attemptIndex + 1}/{totalAttempts}, " : "";
         userLog?.Invoke($"Sending {kb:0.#} KB to {vendorDisplay} ({model})…");
-        userLog?.Invoke($"Waiting for {vendorDisplay} ({model}) response ({attemptTag}timeout {(int)Math.Ceiling(timeout.TotalSeconds)}s)…");
+        userLog?.Invoke($"Sent. {vendorDisplay} ({model}) is now looking at it and writing its answer ({attemptTag}gives up after {(int)Math.Ceiling(timeout.TotalSeconds)}s)…");
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
         using var stopHeartbeat = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -71,7 +71,7 @@ internal static class AiHttpHelper
         {
             await Task.Delay(HeartbeatInterval, ct).ConfigureAwait(false);
             if (!ct.IsCancellationRequested)
-                userLog($"Still waiting on {vendorDisplay} ({model})… {sw.Elapsed.TotalSeconds:0}s elapsed.");
+                userLog($"{vendorDisplay} is still working on its answer… {sw.Elapsed.TotalSeconds:0}s so far (nothing is stuck; the AI company is thinking).");
         }
     }
 }

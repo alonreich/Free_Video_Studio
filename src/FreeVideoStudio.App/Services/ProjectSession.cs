@@ -468,6 +468,11 @@ public sealed class ProjectSession
                 MusicVolume = music?.MusicVolume ?? 1.0,
                 VideoVolume = music?.VideoVolume ?? 1.0,
                 SidechainDucking = music?.EnableDucking ?? false,
+                MusicSongs = _viewModel.IsMusicActive && music != null ? ProjectMusicSongs(music) : Array.Empty<ProjectMusicSong>(),
+                MusicTimelineStartSec = music?.TimelineStartSeconds ?? 0,
+                MusicTimelineEndSec = music?.TimelineEndSeconds ?? 0,
+                MusicLoop = music?.LoopMusic ?? false,
+                MusicCarving = music?.EnableCarving ?? false,
                 VoiceOverFilePath = voice?.VoiceOverWavPath,
                 VoiceOverAtOutputSec = voice?.VoiceOverStartTimestampSec ?? 0,
                 VoiceOverVolume = 1.0,
@@ -530,6 +535,7 @@ public sealed class ProjectSession
                 _viewModel.QualitySliderValue = document.Export.QualityIndex;
 
             _viewModel.IsMusicActive = !string.IsNullOrWhiteSpace(document.Audio.MusicFilePath);
+            if (document.Audio.MusicSongs.Count > 0) _viewModel.MusicWizardResult = MusicResultFromProject(document.Audio);
             _viewModel.VoiceOverResult = document.Audio.VoiceOverTakes.Count > 0 || document.Audio.VoiceOverFilePath != null
                 ? new VoiceOverWindow.VoiceOverResult
                 {
@@ -552,6 +558,42 @@ public sealed class ProjectSession
         _editGeneration++;
         DocumentApplied?.Invoke(this, document);
         Raise();
+    }
+
+    internal static ProjectMusicSong[] ProjectMusicSongs(MusicWizardResult music)
+    {
+        var paths = music.OrderedPaths();
+        var songs = new ProjectMusicSong[paths.Count];
+        for (int i = 0; i < paths.Count; i++)
+        {
+            double full = i < music.MusicDurationsSeconds.Count ? music.MusicDurationsSeconds[i] : (i == 0 ? music.MusicDurationSeconds : 0);
+            double inSec = i < music.MusicStartsSeconds.Count ? music.MusicStartsSeconds[i] : (i == 0 ? music.OffsetSeconds : 0);
+            double outSec = i < music.MusicEndsSeconds.Count ? music.MusicEndsSeconds[i] : 0;
+            songs[i] = new ProjectMusicSong(paths[i], Math.Max(0, full), Math.Max(0, inSec), Math.Max(0, outSec), true);
+        }
+        return songs;
+    }
+
+    internal static MusicWizardResult MusicResultFromProject(ProjectAudio audio)
+    {
+        var songs = audio.MusicSongs;
+        return new MusicWizardResult
+        {
+            MusicFilePath = songs[0].Path,
+            MusicFilePaths = songs.Select(s => s.Path).ToList(),
+            MusicDurationsSeconds = songs.Select(s => s.FullSec).ToList(),
+            MusicStartsSeconds = songs.Select(s => s.InSec).ToList(),
+            MusicEndsSeconds = songs.Select(s => s.OutSec).ToList(),
+            OffsetSeconds = songs[0].InSec,
+            MusicDurationSeconds = songs[0].FullSec,
+            TimelineStartSeconds = audio.MusicTimelineStartSec,
+            TimelineEndSeconds = audio.MusicTimelineEndSec,
+            EnableDucking = audio.SidechainDucking,
+            EnableCarving = audio.MusicCarving,
+            VideoVolume = audio.VideoVolume,
+            MusicVolume = audio.MusicVolume,
+            LoopMusic = audio.MusicLoop,
+        };
     }
 
     private void ReportMaskDriftIfAny(ProjectDocument document)

@@ -188,8 +188,12 @@ public partial class MainWindow
                 {
                     if (cts.IsCancellationRequested || _loadedVideoPath != videoPath) return;
                     _aiEliminationStartAction = () => _ = RunAiEliminationScanAsync(videoPath, userAsked: true);
-                    _aiEliminationStatus = $"AI kill scan: click to start ({price}, estimate)";
-                    _aiEliminationDetail = $"Sends up to {AiEliminationTrackerService.MomentBudget(durationSec) * AiEliminationTrackerService.FrameOffsetsSec.Length} still pictures to {vendorName}.\n{costNote}\nScans under ${AutoScanUnderUsd.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)} start by themselves.";
+                    _aiEliminationStatus = AiEliminationTrackerService.MayUseFreeDailyLimit(config.Vendor)
+                        ? $"AI kill scan: click to start ({price}, estimate · Google requests used today: {AiUsageMeter.GoogleRequestsToday()})"
+                        : $"AI kill scan: click to start ({price}, estimate)";
+                    _aiEliminationDetail = $"Sends up to {AiEliminationTrackerService.MomentBudget(durationSec) * AiEliminationTrackerService.FrameOffsetsSec.Length} still pictures to {vendorName}.\n{costNote}\n" + (AiEliminationTrackerService.MayUseFreeDailyLimit(config.Vendor)
+                        ? "Google keys may be on the free plan, so this scan waits for your click and never uses up your free daily requests by itself.\n" + AiUsageMeter.GoogleTodayLine()
+                        : $"Scans under ${AutoScanUnderUsd.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)} start by themselves.");
                     _aiEliminationStatusIsError = false;
                     QueueTimelineRedrawPass(DispatcherPriority.Background);
                 });

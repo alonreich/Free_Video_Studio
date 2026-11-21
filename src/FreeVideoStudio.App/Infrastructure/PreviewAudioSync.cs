@@ -18,7 +18,7 @@ internal static class PreviewAudioSync
     public const int VoiceBuffers = 3;
     public const double VoiceReaderLeadSec = VoiceLatencyMs / 1000.0;
 
-    public static WaveOutEvent CreateVoicePlayer()
+    public static WaveOut CreateVoicePlayer()
         => new() { BufferMilliseconds = VoiceLatencyMs / VoiceBuffers, NumberOfBuffers = VoiceBuffers };
 
     public static void DisposeOffUiThread(params IDisposable?[] items)
@@ -64,7 +64,7 @@ internal static class PreviewAudioSync
             Math.Clamp(voiceTimeSec + VoiceReaderLeadSec, 0, Math.Max(0, totalSec)));
     }
 
-    public static void SyncVoiceTake(WavAudioReader reader, WaveOutEvent player, bool shouldPlay, double voiceTimeSec, ref long overSinceMs)
+    public static void SyncVoiceTake(WavAudioReader reader, WaveOut player, bool shouldPlay, double voiceTimeSec, ref long overSinceMs)
     {
         var decision = Decide(player.PlaybackState == PlaybackState.Playing, reader.CurrentTime.TotalSeconds,
             reader.TotalTime.TotalSeconds, shouldPlay, voiceTimeSec, ref overSinceMs, Environment.TickCount64);

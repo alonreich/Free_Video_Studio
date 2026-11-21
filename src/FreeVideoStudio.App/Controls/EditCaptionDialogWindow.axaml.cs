@@ -36,6 +36,7 @@ public partial class EditCaptionDialogWindow : Window
     {
         ArgumentNullException.ThrowIfNull(line);
         InitializeComponent();
+        DialogFit.Apply(this, drag: true);
 
         if (ResolveControl<TextBlock>("DialogTitleText") is { } title)
             title.Text = $"Edit Commentary Caption (Line #{line.Id})";

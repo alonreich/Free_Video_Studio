@@ -15,6 +15,7 @@ public partial class CloudSyncProgressWindow : Window
     public CloudSyncProgressWindow()
     {
         InitializeComponent();
+        DialogFit.Apply(this, drag: true);
 
         var cancelBtn = this.FindControl<Button>("CancelSyncBtn");
         if (cancelBtn != null)

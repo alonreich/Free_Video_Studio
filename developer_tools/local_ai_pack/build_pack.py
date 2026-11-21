@@ -96,6 +96,8 @@ def main():
         check_signature(dest)
 
     names = ["onnxruntime.dll", "DirectML.dll"] + MODEL_FILES
+    if os.path.isfile(os.path.join(pack, "yolov8n.onnx")):
+        names.append("yolov8n.onnx")
     rows = []
     for name in names:
         p = os.path.join(pack, name)

@@ -28,7 +28,10 @@ internal static class AiStatusLines
     {
         health ??= AiKeyHealth.Shared;
         if (localOnly)
-            return new("AI: on this PC only", "Online AI features are off and nothing is sent online. Press Change… to use online AI.", StatusTone.Muted, "Change…", AiStatusAction.ChangeMode);
+        {
+            string engine = LocalAiPackService.IsReady ? "optional neural AI pack" : "built-in basic tracker";
+            return new($"AI: on this PC only ({engine})", "Online AI features (captions, Kill Tracker) are off and nothing is sent online. Press Change… to use online AI.", StatusTone.Muted, "Change…", AiStatusAction.ChangeMode);
+        }
         string name = AiVisionProviders.DisplayName(vendor);
         if (string.IsNullOrWhiteSpace(key))
             return new("AI: not connected yet", "Connect an AI company once. It takes about a minute, and Google is free to start.", StatusTone.Warning, "Connect AI…", AiStatusAction.Connect);

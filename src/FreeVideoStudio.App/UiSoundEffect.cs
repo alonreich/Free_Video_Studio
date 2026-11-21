@@ -43,7 +43,7 @@ public static class UiSoundEffect
     private static int _activeVoices;
 
     private static readonly object _engineLock = new();
-    private static WaveOutEvent? _output;
+    private static WaveOut? _output;
     private static MixingSampleProvider? _mixer;
     private static VolumeSampleProvider? _volume;
     private static bool _engineFailed;
@@ -217,7 +217,7 @@ public static class UiSoundEffect
 
             _volume = new VolumeSampleProvider(_mixer) { Volume = 1f };
 
-            _output = new WaveOutEvent { BufferMilliseconds = 17, NumberOfBuffers = 3 };
+            _output = new WaveOut { BufferMilliseconds = 17, NumberOfBuffers = 3 };
             _output.Init(_volume);
             _output.Play();
             return true;

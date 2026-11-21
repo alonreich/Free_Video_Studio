@@ -136,8 +136,9 @@ public sealed class PreviewSpeedGovernor : IDisposable
     {
         var schedule = _schedule;
         if (schedule == null || !double.IsFinite(playheadSec)) return double.NaN;
-        double now = LastSent;
-        if (double.IsNaN(now)) return schedule.SpeedAtAbsoluteMs(playheadSec * 1000.0);
+        double currentSpeed = schedule.SpeedAtAbsoluteMs(playheadSec * 1000.0);
+        double now = double.IsFinite(currentSpeed) && currentSpeed > 0 ? currentSpeed : LastSent;
+        if (double.IsNaN(now)) return currentSpeed;
         double aheadMs = (playheadSec + Math.Max(0, SwitchLeadSec) * Math.Max(0.01, now)) * 1000.0;
         double scheduled = schedule.SpeedAtAbsoluteMs(aheadMs);
         lock (_gate)

@@ -295,6 +295,49 @@ public sealed class LocalAiTests
     }
 
     [Fact]
+    public void LocalDiscovery_FindsMovingTargetsAndSnapsPointAndParsesYolo()
+    {
+        const int w = 320, h = 180;
+        byte[] prev = new byte[w * h * 3];
+        byte[] curr = new byte[w * h * 3];
+        byte[] next = new byte[w * h * 3];
+        for (int y = 40; y < 100; y++)
+        {
+            for (int x = 60; x < 100; x++)
+            {
+                int i = (y * w + x) * 3;
+                curr[i] = 240; curr[i + 1] = 40; curr[i + 2] = 40;
+            }
+            for (int x = 80; x < 120; x++)
+            {
+                int i = (y * w + x) * 3;
+                next[i] = 240; next[i + 1] = 40; next[i + 2] = 40;
+            }
+        }
+        var found = LocalSubjectDiscovery.DiscoverOnFrames(
+            new[] { curr, curr, curr }, w, h,
+            new[] { (prev, next), (prev, next), (prev, next) },
+            AiGameProfile.ThirdPerson);
+        Assert.NotEmpty(found);
+        Assert.Contains(found, c => c.Label.Contains("Motion region") && !c.IsDetectorMatch);
+
+        var snapped = LocalSubjectDiscovery.SnapAtPoint(curr, w, h, 2, 250, 380, 5, AiGameProfile.ThirdPerson);
+        Assert.Equal(5, snapped.Id);
+        Assert.Equal(2, snapped.FrameIndex);
+        Assert.True(snapped.Xmax > snapped.Xmin && snapped.Ymax > snapped.Ymin);
+
+        float[] yoloData = new float[84 * 2];
+        yoloData[0] = 160f;
+        yoloData[2] = 160f;
+        yoloData[4] = 80f;
+        yoloData[6] = 180f;
+        yoloData[8] = 0.88f;
+        var dets = YoloOnnxDetector.ParseYoloOutput(yoloData, new long[] { 1, 84, 2 }, 640, 1280, 720, AiGameProfile.Fortnite);
+        Assert.Single(dets);
+        Assert.Equal("Character", dets[0].Category);
+    }
+
+    [Fact]
     public void PackCheck_ReportsEveryState()
     {
         string dir = Work("pack");
@@ -313,6 +356,95 @@ public sealed class LocalAiTests
         File.WriteAllBytes(Path.Combine(dir, "b.bin"), new byte[] { 9, 9, 9, 9 });
         File.SetLastWriteTimeUtc(Path.Combine(dir, "b.bin"), DateTime.UtcNow.AddMinutes(1));
         Assert.Equal(LocalAiPackState.Damaged, LocalAiPack.Check(dir, files).State);
+    }
+
+    [Fact]
+    public void CheckDetector_ReportsPackUnavailableAbsentDamagedAndInstalled()
+    {
+        string dir = Work("detector");
+        var missingStatus = new LocalAiPackStatus(LocalAiPackState.NotInstalled, dir, "Not installed.", false);
+        Assert.Equal(LocalDetectorState.PackUnavailable, LocalAiPack.CheckDetector(dir, Array.Empty<LocalAiPackFile>(), missingStatus).State);
+
+        var readyStatus = new LocalAiPackStatus(LocalAiPackState.Ready, dir, "Installed.", true);
+        Assert.Equal(LocalDetectorState.Absent, LocalAiPack.CheckDetector(dir, Array.Empty<LocalAiPackFile>(), readyStatus).State);
+
+        string yoloPath = Path.Combine(dir, LocalAiPackManifest.DetectorFile);
+        Directory.CreateDirectory(dir);
+        File.WriteAllBytes(yoloPath, new byte[128]);
+        Assert.Equal(LocalDetectorState.Damaged, LocalAiPack.CheckDetector(dir, Array.Empty<LocalAiPackFile>(), readyStatus).State);
+
+        byte[] validPayload = new byte[2048];
+        new Random(42).NextBytes(validPayload);
+        File.WriteAllBytes(yoloPath, validPayload);
+        Assert.Equal(LocalDetectorState.Installed, LocalAiPack.CheckDetector(dir, Array.Empty<LocalAiPackFile>(), readyStatus).State);
+
+        string hash = Convert.ToHexString(SHA256.HashData(validPayload));
+        var pinned = new[] { new LocalAiPackFile(LocalAiPackManifest.DetectorFile, "https://example.invalid/y.onnx", validPayload.Length, hash) };
+        Assert.Equal(LocalDetectorState.Installed, LocalAiPack.CheckDetector(dir, pinned, readyStatus).State);
+
+        File.WriteAllBytes(yoloPath, new byte[2048]);
+        File.SetLastWriteTimeUtc(yoloPath, DateTime.UtcNow.AddMinutes(1));
+        Assert.Equal(LocalDetectorState.Damaged, LocalAiPack.CheckDetector(dir, pinned, readyStatus).State);
+
+        Assert.False(LocalAiPackFiles.Released);
+    }
+
+    [MediaFact]
+    public async Task BuiltInTracker_FollowsTargetDetectsAmbiguityExcludesOwnBodyAndStopsAtHardCut()
+    {
+        string cutFilter =
+            "color=c=0x2a3a2a:s=640x360:r=20:d=2.0,noise=alls=20:allf=t[bg1];" +
+            "color=c=0xd02020:s=48x48:r=20:d=2.0[top];color=c=0x2060e0:s=48x48:r=20:d=2.0[bot];" +
+            "[top][bot]vstack=inputs=2[char];" +
+            "color=c=0x4040a0:s=140x160:r=20:d=2.0[me];" +
+            "[bg1][me]overlay=x=250:y=200[s1];" +
+            "[s1][char]overlay=x='80+t*180':y='110'[a];" +
+            "color=c=0xf0ead8:s=640x360:r=20:d=1.5,noise=alls=10:allf=t[b];" +
+            "[a][b]concat=n=2:v=1:a=0[v]";
+        string cutVid = await LocalTrackerEndToEndTests.MakeVideoAsync("builtin_cut.mp4", cutFilter);
+        var cutRes = await LocalSubjectTracker.TrackBuiltInAsync(
+            new LocalTrackingRequest(MediaFactAttribute.Ffmpeg!, cutVid, 0, 3.5, 640, 360,
+                new PixelBox(72, 102, 136, 214), 0.1, AiGameProfile.Fortnite),
+            null, CancellationToken.None);
+        Assert.False(cutRes.UsedNeuralPack);
+        Assert.NotNull(cutRes.ForwardCutSec);
+        Assert.InRange(cutRes.ForwardCutSec!.Value, 1.7, 2.3);
+        Assert.All(cutRes.Frames.Where(f => f.TimeSec >= 2.4), f => Assert.False(f.Visible));
+        Assert.True(cutRes.VisibleFrames >= 8);
+        foreach (var f in cutRes.Frames.Where(f => f.Visible && f.TimeSec < 1.8))
+            Assert.False(LocalTrackingMath.LooksLikeOwnBody(AiGameProfile.Fortnite, f.Box, 640, 360));
+
+        string occFilter =
+            "color=c=0x2a3a2a:s=640x360:r=20:d=3.0,noise=alls=25:allf=t[bg];" +
+            "color=c=0xe02525:s=52x96:r=20:d=3.0[target];" +
+            "[bg][target]overlay=x='200+t*20':y='120':enable='lt(t,1.2)'[v]";
+        string occVid = await LocalTrackerEndToEndTests.MakeVideoAsync("builtin_occ.mp4", occFilter);
+        var occRes = await LocalSubjectTracker.TrackBuiltInAsync(
+            new LocalTrackingRequest(MediaFactAttribute.Ffmpeg!, occVid, 0, 3.0, 640, 360,
+                new PixelBox(194, 112, 260, 224), 0.2, AiGameProfile.Generic),
+            null, CancellationToken.None);
+        Assert.False(occRes.UsedNeuralPack);
+        int afterOcc = occRes.Frames.Count(f => f.TimeSec >= 1.5);
+        int hiddenAfterOcc = occRes.Frames.Count(f => f.TimeSec >= 1.5 && !f.Visible);
+        Assert.True(hiddenAfterOcc >= afterOcc * 0.7,
+            $"Expected >=70% occluded frames hidden after 1.5s, got {hiddenAfterOcc}/{afterOcc}: " +
+            string.Join(", ", occRes.Frames.Select(f => $"{f.TimeSec:0.0}:{(f.Visible ? 1 : 0)}:{f.Score:0.00}")));
+
+        string twinFilter =
+            "color=c=0x202820:s=640x360:r=20:d=2.4,noise=alls=10:allf=t[bg];" +
+            "color=c=0xe03030:s=48x96:r=20:d=2.4[t0];" +
+            "color=c=0xe03030:s=48x96:r=20:d=2.4[t1];" +
+            "color=c=0xe03030:s=48x96:r=20:d=2.4[t2];" +
+            "[bg][t0]overlay=x='296':y='120':enable='lt(t,0.25)'[s0];" +
+            "[s0][t1]overlay=x='260':y='120':enable='gte(t,0.40)'[s1];" +
+            "[s1][t2]overlay=x='332':y='120':enable='gte(t,0.40)'[v]";
+        string twinVid = await LocalTrackerEndToEndTests.MakeVideoAsync("builtin_ambig.mp4", twinFilter);
+        var twinRes = await LocalSubjectTracker.TrackBuiltInAsync(
+            new LocalTrackingRequest(MediaFactAttribute.Ffmpeg!, twinVid, 0, 2.4, 640, 360,
+                new PixelBox(296, 120, 344, 216), 0.0, AiGameProfile.Generic),
+            null, CancellationToken.None);
+        Assert.False(twinRes.UsedNeuralPack);
+        Assert.True(twinRes.AmbiguousFrames > 0);
     }
 
     [Fact]
@@ -434,7 +566,7 @@ public sealed class LocalTrackerEndToEndTests
 {
     private static string Pack => LocalAiPackFactAttribute.Pack!;
 
-    private static async Task<string> MakeVideoAsync(string name, string filter)
+    internal static async Task<string> MakeVideoAsync(string name, string filter)
     {
         string dir = Path.Combine(TestArtifactDirectory.SuiteWork(TestOutputSuite.Name), "LocalTrack");
         Directory.CreateDirectory(dir);

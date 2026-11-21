@@ -122,12 +122,12 @@ public sealed class AiAudit5Tests
     [Fact]
     public void CommentaryEstimateLeavesOutCutParts()
     {
-        var timeline = OutputTimeline.Create(24000, null, cuts: new[] { new OutputTimeline.Cut(5.0, 19.0) });
-        var sent = CommentaryService.SentParts(timeline, 0, 0, 24.0);
-        var all = CommentaryService.PlanChunks(24.0);
+        var timeline = OutputTimeline.Create(70000, null, cuts: new[] { new OutputTimeline.Cut(28.5, 59.5) });
+        var sent = CommentaryService.SentParts(timeline, 0, 0, 70.0, AiVendor.Google);
+        var all = CommentaryService.PlanChunksFor(AiVendor.Google, 70.0);
         Assert.True(sent.Count < all.Count);
-        var withCuts = AiCostEstimator.EstimateCommentary(AiVendor.Google, GeminiClient.DefaultModel, 24.0, sentParts: sent);
-        var without = AiCostEstimator.EstimateCommentary(AiVendor.Google, GeminiClient.DefaultModel, 24.0);
+        var withCuts = AiCostEstimator.EstimateCommentary(AiVendor.Google, GeminiClient.DefaultModel, 70.0, sentParts: sent);
+        var without = AiCostEstimator.EstimateCommentary(AiVendor.Google, GeminiClient.DefaultModel, 70.0);
         Assert.True(withCuts.EstimatedTotalTokens < without.EstimatedTotalTokens);
     }
 

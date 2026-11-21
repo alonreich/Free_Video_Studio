@@ -59,14 +59,15 @@
                                 <StackPanel VerticalAlignment="Center" Spacing="2">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <Border Width="8" Height="8" CornerRadius="4" Background="{DynamicResource AppSuccessBrush}" VerticalAlignment="Center"/>
-                                        <TextBlock Text="AI TRACKING PREVIEW (LOOPING)" Foreground="{DynamicResource AppAccentBrush}" FontWeight="Bold" FontSize="{DynamicResource AppFontSize12}"/>
+                                        <TextBlock Text="AI SMART ZOOM PREVIEW" Foreground="{DynamicResource AppAccentBrush}" FontWeight="Bold" FontSize="{DynamicResource AppFontSize12}"/>
                                     </StackPanel>
-                                    <TextBlock Text="Review camera tracking motion before applying." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}"/>
+                                    <TextBlock Text="Review camera tracking motion. Playhead stops at end of block." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}"/>
                                     <TextBlock Name="AiTrackingUsageText" IsVisible="False" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap" MaxWidth="560" Margin="0,4,0,0"/>
                                     <TextBlock Name="AiTrackingAllowanceText" IsVisible="False" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" TextWrapping="Wrap" MaxWidth="560"/>
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                    <Button Name="AiTrackingReplayBtn" Classes="Secondary" Content="▶ REPLAY" MinWidth="100" MinHeight="36" Cursor="Hand" ToolTip.Tip="Replays the tracked block from the beginning."/>
                                     <Button Name="AiTrackingDiscardBtn" Classes="Danger" Content="DISCARD" MinWidth="90" MinHeight="36" Cursor="Hand" ToolTip.Tip="Throws this AI zoom away. Your block stays as it was."/>
                                     <Button Name="AiTrackingAcceptBtn" Classes="Success" Content="ACCEPT &amp; APPLY" MinWidth="130" MinHeight="36" Cursor="Hand" ToolTip.Tip="Keeps this AI zoom on the block. Ctrl+Z takes it off again."/>
                                 </StackPanel>
@@ -245,9 +246,9 @@
 
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6"
                                 HorizontalAlignment="Right" VerticalAlignment="Center">
-                        <Button Name="AiCommentaryBtn" Classes="Primary" Content="🎙️ AI COMMENTARY" MinWidth="140"
+                        <Button Name="AiCommentaryBtn" Classes="Primary" Content="AI CAPTIONS" MinWidth="140"
                                 HorizontalContentAlignment="Center"
-                                ToolTip.Tip="The AI watches this video and writes captions that light up word by word. You see a preview before anything is kept."/>
+                                ToolTip.Tip="Writes on-screen AI commentary captions that light up word by word (does not create a voice). Requires online AI. You see a preview before anything is kept."/>
                         <Button Name="AiSmartZoomBtn" Classes="Primary" Content="AI SMART ZOOM" MinWidth="140"
                                 HorizontalContentAlignment="Center"
                                 ToolTip.Tip="The camera zooms in and follows one person or thing through the selected block. You see a preview before anything is kept."/>
@@ -563,14 +564,14 @@
                         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
                             <ProgressBar IsIndeterminate="True" Width="26" Height="26" VerticalAlignment="Center" Foreground="{DynamicResource AppAccentBrush}"/>
                             <StackPanel Spacing="2">
-                                <TextBlock Text="AI LIVE COMMENTARY SYNTHESIS" FontSize="{DynamicResource AppFontSize18}"
+                                <TextBlock Text="AI COMMENTARY CAPTIONS" FontSize="{DynamicResource AppFontSize18}"
                                            FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                                <TextBlock Text="Analyzing gameplay events, audio cues, and synthesizing synchronized narration"
+                                <TextBlock Text="Analyzing the selected range and writing synchronized on-screen captions (does not create a voice)"
                                            FontSize="{DynamicResource AppFontSize12}" Foreground="{DynamicResource AppTextMutedBrush}"/>
                             </StackPanel>
                         </StackPanel>
                         <Button Name="AiCommentaryCancelBtn" Grid.Column="2" Classes="Danger" Content="CANCEL" MinWidth="100" MinHeight="36"
-                                HorizontalAlignment="Right" Cursor="Hand" ToolTip.Tip="Cancel the active AI commentary generation"/>
+                                HorizontalAlignment="Right" Cursor="Hand" ToolTip.Tip="Cancel the active AI commentary caption run"/>
                     </Grid>
 
                     <Grid ColumnDefinitions="*, Auto">
@@ -580,7 +581,7 @@
 
                     <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
                             BorderThickness="1" CornerRadius="6" Padding="14,10">
-                        <TextBlock Name="AiCommentaryStatusLabel" Text="Preparing video clips and audio..." TextAlignment="Center"
+                        <TextBlock Name="AiCommentaryStatusLabel" Text="Preparing video for caption analysis…" TextAlignment="Center"
                                    Foreground="{DynamicResource AppAccentBrush}" FontWeight="SemiBold"
                                    FontSize="{DynamicResource AppFontSize14}"/>
                     </Border>

@@ -37,8 +37,8 @@ public sealed class UiThreadBlockingTests
     public void FreezeSound_UsesItsOwnAudioThread_AndStopsOffTheUiThread()
     {
         string preview = Read("FreeVideoStudio.App", "Services", "FreezeSoundPreview.cs");
-        Assert.Contains("new WaveOutEvent", preview);
-        Assert.DoesNotContain("new WaveOut ", preview);
+        Assert.Contains("new WaveOut { BufferMilliseconds = 40, NumberOfBuffers = 3 }", preview);
+        Assert.DoesNotContain("WaveOutWindow", preview);
         Assert.Contains("System.Threading.Tasks.Task.Run(() =>", preview);
     }
 
@@ -49,15 +49,24 @@ public sealed class UiThreadBlockingTests
         var oldStyle = Directory.EnumerateFiles(app, "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar)
                         && !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar))
-            .Where(f => System.Text.RegularExpressions.Regex.IsMatch(File.ReadAllText(f), @"WaveOut(?!Event)(?!\.DeviceCount)"))
+            .Where(f => System.Text.RegularExpressions.Regex.IsMatch(File.ReadAllText(f), @"\b(?:WaveOutEvent|WaveOutWindow)\b"))
             .Select(Path.GetFileName).ToList();
-        Assert.True(oldStyle.Count == 0, "window-callback WaveOut still used in: " + string.Join(", ", oldStyle));
-        Assert.Contains("public static WaveOutEvent CreateVoicePlayer()", Read("FreeVideoStudio.App", "Infrastructure", "PreviewAudioSync.cs"));
+        Assert.True(oldStyle.Count == 0, "obsolete or window-callback audio player still used in: " + string.Join(", ", oldStyle));
+        Assert.Contains("public static WaveOut CreateVoicePlayer()", Read("FreeVideoStudio.App", "Infrastructure", "PreviewAudioSync.cs"));
         Assert.Contains("public static void DisposeOffUiThread(", Read("FreeVideoStudio.App", "Infrastructure", "PreviewAudioSync.cs"));
-        Assert.Contains("new WaveOutEvent { BufferMilliseconds = 17", Read("FreeVideoStudio.App", "UiSoundEffect.cs"));
+        Assert.Contains("new WaveOut { BufferMilliseconds = 17", Read("FreeVideoStudio.App", "UiSoundEffect.cs"));
         Assert.Contains("click sound output dispose", Read("FreeVideoStudio.App", "UiSoundEffect.cs"));
     }
 
+    [Fact]
+    public void VoicePlayerUsesTheSupportedTypeAndKeepsItsBufferBudget()
+    {
+        using var player = FreeVideoStudio.App.Infrastructure.PreviewAudioSync.CreateVoicePlayer();
+        Assert.IsType<NAudio.Wave.WaveOut>(player);
+        Assert.Empty(typeof(NAudio.Wave.WaveOut).GetCustomAttributes(typeof(System.ObsoleteAttribute), false));
+        Assert.Equal(40, player.BufferMilliseconds);
+        Assert.Equal(3, player.NumberOfBuffers);
+    }
     [Fact]
     public void AppWideWatchdog_StartsWithTheApp_AndNamesTheBlockingCall()
     {

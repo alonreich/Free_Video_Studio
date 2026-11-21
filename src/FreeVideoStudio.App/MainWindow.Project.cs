@@ -94,6 +94,13 @@ public partial class MainWindow
 
     internal const string DoneCleanTag = "DONECLEAN_01";
 
+    internal void MarkExportedCleanExitForTool()
+    {
+        _exportedCleanSinceLastEdit = true;
+        _videoPipelineShutDown = true;
+        WipeFinishedSessionForExit();
+    }
+
     private void WipeFinishedSessionForExit()
     {
         try { _recovery.ClearState(); }

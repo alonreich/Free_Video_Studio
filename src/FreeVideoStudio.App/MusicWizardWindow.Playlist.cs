@@ -61,6 +61,7 @@ public partial class MusicWizardWindow
         Vm.MoveLaterCommand = new RelayCommand(() => MoveQueuedTrack(_selectedSongIndex, 1));
         Vm.RemoveSongCommand = new RelayCommand(() => RemoveSelectedQueuedTrack(_selectedSongIndex));
         Vm.StartAtBeginningCommand = new RelayCommand(StartSelectedSongAtBeginning);
+        WireSteps();
         DataContext = Vm;
 
         AddHandler(Button.ClickEvent, OnTemplateButtonClick, RoutingStrategies.Bubble);
@@ -71,6 +72,10 @@ public partial class MusicWizardWindow
         if (e.Source is not Button button || button.Tag is not string tag) return;
         switch (button.DataContext)
         {
+            case MusicTrackItem track when tag == "proceed":
+                ProceedWithSong(track);
+                e.Handled = true;
+                break;
             case MusicTrackItem track when tag == "play":
                 ToggleRowPreview(track);
                 e.Handled = true;
@@ -150,11 +155,13 @@ public partial class MusicWizardWindow
     private MusicBedSegment? FirstSegmentOf(int index)
     {
         if (index < 0 || index >= _playlist.Count) return null;
-        string path = _playlist[index].Path;
-        foreach (var seg in CurrentPlan())
-            if (string.Equals(seg.Path, path, StringComparison.OrdinalIgnoreCase)) return seg;
-        return null;
+        var plan = CurrentPlan();
+        int at = MusicBedPlan.FirstSegmentOfTrack(plan, index);
+        return at < 0 ? null : plan[at];
     }
+
+    private int OccurrenceIndex(int index, string path)
+        => index >= 0 && index < _playlist.Count && string.Equals(_playlist[index].Path, path, StringComparison.OrdinalIgnoreCase) ? index : -1;
 
     private bool AddToPlaylist(MusicTrackItem track, bool explicitAdd)
     {
@@ -273,6 +280,15 @@ public partial class MusicWizardWindow
             EnsureSongStripWaveform();
             QueuePhase3MusicLaneRefresh();
             ResyncPreviewMusic();
+            if (_editIndex >= _playlist.Count) _editIndex = _playlist.Count - 1;
+            if (_pendingNewIndex >= _playlist.Count) _pendingNewIndex = -1;
+            if (Vm.IsPartView)
+            {
+                RefreshPart();
+                SyncPartAxis();
+            }
+            else if (Vm.IsReviewView) RefreshReview();
+            OnSoundSettingChanged();
         }
     }
 
@@ -315,7 +331,7 @@ public partial class MusicWizardWindow
             });
         }
         Vm.PlaylistEmpty = _playlist.Count == 0;
-        Vm.PlaylistVisible = _isMergerMode || _playlist.Count > 1 || (_playlistExplicit && _playlist.Count > 0);
+        Vm.PlaylistVisible = false;
         Vm.PlaylistHeader = _playlist.Count == 0 ? "YOUR SONGS" : $"YOUR SONGS ({_playlist.Count})";
         double songs = 0;
         foreach (var e in _playlist) songs += e.WindowSec;
@@ -442,7 +458,7 @@ public partial class MusicWizardWindow
                 catch (Exception ex) { RuntimeLog.Swallowed(ex); }
             }
             if (full <= 0) continue;
-            int at = IndexOfPath(e.Path);
+            int at = OccurrenceIndex(i, e.Path);
             if (at < 0) continue;
             _playlist[at] = e with { FullSec = full, OutSec = e.OutSec > e.InSec ? Math.Min(e.OutSec, full) : full };
         }
@@ -451,11 +467,16 @@ public partial class MusicWizardWindow
 
     private void OnTrackDurationKnown(MusicTrackItem item)
     {
-        int at = IndexOfPath(item.FilePath);
-        if (at < 0 || item.DurationSec <= 0) return;
-        var e = _playlist[at];
-        if (e.FullSec > 0) return;
-        _playlist[at] = e with { FullSec = item.DurationSec, OutSec = e.OutSec > e.InSec ? Math.Min(e.OutSec, item.DurationSec) : item.DurationSec };
+        if (item.DurationSec <= 0) return;
+        bool changed = false;
+        for (int at = 0; at < _playlist.Count; at++)
+        {
+            var e = _playlist[at];
+            if (e.FullSec > 0 || !string.Equals(e.Path, item.FilePath, StringComparison.OrdinalIgnoreCase)) continue;
+            _playlist[at] = e with { FullSec = item.DurationSec, OutSec = e.OutSec > e.InSec ? Math.Min(e.OutSec, item.DurationSec) : item.DurationSec };
+            changed = true;
+        }
+        if (!changed) return;
         OnPlaylistChanged();
         SyncWizardHistoryBaseline();
     }
@@ -479,14 +500,19 @@ public partial class MusicWizardWindow
             {
                 var analysis = await GetTrackEnergyAsync(path, token);
                 if (analysis == null || token.IsCancellationRequested) continue;
-                int at = IndexOfPath(path);
-                if (at < 0) continue;
-                var e = _playlist[at];
-                if (e.UserTrimmed) continue;
-                double full = e.FullSec > 0 ? e.FullSec : analysis.DurationSeconds;
-                var (inSec, outSec) = MusicPlaylistMath.AudibleWindow(analysis.Energy, analysis.BucketSeconds, full);
-                if (Math.Abs(inSec - e.InSec) < 0.05 && Math.Abs(outSec - e.OutSec) < 0.05 && Math.Abs(full - e.FullSec) < 0.05) continue;
-                _playlist[at] = e with { FullSec = full, InSec = inSec, OutSec = outSec };
+                bool trimmedAny = false;
+                double full = 0, inSec = 0, outSec = 0;
+                for (int at = 0; at < _playlist.Count; at++)
+                {
+                    var e = _playlist[at];
+                    if (e.UserTrimmed || !string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase)) continue;
+                    full = e.FullSec > 0 ? e.FullSec : analysis.DurationSeconds;
+                    (inSec, outSec) = MusicPlaylistMath.AudibleWindow(analysis.Energy, analysis.BucketSeconds, full);
+                    if (Math.Abs(inSec - e.InSec) < 0.05 && Math.Abs(outSec - e.OutSec) < 0.05 && Math.Abs(full - e.FullSec) < 0.05) continue;
+                    _playlist[at] = e with { FullSec = full, InSec = inSec, OutSec = outSec };
+                    trimmedAny = true;
+                }
+                if (!trimmedAny) continue;
                 RuntimeLog.Info("MUSIC_WIZARD", $"Silence trimmed: '{Path.GetFileName(path)}' plays {inSec:F2}s → {outSec:F2}s of {full:F2}s.");
                 OnPlaylistChanged();
                 SyncWizardHistoryBaseline();
@@ -512,18 +538,16 @@ public partial class MusicWizardWindow
 
     private void OnListHighlight(MusicTrackItem? track)
     {
-        if (_suppressTrackSelectionSideEffects) return;
+        if (_suppressTrackSelectionSideEffects || _choosingSongToProceed) return;
         _highlightedTrack = track;
-        if (track != null && !_isMergerMode && !_playlistExplicit)
-            OnTrackSelected(track);
+        if (track != null && _currentStep == StepChoose) ToggleRowPreview(track);
         UpdateNextButtonState();
+        UpdatePreviewControlsState();
     }
 
     private void ToggleRowPreview(MusicTrackItem track)
     {
-        bool same = ReferenceEquals(_rowPreviewTrack, track) && _isPreviewPlaying;
         StopPreview();
-        if (same) return;
         if (!File.Exists(track.FilePath))
         {
             ShowToast("That song file is missing.");
@@ -534,12 +558,76 @@ public partial class MusicWizardWindow
         StartAutoPreview(track);
     }
 
+    private int _songPreviewVersion;
+    private bool _songPreviewReady;
+    private bool _choosingSongToProceed;
+    private readonly SemaphoreSlim _songPreviewGate = new(1, 1);
+    private void ProceedWithSong(MusicTrackItem track)
+    {
+        if (_currentStep != StepChoose || _choosingSongToProceed) return;
+        _highlightedTrack = track;
+        OnNextClicked(this, new RoutedEventArgs());
+    }
+    private async Task PlayChosenSongAsync(MusicTrackItem? track, double startAt)
+    {
+        int version = ++_songPreviewVersion;
+        _songPreviewReady = false;
+        bool Current() => version == _songPreviewVersion && _currentStep == StepChoose && _isPreviewPlaying;
+        if (track == null) return;
+        try
+        {
+            if (track.DurationSec <= 0)
+            {
+                double duration = await new MediaProber(ResolveFfprobePath(), track.FilePath).GetDurationAsync();
+                if (!Current()) return;
+                if (duration <= 0) throw new InvalidOperationException("Song duration is unavailable.");
+                track.DurationSec = duration;
+            }
+            if (double.IsNaN(startAt)) startAt = track.DurationSec / 2;
+            await _songPreviewGate.WaitAsync();
+            try
+            {
+                if (!Current()) return;
+                await EnsureAudioPreviewClientAsync();
+                if (!Current() || _audioIpcClient == null) return;
+                var player = _audioIpcClient;
+                await player.SetPropertyAsync("pause", "yes");
+                if (!Current()) return;
+                await player.SetPropertyAsync("start", startAt.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                if (!Current()) return;
+                string path = track.FilePath.Replace("\\", "/");
+                var loaded = await player.SendCommandAsync("loadfile", path, "replace");
+                if (!loaded.Succeeded) throw new InvalidOperationException("Song could not be loaded.");
+                _lastLoadedTrackPath = path;
+                if (!Current()) return;
+                await player.SetPropertyAsync("speed", "1");
+                if (!Current()) return;
+                await player.ApplyPreviewGainAsync(1.0);
+                if (!Current()) return;
+                await player.SetPropertyAsync("af", "");
+                if (!Current()) return;
+                await player.SendCommandAsync("set", "pause", "no");
+                if (!Current()) return;
+                _previewCurrentOffset = startAt;
+                _previewStartTime = DateTime.UtcNow;
+                _songPreviewReady = true;
+            }
+            finally { _songPreviewGate.Release(); }
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Swallowed(ex);
+            if (!Current()) return;
+            StopPreview();
+            ShowToast("Cannot play this song. Try another song.");
+        }
+    }
     private async Task GoBackToAddSongAsync()
     {
         _playlistExplicit = true;
         await OnBackClickedAsync(this, new RoutedEventArgs());
         RefreshPlaylistViews();
-        ShowToast("Press + on a song to add it. Your songs are kept.");
+        ShowToast("Choose the next song. Your songs are kept.");
         Dispatcher.UIThread.Post(() => this.FindControl<TextBox>("MusicSearchBox")?.Focus(), DispatcherPriority.Input);
     }
 }

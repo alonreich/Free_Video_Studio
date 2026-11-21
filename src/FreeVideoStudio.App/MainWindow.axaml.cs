@@ -77,14 +77,14 @@ public partial class MainWindow : Window
 
     private double _loadedVideoDurationMs = 0;
 
-    private NAudio.Wave.WaveOutEvent? _voiceOverPlayer;
+    private NAudio.Wave.WaveOut? _voiceOverPlayer;
     private FreeVideoStudio.Core.Media.WavAudioReader? _voiceOverReader;
     private readonly List<VoiceOverPreviewTake> _voiceOverPreviewTakes = new();
 
     private sealed class VoiceOverPreviewTake
     {
         public required VoiceOverTake Take { get; init; }
-        public required NAudio.Wave.WaveOutEvent Player { get; init; }
+        public required NAudio.Wave.WaveOut Player { get; init; }
         public required FreeVideoStudio.Core.Media.WavAudioReader Reader { get; init; }
         public double StartProjectSec { get; set; }
         public long DriftSinceMs;
@@ -120,6 +120,12 @@ public partial class MainWindow : Window
     }
 
     private static string ResolveFfmpegPath() => ExportViewModel.ResolveFfmpegPath();
+
+    private void BeginWholeVideoFilmstrip()
+    {
+        try { FreeVideoStudio.App.Services.WholeVideoFilmstrip.Begin(ResolveFfmpegPath(), _loadedVideoPath, _loadedVideoDurationMs / 1000.0); }
+        catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+    }
 
     private void SchedulePrewarm()
     {
@@ -703,6 +709,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
         _loadedVideoDurationMs = videoHost.IpcClient.Duration * 1000.0;
         _viewModel.Timeline.LoadedVideoDurationMs = _loadedVideoDurationMs;
+        BeginWholeVideoFilmstrip();
         ApplyDefaults();
         UpdateSpeedLabel();
         UpdateEstimatedQuality();
@@ -876,7 +883,8 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         _viewModel.Timeline.LoadedVideoDurationMs = 0;
         ClearOverlayTextForNextVideo("a different video was loaded");
 
-        _speedSegments.Clear();
+        _viewModel.Timeline.ClearPerVideoEdits();
+        _viewModel.CaptionTrack = null;
         _aiEliminationTimestamps.Clear();
         _aiEliminationMarkers.Clear();
         _aiEliminationStatus = null;
@@ -934,7 +942,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         ForcePreviewSpeed();
 
         var qs = QualitySliderCtl;
-        if (qs != null && !_qualitySliderInitialized) 
+        if (qs != null)
         {
             qs.Value = FreeVideoStudio.App.ViewModels.QualityLadder.ClampIndex(d.StartQualityIndex);
             _qualitySliderInitialized = true;
@@ -1830,7 +1838,8 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
             if (_mainSizeWorker != null)
                 await Task.WhenAny(_mainSizeWorker.Completion, Task.Delay(1000));
-            await WindowBoundsHelper.SaveBoundsAsync(this, "MainWindowBounds");
+            if (this.IsVisible)
+                await WindowBoundsHelper.SaveBoundsAsync(this, "MainWindowBounds");
 
             this.Hide();
 

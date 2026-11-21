@@ -279,6 +279,7 @@ public partial class MainWindow
                     {
                         _loadedVideoDurationMs = ActiveVideoHost.IpcClient.Duration * 1000.0;
                         _viewModel.Timeline.LoadedVideoDurationMs = _loadedVideoDurationMs;
+                        BeginWholeVideoFilmstrip();
                     }
                 }
                 if (ActiveVideoHost != null) ActiveVideoHost.IsVisible = true;

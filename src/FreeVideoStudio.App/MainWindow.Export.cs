@@ -23,14 +23,23 @@ namespace FreeVideoStudio.App;
 
 public partial class MainWindow
 {
+    private sealed record PostExportUi(
+        bool MissingVideo = false,
+        bool UnreadableVideo = false,
+        ExportResult? Result = null,
+        string? Attribution = null);
+
     private async Task ProcessVideoAsync(Button processButton)
     {
         if (!await CheckVoiceTimingBeforeExportAsync()) return;
-        var request = new ExportRequest("PROCESS button", new DelegateExportRunner(token =>
+        PostExportUi? postExport = null;
+        var request = new ExportRequest("PROCESS button", new DelegateExportRunner(async token =>
         {
             processButton.IsEnabled = false;
             processButton.Content = "PROCESSING...";
-            return ProcessVideoCoreAsync(processButton, token);
+            var (outcome, next) = await ProcessVideoCoreAsync(token);
+            postExport = next;
+            return outcome;
         }));
 
         ExportCompletion completion = await _exportCoordinator.StartAsync(request);
@@ -44,6 +53,8 @@ public partial class MainWindow
 
         try
         {
+            RestoreUiAfterExport(processButton);
+
             if (completion.Error is OperationCanceledException)
             {
                 RuntimeLog.Info("EXPORT", "Export cancelled.");
@@ -55,17 +66,73 @@ public partial class MainWindow
                 await ErrorReporter.ShowAsync(this, "Export failed",
                     "Something went wrong while preparing or running the export.", completion.Error.Message);
             }
+            else if (postExport != null)
+            {
+                await RunPostExportUiAsync(postExport);
+            }
         }
         finally
         {
-            OverlayLayerCtl?.StopOverlay();
-            if (ActiveVideoHost != null) ActiveVideoHost.IsVisible = true;
-            processButton.IsEnabled = true;
-            processButton.Content = "PROCESS";
+            RestoreUiAfterExport(processButton);
         }
     }
 
-    private async Task<ExportOutcome> ProcessVideoCoreAsync(Button processButton, System.Threading.CancellationToken processToken)
+    private void RestoreUiAfterExport(Button processButton)
+    {
+        OverlayLayerCtl?.StopOverlay();
+        if (ActiveVideoHost != null) ActiveVideoHost.IsVisible = true;
+        processButton.IsEnabled = true;
+        processButton.Content = "PROCESS";
+    }
+
+    private async Task RunPostExportUiAsync(PostExportUi post)
+    {
+        if (post.MissingVideo)
+        {
+            await ErrorReporter.ShowAsync(this, "Nothing to export",
+                "There is no video loaded, or the file that was loaded has been moved or deleted. Load a video and try again.",
+                "");
+            return;
+        }
+
+        if (post.UnreadableVideo)
+        {
+            await ErrorReporter.ShowAsync(this, "Could not read the video", "Please reload the video and try again.", "");
+            return;
+        }
+
+        if (post.Result is not { } result || result.Canceled) return;
+
+        if (result.Success)
+        {
+            var dlg = new FreeVideoStudio.App.Controls.FinishedDialogWindow();
+            dlg.SetOutputPath(result.OutputPath ?? string.Empty);
+            if (!string.IsNullOrEmpty(post.Attribution)) dlg.SetAttributionText(post.Attribution);
+            await dlg.ShowDialog(this);
+
+            if (result.Warning != null && dlg.DialogResult != 1)
+            {
+                await ErrorReporter.ShowAsync(this, "Thumbnail not created", result.Warning, "");
+            }
+
+            if (dlg.DialogResult == 1) Close();
+            else if (dlg.DialogResult == 2)
+            {
+                ResetProjectStateToUpload();
+                OnUploadVideoClicked(null, new Avalonia.Interactivity.RoutedEventArgs());
+            }
+        }
+        else if (result.Failure != null)
+        {
+            await ErrorReporter.ShowAsync(this, result.Failure);
+        }
+        else
+        {
+            await ErrorReporter.ShowAsync(this, "Export failed", "The video could not be exported.", result.ErrorMessage);
+        }
+    }
+
+    private async Task<(ExportOutcome Outcome, PostExportUi? PostUi)> ProcessVideoCoreAsync(System.Threading.CancellationToken processToken)
     {
         if (ActiveVideoHost?.IpcClient != null)
         {
@@ -76,12 +143,7 @@ public partial class MainWindow
         {
             ShowTacticalFeedback("No valid video loaded to process!");
             PlayUiSound();
-            processButton.IsEnabled = true;
-            processButton.Content = "PROCESS";
-            await ErrorReporter.ShowAsync(this, "Nothing to export",
-                "There is no video loaded, or the file that was loaded has been moved or deleted. Load a video and try again.",
-                "");
-            return ExportOutcome.Declined;
+            return (ExportOutcome.Declined, new PostExportUi(MissingVideo: true));
         }
 
         string? outputDirectory = await Infrastructure.OutputFolderResolver.ResolveAsync(
@@ -89,16 +151,12 @@ public partial class MainWindow
         if (outputDirectory == null)
         {
             ShowTacticalFeedback("Export cancelled — no output folder");
-            processButton.IsEnabled = true;
-            processButton.Content = "PROCESS";
-            return ExportOutcome.Declined;
+            return (ExportOutcome.Declined, null);
         }
 
         if (!await ConfirmHighSegmentCountAsync())
         {
-            processButton.IsEnabled = true;
-            processButton.Content = "PROCESS";
-            return ExportOutcome.Declined;
+            return (ExportOutcome.Declined, null);
         }
 
         await Task.Yield();
@@ -130,12 +188,8 @@ public partial class MainWindow
         }
         catch (OperationCanceledException swallowed)
         {
-            OverlayLayerCtl?.StopOverlay();
-            processButton.IsEnabled = true;
-            processButton.Content = "PROCESS";
-            if (ActiveVideoHost != null) ActiveVideoHost.IsVisible = true;
             global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);
-            return ExportOutcome.Cancelled;
+            return (ExportOutcome.Cancelled, null);
         }
         catch (Exception ex)
         {
@@ -145,12 +199,7 @@ public partial class MainWindow
         double? resolvedTargetMb = sizeEstimate.TargetMegabytes;
         if (!FreeVideoStudio.App.ViewModels.QualityLadder.IsOriginal(qualityIdx) && !resolvedTargetMb.HasValue)
         {
-            OverlayLayerCtl?.StopOverlay();
-            processButton.IsEnabled = true;
-            processButton.Content = "PROCESS";
-            if (ActiveVideoHost != null) ActiveVideoHost.IsVisible = true;
-            await ErrorReporter.ShowAsync(this, "Could not read the video", "Please reload the video and try again.", "");
-            return ExportOutcome.Failed;
+            return (ExportOutcome.Failed, new PostExportUi(UnreadableVideo: true));
         }
 
         RuntimeLog.Info("EXPORT",
@@ -164,26 +213,23 @@ public partial class MainWindow
         var controller = new FreeVideoStudio.App.Services.MainMediaController();
 
         var result = await controller.ExecuteExportAsync(
-            payload, 
+            payload,
             processToken,
-            (percent) => { Avalonia.Threading.Dispatcher.UIThread.Post(() => processButton.Content = $"PROCESSING... {percent}%"); },
-            (phase, title, progress) => { 
-                Avalonia.Threading.Dispatcher.UIThread.Post(() => 
+            (percent) => { Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                var btn = ProcessButtonCtl;
+                if (btn != null) btn.Content = $"PROCESSING... {percent}%";
+            }); },
+            (phase, title, progress) => {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                     OverlayLayerCtl?.UpdatePhase(phase, title, progress));
             }
         );
 
-        OverlayLayerCtl?.StopOverlay();
-        if (ActiveVideoHost != null) ActiveVideoHost.IsVisible = true;
-
         if (result.Canceled)
         {
-            processButton.IsEnabled = true;
-            processButton.Content = "PROCESS";
-            return ExportOutcome.Cancelled;
+            return (ExportOutcome.Cancelled, null);
         }
-
-        ExportOutcome outcome = result.Success ? ExportOutcome.Succeeded : ExportOutcome.Failed;
 
         if (result.Success)
         {
@@ -201,40 +247,12 @@ public partial class MainWindow
                     ? _musicWizardResult.MusicFilePaths
                     : (_musicWizardResult?.MusicFilePath != null ? new[] { _musicWizardResult.MusicFilePath } : null));
 
-            var dlg = new FreeVideoStudio.App.Controls.FinishedDialogWindow();
-            dlg.SetOutputPath(result.OutputPath ?? string.Empty);
-            if (!string.IsNullOrEmpty(attribution)) dlg.SetAttributionText(attribution);
-            await dlg.ShowDialog(this);
-
-            if (result.Warning != null && dlg.DialogResult != 1)
-            {
-                await ErrorReporter.ShowAsync(this, "Thumbnail not created", result.Warning, "");
-            }
-
-            if (dlg.DialogResult == 1) Close();
-            else if (dlg.DialogResult == 2)
-            {
-                ResetProjectStateToUpload();
-                OnUploadVideoClicked(null, new Avalonia.Interactivity.RoutedEventArgs());
-            }
-        }
-        else
-        {
-            ShowTacticalFeedback("Processing failed");
-            PlayUiSound();
-            if (result.Failure != null)
-            {
-                await ErrorReporter.ShowAsync(this, result.Failure);
-            }
-            else
-            {
-                await ErrorReporter.ShowAsync(this, "Export failed", "The video could not be exported.", result.ErrorMessage);
-            }
+            return (ExportOutcome.Succeeded, new PostExportUi(Result: result, Attribution: attribution));
         }
 
-        processButton.IsEnabled = true;
-        processButton.Content = "PROCESS";
-        return outcome;
+        ShowTacticalFeedback("Processing failed");
+        PlayUiSound();
+        return (ExportOutcome.Failed, new PostExportUi(Result: result));
     }
 
     private async Task<bool> ConfirmHighSegmentCountAsync()
@@ -282,8 +300,9 @@ public partial class MainWindow
     }
 
     private async Task<FreeVideoStudio.App.Models.ExportPayload> ComposeExportPayloadAsync(
-        string outputDirectory, string? memeFile, int resolvedQuality, double? resolvedTargetMb)
+        string outputDirectory, string? memeFile, int resolvedQuality, double? resolvedTargetMb, MusicWizardResult? musicOverride = null)
     {
+        var musicResult = musicOverride ?? _musicWizardResult;
         bool musicLeadIn = true;
         bool musicTailOut = true;
         System.Collections.Generic.List<FreeVideoStudio.Core.Media.MusicTrack>? musicTracks = null;
@@ -291,25 +310,25 @@ public partial class MainWindow
 
         var allSegments = BuildExportSpeedSegments();
 
-        if (_musicWizardResult != null && !string.IsNullOrEmpty(_musicWizardResult.MusicFilePath) && System.IO.File.Exists(_musicWizardResult.MusicFilePath))
+        if (musicResult != null && !string.IsNullOrEmpty(musicResult.MusicFilePath) && System.IO.File.Exists(musicResult.MusicFilePath))
         {
-            double musicStartMs = Math.Max(_trimStartMs, _musicWizardResult.TimelineStartSeconds * 1000.0);
-            double musicEndMs = Math.Min(_trimEndMs > 0 ? _trimEndMs : _loadedVideoDurationMs, _musicWizardResult.TimelineEndSeconds * 1000.0);
+            double musicStartMs = Math.Max(_trimStartMs, musicResult.TimelineStartSeconds * 1000.0);
+            double musicEndMs = Math.Min(_trimEndMs > 0 ? _trimEndMs : _loadedVideoDurationMs, musicResult.TimelineEndSeconds * 1000.0);
             double startDelay = SourceMsToOutputSeconds(musicStartMs, allSegments);
             double outputEndSec = SourceMsToOutputSeconds(musicEndMs, allSegments);
             double dur = outputEndSec - startDelay;
             if (dur <= 0) dur = 1.0;
 
             const double MarkerToleranceMs = 50.0;
-            double rawMusicStartMs = _musicWizardResult.TimelineStartSeconds * 1000.0;
-            double rawMusicEndMs = _musicWizardResult.TimelineEndSeconds * 1000.0;
+            double rawMusicStartMs = musicResult.TimelineStartSeconds * 1000.0;
+            double rawMusicEndMs = musicResult.TimelineEndSeconds * 1000.0;
 
             musicLeadIn = rawMusicStartMs <= _trimStartMs + MarkerToleranceMs;
             musicTailOut = rawMusicEndMs <= (_trimEndMs > 0 ? _trimEndMs : _loadedVideoDurationMs) + MarkerToleranceMs;
 
             musicTracks = new System.Collections.Generic.List<FreeVideoStudio.Core.Media.MusicTrack>();
 
-            var bedTracks = _musicWizardResult.ToBedTracks();
+            var bedTracks = musicResult.ToBedTracks();
             for (int i = 0; i < bedTracks.Count; i++)
             {
                 if (bedTracks[i].KnownSec > 0) continue;
@@ -318,13 +337,13 @@ public partial class MainWindow
             }
 
             var bedPlan = FreeVideoStudio.Core.Media.MusicBedPlan.Build(
-                bedTracks, dur, _musicWizardResult.LoopMusic, startDelay);
+                bedTracks, dur, musicResult.LoopMusic, startDelay);
             foreach (var seg in bedPlan)
             {
                 musicTracks.Add(new FreeVideoStudio.Core.Media.MusicTrack(seg.Path, seg.FileOffsetSec, seg.DurationSec, startDelay, true));
             }
 
-            if (_musicWizardResult.LoopMusic && musicTracks.Count > bedTracks.Count)
+            if (musicResult.LoopMusic && musicTracks.Count > bedTracks.Count)
             {
                 RuntimeLog.Info("UI",
                     $"Loop music: repeated the {bedTracks.Count} selected track(s) to {musicTracks.Count} segment(s) to cover the video.");
@@ -332,19 +351,19 @@ public partial class MainWindow
 
             musicConfig = new System.Text.Json.Nodes.JsonObject
             {
-                ["ducking_enabled"] = _musicWizardResult.EnableDucking,
-                ["ducking_threshold"] = _musicWizardResult.EnableDucking ? FreeVideoStudio.Core.Media.SidechainCompressNode.TunedThreshold : FreeVideoStudio.Core.Media.SidechainCompressNode.BypassThreshold,
-                ["ducking_ratio"] = _musicWizardResult.EnableDucking ? FreeVideoStudio.Core.Media.SidechainCompressNode.TunedRatio : FreeVideoStudio.Core.Media.SidechainCompressNode.BypassRatio,
-                ["main_vol"] = _musicWizardResult.VideoVolume,
-                ["music_vol"] = _musicWizardResult.MusicVolume,
-                ["carving_enabled"] = _musicWizardResult.EnableCarving,
+                ["ducking_enabled"] = musicResult.EnableDucking,
+                ["ducking_threshold"] = musicResult.EnableDucking ? FreeVideoStudio.Core.Media.SidechainCompressNode.TunedThreshold : FreeVideoStudio.Core.Media.SidechainCompressNode.BypassThreshold,
+                ["ducking_ratio"] = musicResult.EnableDucking ? FreeVideoStudio.Core.Media.SidechainCompressNode.TunedRatio : FreeVideoStudio.Core.Media.SidechainCompressNode.BypassRatio,
+                ["main_vol"] = musicResult.VideoVolume,
+                ["music_vol"] = musicResult.MusicVolume,
+                ["carving_enabled"] = musicResult.EnableCarving,
                 ["ducking_strength"] = (double)Infrastructure.SettingsManager.Instance.Defaults.DuckingStrength,
                 ["carving_strength"] = (double)Infrastructure.SettingsManager.Instance.Defaults.CarvingStrength
             };
         }
         else
         {
-            musicConfig = new System.Text.Json.Nodes.JsonObject { ["main_vol"] = _musicWizardResult?.VideoVolume ?? 1.0 };
+            musicConfig = new System.Text.Json.Nodes.JsonObject { ["main_vol"] = musicResult?.VideoVolume ?? 1.0 };
         }
 
         var payload = new FreeVideoStudio.App.Models.ExportPayload

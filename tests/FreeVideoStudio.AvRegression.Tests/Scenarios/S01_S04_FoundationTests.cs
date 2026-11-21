@@ -93,7 +93,7 @@ public sealed class S01_S04_FoundationTests
         string export = Src("FreeVideoStudio.App", "MainWindow.Export.cs");
         foreach (string must in new[]
         {
-            "Math.Max(_trimStartMs, _musicWizardResult.TimelineStartSeconds * 1000.0)",
+            "Math.Max(_trimStartMs, musicResult.TimelineStartSeconds * 1000.0)",
             "SourceMsToOutputSeconds(musicStartMs, allSegments)",
             "SourceMsToOutputSeconds(musicEndMs, allSegments)",
             "MusicBedPlan.Build(",

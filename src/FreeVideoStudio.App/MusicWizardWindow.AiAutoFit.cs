@@ -91,7 +91,7 @@ public partial class MusicWizardWindow
         string model = settings.GetEffectiveModel(AiUsage.MusicAutoFit);
         string vendorName = AiVisionProviders.DisplayName(vendor);
 
-        string originalContent = button.Content?.ToString() ?? "✨ AI Auto-Fit";
+        string originalContent = button.Content?.ToString() ?? "✨ AI AUTO-FIT";
         using var usage = AiUsageMeter.BeginTask("AI Music Auto-Fit", vendor);
         using var cts = new CancellationTokenSource();
         using var aiDeadline = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
@@ -105,7 +105,7 @@ public partial class MusicWizardWindow
         void Refresh()
         {
             int secs = (int)(DateTime.UtcNow - started).TotalSeconds;
-            button.Content = $"✖ Cancel AI ({secs} s)";
+            button.Content = $"✖ CANCEL AI ({secs} s)";
             SetAiAutoFitStatus(string.IsNullOrEmpty(estBanner)
                 ? $"🤖 {step}  ·  {secs} s"
                 : $"🤖 {step}  ·  {secs} s  ·  {estBanner}");
@@ -202,6 +202,12 @@ public partial class MusicWizardWindow
             _previewCurrentOffset = _songStartSeconds;
             _currentStep = StepFit;
             _visitedFit = true;
+            _editIndex = 0;
+            _pendingNewIndex = -1;
+            _replaceIndex = -1;
+            _addingSong = false;
+            _playlistExplicit = true;
+            Vm.View = ViewModels.MusicWizardView.Part;
             OnPlaylistChanged();
             UpdateStepVisibility();
             UpdateNextButtonState();
@@ -210,6 +216,7 @@ public partial class MusicWizardWindow
             int loadVersion = ++_phase3LoadVersion;
             await LoadPhase3DataAsync(_phase3LoadCts.Token, loadVersion);
             cts.Token.ThrowIfCancellationRequested();
+            if (loadVersion == _phase3LoadVersion && _currentStep == StepFit) AfterFitLoaded();
 
             string songName = Path.GetFileNameWithoutExtension(recommendation.TrackFilePath);
             string usageSummary = ReportUsageNotice();

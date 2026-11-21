@@ -13,6 +13,7 @@ public partial class ErrorDialogWindow : Window
     public ErrorDialogWindow()
     {
         InitializeComponent();
+        DialogFit.Apply(this, drag: true);
 
         var okayBtn = this.FindControl<Button>("OkayBtn");
         var showLogsBtn = this.FindControl<Button>("ShowLogsBtn");

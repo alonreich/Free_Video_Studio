@@ -143,22 +143,28 @@ public sealed class PreviewDetachController
 
         try
         {
+            var display = WindowPlacement.DisplayOf(_owner) ?? WindowPlacement.Primary(_owner);
+            if (display is not DisplayArea d) return;
+
+            double ownerW = _owner.Bounds.Width > 0 ? _owner.Bounds.Width : 1280;
+            double ownerH = _owner.Bounds.Height > 0 ? _owner.Bounds.Height : 720;
+            double w = Math.Max(monitor.MinWidth, ownerW * 0.5);
+            double h = Math.Round(w * 9.0 / 16.0);
+            if (h < monitor.MinHeight) { h = monitor.MinHeight; w = Math.Round(h * 16.0 / 9.0); }
+            var fit = WindowPlacement.FitInside(d, w, h, WindowPlacement.DialogCap);
+            w = Math.Max(monitor.MinWidth, fit.Width);
+            h = Math.Max(monitor.MinHeight, fit.Height);
+
+            int pw = (int)Math.Round(w * d.Scale);
+            int ph = (int)Math.Round(h * d.Scale);
+            int px = _owner.Position.X + ((int)Math.Round(ownerW * d.Scale) - pw) / 2;
+            int py = _owner.Position.Y + ((int)Math.Round(ownerH * d.Scale) - ph) / 2;
+
             monitor.WindowStartupLocation = WindowStartupLocation.Manual;
-            double w = double.IsNaN(monitor.Width) ? 1280 : monitor.Width;
-            double h = double.IsNaN(monitor.Height) ? 750 : monitor.Height;
-
-            int px = _owner.Position.X + (int)((_owner.Bounds.Width - w) / 2);
-            int py = Math.Max(0, _owner.Position.Y + (int)((_owner.Bounds.Height - h) / 2) - 150);
-
-            var screen = _owner.Screens?.ScreenFromWindow(_owner) ?? _owner.Screens?.Primary;
-            if (screen != null)
-            {
-                var b = screen.Bounds;
-                px = Math.Max(b.X, Math.Min(px, b.X + b.Width - (int)w));
-                py = Math.Max(b.Y, Math.Min(py, b.Y + b.Height - (int)h));
-            }
-
-            monitor.Position = new PixelPoint(px, py);
+            monitor.SizeToContent = SizeToContent.Manual;
+            monitor.Width = w;
+            monitor.Height = h;
+            monitor.Position = WindowPlacement.KeepInside(d, new PixelPoint(px, py), w, h);
         }
         catch (Exception ex)
         {

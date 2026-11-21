@@ -19,10 +19,10 @@ public partial class MusicWizardWindow
     private CheckBox? LoopMusicCheckBoxCtl => _cLoopMusicCheckBox ??= this.FindControl<CheckBox>("LoopMusicCheckBox");
     private TextBlock? _cOffsetLabel;
     private TextBlock? OffsetLabelCtl => _cOffsetLabel ??= this.FindControl<TextBlock>("OffsetLabel");
-    private CheckBox? _cDuckingCheckBox;
-    private CheckBox? DuckingCheckBoxCtl => _cDuckingCheckBox ??= this.FindControl<CheckBox>("DuckingCheckBox");
-    private CheckBox? _cCarvingCheckBox;
-    private CheckBox? CarvingCheckBoxCtl => _cCarvingCheckBox ??= this.FindControl<CheckBox>("CarvingCheckBox");
+    private ToggleSwitch? _cDuckingCheckBox;
+    private ToggleSwitch? DuckingCheckBoxCtl => _cDuckingCheckBox ??= this.FindControl<ToggleSwitch>("DuckingCheckBox");
+    private ToggleSwitch? _cCarvingCheckBox;
+    private ToggleSwitch? CarvingCheckBoxCtl => _cCarvingCheckBox ??= this.FindControl<ToggleSwitch>("CarvingCheckBox");
     private FreeVideoStudio.App.Controls.TimelineLanesControl? _cPhase3Lanes;
     private FreeVideoStudio.App.Controls.TimelineLanesControl? Phase3LanesCtl => _cPhase3Lanes ??= this.FindControl<FreeVideoStudio.App.Controls.TimelineLanesControl>("Phase3Lanes");
     private Avalonia.Controls.Border? _cVideoHostBorder;

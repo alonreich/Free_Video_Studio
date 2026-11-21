@@ -111,7 +111,8 @@ public sealed partial class GranularEditSession
                 Segments.Add(new SpeedSegment(relStart, relEnd, seg.Speed,
                     seg.ZoomX, seg.ZoomY, seg.ZoomW, seg.ZoomH, seg.ZoomOrigRes, seg.ZoomSlow,
                     seg.ZoomStartMs.HasValue ? seg.ZoomStartMs.Value - TrimStartMs : (double?)null,
-                    seg.ZoomEndMs.HasValue ? seg.ZoomEndMs.Value - TrimStartMs : (double?)null));
+                    seg.ZoomEndMs.HasValue ? seg.ZoomEndMs.Value - TrimStartMs : (double?)null,
+                    seg.AiTrackingTrajectory));
             }
         }
     }
@@ -157,7 +158,8 @@ public sealed partial class GranularEditSession
               .Append(s.ZoomH?.ToString() ?? "-").Append(',')
               .Append(s.ZoomSlow ? "S" : "I").Append(',')
               .Append(s.ZoomStartMs?.ToString("0.###", ci) ?? "-").Append(',')
-              .Append(s.ZoomEndMs?.ToString("0.###", ci) ?? "-").Append(';');
+              .Append(s.ZoomEndMs?.ToString("0.###", ci) ?? "-").Append(',')
+              .Append(string.IsNullOrEmpty(s.AiTrackingTrajectory) ? "-" : s.AiTrackingTrajectory.Length.ToString(ci)).Append(';');
         }
         return sb.ToString();
     }

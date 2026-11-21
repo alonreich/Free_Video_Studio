@@ -26,7 +26,8 @@ public sealed class AiAudit6Tests
             Assert.Equal(
                 AiEliminationTrackerService.StartsByItself(asked, false, est, AiVendor.Google, "gemini-3.8-flash", threshold),
                 MainWindow.ScanStartsByItself(asked, false, est, AiVendor.Google, "gemini-3.8-flash", threshold));
-        Assert.True(AiEliminationTrackerService.StartsByItself(false, false, cheap, AiVendor.Google, "gemini-3.8-flash", 0));
+        Assert.False(AiEliminationTrackerService.StartsByItself(false, false, cheap, AiVendor.Google, "gemini-3.8-flash", 0));
+        Assert.True(AiEliminationTrackerService.StartsByItself(false, false, cheap, AiVendor.Anthropic, "claude-sonnet-5-5", 0));
         Assert.False(AiEliminationTrackerService.StartsByItself(false, false, dear, AiVendor.Google, "gemini-3.8-flash", 0));
 
         string merger = Src("VideoMergerWindow.Effects.cs");
@@ -53,12 +54,12 @@ public sealed class AiAudit6Tests
     public void SmartZoom_AsksAboutAFreeReuseBeforeAskingForMoney()
     {
         string src = Src("GranularSpeedEditorWindow.AiZoom.cs");
-        Assert.Contains("bool approvalDeferred = !localTracking && !askedAtStart && reusableBlock;", src);
+        Assert.Contains("bool approvalDeferred = !localTracking && reusableBlock;", src);
         int reuse = src.IndexOf("\"Use the last result\"", StringComparison.Ordinal);
         int deferred = src.IndexOf("if (trajectory == null && approvalDeferred)", StringComparison.Ordinal);
         Assert.True(reuse > 0 && deferred > reuse);
         Assert.Contains("discovery.ProbesRun > 0", src);
-        Assert.Contains("probesRun++;", Src(Path.Combine("Services", "GeminiTrackingService.cs")));
+        Assert.Contains(GeminiTrackingService.SegmentBoundsTag, Src(Path.Combine("Services", "GeminiTrackingService.cs")));
     }
 
     [Fact]

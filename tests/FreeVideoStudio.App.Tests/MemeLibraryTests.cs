@@ -27,10 +27,11 @@ public sealed class MemeLibraryTests
     [Fact]
     public void EveryStarterMemeExistsInTheRepository()
     {
-        string folder = Path.Combine(RepoRoot.Path, "meme");
-        if (!Directory.Exists(folder)) return;
+        string starterFolder = Path.Combine(RepoRoot.Path, "build", "starter_meme");
+        string fallbackFolder = Path.Combine(RepoRoot.Path, "meme");
+        if (!Directory.Exists(starterFolder) && !Directory.Exists(fallbackFolder)) return;
         string[] missing = MemeAssets.StarterFiles[MemeAssets.MemeCategoryFolder]
-            .Where(n => !File.Exists(Path.Combine(folder, n))).ToArray();
+            .Where(n => !File.Exists(Path.Combine(starterFolder, n)) && !File.Exists(Path.Combine(fallbackFolder, n))).ToArray();
         Assert.True(missing.Length == 0, "Missing starter memes: " + string.Join(", ", missing));
     }
 

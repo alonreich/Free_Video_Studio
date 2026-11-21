@@ -244,9 +244,10 @@ internal static class Staging
         }
         foreach (string file in StarterMeme)
         {
-            if (!StageFile($@".\meme\{file}", Path.Combine(starterRoot, "meme")))
+            string src = File.Exists($@".\build\starter_meme\{file}") ? $@".\build\starter_meme\{file}" : $@".\meme\{file}";
+            if (!StageFile(src, Path.Combine(starterRoot, "meme")))
             {
-                missing.Add($@"meme\{file}");
+                missing.Add($@"build\starter_meme\{file}");
             }
         }
 

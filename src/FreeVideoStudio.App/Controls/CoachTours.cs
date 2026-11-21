@@ -151,34 +151,22 @@ public static class CoachTours
     public static readonly IReadOnlyList<CoachStep> MusicWizard = new[]
     {
         new CoachStep(
-            "Step one: pick your music",
-            "Press ▶ on a song to hear its best part, and press it again to stop. Press + to add the song. Nothing plays until you ask it to.",
+            "Step one: pick a song",
+            "Click a song to hear it. When you like it, press NEXT → (or double-click the song).",
             "MusicListBox", CoachGesture.Point),
 
         new CoachStep(
-            "Your songs",
-            "Songs you add line up here and play one after another. The bar shows whether they cover your whole video, and the button under it can fill the rest for you.",
-            "PlaylistPanel", CoachGesture.Point),
-
-        new CoachStep(
-            "Step two: see it with your video",
-            "Press NEXT. Your video plays with the music, and each song is a coloured block under the film. Drag the right edge of a block to make that song end sooner or later.",
+            "Go on",
+            "NEXT → is always here, bottom right. BACK is always bottom left. The ✕ at the top closes without changing your video.",
             "NextBtn", CoachGesture.Click),
 
         new CoachStep(
-            "Choose the part of each song",
-            "Click a song's block, then drag the bright box on its picture to choose which part plays, or use Beginning, Best part or End with the video.",
-            "SongCard", CoachGesture.DragHorizontal),
+            "Step two: where the song starts",
+            "Your video and the song are drawn to scale. Move the red line to the moment you like, then press MARK START. A long song sticks out past the video's end; that part is not in your video."),
 
         new CoachStep(
-            "Check the mix",
-            "Slide the two volumes until it sounds right: the left one is your game, the right one is the music.",
-            "VideoVolSlider", CoachGesture.DragHorizontal),
-
-        new CoachStep(
-            "Send it back",
-            "When it sounds right, APPLY puts the music on your video. It is mixed in when you save.",
-            "NextBtn", CoachGesture.Click)
+            "Step three: check and finish",
+            "Watch your video with the music, set the two volumes, then press DONE ✓.")
     };
 
     public static readonly IReadOnlyList<CoachStep> VoiceOver = new[]

@@ -55,6 +55,7 @@ public partial class ConfirmDialogWindow : Window
     public ConfirmDialogWindow()
     {
         InitializeComponent();
+        DialogFit.Apply(this, drag: true);
         var yesBtn = YesBtnCtl;
         var noBtn = NoBtnCtl;
         var altBtn = AltBtnCtl;

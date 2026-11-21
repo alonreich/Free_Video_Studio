@@ -493,12 +493,19 @@ public sealed class TimelineViewModel : ViewModelBase
         _freezeTimeMs = -1;
         _freezeDurationS = 1.0;
         ApplyMainSpeedPreset(SpeedPresetButtons.NativeDefaultSpeed);
+        ClearPerVideoEdits();
+        TimeElapsedText = "00:00:00";
+        TimeRemainingText = "-00:00:00";
+    }
+
+    public const string NewVideoCleanTag = "NEWVIDEOCLEAN_01";
+
+    public void ClearPerVideoEdits()
+    {
         Cuts.Clear();
         SpeedSegments.Clear();
         MemePlacements.Clear();
         MemeOriginMs = double.NaN;
         _memeOriginEndMs = double.NaN;
-        TimeElapsedText = "00:00:00";
-        TimeRemainingText = "-00:00:00";
     }
 }

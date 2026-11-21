@@ -84,11 +84,16 @@ public partial class AiSetupWizardWindow : Window
         },
     };
 
+    internal const string ClaudePlanNote = "A Claude Pro or Max plan cannot be used in other apps (Anthropic's rule), so you need a pay-as-you-go key from the Anthropic Console.";
+    internal const string ClaudePlanTag = "AICLAUDEPLAN_01";
+
     internal static string CostLine(AiVendor vendor) => vendor switch
     {
-        AiVendor.Anthropic => "Cost: paid. Each AI run usually costs a few cents on your Anthropic account.",
-        AiVendor.OpenAI => "Cost: paid. Each AI run usually costs a few cents on your OpenAI account (or free with ChatGPT Plus/Pro above).",
-        _ => "Cost: free to start with Google's free plan. No credit card needed.",
+        AiVendor.Anthropic => "Cost: paid per use. Each AI run usually costs a few cents on your Anthropic account. " + ClaudePlanNote,
+        AiVendor.OpenAI => ChatGptAuth.CanOfferSignIn
+            ? "Cost: paid. Each AI run usually costs a few cents on your OpenAI account (or free with ChatGPT Plus/Pro above)."
+            : "Cost: paid per use. Each AI run usually costs a few cents on your OpenAI account. A ChatGPT Plus/Pro plan cannot be used here yet.",
+        _ => "Cost: free to start with Google's free plan. No credit card needed. Recommended if you do not want to pay.",
     };
 
     private readonly string? _reason;
@@ -103,6 +108,7 @@ public partial class AiSetupWizardWindow : Window
         _targetUsage = targetUsage;
         _companyPicked = !chooseCompanyFirst;
         InitializeComponent();
+        FitWizardWindowBounds();
 
         var scope = this.FindNameScope();
         var googleBtn = scope?.Find("VendorGoogleBtn") as Button;
@@ -164,15 +170,15 @@ public partial class AiSetupWizardWindow : Window
         {
             var s = SettingsManager.Instance;
             if (s.AiDefaultUsage != null && s.AiDefaultUsage.Vendor == v && !string.IsNullOrWhiteSpace(s.AiDefaultUsage.Model))
-                return AiVisionProviders.ReplaceRetired(v, s.AiDefaultUsage.Model);
+                return s.AiDefaultUsage.Model.Trim();
             return v == AiVendor.Google
                 ? GeminiClient.ResolveModel(s.GeminiModelName)
                 : AiVisionProviders.GetDefaultModel(v);
         }
 
-        void PopulateModels(AiVendor v, IReadOnlyList<string>? liveModels = null)
+        void PopulateModels(AiVendor v, IReadOnlyList<string>? liveModels = null, string? preferredModel = null)
         {
-            string saved = ResolveConfiguredModelForVendor(v);
+            string saved = !string.IsNullOrWhiteSpace(preferredModel) ? preferredModel.Trim() : ResolveConfiguredModelForVendor(v);
             var list = new List<string>();
             if (liveModels != null)
             {
@@ -227,8 +233,14 @@ public partial class AiSetupWizardWindow : Window
                     s.GeminiModelName = resolved;
 
                 s.AiDefaultUsage = chosenConfig.Clone();
-                if (_targetUsage.HasValue)
-                    s.SetUsageConfig(_targetUsage.Value, chosenConfig.Clone());
+                s.AiUsageOverrides = Array.Empty<AiUsage>();
+                s.AiUsageSubjectDiscovery = chosenConfig.Clone();
+                s.AiUsageTracking = chosenConfig.Clone();
+                s.AiUsageMagicWand = chosenConfig.Clone();
+                s.AiUsageCommentary = chosenConfig.Clone();
+                s.AiUsageMusicAutoFit = chosenConfig.Clone();
+                s.AiUsageViralPost = chosenConfig.Clone();
+                s.AiUsageEliminationTracker = chosenConfig.Clone();
 
                 s.AiZoomCloudConsent = true;
                 s.AiZoomCloudConsentVendor = vendor;
@@ -291,7 +303,7 @@ public partial class AiSetupWizardWindow : Window
             {
                 capabilityHint.Text = _vendor switch
                 {
-                    AiVendor.Anthropic => "Anthropic Claude looks at still pictures of your video (no sound). You pay Anthropic for what you use.",
+                    AiVendor.Anthropic => "Anthropic Claude looks at still pictures of your video (no sound). You pay Anthropic for what you use. " + ClaudePlanNote,
                     AiVendor.OpenAI => "OpenAI looks at still pictures of your video (no sound). You pay OpenAI for what you use.",
                     _ => "Google Gemini watches your video and hears its sound. It has a small free plan. " + AiVisionProviders.GoogleFreePlanDataNote,
                 };
@@ -349,9 +361,15 @@ public partial class AiSetupWizardWindow : Window
                 string email = ChatGptAuth.SignedInEmail;
                 hint.Text = signedIn
                     ? $"✓ Using your ChatGPT plan{(email.Length > 0 ? $" ({email})" : "")}. No key needed and no extra charge. Manage it at chatgpt.com/settings/usage."
-                    : "Use your ChatGPT plan in this app: no key and no extra charge. Your browser opens, you sign in to ChatGPT and say yes.";
+                    : ChatGptAuth.CanOfferSignIn
+                        ? "Use your ChatGPT plan in this app: no key and no extra charge. Your browser opens, you sign in to ChatGPT and say yes."
+                        : ChatGptAuth.NotApprovedYetText;
             }
-            if (scope.Find("ChatGptSignInBtn") is Button inBtn) inBtn.Content = signedIn ? "Sign in again" : "Continue with ChatGPT";
+            if (scope.Find("ChatGptSignInBtn") is Button inBtn)
+            {
+                inBtn.Content = signedIn ? "Sign in again" : ChatGptAuth.CanOfferSignIn ? "Continue with ChatGPT" : "Coming soon";
+                inBtn.IsEnabled = ChatGptAuth.CanOfferSignIn;
+            }
             if (scope.Find("ChatGptSignOutBtn") is Button outBtn) outBtn.IsVisible = signedIn;
         }
 
@@ -434,8 +452,9 @@ public partial class AiSetupWizardWindow : Window
                 return;
             }
 
+            string chosenBeforePopulate = SelectedModel;
             if (result.Models is { Count: > 0 })
-                PopulateModels(_vendor, result.Models);
+                PopulateModels(_vendor, result.Models, chosenBeforePopulate);
 
             bool saved = SaveSelectionToSettings(_vendor, pasted.Length > 0 ? pasted : null, SelectedModel);
             SetBusy(false);
@@ -566,7 +585,7 @@ public partial class AiSetupWizardWindow : Window
                 var models = await AiKeyValidator.Instance.ListModelsAsync(_vendor, key, _testCts.Renew());
                 SetBusy(false);
 
-                if (models.Count > 0) PopulateModels(_vendor, models);
+                if (models.Count > 0) PopulateModels(_vendor, models, SelectedModel);
                 else if (modelHint != null)
                     modelHint.Text = $"{currentVendorName} did not send a list (check the key and your internet). The usual models are shown.";
             };
@@ -656,6 +675,30 @@ public partial class AiSetupWizardWindow : Window
         catch (Exception ex)
         {
             RuntimeLog.Fail("AiWizard", $"Failed to launch browser: {ex.Message}");
+        }
+    }
+
+    private void FitWizardWindowBounds()
+    {
+        try
+        {
+            var display = WindowPlacement.HomeDisplay(this);
+            if (display.HasValue)
+            {
+                double usableW = display.Value.UsableWidthDip;
+                double usableH = display.Value.UsableHeightDip;
+                if (usableW > 0 && usableH > 0)
+                {
+                    this.MaxHeight = Math.Max(460, Math.Floor(usableH * 0.90));
+                    this.Width = Math.Clamp(this.Width > 0 ? this.Width : 620, this.MinWidth, Math.Max(this.MinWidth, usableW * 0.90));
+                    this.Height = Math.Clamp(this.Height > 0 ? this.Height : 620, this.MinHeight, this.MaxHeight);
+                }
+            }
+            WindowBoundsHelper.Track(this, "AiSetupWizardBounds");
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Swallowed(ex);
         }
     }
 

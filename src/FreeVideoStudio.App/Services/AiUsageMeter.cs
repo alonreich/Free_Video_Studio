@@ -121,6 +121,22 @@ public static class AiUsageMeter
         return scope;
     }
 
+    internal const string GoogleTodayTag = "AIFREECOUNT_01";
+    public const int GoogleFreeDailyRequestsTypical = 20;
+    private static DateTime _googleDay;
+    private static int _googleRequestsToday;
+
+    internal static DateTime GoogleFreeDayStartUtc(DateTime utcNow) => AiKeyHealth.NextDailyResetUtc(utcNow).AddDays(-1);
+
+    public static int GoogleRequestsToday()
+    {
+        lock (Gate)
+            return GoogleFreeDayStartUtc(DateTime.UtcNow) == _googleDay ? _googleRequestsToday : 0;
+    }
+
+    public static string GoogleTodayLine()
+        => $"Google requests sent by this app today: {GoogleRequestsToday()} (Google's free plan allows about {GoogleFreeDailyRequestsTypical} a day per model).";
+
     public static void Record(AiVendor vendor, long input, long output, long thinking, AiRateLimitSnapshot? limits)
         => Record(vendor, model: null, input, output, thinking, limits);
 
@@ -130,6 +146,12 @@ public static class AiUsageMeter
         {
             lock (Gate)
             {
+                if (vendor == AiVendor.Google && !ChatGptAuth.IsMarker(apiKey))
+                {
+                    DateTime day = GoogleFreeDayStartUtc(DateTime.UtcNow);
+                    if (day != _googleDay) { _googleDay = day; _googleRequestsToday = 0; }
+                    _googleRequestsToday++;
+                }
                 Session.Add(input, output, thinking);
                 AiThinkingCalibration.Observe(vendor, thinking);
                 _sessionUsd += AiCostEstimator.EstimateCostUsd(vendor, model, input, output, thinking);

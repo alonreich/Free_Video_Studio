@@ -209,7 +209,7 @@ public partial class VoiceOverWindow : Window
     private sealed class PreviewPlayer : IDisposable
     {
         public FreeVideoStudio.Core.Media.WavAudioReader Reader { get; }
-        public NAudio.Wave.WaveOutEvent Player { get; }
+        public NAudio.Wave.WaveOut Player { get; }
         public VoiceOverSession Session { get; }
         private float _previewGain;
 
@@ -1440,7 +1440,9 @@ public partial class VoiceOverWindow : Window
 
         string thumbTempDir = FreeVideoStudio.Core.Infrastructure.ApplicationPaths.CreateDefault().TempDirectory;
         var warmedStrip = FreeVideoStudio.App.Services.FilmstripPrewarm.TryTake(
-            localVideoPath, localTrimStart, durationSec);
+            localVideoPath, localTrimStart, durationSec)
+            ?? FreeVideoStudio.App.Services.WholeVideoFilmstrip.TryCompose(
+                localVideoPath, localTrimStart, durationSec, ThumbnailStripGenerator.DefaultFrames);
         bool warmedMounted = false;
         if (warmedStrip != null)
         {

@@ -69,6 +69,7 @@ public sealed class ProjectRecoveryService
         return timelineVm.IsTrimStartSet || timelineVm.IsTrimEndSet || timelineVm.IsThumbnailSet ||
                mainVm.IsGranularSpeedActive || mainVm.IsMusicActive || mainVm.VoiceOverResult != null ||
                mainVm.MusicWizardResult != null ||
+               mainVm.CaptionTrack is { Lines.Count: > 0 } ||
                timelineVm.Cuts.Count > 0 ||
                timelineVm.MemePlacements.Count > 0 ||
                timelineVm.SpeedSegments.Count > 0 || timelineVm.FreezeTimeMs >= 0 ||

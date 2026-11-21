@@ -1,8 +1,8 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="FreeVideoStudio.App.Controls.AiSubjectPickerWindow"
-        Title="Who Should the Camera Follow?"
-        Width="1080" Height="720" MinWidth="900" MinHeight="600"
+        Title="AI Smart Zoom — Choose Who to Follow"
+        Width="1140" Height="780" MinWidth="920" MinHeight="640"
         Background="{DynamicResource AppSurfaceBrush}"
         WindowStartupLocation="CenterOwner"
         ExtendClientAreaToDecorationsHint="True"
@@ -12,73 +12,107 @@
         <Border Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="3">
             <Grid RowDefinitions="30, Auto, *, Auto, Auto">
                 <Border Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
-                    <TextBlock Text="AI SMART ZOOM — WHO SHOULD THE CAMERA FOLLOW?" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
+                    <TextBlock Name="PickerWindowTitleText" Text="AI SMART ZOOM — CHOOSE WHO TO FOLLOW" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
                 </Border>
 
-                <StackPanel Grid.Row="1" Margin="28,16,28,8" Spacing="4">
-                    <TextBlock Text="Pick who the camera should follow" FontSize="{DynamicResource AppFontSize20}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                    <TextBlock Name="PickerIntroText" Text="The AI looked at 3 moments of this segment. Pick who the camera should follow — the box on the frames shows where they are."
-                               Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize13}" TextWrapping="Wrap"/>
+                <StackPanel Grid.Row="1" Margin="28,12,28,6" Spacing="6">
+                    <TextBlock Name="PickerHeadlineText" Text="Stage 1 of 3 · Choose who to follow" FontSize="{DynamicResource AppFontSize20}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1.5" CornerRadius="8" Padding="14,10">
+                        <StackPanel Spacing="3">
+                            <TextBlock Name="PickerIntroText" Text="Click the same person or object in each picture where they appear."
+                                       Foreground="{DynamicResource AppTextPrimaryBrush}" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize13}" TextWrapping="Wrap"/>
+                            <TextBlock Name="PickerStep2GuideText" Text="A bright red oval shows your target. Use 'Not visible' if they are out of frame."
+                                       Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Name="FallbackNoticeText" IsVisible="False" Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap" FontWeight="SemiBold"/>
                     <TextBlock Name="LookaheadNoticeText" IsVisible="False" Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSize13}" TextWrapping="Wrap" FontWeight="SemiBold"/>
                 </StackPanel>
 
-                <Grid Grid.Row="2" ColumnDefinitions="*,12,*,12,*" Margin="28,8,28,12">
-                    <Border Grid.Column="0" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
-                        <Grid RowDefinitions="Auto, *">
-                            <Border Background="{DynamicResource AppScrimBrush}" Padding="8,4">
-                                <TextBlock Name="Frame1TimeLabel" Text="Frame 1 (Start)" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" HorizontalAlignment="Center"/>
+                <Grid Grid.Row="2" ColumnDefinitions="*,12,*,12,*" Margin="28,6,28,10">
+                    <Border Name="Frame1Border" Grid.Column="0" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1.5" CornerRadius="8" ClipToBounds="True">
+                        <Grid RowDefinitions="Auto, *, Auto">
+                            <Border Background="{DynamicResource AppScrimBrush}" Padding="8,5">
+                                <TextBlock Name="Frame1TimeLabel" Text="Picture 1 (Start)" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" HorizontalAlignment="Center"/>
                             </Border>
-                            <Grid Grid.Row="1">
-                                <Image Name="Frame1Image" Stretch="Uniform" Margin="4"/>
-                                <Canvas Name="Frame1Canvas" IsHitTestVisible="False" ClipToBounds="True"/>
+                            <Grid Name="Frame1HitGrid" Grid.Row="1" Background="Transparent" Cursor="Hand" ToolTip.Tip="Click on the target in Picture 1">
+                                <Image Name="Frame1Image" Stretch="Uniform" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="4"/>
+                                <Canvas Name="Frame1Canvas" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" IsHitTestVisible="False" ClipToBounds="True"/>
                             </Grid>
+                            <Border Grid.Row="2" Background="{DynamicResource AppScrimBrush}" Padding="8,6" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
+                                <Grid ColumnDefinitions="*, Auto, Auto">
+                                    <TextBlock Name="Frame1Badge" Text="Waiting for selection" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center"/>
+                                    <Button Name="Frame1NotVisibleBtn" Grid.Column="1" Content="Not visible" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0"/>
+                                    <Button Name="Frame1ClearBtn" Grid.Column="2" Content="Clear" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0"/>
+                                </Grid>
+                            </Border>
                         </Grid>
                     </Border>
 
-                    <Border Grid.Column="2" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
-                        <Grid RowDefinitions="Auto, *">
-                            <Border Background="{DynamicResource AppScrimBrush}" Padding="8,4">
-                                <TextBlock Name="Frame2TimeLabel" Text="Frame 2 (Midpoint)" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" HorizontalAlignment="Center"/>
+                    <Border Name="Frame2Border" Grid.Column="2" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1.5" CornerRadius="8" ClipToBounds="True">
+                        <Grid RowDefinitions="Auto, *, Auto">
+                            <Border Background="{DynamicResource AppScrimBrush}" Padding="8,5">
+                                <TextBlock Name="Frame2TimeLabel" Text="Picture 2 (Middle)" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" HorizontalAlignment="Center"/>
                             </Border>
-                            <Grid Grid.Row="1">
-                                <Image Name="Frame2Image" Stretch="Uniform" Margin="4"/>
-                                <Canvas Name="Frame2Canvas" IsHitTestVisible="False" ClipToBounds="True"/>
+                            <Grid Name="Frame2HitGrid" Grid.Row="1" Background="Transparent" Cursor="Hand" ToolTip.Tip="Click on the target in Picture 2">
+                                <Image Name="Frame2Image" Stretch="Uniform" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="4"/>
+                                <Canvas Name="Frame2Canvas" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" IsHitTestVisible="False" ClipToBounds="True"/>
                             </Grid>
+                            <Border Grid.Row="2" Background="{DynamicResource AppScrimBrush}" Padding="8,6" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
+                                <Grid ColumnDefinitions="*, Auto, Auto">
+                                    <TextBlock Name="Frame2Badge" Text="Waiting for selection" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center"/>
+                                    <Button Name="Frame2NotVisibleBtn" Grid.Column="1" Content="Not visible" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0"/>
+                                    <Button Name="Frame2ClearBtn" Grid.Column="2" Content="Clear" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0"/>
+                                </Grid>
+                            </Border>
                         </Grid>
                     </Border>
 
-                    <Border Grid.Column="4" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
-                        <Grid RowDefinitions="Auto, *">
-                            <Border Background="{DynamicResource AppScrimBrush}" Padding="8,4">
-                                <TextBlock Name="Frame3TimeLabel" Text="Frame 3 (End)" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" HorizontalAlignment="Center"/>
+                    <Border Name="Frame3Border" Grid.Column="4" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1.5" CornerRadius="8" ClipToBounds="True">
+                        <Grid RowDefinitions="Auto, *, Auto">
+                            <Border Background="{DynamicResource AppScrimBrush}" Padding="8,5">
+                                <TextBlock Name="Frame3TimeLabel" Text="Picture 3 (End)" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" HorizontalAlignment="Center"/>
                             </Border>
-                            <Grid Grid.Row="1">
-                                <Image Name="Frame3Image" Stretch="Uniform" Margin="4"/>
-                                <Canvas Name="Frame3Canvas" IsHitTestVisible="False" ClipToBounds="True"/>
+                            <Grid Name="Frame3HitGrid" Grid.Row="1" Background="Transparent" Cursor="Hand" ToolTip.Tip="Click on the target in Picture 3">
+                                <Image Name="Frame3Image" Stretch="Uniform" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="4"/>
+                                <Canvas Name="Frame3Canvas" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" IsHitTestVisible="False" ClipToBounds="True"/>
                             </Grid>
+                            <Border Grid.Row="2" Background="{DynamicResource AppScrimBrush}" Padding="8,6" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
+                                <Grid ColumnDefinitions="*, Auto, Auto">
+                                    <TextBlock Name="Frame3Badge" Text="Waiting for selection" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center"/>
+                                    <Button Name="Frame3NotVisibleBtn" Grid.Column="1" Content="Not visible" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0"/>
+                                    <Button Name="Frame3ClearBtn" Grid.Column="2" Content="Clear" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0"/>
+                                </Grid>
+                            </Border>
                         </Grid>
                     </Border>
                 </Grid>
 
-                <Border Grid.Row="3" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="28,0,28,12" Padding="14">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="WHO THE AI FOUND (CLICK ONE):" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppTextMutedBrush}" LetterSpacing="1"/>
+                <Border Grid.Row="3" IsVisible="False" Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="28,0,28,10" Padding="14,10">
+                    <StackPanel Spacing="6">
+                        <TextBlock Name="SubjectsSectionHeaderText" Text="SUGGESTED TARGET OPTIONS" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppTextMutedBrush}" LetterSpacing="1"/>
                         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                            <StackPanel Name="SubjectsContainer" Orientation="Horizontal" Spacing="12"/>
+                            <StackPanel Name="SubjectsContainer" Orientation="Horizontal" Spacing="14" Margin="4,4,4,6"/>
                         </ScrollViewer>
                     </StackPanel>
                 </Border>
 
-                <Grid Grid.Row="4" ColumnDefinitions="Auto, Auto, *, Auto" Margin="28,0,28,18">
-                    <Button Name="CancelPickerBtn" Grid.Column="0" Classes="Secondary" Content="CANCEL" MinWidth="110" MinHeight="42" Cursor="Hand" IsCancel="True"
+                <Grid Grid.Row="4" ColumnDefinitions="Auto, Auto, Auto, *, Auto, Auto" Margin="28,0,28,16">
+                    <Button Name="CancelPickerBtn" Grid.Column="0" Classes="Secondary" Content="CANCEL" MinWidth="105" MinHeight="42" Cursor="Hand" IsCancel="True"
                             ToolTip.Tip="Closes this list. Nothing changes in your video."/>
-                    <Button Name="NoneOfTheseBtn" Grid.Column="1" Classes="Secondary" Content="NONE OF THESE — I'LL AIM A BOX" MinHeight="42" Cursor="Hand" Margin="10,0,0,0"
-                            ToolTip.Tip="Closes this list and puts a box on the video. Aim it at who to follow, then press FOLLOW THIS BOX."/>
-                    <TextBlock Name="SelectionStatusText" Grid.Column="2" Text="Click a card above to select your target."
-                               FontSize="{DynamicResource AppFontSize13}" Foreground="{DynamicResource AppTextMutedBrush}"
+                    <Button Name="SkipBlockBtn" Grid.Column="1" Classes="Secondary" Content="SKIP BLOCK" MinHeight="42" Cursor="Hand" Margin="8,0,0,0" IsVisible="False"
+                            ToolTip.Tip="Skips zooming this block and moves to the next block in the batch."/>
+                    <Button Name="DescribeManuallyBtn" Grid.Column="2" Classes="Secondary" Content="Describe Manually" MinHeight="42" Cursor="Hand" Margin="8,0,0,0"
+                            ToolTip.Tip="Didn't see the right option above? Click to describe who or what you want Cloud AI to mark in these pictures."/>
+                    <Button Name="ResampleBtn" Grid.Column="2" Classes="Secondary" Content="Try Another Moment" MinHeight="42" Cursor="Hand" Margin="8,0,0,0" IsVisible="False"
+                            ToolTip.Tip="Samples different moments within this segment to find your target."/>
+                    <TextBlock Name="SelectionStatusText" Grid.Column="3" Text="Click the same person or object in each picture where they appear."
+                               FontSize="{DynamicResource AppFontSize12}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"
                                VerticalAlignment="Center" HorizontalAlignment="Center" TextWrapping="Wrap" Margin="10,0"/>
-                    <Button Name="ConfirmPickerBtn" Grid.Column="3" Classes="Success" Content="FOLLOW THIS ONE" MinWidth="220" MinHeight="42" Cursor="Hand" IsEnabled="False" IsDefault="True"
-                            ToolTip.Tip="The camera follows the one you picked through the whole block. You see a preview before anything is kept."/>
+                    <Button Name="BackStageBtn" Grid.Column="4" Classes="Secondary" Content="← BACK" MinWidth="100" MinHeight="42" Cursor="Hand" Margin="0,0,8,0" IsVisible="False"
+                            ToolTip.Tip="Returns to Stage 1 to choose or adjust pictures."/>
+                    <Button Name="ConfirmPickerBtn" Grid.Column="5" Classes="Success" Content="Next: Check Selections →" MinWidth="230" MinHeight="42" Cursor="Hand" IsEnabled="False" IsDefault="True"
+                            ToolTip.Tip="Review your selections."/>
                 </Grid>
             </Grid>
         </Border>

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -43,6 +43,15 @@ public class DiscoveredSubject
 
     [JsonIgnore]
     public bool IsUserBox { get; set; }
+
+    [JsonIgnore]
+    public bool IsDetectorMatch { get; set; }
+
+    [JsonIgnore]
+    public List<DiscoveredSubject>? AdditionalAnchors { get; set; }
+
+    [JsonIgnore]
+    public double? ExactTimeSec { get; set; }
 }
 
 [JsonSerializable(typeof(List<RawSubjectWaypoint>))]
@@ -59,6 +68,9 @@ public sealed record AiDiscoveryResult(
     double LookaheadOffsetSec)
 {
     public int ProbesRun { get; init; }
+    public FreeVideoStudio.Core.LocalAi.LocalDetectorStatus? DetectorStatus { get; init; }
+    public bool UsedLocalFallback { get; init; }
+    public string? FallbackReason { get; init; }
 }
 
 public enum AiPartFailureChoice
@@ -146,14 +158,15 @@ public static class GeminiTrackingService
         string videoPath,
         double sourceStartSec,
         double sourceDurationSec,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int attempt = 0)
     {
         string tempDir = ApplicationPaths.CreateDefault().TempDirectory;
         Directory.CreateDirectory(tempDir);
 
-        double t1 = sourceStartSec + Math.Max(0.05, 0.15 * sourceDurationSec);
-        double t2 = sourceStartSec + 0.50 * sourceDurationSec;
-        double t3 = sourceStartSec + Math.Min(sourceDurationSec - 0.05, 0.85 * sourceDurationSec);
+        var (t1, t2, t3) = CandidateFrameTimes(sourceStartSec, sourceDurationSec);
+        if (attempt > 0)
+            (t1, t2, t3) = CandidateFrameTimes(sourceStartSec, sourceDurationSec, attempt);
 
         string f1Path = Path.Combine(tempDir, $"cand_f1_{Guid.NewGuid():N}.jpg");
         string f2Path = Path.Combine(tempDir, $"cand_f2_{Guid.NewGuid():N}.jpg");
@@ -166,9 +179,25 @@ public static class GeminiTrackingService
         return (f1Path, f2Path, f3Path, t1, t2, t3);
     }
 
+    public const string SegmentBoundsTag = "AISEGMENTONLY_01";
+    internal static (double T1, double T2, double T3) CandidateFrameTimes(double start, double duration, int attempt = 0)
+    {
+        if (!double.IsFinite(start) || start < 0 || !double.IsFinite(duration) || duration <= 0)
+            throw new ArgumentOutOfRangeException(nameof(duration), "Select a non-empty video segment.");
+        if (attempt == 0)
+            return (start + duration * 0.15, start + duration * 0.50, start + duration * 0.85);
+        (double f1, double f2, double f3) = (attempt % 4) switch
+        {
+            1 => (0.30, 0.65, 0.95),
+            2 => (0.05, 0.35, 0.70),
+            3 => (0.22, 0.55, 0.80),
+            _ => (0.15, 0.50, 0.85),
+        };
+        return (start + duration * f1, start + duration * f2, start + duration * f3);
+    }
     public const int CandidateMaxDimension = 1280;
 
-    private static async Task ExtractStillAsync(string videoPath, double sec, string outPath, CancellationToken token)
+    internal static async Task ExtractStillAsync(string videoPath, double sec, string outPath, CancellationToken token)
     {
         string ffmpeg = BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries");
         string seek = sec.ToString("0.000", CultureInfo.InvariantCulture);
@@ -395,68 +424,14 @@ public static class GeminiTrackingService
         AiGameProfile profile,
         Action<string>? consoleLog = null,
         CancellationToken cancellationToken = default,
-        string? targetDescription = null)
+        string? targetDescription = null,
+        int attempt = 0)
     {
         var (f1, f2, f3, t1, t2, t3) = await ExtractThreeCandidateFramesAsync(
-            videoPath, sourceStartSec, sourceDurationSec, cancellationToken).ConfigureAwait(false);
+            videoPath, sourceStartSec, sourceDurationSec, cancellationToken, attempt).ConfigureAwait(false);
 
         var subjects = await DiscoverSubjectsAsync(f1, f2, f3, session, profile, consoleLog, cancellationToken, targetDescription).ConfigureAwait(false);
-        if (subjects.Count > 0)
-            return new AiDiscoveryResult(subjects, f1, f2, f3, t1, t2, t3, 0);
-
-        double[] lookaheadDeltas =
-        {
-            Math.Max(2.5, sourceDurationSec * 1.0)
-        };
-
-        int probesRun = 0;
-        foreach (double delta in lookaheadDeltas)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            double probeStart = sourceStartSec + delta;
-            double probeDuration = sourceDurationSec;
-            if (sourceEndLimitSec > 0)
-            {
-                if (probeStart + 0.5 >= sourceEndLimitSec) break;
-                probeDuration = Math.Min(probeDuration, sourceEndLimitSec - probeStart);
-            }
-
-            consoleLog?.Invoke($"Nobody found in the segment. Looking {delta.ToString("0.0", CultureInfo.InvariantCulture)}s further into the video…");
-            string pf1 = string.Empty, pf2 = string.Empty, pf3 = string.Empty;
-            try
-            {
-                var (n1, n2, n3, pt1, pt2, pt3) = await ExtractThreeCandidateFramesAsync(
-                    videoPath, probeStart, probeDuration, cancellationToken).ConfigureAwait(false);
-                pf1 = n1; pf2 = n2; pf3 = n3;
-
-                probesRun++;
-                var probeSubjects = await DiscoverSubjectsAsync(pf1, pf2, pf3, session, profile, consoleLog, cancellationToken, targetDescription).ConfigureAwait(false);
-                if (probeSubjects.Count > 0)
-                {
-                    consoleLog?.Invoke($"Found {probeSubjects.Count} target(s) {delta.ToString("0.0", CultureInfo.InvariantCulture)}s after the segment start.");
-                    DeleteQuietly(f1); DeleteQuietly(f2); DeleteQuietly(f3);
-                    return new AiDiscoveryResult(probeSubjects, pf1, pf2, pf3, pt1, pt2, pt3, delta) { ProbesRun = probesRun };
-                }
-                DeleteQuietly(pf1); DeleteQuietly(pf2); DeleteQuietly(pf3);
-            }
-            catch (OperationCanceledException)
-            {
-                DeleteQuietly(pf1); DeleteQuietly(pf2); DeleteQuietly(pf3);
-                throw;
-            }
-            catch (AiProviderException ex) when (!ex.IsTransient && ex.Kind is not AiProviderErrorKind.MalformedResponse)
-            {
-                DeleteQuietly(pf1); DeleteQuietly(pf2); DeleteQuietly(pf3);
-                throw;
-            }
-            catch (Exception ex)
-            {
-                RuntimeLog.Swallowed(ex);
-                DeleteQuietly(pf1); DeleteQuietly(pf2); DeleteQuietly(pf3);
-            }
-        }
-
-        return new AiDiscoveryResult(new List<DiscoveredSubject>(), f1, f2, f3, t1, t2, t3, 0) { ProbesRun = probesRun };
+        return new AiDiscoveryResult(subjects, f1, f2, f3, t1, t2, t3, 0);
     }
 
     private static void DeleteQuietly(string path)
@@ -512,6 +487,7 @@ public static class GeminiTrackingService
         var all = new List<RawSubjectWaypoint>();
         (int ymin, int xmin, int ymax, int xmax) box = (target.Ymin, target.Xmin, target.Ymax, target.Xmax);
         double observedAt = Math.Max(0, req.ReferenceTimeInSegmentSec);
+        bool boxAnchoredAtChunkStart = false;
         bool useFps = true;
 
         for (int k = 0; k < chunks.Count; k++)
@@ -547,7 +523,10 @@ public static class GeminiTrackingService
             }
 
             fraction?.Report((k + 0.25) / chunks.Count);
-            double observedInChunk = k == 0 ? Math.Clamp(observedAt - cs, 0, sliceLen) : 0;
+            double observedInChunk = boxAnchoredAtChunkStart
+                ? 0.0
+                : Math.Clamp(observedAt - cs, 0.0, sliceLen);
+            bool anchorInThisSlice = boxAnchoredAtChunkStart || (observedAt >= cs - 0.05 && observedAt <= ce + 0.05);
             statusProgress?.Report($"Step 3 of 4 · Following '{(string.IsNullOrWhiteSpace(target.Label) ? "the target" : target.Label)}'{part}…");
 
             List<RawSubjectWaypoint>? waypoints = null;
@@ -556,7 +535,7 @@ public static class GeminiTrackingService
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    waypoints = await TrackChunkAsync(session, req.Profile, target.Label, box, observedInChunk, refCrop, mp4, preSampledFrames, sliceLen, useFps, consoleLog, cancellationToken).ConfigureAwait(false);
+                    waypoints = await TrackChunkAsync(session, req.Profile, target.Label, box, observedInChunk, anchorInThisSlice, refCrop, mp4, preSampledFrames, sliceLen, useFps, consoleLog, cancellationToken).ConfigureAwait(false);
                 }
                 catch (GeminiException ex) when (useFps && !directFrameSampling && AiAnswerGuard.IsFpsRejection(ex))
                 {
@@ -598,6 +577,7 @@ public static class GeminiTrackingService
                 all.Add(wp with { Time = Math.Round(Math.Clamp(t, 0, req.SourceDurationSec), 3) });
             }
 
+            boxAnchoredAtChunkStart = false;
             for (int i = waypoints.Count - 1; i >= 0; i--)
             {
                 var wp = waypoints[i];
@@ -605,6 +585,7 @@ public static class GeminiTrackingService
                 int hw = Math.Max(10, wp.W.GetValueOrDefault(120) / 2);
                 int hh = Math.Max(10, wp.H.GetValueOrDefault(260) / 2);
                 box = (Math.Clamp(cy - hh, 0, 1000), Math.Clamp(cx - hw, 0, 1000), Math.Clamp(cy + hh, 0, 1000), Math.Clamp(cx + hw, 0, 1000));
+                boxAnchoredAtChunkStart = true;
                 break;
             }
         }
@@ -643,11 +624,11 @@ public static class GeminiTrackingService
 
     private static async Task<List<RawSubjectWaypoint>> TrackChunkAsync(
         GeminiModelSession session, AiGameProfile profile, string label,
-        (int ymin, int xmin, int ymax, int xmax) box, double observedAt, byte[]? refCrop,
+        (int ymin, int xmin, int ymax, int xmax) box, double observedAt, bool anchorInThisSlice, byte[]? refCrop,
         byte[]? mp4, IReadOnlyList<AiImageInput>? preSampledFrames, double sliceLen, bool useFps, Action<string>? consoleLog, CancellationToken ct)
     {
         double interval = useFps ? 1.0 / TrackingFps : 1.0;
-        string prompt = AiTrackingPrompts.Tracking(profile, label, box, observedAt, refCrop != null, interval, sliceLen);
+        string prompt = AiTrackingPrompts.Tracking(profile, label, box, observedAt, refCrop != null, interval, sliceLen, anchorInThisSlice);
 
         string text;
         if (AiVisionProviders.WatchesVideoWithAudio(session.Vendor))

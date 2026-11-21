@@ -43,7 +43,7 @@ public partial class SettingsWindow : Window
 
         if (scope.Find("AiSessionUsageText") is TextBlock sessionUsage)
         {
-            sessionUsage.Text = AiUsageMeter.SessionSummary();
+            sessionUsage.Text = AiUsageMeter.SessionSummary() + (AiUsageMeter.GoogleRequestsToday() > 0 ? "\n" + AiUsageMeter.GoogleTodayLine() : "");
             ToolTip.SetTip(sessionUsage, AiUsageMeter.SessionDetails());
         }
 
@@ -118,13 +118,19 @@ public partial class SettingsWindow : Window
         add.Click += (_, _) => _ = AddAsync();
         if (scope.Find("AiChatGptSignInBtn") is Button chatGpt)
         {
+            if (!ChatGptAuth.CanOfferSignIn)
+            {
+                chatGpt.IsEnabled = false;
+                chatGpt.Content = "Coming soon";
+                if (scope.Find("AiChatGptSignInHint") is TextBlock planHint) planHint.Text = ChatGptAuth.NotApprovedYetText;
+            }
             chatGpt.Click += async (_, _) =>
             {
                 chatGpt.IsEnabled = false;
                 SetStatusText(status, "Opening ChatGPT in your browser. Finish signing in there…", StatusTone.Muted);
                 ChatGptSignInResult result;
                 try { result = await ChatGptAuth.SignInAsync(null, System.Threading.CancellationToken.None); }
-                finally { chatGpt.IsEnabled = true; }
+                finally { chatGpt.IsEnabled = ChatGptAuth.CanOfferSignIn; }
                 if (!result.Success)
                 {
                     SetStatusText(status, result.Message, result.Cancelled ? StatusTone.Muted : StatusTone.Danger);
@@ -322,6 +328,25 @@ public partial class SettingsWindow : Window
         finally { _showingRow = false; }
     }
 
+    private void SaveDefaultAiNow()
+    {
+        var def = Vm.DefaultAi.Clone();
+        Vm.Services.Store.TryUpdate(s =>
+        {
+            s.AiDefaultUsage = def.Clone();
+            s.AiUsageOverrides = System.Array.Empty<AiUsage>();
+            s.AiUsageSubjectDiscovery = def.Clone();
+            s.AiUsageTracking = def.Clone();
+            s.AiUsageMagicWand = def.Clone();
+            s.AiUsageCommentary = def.Clone();
+            s.AiUsageMusicAutoFit = def.Clone();
+            s.AiUsageViralPost = def.Clone();
+            s.AiUsageEliminationTracker = def.Clone();
+            if (def.Vendor == AiVendor.Google && !string.IsNullOrWhiteSpace(def.Model))
+                s.GeminiModelName = def.Model;
+        });
+    }
+
     private void WireDefaultAiRow(INameScope scope)
     {
         if (scope.Find("AiDefaultVendorCombo") is not ComboBox vendorCombo || scope.Find("AiDefaultModelCombo") is not ComboBox modelCombo) return;
@@ -332,6 +357,7 @@ public partial class SettingsWindow : Window
             int idx = vendorCombo.SelectedIndex;
             if (idx < 0 || idx >= VendorItems.Length || VendorItems[idx].Vendor == Vm.DefaultAi.Vendor) return;
             Vm.SetDefaultAi(VendorItems[idx].Vendor, null);
+            SaveDefaultAiNow();
         };
         modelCombo.SelectionChanged += (_, _) =>
         {
@@ -339,8 +365,16 @@ public partial class SettingsWindow : Window
             var cfg = Vm.DefaultAi;
             if (string.Equals(cfg.Model, m, StringComparison.Ordinal)) return;
             Vm.SetDefaultAi(cfg.Vendor, m);
+            SaveDefaultAiNow();
         };
-        if (scope.Find("AiDefaultUseRecommendedBtn") is Button rec) rec.Click += (_, _) => Vm.UseRecommendedAi();
+        if (scope.Find("AiDefaultUseRecommendedBtn") is Button rec)
+        {
+            rec.Click += (_, _) =>
+            {
+                Vm.UseRecommendedAi();
+                SaveDefaultAiNow();
+            };
+        }
         if (scope.Find("AiDefaultRefreshBtn") is Button refresh)
         {
             refresh.Click += async (_, _) =>

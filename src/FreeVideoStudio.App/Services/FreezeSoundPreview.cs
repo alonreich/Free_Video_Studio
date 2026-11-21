@@ -8,7 +8,7 @@ namespace FreeVideoStudio.App.Services;
 public sealed class FreezeSoundPreview : IDisposable
 {
     private const int SampleRate = 48000;
-    private WaveOutEvent? _output;
+    private WaveOut? _output;
     private byte[]? _cached;
     private double _cachedDuration = -1;
     private FreezeSound? _cachedSound;
@@ -60,7 +60,7 @@ public sealed class FreezeSoundPreview : IDisposable
             _volumeProvider = new VolumeSampleProvider(mono) { Volume = (float)Math.Clamp(volume01, 0, 1) };
             var stereo = new MonoToStereoSampleProvider(_volumeProvider);
             using var blocking = FreeVideoStudio.Core.Infrastructure.BlockingCallTracker.Enter("freeze sound start");
-            _output = new WaveOutEvent { BufferMilliseconds = 40, NumberOfBuffers = 3 };
+            _output = new WaveOut { BufferMilliseconds = 40, NumberOfBuffers = 3 };
             _output.Init(stereo);
             _output.Play();
         }

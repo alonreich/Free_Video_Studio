@@ -15,8 +15,10 @@ public static class LocalAiPackManifest
     public const string DirectMlFile = "DirectML.dll";
     public const string EncoderFile = "sam2_small_encoder.onnx";
     public const string DecoderFile = "sam2_small_decoder.onnx";
+    public const string DetectorFile = "yolov8n.onnx";
 
     public const int ModelInputSize = 1024;
+    public const int DetectorInputSize = 640;
     public const int MaskSize = 256;
     public const string EncoderInput = "image";
     public const string EncoderEmbed = "image_embed";

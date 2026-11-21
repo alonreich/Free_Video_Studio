@@ -95,9 +95,8 @@ public sealed class NativeFrameCallerTests : IDisposable
     public void GeminiCandidateTimestampRuleIsUnchanged()
     {
         string src = File.ReadAllText(Path.Combine(RepoRoot.Path, "src", "FreeVideoStudio.App", "Services", "GeminiTrackingService.cs"));
-        Assert.Contains("double t1 = sourceStartSec + Math.Max(0.05, 0.15 * sourceDurationSec);", src);
-        Assert.Contains("double t2 = sourceStartSec + 0.50 * sourceDurationSec;", src);
-        Assert.Contains("double t3 = sourceStartSec + Math.Min(sourceDurationSec - 0.05, 0.85 * sourceDurationSec);", src);
+        Assert.Contains("CandidateFrameTimes(sourceStartSec, sourceDurationSec);", src);
+        Assert.Contains("start + duration * 0.15, start + duration * 0.50, start + duration * 0.85", src);
         Assert.Contains("sec.ToString(\"0.000\", CultureInfo.InvariantCulture)", src);
     }
 }
