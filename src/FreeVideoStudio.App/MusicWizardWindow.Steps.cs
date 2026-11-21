@@ -23,7 +23,6 @@ public partial class MusicWizardWindow
     private bool _partAuditionActive;
     private int _partAuditionVersion;
 
-
     public Func<MusicWizardResult, string, CancellationToken, Task<AudioPreviewMap?>>? RenderSoundPreview { get; set; }
 
     private void WireSteps()

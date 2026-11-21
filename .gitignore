@@ -57,5 +57,3 @@ settings.json.corrupt-*.bak
 /tests/.test-run.lock
 /logs/
 developer_tools/local_ai_pack/out/
-/mp3/*
-/meme/*
