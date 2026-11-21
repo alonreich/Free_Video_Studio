@@ -118,8 +118,6 @@ public sealed class MusicWizardViewModel : ViewModelBase
     private string _partSongTitle = "";
     public string PartSongTitle { get => _partSongTitle; set => SetProperty(ref _partSongTitle, value); }
 
-
-
     private string _partSelectedText = "";
     public string PartSelectedText { get => _partSelectedText; set => SetProperty(ref _partSelectedText, value); }
 
