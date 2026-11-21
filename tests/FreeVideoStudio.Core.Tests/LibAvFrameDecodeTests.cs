@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Globalization;
 using FreeVideoStudio.Core.Media;
 using FreeVideoStudio.Core.Media.Native;
@@ -570,7 +570,9 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
     public async Task RapidCancellationIsBoundedAndLeavesNoLock()
     {
         var rng = new Random(4321);
-        string clip = _fx.Clips.FirstOrDefault(kv => kv.Key.StartsWith("meme/", StringComparison.Ordinal)).Value ?? _fx.Counters["counter-bframes.mp4"];
+        string source = _fx.Clips.FirstOrDefault(kv => kv.Key.StartsWith("meme/", StringComparison.Ordinal)).Value ?? _fx.Counters["counter-bframes.mp4"];
+        string clip = Path.Combine(FreeVideoStudio.Testing.TestArtifactDirectory.SuiteWork(FreeVideoStudio.Testing.TestOutputSuite.Name), $"frame-cancellation-{Guid.NewGuid():N}{Path.GetExtension(source)}");
+        File.Copy(source, clip);
         int cancelled = 0, completed = 0;
         long worst = 0;
         for (int i = 0; i < 150; i++)

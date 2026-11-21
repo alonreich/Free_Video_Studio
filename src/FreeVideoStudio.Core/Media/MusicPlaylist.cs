@@ -84,6 +84,63 @@ public static class MusicPlaylistMath
         return e with { InSec = newIn, OutSec = Math.Min(full, newIn + length), UserTrimmed = true };
     }
 
+    public const string EndBeforeStartMessage = "End must come after start.";
+
+    public static string? WindowProblem(MusicPlaylistEntry e, double inSec, double outSec)
+    {
+        if (!double.IsFinite(inSec) || !double.IsFinite(outSec)) return "Type a time like 1:05.";
+        if (inSec < 0) return "Start cannot be before the song begins.";
+        if (e.FullSec > 0 && outSec > e.FullSec + 0.01) return "End cannot be after the song ends.";
+        if (outSec <= inSec) return EndBeforeStartMessage;
+        if (outSec - inSec < MinWindowSec - 1e-6) return $"Choose at least {MinWindowSec:0} seconds.";
+        return null;
+    }
+
+    public static MusicPlaylistEntry? TrySetWindow(MusicPlaylistEntry e, double inSec, double outSec, out string? problem)
+    {
+        problem = WindowProblem(e, inSec, outSec);
+        if (problem != null) return null;
+        double full = e.FullSec > 0 ? e.FullSec : outSec;
+        return e with { InSec = inSec, OutSec = Math.Min(outSec, full), UserTrimmed = true };
+    }
+
+    public static bool TryParseClock(string? text, out double seconds)
+    {
+        seconds = 0;
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        string[] parts = text.Trim().Split(':');
+        if (parts.Length > 3) return false;
+        double total = 0;
+        for (int i = 0; i < parts.Length; i++)
+        {
+            bool last = i == parts.Length - 1;
+            if (!double.TryParse(parts[i], System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.CultureInfo.InvariantCulture, out double v)) return false;
+            if (v < 0 || (!last && v != Math.Floor(v)) || (i > 0 && v >= 60)) return false;
+            total = total * 60 + v;
+        }
+        seconds = total;
+        return double.IsFinite(total);
+    }
+
+    public static string FormatClock(double seconds)
+    {
+        var ts = TimeSpan.FromSeconds(Math.Max(0, Math.Round(seconds, 1)));
+        string whole = ts.TotalHours >= 1 ? ts.ToString(@"h\:mm\:ss") : ts.ToString(@"m\:ss");
+        return ts.Milliseconds >= 50 ? $"{whole}.{ts.Milliseconds / 100}" : whole;
+    }
+
+    public static string SpokenDuration(double seconds)
+    {
+        int total = (int)Math.Round(Math.Max(0, seconds));
+        if (total < 60) return total == 1 ? "1 second" : $"{total} seconds";
+        int minutes = total / 60, rest = total % 60;
+        string m = minutes == 1 ? "1 minute" : $"{minutes} minutes";
+        return rest == 0 ? m : $"{m} {rest} second{(rest == 1 ? "" : "s")}";
+    }
+
+    public static MusicPlaylistEntry ResetWindow(MusicPlaylistEntry e)
+        => e.FullSec > 0 ? e with { InSec = 0.0, OutSec = e.FullSec, UserTrimmed = true } : e;
+
     public static IReadOnlyList<MusicBedTrack> ToTracks(IReadOnlyList<MusicPlaylistEntry> entries)
     {
         var tracks = new List<MusicBedTrack>(entries?.Count ?? 0);

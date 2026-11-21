@@ -758,9 +758,9 @@ public class DefaultValues : FreezableSettings
     private CheckboxDefaultBehavior _enableFadeBehaviorField = CheckboxDefaultBehavior.AlwaysOn;
 
     public int QualityIndex { get => _qualityIndexField; set => Set(ref _qualityIndexField, value); }
-    private int _qualityIndexField = 8;
+    private int _qualityIndexField = 6;
     public ValueDefaultBehavior QualityBehavior { get => _qualityBehaviorField; set => Set(ref _qualityBehaviorField, value); }
-    private ValueDefaultBehavior _qualityBehaviorField = ValueDefaultBehavior.FixedValue;
+    private ValueDefaultBehavior _qualityBehaviorField = ValueDefaultBehavior.RememberLast;
 
     public bool AutoSpikeFlattening { get => _autoSpikeFlatteningField; set => Set(ref _autoSpikeFlatteningField, value); }
     private bool _autoSpikeFlatteningField = true;
@@ -786,7 +786,7 @@ public class DefaultValues : FreezableSettings
     private double _lastSpeedField = 1.1;
 
     public int LastQualityIndex { get => _lastQualityIndexField; set => Set(ref _lastQualityIndexField, value); }
-    private int _lastQualityIndexField = 8;
+    private int _lastQualityIndexField = 6;
 
     public static bool Resolve(CheckboxDefaultBehavior behavior, bool lastChoice) => behavior switch
     {
@@ -808,6 +808,7 @@ public class DefaultValues : FreezableSettings
         EnableFade = enableFade;
         LastSpeed = Math.Clamp(speed, 0.1, 4.0);
         LastQualityIndex = qualityIndex;
+        QualityIndex = qualityIndex;
     }
 }
 
@@ -1083,6 +1084,7 @@ public static class SettingsManager
         {
             loaded.AutoUpdateChecks = true;
         }
+        bool migratedQualityDefault = loaded.Defaults.QualityIndex == 8 && loaded.Defaults.QualityBehavior == ValueDefaultBehavior.FixedValue;
         Migrate(loaded);
         bool sealedPlainKey = SealLegacyPlainKey(loaded);
 
@@ -1093,6 +1095,7 @@ public static class SettingsManager
             PersistedSchemaVersion = schemaBefore,
             UnknownRoot = ExtractUnknownRootProperties(json),
             NeedsPersist = schemaBefore < CurrentSchemaVersion
+                        || migratedQualityDefault
                         || (lackedAutoUpdate && schemaBefore <= CurrentSchemaVersion)
                         || (sealedPlainKey && schemaBefore <= CurrentSchemaVersion),
         };
@@ -1256,14 +1259,23 @@ public static class SettingsManager
             from = 14;
         }
 
+        if (loaded.Defaults.QualityIndex == 8 && loaded.Defaults.QualityBehavior == ValueDefaultBehavior.FixedValue)
+        {
+            loaded.Defaults.QualityIndex = FreeVideoStudio.App.ViewModels.QualityLadder.DefaultIndex;
+            loaded.Defaults.LastQualityIndex = FreeVideoStudio.App.ViewModels.QualityLadder.DefaultIndex;
+            loaded.Defaults.QualityBehavior = ValueDefaultBehavior.RememberLast;
+        }
+
         if (!string.IsNullOrEmpty(loaded.GeminiModelName) && loaded.GeminiModelName != GeminiClient.DefaultModel)
         {
-            if (loaded.AiUsageSubjectDiscovery?.Vendor == AiVendor.Google && (string.IsNullOrEmpty(loaded.AiUsageSubjectDiscovery.Model) || loaded.AiUsageSubjectDiscovery.Model == GeminiClient.DefaultModel))
-                loaded.AiUsageSubjectDiscovery.Model = loaded.GeminiModelName;
-            if (loaded.AiUsageTracking?.Vendor == AiVendor.Google && (string.IsNullOrEmpty(loaded.AiUsageTracking.Model) || loaded.AiUsageTracking.Model == GeminiClient.DefaultModel))
-                loaded.AiUsageTracking.Model = loaded.GeminiModelName;
-            if (loaded.AiUsageMagicWand?.Vendor == AiVendor.Google && (string.IsNullOrEmpty(loaded.AiUsageMagicWand.Model) || loaded.AiUsageMagicWand.Model == GeminiClient.DefaultModel))
-                loaded.AiUsageMagicWand.Model = loaded.GeminiModelName;
+            foreach (AiUsage u in AppSettings.AllAiUsages)
+            {
+                var cfg = loaded.GetOwnUsageConfig(u);
+                if (cfg.Vendor == AiVendor.Google && (string.IsNullOrEmpty(cfg.Model) || cfg.Model == GeminiClient.DefaultModel))
+                    cfg.Model = loaded.GeminiModelName;
+            }
+            if (loaded.AiDefaultUsage?.Vendor == AiVendor.Google && (string.IsNullOrEmpty(loaded.AiDefaultUsage.Model) || loaded.AiDefaultUsage.Model == GeminiClient.DefaultModel))
+                loaded.AiDefaultUsage.Model = loaded.GeminiModelName;
         }
 
         loaded.EnsureAiDefault();

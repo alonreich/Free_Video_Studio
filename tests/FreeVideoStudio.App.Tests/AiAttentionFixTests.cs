@@ -41,8 +41,9 @@ public sealed class AiAttentionFixTests
         var line = AiStatusLines.Describe(s, health);
         Assert.Contains("today's free limit", line.Text);
         Assert.Equal(AiStatusAction.Fix, line.Action);
-        Assert.NotNull(health.Check(AiVendor.Google, key, DateTime.UtcNow + TimeSpan.FromMinutes(10)));
-        Assert.Null(health.Check(AiVendor.Google, key, DateTime.UtcNow + TimeSpan.FromHours(25)));
+        var reset = AiKeyHealth.NextDailyResetUtc(DateTime.UtcNow);
+        Assert.NotNull(health.Check(AiVendor.Google, key, reset.AddSeconds(-30)));
+        Assert.Null(health.Check(AiVendor.Google, key, reset.AddSeconds(30)));
     }
 
     [Fact]

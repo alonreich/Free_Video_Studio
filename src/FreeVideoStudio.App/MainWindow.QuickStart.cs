@@ -74,6 +74,11 @@ public partial class MainWindow
             }
             : null;
         AutomationProperties.SetItemStatus(toggle, on ? "On" : "Off");
+        if (Controls.AiModeWindow.CloudFeaturesOff(AiSetup.Current()))
+        {
+            toggle.Opacity = Controls.AiModeWindow.CloudOffOpacity;
+            ToolTip.SetTip(toggle, Controls.AiModeWindow.OnlineNeededTip);
+        }
     }
 
     private async Task OnKillTrackerQuickToggleAsync()

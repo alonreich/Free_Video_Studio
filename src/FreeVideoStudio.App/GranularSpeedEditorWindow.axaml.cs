@@ -3652,7 +3652,7 @@ public partial class GranularSpeedEditorWindow : Window
 
         var result = FreeVideoStudio.Core.Media.ZoomPreviewSimulator.Compute(
             _edit.Segments, tSec, durSec, _edit.IsMobileFormat, psw, psh,
-            trimStartSec: _edit.TrimStartMs / 1000.0);
+            trimStartSec: 0);
 
         if (!result.HasCrop) { ClearLiveZoomCrop(); return; }
         if (result.Crop == _lastLiveCrop) return;
@@ -4605,8 +4605,10 @@ public partial class GranularSpeedEditorWindow : Window
                 RelayoutFrameLane();
             }
 
-            var warmed = FreeVideoStudio.App.Services.FilmstripPrewarm.TryTake(
-                _edit.VideoPath, _edit.TrimStartMs / 1000.0, dur);
+            Avalonia.Media.Imaging.Bitmap? warmed = FreeVideoStudio.App.Services.FilmstripPrewarm.TryTake(
+                _edit.VideoPath, _edit.TrimStartMs / 1000.0, dur)
+                ?? FreeVideoStudio.App.Services.WholeVideoFilmstrip.TryCompose(
+                    _edit.VideoPath, _edit.TrimStartMs / 1000.0, dur, ThumbnailStripGenerator.DefaultFrames);
             if (warmed != null)
             {
                 MountLane(warmed);

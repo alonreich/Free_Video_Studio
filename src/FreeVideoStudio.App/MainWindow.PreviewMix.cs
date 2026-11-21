@@ -148,6 +148,14 @@ public partial class MainWindow
         UpdatePreviewFidelity();
     }
 
+    private async Task<AudioPreviewMap?> RenderWizardSoundPreviewAsync(MusicWizardResult music, string wavPath, CancellationToken ct)
+    {
+        NormalizeMusicPlacement(music);
+        var payload = await ComposeExportPayloadAsync(_paths.TempDirectory, SelectedLegacyMemeFile(), 20, null, music);
+        ct.ThrowIfCancellationRequested();
+        return await Task.Run(() => Services.MainMediaController.RenderAudioPreviewAsync(payload, wavPath, ct), ct);
+    }
+
     private void OnPreviewMixActiveChanged()
     {
         if (PreviewMixActive)

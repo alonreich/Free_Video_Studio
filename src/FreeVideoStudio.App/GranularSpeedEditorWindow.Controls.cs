@@ -57,6 +57,8 @@ public partial class GranularSpeedEditorWindow
     private Button? AiTrackingCancelBtnCtl => _cAiTrackingCancelBtn ??= (this.FindNameScope()?.Find("AiTrackingCancelBtn") as Button);
     private Border? _cAiTrackingPreviewBar;
     private Border? AiTrackingPreviewBarCtl => _cAiTrackingPreviewBar ??= (this.FindNameScope()?.Find("AiTrackingPreviewBar") as Border);
+    private Button? _cAiTrackingReplayBtn;
+    private Button? AiTrackingReplayBtnCtl => _cAiTrackingReplayBtn ??= (this.FindNameScope()?.Find("AiTrackingReplayBtn") as Button);
     private Button? _cAiTrackingDiscardBtn;
     private Button? AiTrackingDiscardBtnCtl => _cAiTrackingDiscardBtn ??= (this.FindNameScope()?.Find("AiTrackingDiscardBtn") as Button);
     private Button? _cAiTrackingAcceptBtn;

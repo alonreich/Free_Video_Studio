@@ -15,7 +15,8 @@
 > If an agent must test compilation, packaging, or NativeAOT publish, it **MUST ONLY USE `.\dev_build.cmd`** (local build only, passing `--dev`, never touches GitHub or publishes to the cloud).
 > The release gate (`09` [DIST-RELEASEGATE](09_DISTRIBUTION_AND_RELEASE.md#DIST-RELEASEGATE)) makes `Build.cmd` refuse
 > a dirty, unpushed or unreviewed release and ask a human to type `PUBLISH`. That protects the release; it is
-> NOT permission for an agent to run it.
+> NOT permission for an agent to run it. Agents must never pass `--yes` or set `FVS_RELEASE_UNATTENDED`
+> (together they skip the `PUBLISH` prompt, `09` RELQA_02).
 
 * **Stop-and-Read:** never inspect or edit code without first reading and citing its mapped specification
   in `docs/` ([`SPEC_GOVERNANCE.md`](SPEC_GOVERNANCE.md) §1–§2). Files marked `⚠` are co-governed: read every spec they name.
@@ -23,7 +24,7 @@
   stable `{#ANCHOR}`, never a section number).
 * **Spec routing:** maintain domain mini-maps and `INDEX.md`; repeated source headers are not required
   (`SPEC_GOVERNANCE.md` §4, SPECROUTING_02).
-* **No comments in code (NOCOMMENTS_01 / NOCOMMENTS_02 / NOCOMMENTS_03, user decisions 2026-11-13, 2026-11-15 and 2026-11-16):** code files carry no comments of any kind and no extra blank lines, tests included: `.cs` (`//`, `/* */`, `///`, `/** */`), XML/`.axaml`/`.csproj`/`.props`/`.manifest` (`<!-- -->`), `.ps1` (`#`, `<# #>`), `.py` (`#`), `.cmd`/`.bat` (`REM`, `::`), `.yml` (`#`), `.iss` (`;`, `//`, `{ }`, `(* *)`) and `.gitignore`/`.gitattributes`/`.agignore` (`#`). Documentation is never touched: `docs/`, `.md`, `.txt`, `LICENSE`. Kept because they do something: a Python shebang/encoding line, PowerShell `#Requires`, Inno `{$…}`/`{#…}` directives, and `#` lines inside YAML block scalars (they are script text). Blank lines: none at the start or end of a file; at most one in a row (Python: two before top-level code); in `.cs` none right after `{` or before `}`; never inside a string, here-string or block scalar. Anything worth explaining goes in the owning spec in `docs/`. `.\developer_tools\Find_and_Remove_Comments.cmd` (or double-click it; it runs the C# project `developer_tools/CommentRemover/CommentRemover.csproj` from the repository root) takes no arguments and reads every code file git tracks or would add, first PRINTS a preview (full file path, line number and text of every comment it would remove, the number of lines it would delete per file, and any sentinel it would re-point) and asks `[Y/N]`; only Y writes (N, or no input, exits 2 with nothing written). On Y it removes comments and extra blank lines, appends the removed text word for word to `docs/CODE_NOTES_App.md` / `CODE_NOTES_Core.md` / `CODE_NOTES_Tests.md` / `CODE_NOTES_Tools.md` (grep-only history, the spec wins), re-points affected sentinels to `TAG=path#Symbol`, and exits 0. It checks every file with that language's own parser (Roslyn, `XmlReader`, YamlDotNet, the PowerShell parser, Python `tokenize`) and refuses (exit 1, nothing written) if any file would change meaning, does not parse, or a sentinel cannot be re-pointed; all files are written together or none (a file changed meanwhile, or a failed write, puts every file back). `ArchitectureRuleTests.NoCSharpFileContainsAComment` enforces the `.cs` part in CI. Consequences: a sentinel whose tag only lived in a comment names the member it described, `TAG=path#Symbol` (05 SYS-VERIFYTOOL); fake test keys are written split (`"sk-" + "ant-dummy…"`) so the secret scan does not match them.
+* **No comments in code (NOCOMMENTS_01 / NOCOMMENTS_02 / NOCOMMENTS_03, user decisions 2026-11-13, 2026-11-15 and 2026-11-16):** code files (`.cs`, XML/`.axaml`/`.csproj`/`.props`/`.manifest`, `.ps1`, `.py`, `.cmd`/`.bat`, `.yml`, `.iss`, ignore files) carry no comments and no extra blank lines, tests included. Kept because they do something: a Python shebang/encoding line, PowerShell `#Requires`, Inno `{$…}`/`{#…}` directives, `#` lines inside YAML block scalars. Documentation (`docs/`, `.md`, `.txt`, `LICENSE`) is never touched. Explanations go in the owning spec. Remover: `.\developer_tools\Find_and_Remove_Comments.cmd` (rules and mechanics: `05` SYS-VERIFYTOOL, [`REPO_MAP.md`](REPO_MAP.md)); removed text lands in `docs/CODE_NOTES_*.md` (grep-only). A sentinel whose tag only lived in a comment is `TAG=path#Symbol`; fake test keys are written split (`"sk-" + "ant-dummy…"`) so SECRETSCAN_01 does not match them.
 * **All developer tools live in `developer_tools/` (DEVTOOLS_01, user decision 2026-11-16):** every developer-only script, console app or helper (never shipped) goes in `developer_tools/` — one file per script, or one sub-folder per C# project (`developer_tools/<Name>/<Name>.csproj`). There is no `tools/` folder; do not create one or put tools anywhere else. The comment and blank-line remover is run by `developer_tools/Find_and_Remove_Comments.cmd`, which starts `developer_tools/CommentRemover/CommentRemover.csproj` (a launcher may sit next to its project under a different name, so tab completion finds the launcher first). The list of tools is in [`REPO_MAP.md`](REPO_MAP.md).
 * **Land the sentinel with the fix:** a guarded fix adds its `TAG=path` (tag in non-comment code) or `TAG=path#Symbol` line to `build/sentinels.txt` in the
   same change (checked by `build/FvsVerify` via `dev.cmd`, DEVVERIFY_01, and by
@@ -49,7 +50,7 @@ An agent may not finish a task or commit code that changes logic, UI, workflows,
 structure without all of these ([`09` DIST-RELEASENOTES](09_DISTRIBUTION_AND_RELEASE.md#DIST-RELEASENOTES)):
 
 1. **Technical log — [`changes.md`](changes.md) → `## Unreleased`:** one entry per change,
-   `- <date> · <TAG> · <what changed and why> (<files>)`. Jargon is fine here.
+   `- <date> · <TAG> · <what changed and why> (<files>)`, the description ≤ 400 characters; details belong in the owning spec, cite its anchor. Jargon is fine here.
 2. **User notes — [`CHANGELOG.md`](CHANGELOG.md) → `## Upcoming`** (never a guessed version heading): plain,
    short, oversimplified English for end users, `**Headline:** one or two sentences`. Technical jargon,
    method, class and file names and engineering tags are forbidden. MERGE with an existing bullet instead of
@@ -84,7 +85,7 @@ structure without all of these ([`09` DIST-RELEASENOTES](09_DISTRIBUTION_AND_REL
 5. A failing `S03` means the app code a rig mirrors changed: update that rig (named in the message).
 6. Environment: `FVS_AV_AUDIO=null` forces the simulated clock (no sound device); `FVS_AV_SEED=<n>` replays
    S35's random session with the seed printed in its failure; `FVS_TEST_OUTPUT_MANAGED` is set by
-   the runner only (never by hand); `FVS_TEST_FFMPEG=<path>` names FFmpeg for Core media unit tests (else they skip); `FVS_TEST_ORT_DIR` + `FVS_TEST_LOCALAI_DIR` add the Local AI real-model tests, which the gate otherwise leaves out and reports as NOT RUN (LOCALAITEST_01, `05` SYS-LOCALAI).
+   the runner only (never by hand); `FVS_TEST_FFMPEG=<path>` names FFmpeg for Core media unit tests (else they skip); `FVS_TEST_ORT_DIR` + `FVS_TEST_LOCALAI_DIR` add the Local AI real-model tests, which the gate otherwise leaves out and reports as NOT RUN (LOCALAITEST_01, `10` SYS-LOCALAI).
 
 `tests\run-all-tests.cmd` additionally exercises actual desktop pixels and the real merger window,
 standalone media exports and decoder soak. Its desktop tier requires an interactive, unobscured
@@ -145,18 +146,11 @@ logs\
 | [`SPEC_GOVERNANCE.md`](SPEC_GOVERNANCE.md) | Before any code inspection or change: the zero-leakage contract. |
 | [`INDEX.md`](INDEX.md) | You know a file, symbol, constant or tag and need its spec (grep it; never read it whole). |
 | [`REPO_MAP.md`](REPO_MAP.md) | You need where a component, tool, test suite or asset folder lives. |
-| [`01_TIMELINE_COORDINATE_MATH.md`](01_TIMELINE_COORDINATE_MATH.md) … [`09_DISTRIBUTION_AND_RELEASE.md`](09_DISTRIBUTION_AND_RELEASE.md) | The domain specs (§3 routes you to one). |
+| [`01_TIMELINE_COORDINATE_MATH.md`](01_TIMELINE_COORDINATE_MATH.md) … [`10_AI_FEATURES.md`](10_AI_FEATURES.md) | The domain specs (§3 routes you to one). |
 | [`CHANGELOG.md`](CHANGELOG.md) / [`changes.md`](changes.md) | User release notes / technical change log (§0.3). |
 | [`New-Release.md`](New-Release.md) | The human checklist after a public release (antivirus submissions). |
 | `CODE_NOTES_App.md` / `CODE_NOTES_Core.md` / `CODE_NOTES_Tests.md` / `CODE_NOTES_Tools.md` | The text of the comments removed from code files (NOCOMMENTS_02/03), by file and member or nearby code name. Grep it; never read it whole. |
 | [`REBRAND_MIGRATION.md`](REBRAND_MIGRATION.md) | Old→new product identity and its migration. |
-
-
-> ### ✅ REBRAND COMPLETE — read [`REBRAND_MIGRATION.md`](REBRAND_MIGRATION.md)
-> This product was renamed to **Free Video Studio** (`FreeVideoStudio`). The rebrand record lists the
-> full old→new identity map, exactly what happens when an old-brand install updates, the automatic
-> output naming (`FreeVideoStudio-N.mp4` / `FreeVideoStudio-merged-N.mp4`, one name editable in Settings › Files & Folders)
-> and the only two files allowed to contain the previous name.
 
 ## 1. Mission Architecture
 Free Video Studio is a specialized, hardware-accelerated desktop video editing suite built with C# and Avalonia UI on .NET 9 (Native AOT compatible). The system transforms raw 16:9 widescreen gameplay footage into master-quality 9:16 portrait montages, mobile highlights, and social video deliverables with zero manual keyframing.
@@ -165,9 +159,7 @@ Free Video Studio is a specialized, hardware-accelerated desktop video editing s
 
 `FreeVideoStudio.sln` contains `src/FreeVideoStudio.App`, `src/FreeVideoStudio.Core`, `build/FvsVerify`, `tests/FreeVideoStudio.App.Tests`, `tests/FreeVideoStudio.Core.Tests`, `tests/FvsVerify.Tests` and `tests/FreeVideoStudio.AvRegression.Tests` (`build/FvsBuild` is built separately). The application assembly is `FreeVideoStudio`; its root namespace remains `FreeVideoStudio.App`. The core assembly and namespace are `FreeVideoStudio.Core`. `FvsBuild`, `FvsVerify`, `.fvsproj` and the existing `FVS_*` environment variables retain their internal names.
 
-**Session lifecycle (user decisions 2026-11-16):** opening another video asks "Save your changes?" only when an edit would be lost (06 NEWVIDEOGUARD_01); after PROCESS or MERGE finishes with no edit since, closing asks nothing and the next start is an empty new state (DONECLEAN_01, 05 [SYS-RECOVERY](05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-RECOVERY)); after a crash, restore brings back the edits, playhead, AI kill marks and audio choices and keeps the work marked unsaved (RECOVERYFULL_01).
-
-Use [distribution identity](09_DISTRIBUTION_AND_RELEASE.md#DIST-IDENTITY) for packaging names and local validation commands, and [storage migration](05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-REBRAND) for canonical AppData paths and legacy compatibility. `project_structure.txt` and `AGENTS.md` at the repository root only point to THIS file, the single entry point; the repository map that used to live in `project_structure.txt` is [`REPO_MAP.md`](REPO_MAP.md) (§5). Repository links are relative to the checkout; the GitHub repository is `alonreich/Free_Video_Studio` ([`REBRAND_MIGRATION.md`](REBRAND_MIGRATION.md)).
+Use [distribution identity](09_DISTRIBUTION_AND_RELEASE.md#DIST-IDENTITY) for packaging names, and [storage migration](05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-REBRAND) for canonical AppData paths and legacy compatibility. `project_structure.txt` and `AGENTS.md` at the repository root only point to THIS file, the single entry point; the repository map that used to live in `project_structure.txt` is [`REPO_MAP.md`](REPO_MAP.md). Repository links are relative to the checkout; the GitHub repository is `alonreich/Free_Video_Studio` ([`REBRAND_MIGRATION.md`](REBRAND_MIGRATION.md)).
 
 ---
 
@@ -198,16 +190,10 @@ One spec per domain. File-level routing (including every `⚠` co-governed file)
 | [`02`](02_AUDIO_ENGINE_MASTERING.md) | Audio engine & mastering — PID preview volume, LUFS targets, sidechain ducking, Voice Over Studio, WASAPI threading, music bed fades. |
 | [`03`](03_FFMPEG_EXPORT_PIPELINE.md) | FFmpeg export — encoder discovery, zoom filtergraph, concat/bitrate, memes (concat, corner, preview), fades, progress, binary paths, meme library, output names, caption burn-in. |
 | [`04`](04_UI_UX_AVALONIA_SPEC.md) | UI/UX & Avalonia — design tokens, high-DPI layout, tooltips, confirmations, coach tours, editors' layout, detachable previews, merger queue, Settings, wizards. |
-| [`05`](05_SYSTEM_LIFECYCLE_STORAGE.md) | System lifecycle & storage — mutexes, logging, window bounds, deferred close, crash recovery, atomic writes, storage table, install/update transaction & trust, signing, AV hygiene, dev harness & sentinels, AI settings/keys. |
+| [`05`](05_SYSTEM_LIFECYCLE_STORAGE.md) | System lifecycle & storage — mutexes, logging, window bounds, deferred close, crash recovery, atomic writes, IPC teardown, storage table, settings schema & secret scan, AV-clean deployment, dev harness & sentinels, code exporter, diagnostics. |
 | [`06`](06_PROJECT_DOCUMENT_MODEL.md) | Project document — `.fvsproj`, schema versioning & amputation rule, AOT-safe JSON, atomic persistence & backup, source integrity, recent projects. |
 | [`07`](07_UNDO_AND_HISTORY.md) | Undo/redo — gesture coalescing, ceiling on push, redo invalidation, no-op rejection, immutable state, re-entrancy guard, persistence. |
 | [`08`](08_APPLICATION_COMPOSITION.md) | Composition root, service seams, fault tiers (Recoverable/Degraded/Fatal), architecture tests, CI. |
-| [`09`](09_DISTRIBUTION_AND_RELEASE.md) | Inno Setup installer, smart (per-file, content-hashed) updates, release gate, release notes & retention, LFS enforcement and the history-rewrite runbook. |
+| [`09`](09_DISTRIBUTION_AND_RELEASE.md) | Inno Setup installer, smart (per-file, content-hashed) updates, release gate, release notes & retention, LFS enforcement and the history-rewrite runbook, Authenticode signing & publisher trust, auto-update lifecycle, transactional install/upgrade (elevation trust, Controlled folder access, install UX). |
+| [`10`](10_AI_FEATURES.md) | AI features — the seven online features, providers/transport, keys & AI settings, usage & cost lines, the optional Local AI pack, AI audit rules. |
 | [`REBRAND_MIGRATION.md`](REBRAND_MIGRATION.md) | Old→new identity map, old-brand update flow, residue removal, automatic output names. |
-
----
-
-## 5. Repository Map  {#GOV-REPOMAP}
-
-Moved to [`REPO_MAP.md`](REPO_MAP.md) (paths, tools, test suites, asset folders). Keep it in step with the
-code (§0.3 rule 3).

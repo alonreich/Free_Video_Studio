@@ -15,6 +15,19 @@ public enum LocalAiPackState
     Ready,
 }
 
+public enum LocalDetectorState
+{
+    PackUnavailable,
+    Absent,
+    Damaged,
+    Installed,
+}
+
+public sealed record LocalDetectorStatus(LocalDetectorState State, string Path, string Message)
+{
+    public bool IsInstalled => State == LocalDetectorState.Installed;
+}
+
 public sealed record LocalAiPackStatus(LocalAiPackState State, string Folder, string Message, bool Verified)
 {
     public bool IsReady => State == LocalAiPackState.Ready;
@@ -23,10 +36,17 @@ public sealed record LocalAiPackStatus(LocalAiPackState State, string Folder, st
 public static class LocalAiPack
 {
     public const string DevFolderOverrideVariable = "FVS_LOCAL_AI_PACK_DIR";
+    public const long MinValidDetectorBytes = 1024;
 
     private static readonly ConcurrentDictionary<(string Path, long Length, DateTime Written), string> HashCache = new();
 
     public static string InstallFolder(ApplicationPaths paths) => Path.Combine(paths.LocalAiDirectory, "v" + LocalAiPackManifest.PackVersion);
+
+    public static string EffectiveFolder(ApplicationPaths paths)
+    {
+        string? devFolder = DevelopmentEnvironment.IsActive ? Environment.GetEnvironmentVariable(DevFolderOverrideVariable) : null;
+        return !string.IsNullOrWhiteSpace(devFolder) ? Path.GetFullPath(devFolder) : InstallFolder(paths);
+    }
 
     public static LocalAiPackStatus Resolve(ApplicationPaths paths)
     {
@@ -34,6 +54,58 @@ public static class LocalAiPack
         if (!string.IsNullOrWhiteSpace(devFolder))
             return CheckUnpinned(Path.GetFullPath(devFolder));
         return Check(InstallFolder(paths), LocalAiPackManifest.IsPublished ? LocalAiPackManifest.Files : Array.Empty<LocalAiPackFile>());
+    }
+
+    public static LocalDetectorStatus ResolveDetector(ApplicationPaths paths)
+    {
+        LocalAiPackStatus packStatus = Resolve(paths);
+        IReadOnlyList<LocalAiPackFile> files = LocalAiPackManifest.IsPublished ? LocalAiPackManifest.Files : Array.Empty<LocalAiPackFile>();
+        return CheckDetector(packStatus.Folder, files, packStatus);
+    }
+
+    public static LocalDetectorStatus CheckDetector(string folder, IReadOnlyList<LocalAiPackFile> files, LocalAiPackStatus? packStatus = null)
+    {
+        string path = string.IsNullOrWhiteSpace(folder) ? string.Empty : Path.Combine(folder, LocalAiPackManifest.DetectorFile);
+        LocalAiPackFile? pinned = null;
+        foreach (var f in files)
+        {
+            if (string.Equals(f.Name, LocalAiPackManifest.DetectorFile, StringComparison.OrdinalIgnoreCase))
+            {
+                pinned = f;
+                break;
+            }
+        }
+
+        bool fileExists = !string.IsNullOrEmpty(path) && File.Exists(path);
+        if (pinned != null)
+        {
+            if (!fileExists)
+            {
+                if (packStatus?.State is LocalAiPackState.NotPublished or LocalAiPackState.NotInstalled)
+                    return new(LocalDetectorState.PackUnavailable, path, "Optional neural AI pack is not installed; local subject suggestions use motion and standout regions.");
+                return new(LocalDetectorState.Absent, path, $"Optional detector ({LocalAiPackManifest.DetectorFile}) is not included in this pack; local subject suggestions use motion and standout regions.");
+            }
+            var info = new FileInfo(path);
+            if (info.Length != pinned.Length || !string.Equals(HashOf(info), pinned.Sha256, StringComparison.OrdinalIgnoreCase))
+                return new(LocalDetectorState.Damaged, path, $"Local object detector ({LocalAiPackManifest.DetectorFile}) is damaged or was modified.");
+            return new(LocalDetectorState.Installed, path, "Local object detector is installed and verified.");
+        }
+
+        if (fileExists)
+        {
+            var info = new FileInfo(path);
+            if (info.Length < MinValidDetectorBytes)
+                return new(LocalDetectorState.Damaged, path, $"Local object detector ({LocalAiPackManifest.DetectorFile}) is empty or incomplete.");
+            if (packStatus?.State == LocalAiPackState.Damaged)
+                return new(LocalDetectorState.Damaged, path, $"Local AI pack is damaged, so {LocalAiPackManifest.DetectorFile} cannot run safely.");
+            return new(LocalDetectorState.Installed, path, "Local object detector (unpinned) is present.");
+        }
+
+        if (packStatus?.State == LocalAiPackState.Damaged)
+            return new(LocalDetectorState.Damaged, path, "Local AI pack is damaged and no object detector model is available.");
+        if (packStatus?.State == LocalAiPackState.Ready)
+            return new(LocalDetectorState.Absent, path, $"Neural tracking pack is installed without {LocalAiPackManifest.DetectorFile}; local subject suggestions use motion and standout regions.");
+        return new(LocalDetectorState.PackUnavailable, path, "No local object detector pack is installed; local suggestions use motion and standout regions (not neural object recognition).");
     }
 
     public static LocalAiPackStatus Check(string folder, IReadOnlyList<LocalAiPackFile> files)

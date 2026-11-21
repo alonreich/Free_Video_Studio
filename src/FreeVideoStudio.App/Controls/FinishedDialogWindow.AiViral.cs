@@ -11,8 +11,28 @@ namespace FreeVideoStudio.App.Controls;
 public partial class FinishedDialogWindow
 {
     private ViralPostViewModel? _viral;
+    private bool _viralActivatedForSocial;
 
     private T? FindViral<T>(string name) where T : class => this.FindNameScope()?.Find(name) as T;
+
+    private bool TryActivateViralPostForSocial(string platformName)
+    {
+        if (_viralActivatedForSocial || string.IsNullOrWhiteSpace(_outputPath)) return false;
+        if (!Infrastructure.SettingsManager.Instance.AiViralPostHelperEnabled || Infrastructure.SettingsManager.Instance.AiMode == AiMode.LocalOnly)
+            return false;
+        _viralActivatedForSocial = true;
+        RuntimeLog.Info("ViralPost", $"User clicked {platformName} — activating Viral Post Helper before opening {platformName}.");
+        StartViralPostGeneration(_outputPath);
+        return FindViral<Border>("ViralPostCard")?.IsVisible == true;
+    }
+
+    private void OnViralTurnOffClicked(object? sender, RoutedEventArgs e)
+    {
+        _viral?.Cancel();
+        Infrastructure.SettingsManager.Update(s => s.AiViralPostHelperEnabled = false);
+        if (FindViral<Border>("ViralPostCard") is { } card) card.IsVisible = false;
+        FloatingNotice.Info(this, "Viral Post Helper turned off. You can turn it back on anytime in Settings › AI.");
+    }
 
     private void StartViralPostGeneration(string videoPath)
     {

@@ -10,7 +10,7 @@ public sealed record ProjectDocument
 {
     public const string FormatId = "fvsproj";
 
-    public const int SchemaVersion = 8;
+    public const int SchemaVersion = 9;
 
     public const int MinimumReadableSchemaVersion = 1;
 
@@ -296,11 +296,23 @@ public sealed record ProjectMerge
     public override int GetHashCode() => HashCode.Combine(BaseSpeed, Clips.Count);
 }
 
+public sealed record ProjectMusicSong(string Path, double FullSec, double InSec, double OutSec, bool UserTrimmed);
+
 public sealed record ProjectAudio
 {
     public string? MusicFilePath { get; init; }
 
     public double MusicStartSec { get; init; }
+
+    public IReadOnlyList<ProjectMusicSong> MusicSongs { get; init; } = Array.Empty<ProjectMusicSong>();
+
+    public double MusicTimelineStartSec { get; init; }
+
+    public double MusicTimelineEndSec { get; init; }
+
+    public bool MusicLoop { get; init; }
+
+    public bool MusicCarving { get; init; }
 
     public double MusicVolume { get; init; } = 1.0;
 
@@ -323,7 +335,9 @@ public sealed record ProjectAudio
         MusicVolume == other.MusicVolume && VideoVolume == other.VideoVolume && SidechainDucking == other.SidechainDucking &&
         VoiceOverFilePath == other.VoiceOverFilePath && VoiceOverAtOutputSec == other.VoiceOverAtOutputSec &&
         VoiceOverVolume == other.VoiceOverVolume && VoiceOverDuckAudio == other.VoiceOverDuckAudio &&
-        VoiceOverProtectFromMusic == other.VoiceOverProtectFromMusic && VoiceOverTakes.SequenceEqual(other.VoiceOverTakes);
+        VoiceOverProtectFromMusic == other.VoiceOverProtectFromMusic && VoiceOverTakes.SequenceEqual(other.VoiceOverTakes) &&
+        MusicSongs.SequenceEqual(other.MusicSongs) && MusicTimelineStartSec == other.MusicTimelineStartSec &&
+        MusicTimelineEndSec == other.MusicTimelineEndSec && MusicLoop == other.MusicLoop && MusicCarving == other.MusicCarving;
 
     public override int GetHashCode()
     {
@@ -332,6 +346,8 @@ public sealed record ProjectAudio
         h.Add(VoiceOverFilePath); h.Add(VoiceOverAtOutputSec); h.Add(VoiceOverVolume);
         h.Add(VoiceOverDuckAudio); h.Add(VoiceOverProtectFromMusic);
         foreach (var take in VoiceOverTakes) h.Add(take);
+        foreach (var song in MusicSongs) h.Add(song);
+        h.Add(MusicTimelineStartSec); h.Add(MusicTimelineEndSec); h.Add(MusicLoop); h.Add(MusicCarving);
         return h.ToHashCode();
     }
 }

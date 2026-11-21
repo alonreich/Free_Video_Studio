@@ -31,6 +31,7 @@ public partial class AiCommentaryDialogWindow : Window
     public AiCommentaryDialogWindow()
     {
         InitializeComponent();
+        DialogFit.Apply(this, drag: true);
     }
 
     private void Attach(AiCommentaryOptionsViewModel vm)

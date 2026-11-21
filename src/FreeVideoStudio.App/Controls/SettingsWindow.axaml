@@ -466,12 +466,12 @@
                                                 <StackPanel Orientation="Horizontal" Spacing="10">
                                                     <Button Name="AiChatGptSignInBtn" Classes="Primary" Content="Continue with ChatGPT" Cursor="Hand"
                                                             ToolTip.Tip="ChatGPT Plus or Pro: use your plan in this app, with no key and no extra charge. Your browser opens to sign in."/>
-                                                    <TextBlock Classes="Hint" Text="No key needed with ChatGPT Plus or Pro." VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                                    <TextBlock Name="AiChatGptSignInHint" Classes="Hint" Text="No key needed with ChatGPT Plus or Pro." VerticalAlignment="Center" TextWrapping="Wrap"/>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" Spacing="10">
                                                     <TextBlock Classes="Hint" Text="No key yet? Get one:" VerticalAlignment="Center"/>
                                                     <Button Name="AiGetFreeKeyBtn" Classes="Secondary" Content="Google (free)" Cursor="Hand" ToolTip.Tip="Opens Google AI Studio in your browser, where you can make a free key.&#x0a;&#x0a;On the free plan Google may use what you send to improve its products, and people at Google may look at it. With billing turned on it does not. Don't use the free plan for private videos."/>
-                                                    <Button Name="AiGetClaudeKeyBtn" Classes="Secondary" Content="Anthropic" Cursor="Hand" ToolTip.Tip="Opens the Anthropic Console in your browser, where you can make a key."/>
+                                                    <Button Name="AiGetClaudeKeyBtn" Classes="Secondary" Content="Anthropic" Cursor="Hand" ToolTip.Tip="Opens the Anthropic Console in your browser, where you can make a pay-as-you-go key. A Claude Pro or Max plan cannot be used in other apps (Anthropic's rule)."/>
                                                     <Button Name="AiGetOpenAiKeyBtn" Classes="Secondary" Content="OpenAI" Cursor="Hand" ToolTip.Tip="Opens the OpenAI platform in your browser, where you can make a key."/>
                                                 </StackPanel>
                                             </StackPanel>

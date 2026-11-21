@@ -9,6 +9,7 @@ public partial class UpgradeProgressWindow : Window
     public UpgradeProgressWindow()
     {
         AvaloniaXamlLoader.Load(this);
+        Controls.DialogFit.Apply(this, drag: true);
     }
 
     public bool AllowClose { get; set; }

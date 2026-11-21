@@ -120,10 +120,10 @@ public sealed class SharedHistoryWiringTests
         Assert.Contains("_history.ReplaceCurrent(", Body(history, "ApplyWizardSnapshotAsync"));
         Assert.Contains("PointerReleasedEvent", Body(history, "WireWizardHistory"));
 
-        string window = Src("MusicWizardWindow.axaml.cs") + Src("MusicWizardWindow.Playlist.cs") + Src("MusicWizardWindow.SongLane.cs");
+        string window = Src("MusicWizardWindow.axaml.cs") + Src("MusicWizardWindow.Playlist.cs") + Src("MusicWizardWindow.SongLane.cs") + Src("MusicWizardWindow.Steps.cs");
         Assert.True(Count(window, @"\bEndWizardGesture\s*\(\s*\)") >= 2, "both waveform scrubs must close their gesture");
-        foreach (string method in new[] { "OnTrackSelected", "ApplySongStartSeconds", "SetOffsetFromPointer",
-                                          "HandleSongOffsetKeyDown", "BuildAutoFillQueue", "MoveQueuedTrack", "RemoveSelectedQueuedTrack" })
+        foreach (string method in new[] { "ApplySongStartSeconds", "ApplyPartWindow", "AcceptPartAsync",
+                                          "BuildAutoFillQueue", "MoveQueuedTrack", "RemoveSelectedQueuedTrack" })
             Assert.Contains("RecordWizardEdit();", Body(window, method));
     }
 }

@@ -31,7 +31,7 @@ public sealed record MergerLaunchContext : ToolLaunchContext
     }
 }
 
-public sealed record ToolNavigationResult(string ToolName, bool ReturnedToOwner, string? SelectedClipPath)
+public sealed record ToolNavigationResult(string ToolName, bool ReturnedToOwner, string? SelectedClipPath, bool ExitApplication = false)
 {
     public static ToolNavigationResult Cancelled(string toolName)
         => new(toolName, ReturnedToOwner: false, SelectedClipPath: null);

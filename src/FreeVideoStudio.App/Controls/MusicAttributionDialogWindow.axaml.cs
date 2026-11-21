@@ -13,6 +13,7 @@ public partial class MusicAttributionDialogWindow : Window
     public MusicAttributionDialogWindow()
     {
         InitializeComponent();
+        DialogFit.Apply(this);
         AttachTitleBarDrag();
     }
 

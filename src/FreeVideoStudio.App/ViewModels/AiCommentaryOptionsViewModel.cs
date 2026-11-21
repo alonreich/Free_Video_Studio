@@ -29,6 +29,7 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
     private int _gameTypeIndex;
     private string _notes = string.Empty;
     private bool _isAdvancedOpen;
+    private string _providerCapabilityNote = AiVisionProviders.DescribeCommentaryCapability(AiVendor.Google);
 
     public AiCommentaryOptionsViewModel(bool hasSelectedSegment)
     {
@@ -50,6 +51,8 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
         : "No speed block currently selected on the timeline.";
 
     public bool IsAdvancedOpen { get => _isAdvancedOpen; set => SetProperty(ref _isAdvancedOpen, value); }
+
+    public string ProviderCapabilityNote { get => _providerCapabilityNote; set => SetProperty(ref _providerCapabilityNote, value); }
 
     public CommentaryPreset Preset => _preset;
     public bool IsHypeStreamer { get => _preset == CommentaryPreset.HypeStreamer; set { if (value) ApplyPreset(CommentaryPreset.HypeStreamer); } }
@@ -238,6 +241,7 @@ public sealed class AiCommentaryOptionsViewModel : ViewModelBase
         if (!string.IsNullOrWhiteSpace(s.AiCommentaryLastNotes)) vm.Notes = s.AiCommentaryLastNotes;
         vm.GameTypeIndex = ProfileToIndex(initialProfile);
         vm.IsAdvancedOpen = false;
+        vm.ProviderCapabilityNote = AiVisionProviders.DescribeCommentaryCapability(s.GetUsageConfig(AiUsage.Commentary).Vendor);
         return vm;
     }
 

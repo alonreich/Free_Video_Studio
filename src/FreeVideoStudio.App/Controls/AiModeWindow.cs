@@ -40,18 +40,23 @@ public sealed class AiModeWindow : Window
         ExtendClientAreaTitleBarHeightHint = 30;
 
         _pcAvailable = AiSetup.PcAvailable;
-        string pcNote = _pcAvailable ? string.Empty : "Not available yet.";
+        bool neuralReady = LocalAiPackService.IsReady;
+        bool neuralPublished = LocalAiPackManifest.IsPublished;
         string size = AiSetup.PackSizeText();
-        string download = _pcAvailable && !LocalAiPackService.IsReady && size.Length > 0
-            ? $" One-time download, {size}."
-            : string.Empty;
+        string neuralNote = neuralReady
+            ? " Optional neural AI pack is installed."
+            : neuralPublished && size.Length > 0
+                ? $" Optional neural AI pack ({size}) can be downloaded on Next."
+                : " Uses built-in basic local tracker (no download needed; optional neural pack not published yet). Less accurate on busy scenes, fast camera whips, or occlusions.";
 
         _local = Option("On this PC only", "Nothing leaves your PC.",
-            "100% free. Works: Smart Zoom on a box you draw, Magic Wand. Everything else needs online AI." + download, pcNote, _pcAvailable);
-        _online = Option("Online only", "Your video goes to the AI company you pick (Google, Anthropic or OpenAI).",
+            "100% free." + neuralNote + " Works for Smart Zoom & Magic Wand; online features like AI Commentary captions and Kill Tracker stay off.", string.Empty, true);
+        _online = Option("Online only", "Cloud AI finds targets and writes captions. Following a target always runs on this PC (faster and steadier).",
             "Free with Google's free plan or your ChatGPT Plus/Pro plan. Other keys cost a few cents per use. On Google's free plan, Google may use what you send to improve its products.", string.Empty, true);
-        _both = Option("Recommended: Both", "Online AI says who to follow; your PC does the heavy work.",
-            "Cheap: online AI sees only a few pictures." + download, pcNote, _pcAvailable);
+        _both = Option("Recommended: Both", "Cloud AI finds who to follow and writes captions; your PC follows the zoom target.",
+            "Cheap: cloud AI sees 3 stills to pick targets." + (neuralReady
+                ? " Your neural AI pack tracks on this PC."
+                : " Tracking runs free on this PC (built-in basic tracker)."), string.Empty, true);
 
         AiMode current = AiSetup.Current();
         if (current == AiMode.LocalOnly && _local.IsEnabled) _local.IsChecked = true;
@@ -108,6 +113,7 @@ public sealed class AiModeWindow : Window
         root.Children.Add(_bar);
         root.Children.Add(buttons);
         Content = DialogChrome.Wrap(this, "How Should AI Work?", root);
+        DialogFit.Apply(this);
     }
 
     private RadioButton Option(string heading, string line, string small, string note, bool enabled)
@@ -177,7 +183,10 @@ public sealed class AiModeWindow : Window
         _next.IsEnabled = false;
         try
         {
-            if (AiSetup.UsesPc(mode) && !LocalAiPackService.IsReady && !await DownloadAsync()) return;
+            if (AiSetup.UsesPc(mode) && !LocalAiPackService.IsReady && LocalAiPackManifest.IsPublished)
+            {
+                await DownloadAsync();
+            }
 
             if (AiSetup.UsesOnline(mode) && !AiSetup.HasStoredKey(SettingsManager.Instance))
             {
@@ -250,6 +259,20 @@ public sealed class AiModeWindow : Window
     }
 
     public static bool SkipsChoice(bool pcAvailable, AiMode saved) => !pcAvailable && saved == AiMode.NotChosen;
+
+    public const string CloudGateTag = "AICLOUDGATE_01";
+    public const string OnlineNeededTip = "Needs online AI. You picked 'On this PC only'. Click to change it, or go to Settings › AI › How AI works.";
+    public const double CloudOffOpacity = 0.45;
+
+    public static bool CloudFeaturesOff(AiMode mode) => mode == AiMode.LocalOnly;
+
+    public static void ApplyCloudOnlyLook(Control? control, string normalTip)
+    {
+        if (control == null) return;
+        bool off = CloudFeaturesOff(AiSetup.Current());
+        control.Opacity = off ? CloudOffOpacity : 1.0;
+        ToolTip.SetTip(control, off ? OnlineNeededTip : normalTip);
+    }
 
     private static async Task<bool> ConnectOnlineOnlyAsync(Window owner)
     {

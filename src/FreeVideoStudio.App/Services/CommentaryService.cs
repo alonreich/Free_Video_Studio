@@ -77,6 +77,53 @@ public static class CommentaryService
 
     public const string ParallelTag = "AIPARALLEL_01";
 
+    public const string BigPartsTag = "AICOMMBIGPARTS_01";
+    public const double GeminiPartSec = 30.0;
+    public const double ClaudePartSec = 10.0;
+    public const double OpenAiPartSec = 20.0;
+    public const int EarlierLinesInPrompt = 6;
+
+    public static double PartSecFor(AiVendor vendor) => vendor switch
+    {
+        AiVendor.Anthropic => ClaudePartSec,
+        AiVendor.OpenAI => OpenAiPartSec,
+        _ => GeminiPartSec,
+    };
+
+    public static IReadOnlyList<(double Start, double End)> PlanChunksFor(AiVendor vendor, double durationSec)
+        => PlanChunks(durationSec, PartSecFor(vendor));
+
+    internal static IReadOnlyList<string> EarlierLines(IReadOnlyList<CaptionLine>?[] partLines, int partIndex)
+    {
+        var texts = new List<string>();
+        for (int k = 0; k < partIndex && k < partLines.Length; k++)
+            if (partLines[k] is { } done)
+                foreach (var l in done) texts.Add(l.Text);
+        return texts.Count <= EarlierLinesInPrompt ? texts : texts.GetRange(texts.Count - EarlierLinesInPrompt, EarlierLinesInPrompt);
+    }
+
+    internal static string StoryNotes(int partIndex, IReadOnlyList<(double Start, double End)> chunks, double totalSec, IReadOnlyList<string> earlier)
+    {
+        if (chunks.Count <= 1 || partIndex < 0 || partIndex >= chunks.Count) return string.Empty;
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var c = chunks[partIndex];
+        string where = $"This clip is part {partIndex + 1} of {chunks.Count} of one {totalSec.ToString("0", ci)} s video (it covers {c.Start.ToString("0.0", ci)} s to {c.End.ToString("0.0", ci)} s of it). Keep the story going across parts.\n";
+        if (earlier.Count == 0) return where;
+        return where + "Lines you already said earlier in this video (do not repeat them; continue from them):\n"
+            + string.Join("\n", earlier.Select(t => "- " + t.Replace('\n', ' '))) + "\n";
+    }
+
+    internal static string? PlainWaitNotice(string message)
+    {
+        if (string.IsNullOrEmpty(message)) return null;
+        if (message.Contains("is still working on its answer", StringComparison.Ordinal)) return message;
+        if (!message.StartsWith("[", StringComparison.Ordinal) || message.IndexOf("retry", StringComparison.OrdinalIgnoreCase) < 0) return null;
+        int close = message.IndexOf(']');
+        string text = close > 0 && close + 1 < message.Length ? message[(close + 1)..].Trim() : message;
+        int http = text.IndexOf(" (HTTP", StringComparison.Ordinal);
+        return http > 0 ? text[..http] : text;
+    }
+
     internal static Exception? FirstRealFailure(IEnumerable<Task> tasks)
     {
         foreach (var t in tasks)
@@ -144,7 +191,7 @@ public static class CommentaryService
             _ => GeminiClient.ResolveModel(request.Model),
         };
 
-        var chunks = PlanChunks(request.DurationSec);
+        var chunks = PlanChunksFor(request.Vendor, request.DurationSec);
         CommentaryPersonality personality = request.EffectivePersonality;
         var rawLines = new List<CaptionLine>();
         int lineIdCounter = 1;
@@ -203,9 +250,18 @@ public static class CommentaryService
                     DescribePlayback(request.Timeline, request.TimelineOffsetSec, chunkStartSec, chunkEndSec),
                     canHearAudio: AiVisionProviders.WatchesVideoWithAudio(request.Vendor),
                     killTimesInPart: KillTimesForPart(request.KillTimesSec, chunkStartSec, chunkEndSec),
-                    rewriteOf: request.RewriteOf);
+                    rewriteOf: request.RewriteOf,
+                    storyNotes: StoryNotes(i, chunks, request.DurationSec, EarlierLines(partLines, i)));
 
+                string partTag = chunks.Count > 1 ? $"part {i + 1} of {chunks.Count} · " : string.Empty;
+                progress?.Report($"Writing captions · {partTag}preparing {chunkDurSec:0} s of video on this PC…");
                 PartMedia media = await PreparePartMediaAsync(request, chunkStartSec, chunkDurSec, cuts, consoleLog, ct).ConfigureAwait(false);
+                progress?.Report($"Writing captions · {partTag}{vendorName} is watching it and writing lines…");
+                Action<string> partLog = m =>
+                {
+                    consoleLog?.Invoke(m);
+                    if (PlainWaitNotice(m) is { } wait) progress?.Report($"Writing captions · {partTag}{wait}");
+                };
 
                 List<CaptionLine>? chunkLines = null;
                 for (int attempt = 0; ; attempt++)
@@ -214,7 +270,7 @@ public static class CommentaryService
                     AiProviderException failure;
                     try
                     {
-                        string responseJson = await SendPartAsync(request, provider, apiKey, effectiveModel, prompt, media, consoleLog, ct).ConfigureAwait(false);
+                        string responseJson = await SendPartAsync(request, provider, apiKey, effectiveModel, prompt, media, partLog, ct).ConfigureAwait(false);
                         int localId = 1;
                         if (TryParseCommentaryResponse(responseJson, chunkStartSec, chunkEndSec, ref localId, out var parsed))
                         {
@@ -335,10 +391,10 @@ public static class CommentaryService
 
     private sealed record PartMedia(AiVideoInput? Video, IReadOnlyList<AiImageInput> Frames);
 
-    public static IReadOnlyList<(double Start, double End)> SentParts(OutputTimeline? timeline, double timelineOffsetSec, double startSec, double durationSec)
+    public static IReadOnlyList<(double Start, double End)> SentParts(OutputTimeline? timeline, double timelineOffsetSec, double startSec, double durationSec, AiVendor vendor = AiVendor.Google)
     {
         var sent = new List<(double Start, double End)>();
-        foreach (var chunk in PlanChunks(durationSec))
+        foreach (var chunk in PlanChunksFor(vendor, durationSec))
         {
             double a = startSec + chunk.Start, b = startSec + chunk.End;
             var cuts = CutSpansInPart(timeline, timelineOffsetSec, a, b);

@@ -387,6 +387,7 @@ public sealed class MainViewModel : ViewModelBase
     public void ResetEditingStateForNewVideo()
     {
         Timeline.Reset();
+        CaptionTrack = null;
         MusicWizardResult = null;
         VoiceOverResult = null;
         IsAddMeme = false;

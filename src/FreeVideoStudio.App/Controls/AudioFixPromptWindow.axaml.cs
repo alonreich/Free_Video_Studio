@@ -20,6 +20,7 @@ public partial class AudioFixPromptWindow : Window
     public AudioFixPromptWindow()
     {
         InitializeComponent();
+        DialogFit.Apply(this);
 
         _alwaysCheck = this.FindControl<CheckBox>("AlwaysCheck");
         _neverCheck = this.FindControl<CheckBox>("NeverCheck");

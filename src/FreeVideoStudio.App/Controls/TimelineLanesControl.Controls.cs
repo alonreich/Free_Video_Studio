@@ -21,6 +21,12 @@ public partial class TimelineLanesControl
     private Canvas? LaneBSeekCanvasCtl => _cLaneBSeekCanvas ??= this.FindControl<Canvas>("LaneBSeekCanvas");
     private Canvas? _cLaneCSeekCanvas;
     private Canvas? LaneCSeekCanvasCtl => _cLaneCSeekCanvas ??= ResolveControl<Canvas>("LaneCSeekCanvas");
+    private Border? _cLaneABorder;
+    private Border? LaneABorderCtl => _cLaneABorder ??= ResolveControl<Border>("LaneABorder");
+    private Border? _cLaneBBorder;
+    private Border? LaneBBorderCtl => _cLaneBBorder ??= ResolveControl<Border>("LaneBBorder");
+    private Border? _cCaretLine;
+    private Border? CaretLineCtl => _cCaretLine ??= ResolveControl<Border>("CaretLine");
     private Border? _cLaneCBorder;
     private Border? LaneCBorderCtl => _cLaneCBorder ??= ResolveControl<Border>("LaneCBorder");
     private Panel? _cLaneCHostPanel;

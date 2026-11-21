@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
         xmlns:local="clr-namespace:FreeVideoStudio.App"
         xmlns:controls="clr-namespace:FreeVideoStudio.App.Controls"
@@ -8,11 +8,24 @@
         Title="Add Music"
         Background="{DynamicResource AppSurfaceBrush}"
         CanResize="True"
-        MinWidth="1100" MinHeight="760"
+        MinWidth="900" MinHeight="760"
         WindowStartupLocation="Manual"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaTitleBarHeightHint="30"
         DragDrop.AllowDrop="True">
+
+    <Window.Styles>
+        <Style Selector="Button.Pulse">
+            <Setter Property="BorderBrush" Value="SeaGreen"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Style.Animations>
+                <Animation Duration="0:0:0.9" IterationCount="Infinite" PlaybackDirection="Alternate">
+                    <KeyFrame Cue="0%"><Setter Property="Opacity" Value="1"/></KeyFrame>
+                    <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0.5"/></KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+    </Window.Styles>
 
     <Grid>
         <Border Name="MainBorder" Background="{DynamicResource AppSurfaceBrush}" CornerRadius="0" Padding="0" BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="5">
@@ -24,32 +37,37 @@
 
                     <Button Grid.Row="0" Name="WizardHelpButton" Classes="Secondary" Content="?" MinWidth="{DynamicResource AppSpeedPresetMinWidth}" MinHeight="{DynamicResource AppButtonMinHeight}" Padding="0" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Top" ZIndex="5" AutomationProperties.Name="Show me around the music wizard" ToolTip.Tip="New here? Play the short walkthrough that points out what everything on this screen does."/>
 
-                    <Grid Grid.Row="0" Margin="0,0,0,10" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" HorizontalAlignment="Center" MinWidth="420">
-                        <Border Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="105,0,105,0" Height="2" Background="{DynamicResource AppBorderBrush}"/>
+                    <Grid Grid.Row="0" Margin="0,0,0,10" ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" HorizontalAlignment="Center" MinWidth="540">
+                        <Border Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="90,0,90,0" Height="2" Background="{DynamicResource AppBorderBrush}"/>
                         <Border Grid.Row="0" Grid.Column="0" Name="Step1Dot" Classes="WizDotActive" MinWidth="32" MinHeight="32" CornerRadius="16" HorizontalAlignment="Center" ZIndex="1">
                             <TextBlock Name="Step1Icon" Classes="WizIconOn" Text="1" FontWeight="Bold" FontSize="{DynamicResource AppFontSize14}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
-                        <TextBlock Grid.Row="1" Grid.Column="0" Name="Step1Label" Classes="WizLabelActive" Text="Choose music" FontSize="{DynamicResource AppFontSize10}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Name="Step1Label" Classes="WizLabelActive" Text="Choose a song" FontSize="{DynamicResource AppFontSize10}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
                         <Border Grid.Row="0" Grid.Column="1" Name="Step2Dot" Classes="WizDotPending" MinWidth="32" MinHeight="32" CornerRadius="16" HorizontalAlignment="Center" ZIndex="1">
                             <TextBlock Name="Step2Icon" Classes="WizIconPending" Text="2" FontWeight="Bold" FontSize="{DynamicResource AppFontSize14}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
-                        <TextBlock Grid.Row="1" Grid.Column="1" Name="Step2Label" Classes="WizLabelPending" Text="Fit &amp; mix" FontSize="{DynamicResource AppFontSize10}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Name="Step2Label" Classes="WizLabelPending" Text="Select music starting point" FontSize="{DynamicResource AppFontSize10}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                        <Border Grid.Row="0" Grid.Column="2" Name="Step3Dot" Classes="WizDotPending" MinWidth="32" MinHeight="32" CornerRadius="16" HorizontalAlignment="Center" ZIndex="1">
+                            <TextBlock Name="Step3Icon" Classes="WizIconPending" Text="3" FontWeight="Bold" FontSize="{DynamicResource AppFontSize14}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Grid.Row="1" Grid.Column="2" Name="Step3Label" Classes="WizLabelPending" Text="Check &amp; finish" FontSize="{DynamicResource AppFontSize10}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
                     </Grid>
 
                     <Border Grid.Row="1" Background="{DynamicResource AppSurfaceBrush}" CornerRadius="8" BorderBrush="{DynamicResource AppPanelBrush}" BorderThickness="1" Padding="14">
                         <Panel>
 
-                            <Grid Name="Step1Panel" IsVisible="True" RowDefinitions="Auto,Auto,*" ColumnDefinitions="*,Auto">
-                                <Grid Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" ColumnDefinitions="Auto,*,Auto,Auto,Auto" RowDefinitions="Auto,Auto" Margin="0,0,0,8">
+                            <Grid Name="Step1Panel" IsVisible="True" RowDefinitions="Auto,Auto,Auto,*" ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="{Binding ChooseHeading}" IsVisible="{Binding HasChooseHeading}" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" Margin="0,0,0,8"/>
+                                <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" ColumnDefinitions="Auto,*,Auto,Auto,Auto" RowDefinitions="Auto,Auto" Margin="0,0,0,8">
                                     <TextBlock Grid.Column="0" Text="Music folder:" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                     <TextBlock Grid.Column="1" Text="{Binding MusicFolderText}" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" VerticalAlignment="Center" TextTrimming="PathSegmentEllipsis"/>
-                                    <Button Grid.Column="2" Name="ChangeFolderBtn" Content="Change folder" Classes="Secondary" VerticalAlignment="Center" Margin="10,0,0,0" Cursor="Hand" ToolTip.Tip="Choose a different folder to browse for music files"/>
-                                    <Button Grid.Column="3" Name="DownloadSongsBtn" Content="⬇ Get more songs" Classes="Secondary" VerticalAlignment="Center" Margin="8,0,0,0" Cursor="Hand" ToolTip.Tip="Download free background songs from the official library into this folder" AutomationProperties.Name="Download more songs"/>
-                                    <Button Grid.Column="4" Name="AiAutoFitBtn" Content="✨ AI Auto-Fit" Click="OnAiAutoFitClicked" Classes="Secondary" VerticalAlignment="Center" Margin="8,0,0,0" Cursor="Hand" ToolTip.Tip="Let cloud AI analyze video scenes and automatically pick the best matching song and optimal timing" AutomationProperties.Name="AI Auto-Fit song"/>
+                                    <Button Grid.Column="2" Name="ChangeFolderBtn" Content="CHANGE FOLDER" Classes="Secondary" VerticalAlignment="Center" Margin="10,0,0,0" Cursor="Hand" ToolTip.Tip="Choose a different folder to browse for music files"/>
+                                    <Button Grid.Column="3" Name="DownloadSongsBtn" Content="⬇ GET MORE SONGS" Classes="Secondary" VerticalAlignment="Center" Margin="8,0,0,0" Cursor="Hand" ToolTip.Tip="Download free background songs from the official library into this folder" AutomationProperties.Name="Download more songs"/>
+                                    <Button Grid.Column="4" Name="AiAutoFitBtn" Content="✨ AI AUTO-FIT" Click="OnAiAutoFitClicked" Classes="Secondary" VerticalAlignment="Center" Margin="8,0,0,0" Cursor="Hand" ToolTip.Tip="Let cloud AI analyze video scenes and automatically pick the best matching song and optimal timing" AutomationProperties.Name="AI Auto-Fit song"/>
                                     <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="5" Name="AiAutoFitStatusText" IsVisible="False" TextWrapping="Wrap" Margin="0,6,0,0"
                                                Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}"/>
                                 </Grid>
-                                <Grid Grid.Row="1" Grid.Column="0" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,8">
+                                <Grid Grid.Row="2" Grid.Column="0" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,8">
                                     <Grid Grid.Column="0" VerticalAlignment="Center">
                                         <TextBox Name="MusicSearchBox" Watermark="Search songs by name" Text="{Binding $parent[local:MusicWizardWindow].MusicSearchText, Mode=TwoWay}" MinHeight="{DynamicResource AppButtonMinHeight}" FontSize="{DynamicResource AppFontSize12}" VerticalContentAlignment="Center" Padding="10,0,38,0"/>
                                         <Button Name="ClearSearchBtn" Content="✕" Classes="Secondary" Width="30" Height="30" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" ToolTip.Tip="Clear search and show all songs" AutomationProperties.Name="Clear search" Cursor="Hand" IsVisible="False" Focusable="False"/>
@@ -63,14 +81,13 @@
                                     <TextBlock Grid.Column="2" Name="MusicResultCountText" Text="0 songs" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" MinWidth="70" TextAlignment="Right" Margin="10,0,0,0"/>
                                 </Grid>
 
-                                <Border Grid.Row="2" Grid.Column="0" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4" Background="{DynamicResource AppSurfaceBrush}">
+                                <Border Grid.Row="3" Grid.Column="0" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4" Background="{DynamicResource AppSurfaceBrush}">
                                     <Grid RowDefinitions="Auto,*">
                                         <Border Grid.Row="0" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" Padding="7,5,0,5">
-                                            <Grid ColumnDefinitions="40,*,80,52" Margin="0,0,34,0">
-                                                <TextBlock Grid.Column="0" Text="Hear" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            <Grid ColumnDefinitions="90,*,80" Margin="0,0,34,0">
+                                                <TextBlock Grid.Column="0" Text="Choose" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                 <TextBlock Grid.Column="1" Text="Song" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" VerticalAlignment="Center" Margin="8,0,0,0"/>
                                                 <TextBlock Grid.Column="2" Text="Length" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" TextAlignment="Center" VerticalAlignment="Center"/>
-                                                <TextBlock Grid.Column="3" Text="Add" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                             </Grid>
                                         </Border>
                                         <Grid Grid.Row="1">
@@ -87,8 +104,8 @@
                                                         <Border Padding="5,2" Cursor="Hand" HorizontalAlignment="Stretch" Margin="0,0,20,0"
                                                                 ToolTip.Tip="{CompiledBinding RowTip}"
                                                                 BorderThickness="0,0,0,1" BorderBrush="{DynamicResource AppTableHairlineBrush}">
-                                                            <Grid ColumnDefinitions="40,*,80,52">
-                                                                <Button Grid.Column="0" Tag="play" Classes="Secondary" Content="{CompiledBinding PreviewGlyph}" MinWidth="30" MinHeight="26" Padding="0" HorizontalAlignment="Center" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" FontSize="{DynamicResource AppFontSize10}" Focusable="False" ToolTip.Tip="Hear the best part of this song (press again to stop)" AutomationProperties.Name="Play a preview of this song"/>
+                                                            <Grid ColumnDefinitions="90,*,80">
+                                                                <Button Grid.Column="0" Tag="proceed" Classes="Secondary" Content="USE SONG →" MinHeight="30" Padding="6,2" HorizontalAlignment="Center" FontSize="{DynamicResource AppFontSize10}" ToolTip.Tip="Choose this song and continue" AutomationProperties.Name="Use this song and continue"/>
                                                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0" VerticalAlignment="Center">
                                                                     <Border IsVisible="{CompiledBinding IsRecent}" Background="{DynamicResource AppAccentAlpha20Brush}" CornerRadius="3" Padding="4,0" VerticalAlignment="Center">
                                                                         <TextBlock Text="RECENT" Foreground="{DynamicResource AppAccentBrush}" FontSize="{DynamicResource AppFontSize9}" FontWeight="Bold"/>
@@ -96,7 +113,6 @@
                                                                     <TextBlock Text="{CompiledBinding Name}" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                                                 </StackPanel>
                                                                 <TextBlock Grid.Column="2" Text="{CompiledBinding DurationText}" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" TextAlignment="Center" VerticalAlignment="Center"/>
-                                                                <Button Grid.Column="3" Tag="add" Classes="Secondary" Content="{CompiledBinding AddGlyph}" MinWidth="34" MinHeight="26" Padding="0" HorizontalAlignment="Center" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" FontWeight="Bold" FontSize="{DynamicResource AppFontSize12}" Focusable="False" ToolTip.Tip="{CompiledBinding AddTip}" AutomationProperties.Name="Add this song to your songs"/>
                                                             </Grid>
                                                         </Border>
                                                     </DataTemplate>
@@ -107,77 +123,22 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Grid.Row="1" Grid.RowSpan="2" Grid.Column="1" Name="PlaylistPanel" IsVisible="{Binding PlaylistVisible}" Width="340" Margin="12,0,0,0" Padding="10"
-                                        Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6">
-                                    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
-                                        <TextBlock Grid.Row="0" Text="{Binding PlaylistHeader}" Foreground="{DynamicResource AppAccentBrush}" FontWeight="Bold" FontSize="{DynamicResource AppFontSize12}"/>
-                                        <TextBlock Grid.Row="1" Text="They play one after another, top to bottom." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" TextWrapping="Wrap" Margin="0,2,0,6"/>
-                                        <Grid Grid.Row="2">
-                                            <ListBox ItemsSource="{Binding PlaylistRows}" Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4" ScrollViewer.VerticalScrollBarVisibility="Auto">
-                                                <ListBox.Styles>
-                                                    <Style Selector="ListBoxItem">
-                                                        <Setter Property="Padding" Value="4,2"/>
-                                                    </Style>
-                                                </ListBox.Styles>
-                                                <ListBox.ItemTemplate>
-                                                    <DataTemplate x:DataType="vm:MusicPlaylistRow">
-                                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ToolTip.Tip="{CompiledBinding Tip}">
-                                                            <TextBlock Grid.Column="0" Text="{CompiledBinding OrderText}" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" MinWidth="22" VerticalAlignment="Center"/>
-                                                            <TextBlock Grid.Column="1" Text="{CompiledBinding Name}" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                                            <TextBlock Grid.Column="2" Text="{CompiledBinding LengthText}" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" Margin="6,0,4,0"/>
-                                                            <Button Grid.Column="3" Tag="up" Classes="Secondary" Content="▲" MinWidth="24" MinHeight="22" Padding="0" FontSize="{DynamicResource AppFontSize9}" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Focusable="False" IsEnabled="{CompiledBinding CanMoveUp}" ToolTip.Tip="Play this song earlier" AutomationProperties.Name="Move song up"/>
-                                                            <Button Grid.Column="4" Tag="down" Classes="Secondary" Content="▼" MinWidth="24" MinHeight="22" Padding="0" FontSize="{DynamicResource AppFontSize9}" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="2,0,0,0" Focusable="False" IsEnabled="{CompiledBinding CanMoveDown}" ToolTip.Tip="Play this song later" AutomationProperties.Name="Move song down"/>
-                                                            <Button Grid.Column="5" Tag="remove" Classes="Secondary" Content="✕" MinWidth="24" MinHeight="22" Padding="0" FontSize="{DynamicResource AppFontSize9}" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="2,0,0,0" Focusable="False" ToolTip.Tip="Take this song out" AutomationProperties.Name="Remove song"/>
-                                                        </Grid>
-                                                    </DataTemplate>
-                                                </ListBox.ItemTemplate>
-                                            </ListBox>
-                                            <TextBlock IsVisible="{Binding PlaylistEmpty}" Text="No songs yet.&#x0a;&#x0a;Press ▶ on a song to hear it, then + to add it here. Add as many as you like." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="14" IsHitTestVisible="False"/>
-                                        </Grid>
-                                        <StackPanel Grid.Row="3" Spacing="4" Margin="0,8,0,0">
-                                            <Grid ColumnDefinitions="*,Auto">
-                                                <TextBlock Grid.Column="0" Text="{Binding PlaylistTotals}" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="SemiBold"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding CoveragePercentText}" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold"/>
-                                            </Grid>
-                                            <ProgressBar Minimum="0" Maximum="100" Value="{Binding CoveragePercent}" Foreground="{Binding CoverageBrush}" Background="{DynamicResource AppSurfaceBrush}" MinHeight="10" CornerRadius="5"
-                                                         AutomationProperties.Name="How much of the video has music"/>
-                                            <TextBlock Text="{Binding CoverageHeadline}" Foreground="{Binding CoverageBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                                        </StackPanel>
-                                        <Button Grid.Row="4" Classes="Secondary" Content="Fill the rest automatically" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,8,0,0" FontSize="{DynamicResource AppFontSize10}" IsVisible="{Binding HasGap}" Command="{Binding FillRestCommand}"
-                                                ToolTip.Tip="Adds songs from the list on the left, in the order shown, until the whole video has music."/>
-                                    </Grid>
-                                </Border>
                             </Grid>
 
-                            <Grid Name="Step3Panel" IsVisible="False" RowDefinitions="Auto, *, Auto, Auto, Auto" ColumnDefinitions="*, Auto" ClipToBounds="False">
-                                <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,0,0,6" Spacing="3">
-                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-                                        <TextBlock Grid.Column="0" Text="FIT &amp; MIX" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" VerticalAlignment="Center"/>
+                            <Grid Name="Step3Panel" IsVisible="False" RowDefinitions="Auto, *, Auto, Auto" ClipToBounds="False">
+                                <StackPanel Grid.Row="0" Margin="0,0,0,6" Spacing="3">
+                                    <Grid ColumnDefinitions="Auto,Auto,*">
+                                        <TextBlock Grid.Column="0" Text="{Binding FitHeading}" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" VerticalAlignment="Center"/>
                                         <TextBlock Grid.Column="1" Name="FinalPlacementLabel" Text="ⓘ" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" VerticalAlignment="Center" Cursor="Help" Margin="8,0,0,0"
-                                                   ToolTip.Tip="Press play to watch your video with the music. The coloured blocks under the film are your songs."/>
+                                                   ToolTip.Tip="Press play to watch your video with the music."/>
                                         <TextBlock Grid.Column="2" Name="Phase3StatusLabel" Text="" IsVisible="False" Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="10,0,0,0"/>
-                                        <Button Grid.Column="3" Name="SoundOptionsBtn" Classes="Secondary" Content="⚙ Sound options" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center"
-                                                ToolTip.Tip="Two helpers that keep your game sound clear under the music. Both are on by default.">
-                                            <Button.Flyout>
-                                                <Flyout Placement="BottomEdgeAlignedRight">
-                                                    <StackPanel Spacing="6" Margin="8" MaxWidth="380">
-                                                        <TextBlock Text="SOUND OPTIONS" Foreground="{DynamicResource AppAccentBrush}" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}"/>
-                                                        <CheckBox Name="DuckingCheckBox" Content="Protect the game sound from the music" MinHeight="40" IsChecked="True" Foreground="{DynamicResource AppTextPrimaryBrush}"
-                                                                  ToolTip.Tip="Leave this ON.&#x0a;&#x0a;Whenever something loud happens in your gameplay — a gunshot, a shout, an explosion — the music steps back for a moment so you can still hear it. Then it comes back up.&#x0a;&#x0a;This is applied when your video is saved. You will not hear it change in this preview; the main preview plays the saved sound once this wizard closes."/>
-                                                        <CheckBox Name="CarvingCheckBox" Content="Smooth blend between music and game sound" MinHeight="40" IsChecked="True" Foreground="{DynamicResource AppTextPrimaryBrush}"
-                                                                  ToolTip.Tip="Leave this ON.&#x0a;&#x0a;Music and game sound often fight over the same pitches, which makes both sound muddy. This scoops a little out of the music exactly where voices and game sounds live, so the two sit together instead of clashing.&#x0a;&#x0a;This is applied when your video is saved. You will not hear it change in this preview; the main preview plays the saved sound once this wizard closes."/>
-                                                        <TextBlock Text="Both are applied when your video is saved — you will hear them in the main preview after this screen closes." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" TextWrapping="Wrap"/>
-                                                    </StackPanel>
-                                                </Flyout>
-                                            </Button.Flyout>
-                                        </Button>
                                     </Grid>
                                     <Border Name="ProblemFlagsPanel" Background="{DynamicResource AppOverlayBrush}" BorderBrush="{DynamicResource AppWarningBrush}" BorderThickness="1" CornerRadius="6" Padding="8,5" IsVisible="False">
                                         <TextBlock Name="ProblemFlagsText" Text="" Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="SemiBold" TextWrapping="Wrap"/>
                                     </Border>
                                 </StackPanel>
 
-                                <Grid Grid.Row="1" Grid.Column="0" Margin="0,0,0,10">
+                                <Grid Grid.Row="1" Margin="0,0,0,8" ColumnDefinitions="*,Auto">
                                     <Border Name="VideoHostBorder" Background="{DynamicResource AppVideoSurfaceBrush}" CornerRadius="6" ClipToBounds="True">
                                     </Border>
 
@@ -189,6 +150,9 @@
                                             FontSize="{DynamicResource AppFontSize12}" FontWeight="Bold"
                                             Background="{DynamicResource AppOverlayBrush}" ZIndex="9999"
                                             ToolTip.Tip="Pop the preview out into its own floating window. It remembers its size, position and which screen you left it on."/>
+                                    <Border Name="PastVideoEndOverlay" Background="Black" CornerRadius="6" IsHitTestVisible="False" IsVisible="{Binding PastVideoEnd}" ZIndex="60">
+                                        <TextBlock Text="The video has ended · this part of the song will not be in your video" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="16,0,16,18"/>
+                                    </Border>
                                     <Border Name="Phase3VideoLoadingOverlay" Background="{DynamicResource AppOverlayBrush}" CornerRadius="6" IsHitTestVisible="False" IsVisible="False">
                                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
                                             <ProgressBar IsIndeterminate="True" MinWidth="100" MinHeight="4" Foreground="{DynamicResource AppAccentBrush}" Background="{DynamicResource AppPanelBrush}"/>
@@ -204,9 +168,103 @@
                                             <TextBlock Text="Please wait a moment." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" HorizontalAlignment="Center"/>
                                         </StackPanel>
                                     </Border>
+
+                                    <Border Grid.Column="1" Name="SoundPanel" IsVisible="{Binding IsReviewView}" Margin="8,0,0,0">
+                                        <Border Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="12,10" Width="320" VerticalAlignment="Stretch">
+                                            <Grid RowDefinitions="Auto,*,Auto">
+                                                <TextBlock Grid.Row="0" Text="SOUND" Foreground="{DynamicResource AppAccentBrush}" FontWeight="Bold" FontSize="{DynamicResource AppFontSize14}" Margin="0,0,0,12"/>
+                                                <Grid Grid.Row="1" ColumnDefinitions="*,*" MinHeight="180">
+                                                    <Border Grid.Column="0" Margin="0,0,5,0" Padding="8,8" Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" ClipToBounds="False" ToolTip.Tip="How loud the video's own sound is in your saved video.">
+                                                        <Grid RowDefinitions="Auto,Auto,*" ClipToBounds="False">
+                                                            <TextBlock Grid.Row="0" Text="Video sound" HorizontalAlignment="Center" Foreground="{DynamicResource AppTextPrimaryBrush}" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize12}"/>
+                                                            <TextBlock Grid.Row="1" Name="VideoVolLabel" Text="100%" HorizontalAlignment="Center" Foreground="{DynamicResource AppTextPrimaryBrush}" FontWeight="Bold" FontSize="{DynamicResource AppFontSize16}" Margin="0,4,0,10"/>
+                                                            <Slider Grid.Row="2" Name="VideoVolSlider" Classes="CompactSlider" Orientation="Vertical" Minimum="0" Maximum="100" Value="100" VerticalAlignment="Stretch" HorizontalAlignment="Center" MinHeight="140" Margin="0,8,0,8" ClipToBounds="False" IsSnapToTickEnabled="False" TickFrequency="1" AutomationProperties.Name="Video sound level"/>
+                                                        </Grid>
+                                                    </Border>
+                                                    <Border Grid.Column="1" Margin="5,0,0,0" Padding="8,8" Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" ClipToBounds="False" ToolTip.Tip="How loud the music is in your saved video.">
+                                                        <Grid RowDefinitions="Auto,Auto,*" ClipToBounds="False">
+                                                            <TextBlock Grid.Row="0" Text="Music" HorizontalAlignment="Center" Foreground="{DynamicResource AppTextPrimaryBrush}" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize12}"/>
+                                                            <TextBlock Grid.Row="1" Name="MusicVolLabel" Text="100%" HorizontalAlignment="Center" Foreground="{DynamicResource AppTextPrimaryBrush}" FontWeight="Bold" FontSize="{DynamicResource AppFontSize16}" Margin="0,4,0,10"/>
+                                                            <Slider Grid.Row="2" Name="MusicVolSlider" Classes="CompactSlider" Orientation="Vertical" Minimum="0" Maximum="100" Value="100" VerticalAlignment="Stretch" HorizontalAlignment="Center" MinHeight="140" Margin="0,8,0,8" ClipToBounds="False" IsSnapToTickEnabled="False" TickFrequency="1" AutomationProperties.Name="Music level"/>
+                                                        </Grid>
+                                                    </Border>
+                                                </Grid>
+                                                <StackPanel Grid.Row="2" Spacing="10" Margin="0,12,0,0">
+                                                    <StackPanel Spacing="2">
+                                                        <ToggleSwitch Name="DuckingCheckBox" IsChecked="True" OnContent="" OffContent="" Content="Lower music during loud video sounds" Foreground="{DynamicResource AppTextPrimaryBrush}" ToolTip.Tip="Volume ducking."/>
+                                                        <TextBlock Text="Automatically turns music down when the video gets loud." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                    <StackPanel Spacing="2">
+                                                        <ToggleSwitch Name="CarvingCheckBox" IsChecked="True" OnContent="" OffContent="" Content="Make video sounds clearer" Foreground="{DynamicResource AppTextPrimaryBrush}" ToolTip.Tip="EQ carving."/>
+                                                        <TextBlock Text="Adjusts the music's tone so video sounds are easier to hear." Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding SoundPreviewStatus}" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </Border>
                                 </Grid>
 
-                                <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" ZIndex="10" Margin="0,0,0,8" ClipToBounds="False">
+                                <Border Grid.Row="3" Name="PartPanel" IsVisible="{Binding IsPartView}" Padding="10,8" CornerRadius="6"
+                                        Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
+                                    <Grid RowDefinitions="Auto,Auto,Auto">
+                                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+                                            <TextBlock Grid.Column="0" Text="{Binding PartSongTitle}" FontSize="{DynamicResource AppFontSize12}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding PartSelectedText}" Foreground="{DynamicResource AppInfoBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                        </Grid>
+                                        <Border Grid.Row="1" IsVisible="False" Background="{DynamicResource AppSurfaceBrush}" CornerRadius="4" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" MinHeight="46">
+                                            <Panel>
+                                                <Image Name="WaveformImage" Stretch="Fill" Opacity="0.6"/>
+                                                <Canvas Name="WaveformCanvas" Classes="TimelineSeekSurface" Background="Transparent" ClipToBounds="True" Cursor="Hand" Focusable="True" AutomationProperties.Name="Song position" ToolTip.Tip="Click or drag to move the playhead. Press Mark start and Mark end to choose the part that plays." KeyboardNavigation.IsTabStop="True" />
+                                                <TextBlock Name="WaveformLoadingText" Text="Drawing the song..." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize12}" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="False" IsHitTestVisible="False"/>
+                                            </Panel>
+                                        </Border>
+                                        <WrapPanel Grid.Row="2" Orientation="Horizontal" Margin="0,6,0,0">
+                                            <Button Name="PartUndoBtn" Classes="Secondary" Content="↶ UNDO" Command="{Binding UndoCommand}" FontSize="{DynamicResource AppFontSize10}" Margin="0,0,6,0" ToolTip.Tip="Bring back what you just cut (Ctrl+Z)." AutomationProperties.Name="Undo"/>
+                                            <Button Name="PartRedoBtn" Classes="Secondary" Content="↷ REDO" Command="{Binding RedoCommand}" FontSize="{DynamicResource AppFontSize10}" Margin="0,0,10,0" ToolTip.Tip="Cut it again (Ctrl+Y)." AutomationProperties.Name="Redo"/>
+                                            <Button Classes="Secondary" Content="RESET" Command="{Binding ResetPartCommand}" FontSize="{DynamicResource AppFontSize10}" Margin="0,0,10,0" ToolTip.Tip="Use the whole song again."/>
+                                            <Button Classes="Secondary" Content="END WITH THE VIDEO" Command="{Binding EndWithVideoCommand}" IsVisible="{Binding PartOverflows}" FontSize="{DynamicResource AppFontSize10}" Margin="0,0,10,0" ToolTip.Tip="Make the song end where the video ends."/>
+                                            <TextBlock Text="{Binding PartProblem}" IsVisible="{Binding HasPartProblem}" Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                            <TextBlock Text="{Binding PartNote}" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,10,0"/>
+                                            <TextBlock Name="SmartFitStatusText" Text="" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                            <TextBlock Name="OffsetLabel" Text="" IsVisible="False"/>
+                                        </WrapPanel>
+                                    </Grid>
+                                </Border>
+
+                                <Border Grid.Row="3" Name="ReviewPanel" IsVisible="{Binding IsReviewView}" Padding="10,8" CornerRadius="6"
+                                        Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
+                                    <Grid RowDefinitions="Auto,Auto,Auto">
+                                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                                            <controls:ReviewTimelineRuler Grid.Row="0" Grid.Column="0" Margin="10,0,10,0" Duration="{Binding ReviewDuration}" Blocks="{Binding ReviewBlocks}"/>
+                                            <Slider Grid.Row="1" Grid.Column="0" Name="ReviewProgressSlider" Minimum="0" Maximum="{Binding ReviewDuration}" Value="{Binding ReviewPosition, Mode=TwoWay}" IsSnapToTickEnabled="False" AutomationProperties.Name="Video position" ToolTip.Tip="Click or drag to move through your video."/>
+                                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ReviewPositionText}" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize12}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                        </Grid>
+                                        <ScrollViewer Grid.Row="1" MaxHeight="76" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,4,0,0">
+                                            <ItemsControl ItemsSource="{Binding ReviewSongs}">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:MusicOccurrenceChip">
+                                                        <Button Classes="Secondary" Content="{CompiledBinding Text}" Margin="0,0,6,6" MaxWidth="320" FontSize="{DynamicResource AppFontSize10}"
+                                                                Command="{Binding $parent[ItemsControl].((vm:MusicWizardViewModel)DataContext).EditSongCommand}" CommandParameter="{CompiledBinding}"
+                                                                ToolTip.Tip="{CompiledBinding Tip}" AutomationProperties.Name="{CompiledBinding Text}"/>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                        <TextBlock Grid.Row="2" Text="{Binding ReviewCoverageText}" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" TextWrapping="Wrap"/>
+                                    </Grid>
+                                </Border>
+
+                                <Panel Grid.Row="3" IsVisible="False" IsHitTestVisible="False" Width="0" Height="0" HorizontalAlignment="Left">
+                                    <CheckBox Name="LoopMusicCheckBox" IsChecked="False"/>
+                                    <Button Name="SmartFitBtn"/>
+                                    <Button Name="FitByEndBtn"/>
+                                </Panel>
+
+                                <Grid Grid.Row="2" IsVisible="{Binding IsPartView}" Margin="0,0,0,6" ClipToBounds="False">
                                     <controls:TimelineLanesControl Name="Phase3Lanes" ClipToBounds="False"/>
 
                                     <Panel Name="Phase3LaneContentHolder" IsVisible="False">
@@ -236,115 +294,6 @@
                                         </Panel>
                                     </Panel>
                                 </Grid>
-
-                                <Border Grid.Row="1" Grid.Column="1" ZIndex="20"
-                                        HorizontalAlignment="Right" VerticalAlignment="Stretch"
-                                        Margin="6,0,0,10" Padding="3,5,3,5"
-                                        Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
-                                        BorderThickness="1" CornerRadius="7" ClipToBounds="False">
-                                    <Grid RowDefinitions="Auto,*" ColumnDefinitions="Auto,Auto" ClipToBounds="False">
-
-                                        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="MIX" HorizontalAlignment="Center"
-                                                   Foreground="{DynamicResource AppTextMutedBrush}"
-                                                   FontSize="{DynamicResource AppFontSize9}" FontWeight="Bold" Margin="0,0,0,5"/>
-
-                                        <Border Grid.Row="1" Grid.Column="0" VerticalAlignment="Stretch"
-                                                Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
-                                                BorderThickness="1" CornerRadius="4" Padding="0,4,0,4" ClipToBounds="False" ZIndex="10"
-                                                ToolTip.Tip="Volume of the original video audio">
-                                            <Grid RowDefinitions="Auto,*,Auto" ClipToBounds="False">
-                                                <TextBlock Grid.Row="0" Text="VIDEO" HorizontalAlignment="Center"
-                                                           Foreground="{DynamicResource AppTextMutedBrush}"
-                                                           FontSize="{DynamicResource AppFontSize9}" FontWeight="Bold"
-                                                           Margin="0,0,0,2" ClipToBounds="False" IsHitTestVisible="False"/>
-                                                <TextBlock Grid.Row="2" Name="VideoVolLabel" Text="100%"
-                                                           HorizontalAlignment="Center" TextAlignment="Center" Margin="0,2,0,0"
-                                                           Foreground="{DynamicResource AppTextPrimaryBrush}"
-                                                           FontSize="{DynamicResource AppFontSize9}" IsHitTestVisible="False"/>
-
-                                                <Slider Grid.Row="1" Name="VideoVolSlider" Classes="CompactSlider" Orientation="Vertical"
-                                                        Minimum="0" Maximum="100" Value="100"
-                                                        VerticalAlignment="Stretch" HorizontalAlignment="Center"
-                                                        MinHeight="110" ZIndex="9999"
-                                                        ClipToBounds="False" IsSnapToTickEnabled="False" TickFrequency="1"
-                                                        ToolTip.Tip="Volume of the original video audio"/>
-                                            </Grid>
-                                        </Border>
-
-                                        <Border Grid.Row="1" Grid.Column="1" VerticalAlignment="Stretch"
-                                                Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
-                                                BorderThickness="1" CornerRadius="4" Padding="0,4,0,4" ClipToBounds="False" ZIndex="10"
-                                                ToolTip.Tip="Volume of the background music">
-                                            <Grid RowDefinitions="Auto,*,Auto" ClipToBounds="False">
-                                                <TextBlock Grid.Row="0" Text="MUSIC" HorizontalAlignment="Center"
-                                                           Foreground="{DynamicResource AppTextMutedBrush}"
-                                                           FontSize="{DynamicResource AppFontSize9}" FontWeight="Bold"
-                                                           Margin="0,0,0,2" ClipToBounds="False" IsHitTestVisible="False"/>
-                                                <TextBlock Grid.Row="2" Name="MusicVolLabel" Text="100%"
-                                                           HorizontalAlignment="Center" TextAlignment="Center" Margin="0,2,0,0"
-                                                           Foreground="{DynamicResource AppTextPrimaryBrush}"
-                                                           FontSize="{DynamicResource AppFontSize9}" IsHitTestVisible="False"/>
-
-                                                <Slider Grid.Row="1" Name="MusicVolSlider" Classes="CompactSlider" Orientation="Vertical"
-                                                        Minimum="0" Maximum="100" Value="100"
-                                                        VerticalAlignment="Stretch" HorizontalAlignment="Center"
-                                                        MinHeight="110" ZIndex="9999"
-                                                        ClipToBounds="False" IsSnapToTickEnabled="False" TickFrequency="1"
-                                                        ToolTip.Tip="Volume of the background music"/>
-                                            </Grid>
-                                        </Border>
-                                    </Grid>
-                                </Border>
-
-                                <Border Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Padding="10,6" Margin="0,0,0,8" CornerRadius="6"
-                                        Background="{DynamicResource AppOverlayBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
-                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
-                                        <TextBlock Grid.Column="0" Text="{Binding CoverageIcon}" FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold" Foreground="{Binding CoverageBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding CoverageHeadline}" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppOnOverlayTextBrush}" TextWrapping="Wrap"/>
-                                            <TextBlock Text="{Binding CoverageDetail}" FontSize="{DynamicResource AppFontSize10}" Foreground="{DynamicResource AppOnOverlayMutedTextBrush}" TextWrapping="Wrap"/>
-                                        </StackPanel>
-                                        <CheckBox Grid.Column="2" Name="LoopMusicCheckBox" Content="Loop songs" IsChecked="False" Foreground="{DynamicResource AppOnOverlayTextBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" Margin="10,0,0,0"
-                                                  ToolTip.Tip="When your songs run out before the video ends, play them again from the top until the video ends."/>
-                                        <Button Grid.Column="3" Name="AddSongBtn" Classes="Secondary" Content="+ Add a song" Command="{Binding AddSongCommand}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" Margin="10,0,0,0"
-                                                ToolTip.Tip="Go back to the song list and add another song. Your songs and settings are kept."/>
-                                        <Button Grid.Column="4" Name="FillRestBtn" Classes="Primary" Content="Fill the rest" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" Margin="8,0,0,0" IsVisible="{Binding HasGap}" Command="{Binding FillRestCommand}"
-                                                ToolTip.Tip="Add songs from your music folder, in the list's order, until the whole video has music."/>
-                                    </Grid>
-                                </Border>
-
-                                <Border Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Name="SongCard" Padding="10,8" CornerRadius="6"
-                                        Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
-                                    <Grid RowDefinitions="Auto,Auto,Auto">
-                                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,0,0,6">
-                                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" ClipToBounds="True">
-                                                <TextBlock Text="{Binding SongCardTitle}" FontSize="{DynamicResource AppFontSize12}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="460"/>
-                                                <TextBlock Text="{Binding SongCardRange}" FontSize="{DynamicResource AppFontSize10}" Foreground="{DynamicResource AppInfoBrush}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                            <Button Grid.Column="1" Classes="Secondary" Content="◀" Command="{Binding MoveEarlierCommand}" IsEnabled="{Binding CanMoveEarlier}" IsVisible="{Binding IsMultiSong}" MinWidth="30" Padding="0" FontSize="{DynamicResource AppFontSize10}" HorizontalContentAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="Play this song earlier" AutomationProperties.Name="Move song earlier"/>
-                                            <Button Grid.Column="2" Classes="Secondary" Content="▶" Command="{Binding MoveLaterCommand}" IsEnabled="{Binding CanMoveLater}" IsVisible="{Binding IsMultiSong}" MinWidth="30" Padding="0" FontSize="{DynamicResource AppFontSize10}" HorizontalContentAlignment="Center" VerticalAlignment="Center" Margin="4,0,0,0" ToolTip.Tip="Play this song later" AutomationProperties.Name="Move song later"/>
-                                            <Button Grid.Column="3" Classes="Secondary" Content="✕ Remove" Command="{Binding RemoveSongCommand}" IsVisible="{Binding IsMultiSong}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" Margin="4,0,14,0" ToolTip.Tip="Take this song out of the video" AutomationProperties.Name="Remove song"/>
-                                            <TextBlock Grid.Column="4" Text="Start at:" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                            <Button Grid.Column="5" Classes="Secondary" Content="Beginning" Command="{Binding StartAtBeginningCommand}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" ToolTip.Tip="Play this song from its first note."/>
-                                            <Button Grid.Column="6" Name="SmartFitBtn" Classes="Secondary" Content="★ Best part" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" Margin="4,0,0,0" ToolTip.Tip="Jump to the strongest, most energetic part of this song that fits your video."/>
-                                            <Button Grid.Column="7" Name="FitByEndBtn" Classes="Secondary" Content="End with the video" IsVisible="{Binding CanEndWithVideo}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" Margin="4,0,0,0"
-                                                    ToolTip.Tip="Line the END of this song up with the END of your video.&#x0a;&#x0a;It finds where the song really finishes — the last moment there is still something to hear, not the silence after it — and works backwards from there.&#x0a;&#x0a;Your video then finishes on the song's last note instead of cutting off mid-verse."/>
-                                        </Grid>
-                                        <Border Grid.Row="1" Background="{DynamicResource AppSurfaceBrush}" CornerRadius="4" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" MinHeight="64">
-                                            <Panel>
-                                                <Image Name="WaveformImage" Stretch="Fill"/>
-                                                <Canvas Name="WaveformCanvas" Classes="TimelineSeekSurface" Background="Transparent" ClipToBounds="True" Cursor="Hand" Focusable="True" AutomationProperties.Name="Part of the song that plays" ToolTip.Tip="Drag the bright box to choose which part of the song plays. Drag its edges to trim it. Arrow keys nudge the start." KeyboardNavigation.IsTabStop="True" />
-                                                <TextBlock Name="WaveformLoadingText" Text="Drawing the song..." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize12}" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="False" IsHitTestVisible="False"/>
-                                            </Panel>
-                                        </Border>
-                                        <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="0,6,0,0">
-                                            <TextBlock Grid.Column="0" Name="SmartFitStatusText" Text="" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                            <TextBlock Grid.Column="1" Name="OffsetLabel" Text="" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" Margin="10,0,10,0"/>
-                                            <CheckBox Grid.Column="2" Content="Snap to beat" IsChecked="{Binding SnapToBeat, Mode=TwoWay}" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center"
-                                                      ToolTip.Tip="When you let go of the box, its start moves onto the nearest strong beat, so the song comes in on a hit."/>
-                                        </Grid>
-                                    </Grid>
-                                </Border>
                             </Grid>
 
                         </Panel>
@@ -356,33 +305,26 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Name="CancelBtn" Content="CANCEL" Classes="Danger" MinWidth="90" HorizontalContentAlignment="Center" ToolTip.Tip="Cancel and close the wizard without saving">
-                            <Button.Flyout>
-                                <Flyout Placement="Top">
-                                    <StackPanel Spacing="8" Margin="8">
-                                        <TextBlock Text="⚠️ Cannot be undone" Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSize12}" FontWeight="Bold" />
-                                        <Button Name="ConfirmCancelBtn" Classes="Danger" Content="CONFIRM CANCEL" HorizontalAlignment="Stretch" ToolTip.Tip="Permanently cancel and close the wizard." />
-                                    </StackPanel>
-                                </Flyout>
-                            </Button.Flyout>
-                        </Button>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10" IsVisible="{Binding TransportVisible}">
-                            <Button Name="SkipBackBtn" Classes="Secondary" MinWidth="70" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" ToolTip.Tip="Skip back 30 seconds" AutomationProperties.Name="Skip back 30 seconds">
-                                <TextBlock Text="-30s" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextPrimaryBrush}" />
+                            <Button Name="PartMarkStartBtn" Classes="Secondary" Classes.Pulse="{Binding MarkStartHint}" Content="MARK START" Padding="16,8" Margin="0,0,20,0" IsVisible="{Binding IsPartView}" Command="{Binding StartHereCommand}" ToolTip.Tip="Cut away the song before the red line. The music starts exactly here."/>
+                            <Button Name="SkipBackBtn" IsVisible="{Binding SkipVisible}" Classes="Secondary" MinWidth="70" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" ToolTip.Tip="{Binding SkipBackTip}" AutomationProperties.Name="{Binding SkipBackTip}">
+                                <TextBlock Text="{Binding SkipBackText}" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextPrimaryBrush}" />
                             </Button>
-                            <Button Name="PlayBtn" Classes="Primary" MinWidth="70" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" AutomationProperties.Name="Play or Pause" ToolTip.Tip="Play your video with the music (Space)">
+                            <Button Name="PlayBtn" Classes="Primary" MinWidth="70" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" AutomationProperties.Name="Play or Pause" ToolTip.Tip="{Binding PlayTip}">
                                 <Panel Width="{DynamicResource AppFontSize16}" Height="{DynamicResource AppFontSize16}">
                                     <Path Name="PlayIcon" Data="{DynamicResource AppPlayIconGeometry}" Fill="{DynamicResource AppOnAccentTextBrush}" Stretch="Uniform"/>
                                     <Path Name="PauseIcon" IsVisible="False" Data="{DynamicResource AppPauseIconGeometry}" Fill="{DynamicResource AppOnAccentTextBrush}" Stretch="Uniform"/>
                                 </Panel>
                             </Button>
-                            <Button Name="SkipForwardBtn" Classes="Secondary" MinWidth="70" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" ToolTip.Tip="Skip forward 30 seconds" AutomationProperties.Name="Skip forward 30 seconds">
-                                <TextBlock Text="+30s" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextPrimaryBrush}" />
+                            <Button Name="SkipForwardBtn" IsVisible="{Binding SkipVisible}" Classes="Secondary" MinWidth="70" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" ToolTip.Tip="{Binding SkipForwardTip}" AutomationProperties.Name="{Binding SkipForwardTip}">
+                                <TextBlock Text="{Binding SkipForwardText}" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextPrimaryBrush}" />
                             </Button>
+                            <Button Name="PartMarkEndBtn" Classes="Secondary" Content="MARK END" Padding="16,8" Margin="20,0,0,0" IsVisible="{Binding IsPartView}" Command="{Binding EndHereCommand}" ToolTip.Tip="Cut away the song after the red line. The music ends exactly here."/>
                         </StackPanel>
-                        <Button Grid.Column="2" Name="BackBtn" Content="BACK" Classes="Secondary" MinWidth="90" HorizontalContentAlignment="Center" Margin="0,0,10,0" IsEnabled="False" IsVisible="True" ToolTip.Tip="Go back to the song list (your songs are kept)"/>
-                        <Button Grid.Column="3" Name="NextBtn" Content="NEXT" Classes="Success" MinWidth="90" HorizontalContentAlignment="Center" ToolTip.Tip="Proceed to the next step"/>
+                        <Button Grid.Column="0" Name="BackBtn" Content="BACK" Classes="Secondary" MinWidth="110" HorizontalContentAlignment="Center" IsEnabled="False" IsVisible="True" ToolTip.Tip="Go back to the song list (your songs are kept)"/>
+                        <Button Grid.Column="4" Name="NextBtn" Content="NEXT →" Classes="Success" MinWidth="110" HorizontalContentAlignment="Center" ToolTip.Tip="Proceed to the next step"/>
                     </Grid>
 
                 </Grid>

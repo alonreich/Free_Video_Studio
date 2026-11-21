@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -75,6 +75,13 @@ public static class AiTrajectorySmoother
 
         [JsonPropertyName("segmentDuration")]
         public double SegmentDurationSec { get; set; }
+
+        [JsonPropertyName("isUncertain")]
+        public bool IsUncertain { get; set; }
+
+        [JsonPropertyName("uncertainTime")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public double? UncertainTimeSec { get; set; }
 
         [JsonPropertyName("raw")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -295,21 +302,40 @@ public static class AiTrajectorySmoother
     }
 
     public const string SmoothingRevision = "AICAMSMOOTH_01";
-    public const double PortraitMaxScale = 1.65;
+    public const string FramingRevision = "AIHUDCAMERA_01";
+    public const double PortraitMaxScale = 1.95;
+    public const double SafeTargetTop = 0.08;
+    public const double SafeTargetBottom = 0.73;
+    public const double PreferredTargetY = 0.42;
     public const double PositionSmoothSec = 0.45;
     public const double PositionSettleSec = 0.25;
     public const double MaxPanPerSec = 450.0;
     public const double ZoomSizeWindowSec = 1.5;
     public const double ZoomSizeTrimFraction = 0.2;
-    public const double ZoomSmoothSec = 0.45;
+    public const double ZoomSmoothSec = 0.55;
     public const double MaxZoomPerSec = 1.6;
     public const double SpikeSpeedPerSec = 600.0;
     public const double MaxFramingDriftFraction = 0.12;
     public const double HoldAfterLossSec = 1.0;
     public const double EaseWideSec = 0.8;
-    public const double FastMoveSpeed = 300.0;
+    public const double FastMoveSpeed = 235.0;
     public const double FastMoveRange = 450.0;
-    public const double FastMoveLookaheadSec = 0.5;
+    public const double FastMoveLookaheadSec = 0.90;
+    public const double FastMoveHoldAfterSec = 0.80;
+    public const double FastMoveSustainFraction = 0.6;
+
+    internal static bool IsWobble(int i, int n, bool[] seen, double[] cx, double[] cy, double[] stepSpeed)
+    {
+        if (i + 2 >= n || !seen[i + 2]) return false;
+        if (i > 0 && stepSpeed[i - 1] > FastMoveSpeed * FastMoveSustainFraction) return false;
+        double ax = cx[i + 1] - cx[i], ay = cy[i + 1] - cy[i];
+        double bx = cx[i + 2] - cx[i + 1], by = cy[i + 2] - cy[i + 1];
+        double a = Math.Sqrt(ax * ax + ay * ay), b = Math.Sqrt(bx * bx + by * by);
+        if (a < 1e-6 || b < 1e-6) return false;
+        double cos = (ax * bx + ay * by) / (a * b);
+        return cos < -0.5 && b >= a * FastMoveSustainFraction;
+    }
+    public const string FastMoveHysteresisTag = "AIZOOMHYST_01";
 
     public static SmoothedTrajectory SmoothTrajectory(
         IReadOnlyList<RawSubjectWaypoint> rawWaypoints,
@@ -336,7 +362,8 @@ public static class AiTrajectorySmoother
         }
 
         baseScale = Math.Clamp(baseScale, 1.2, 5.0);
-        double effectiveBaseScale = portraitMode ? Math.Min(baseScale, PortraitMaxScale) : baseScale;
+        double clarityCap = portraitMode ? PortraitMaxScale : Math.Clamp(Math.Min(sourceW / 560.0, sourceH / 315.0), 1.2, 4.0);
+        double effectiveBaseScale = Math.Min(baseScale * 1.4, clarityCap);
         double effectiveMinScale = Math.Clamp(minScale, 1.0, effectiveBaseScale);
         deadbandPercent = Math.Clamp(deadbandPercent, 0.0, 10.0);
 
@@ -415,18 +442,35 @@ public static class AiTrajectorySmoother
         RejectSpikes(time, seen, cx, cy, bw, bh);
 
         var fastMove = new double[n];
+        var stepSpeed = new double[n];
         for (int i = 0; i < n - 1; i++)
         {
             if (!seen[i] || !seen[i + 1]) continue;
             double dt = Math.Max(0.04, time[i + 1] - time[i]);
-            double speed = Distance(cx[i + 1] - cx[i], cy[i + 1] - cy[i]) / dt;
+            stepSpeed[i] = Distance(cx[i + 1] - cx[i], cy[i + 1] - cy[i]) / dt;
+        }
+        for (int i = 0; i < n - 1; i++)
+        {
+            if (!seen[i] || !seen[i + 1]) continue;
+            double speed = stepSpeed[i];
             if (speed <= FastMoveSpeed) continue;
+            if (IsWobble(i, n, seen, cx, cy, stepSpeed)) continue;
             double intensity = Math.Clamp((speed - FastMoveSpeed) / FastMoveRange, 0.0, 1.0);
-            for (int j = 0; j <= i; j++)
+            for (int j = 0; j < n; j++)
             {
                 double before = time[i] - time[j];
                 if (before >= 0 && before <= FastMoveLookaheadSec)
-                    fastMove[j] = Math.Max(fastMove[j], (1.0 - before / FastMoveLookaheadSec) * intensity);
+                {
+                    double tLead = 1.0 - before / FastMoveLookaheadSec;
+                    double easedLead = tLead * tLead * (3.0 - 2.0 * tLead);
+                    fastMove[j] = Math.Max(fastMove[j], easedLead * intensity);
+                }
+                double after = time[j] - time[i];
+                if (after > 0 && after <= FastMoveHoldAfterSec)
+                {
+                    double tDecay = 1.0 - after / FastMoveHoldAfterSec;
+                    fastMove[j] = Math.Max(fastMove[j], tDecay * intensity * 0.85);
+                }
             }
         }
 
@@ -442,10 +486,12 @@ public static class AiTrajectorySmoother
             sizeW[i] = TypicalSizeAround(time, seen, bw, i, ZoomSizeWindowSec, window);
             sizeH[i] = TypicalSizeAround(time, seen, bh, i, ZoomSizeWindowSec, window);
             aimX[i] = cx[i];
-            aimY[i] = sizeH[i] > 1.15 * sizeW[i] ? Math.Max(50.0, cy[i] - 0.12 * sizeH[i]) : cy[i];
-            double bodyFitScale = 1000.0 / Math.Max(120.0, sizeH[i] * 1.50);
-            double idealScale = Math.Clamp(bodyFitScale, effectiveMinScale, effectiveBaseScale);
-            wantScale[i] = idealScale - (idealScale - effectiveMinScale) * fastMove[i];
+            aimY[i] = cy[i];
+            double tightSpan = Math.Max(110.0, Math.Max(sizeH[i] / (SafeTargetBottom - SafeTargetTop), sizeW[i] * (portraitMode ? 3.0 : 1.25)));
+            double bodyFitScale = 1000.0 / tightSpan;
+            double idealScale = Math.Clamp(bodyFitScale, 1.0, effectiveBaseScale);
+            double wideTarget = Math.Max(1.10, effectiveMinScale - 0.15 * fastMove[i]);
+            wantScale[i] = idealScale - (idealScale - Math.Min(idealScale, wideTarget)) * fastMove[i];
         }
 
         var nextSeen = new int[n];
@@ -550,9 +596,15 @@ public static class AiTrajectorySmoother
         LimitRate(at, scale, MaxZoomPerSec);
         SmoothBothWays(at, scale, ZoomSmoothSec);
         for (int k = 0; k < m; k++) scale[k] = Math.Clamp(scale[k], 1.0, effectiveBaseScale);
+        for (int k = 0; k < m; k++)
+            if (!points[k].Visible && points[k].Scale <= 1.001) scale[k] = 1.0;
+        for (int k = 1; k < m; k++)
+            scale[k] = Math.Min(scale[k], scale[k - 1] + MaxZoomPerSec * (at[k] - at[k - 1]));
+        for (int k = m - 2; k >= 0; k--)
+            scale[k] = Math.Min(scale[k], scale[k + 1] + MaxZoomPerSec * (at[k + 1] - at[k]));
 
-        double bottomMarginFrac = portraitMode ? 0.72 : 0.88;
-        double topMarginFrac = portraitMode ? 0.20 : 0.10;
+        double bottomMarginFrac = SafeTargetBottom;
+        double topMarginFrac = SafeTargetTop;
         var wantX = new double[m];
         var wantY = new double[m];
         for (int k = 0; k < m; k++)
@@ -563,7 +615,7 @@ public static class AiTrajectorySmoother
             double targetCenterX = (pt.X / 1000.0) * sourceW;
             double targetCenterY = (pt.Y / 1000.0) * sourceH;
             double cropX = targetCenterX - (cropW / 2.0);
-            double cropY = targetCenterY - (cropH / 2.0);
+            double cropY = targetCenterY - cropH * PreferredTargetY;
             double feetY = ((pt.Y + pt.H / 2.0) / 1000.0) * sourceH;
             double headY = ((pt.Y - pt.H / 2.0) / 1000.0) * sourceH;
 
@@ -584,6 +636,7 @@ public static class AiTrajectorySmoother
                     targetCenterX - halfW, headY, targetCenterX + halfW, Math.Max(feetY, headY + 1), zones);
             }
 
+            cropY = SafeVerticalCrop(cropY, targetCenterY, headY, feetY, cropH, sourceH);
             wantX[k] = (cropX + cropW / 2.0) * 1000.0 / sourceW;
             wantY[k] = (cropY + cropH / 2.0) * 1000.0 / sourceH;
         }
@@ -608,6 +661,13 @@ public static class AiTrajectorySmoother
             double cropX = Math.Clamp((centerX / 1000.0) * sourceW - cropW / 2.0, 0.0, Math.Max(0.0, sourceW - cropW));
             double cropY = Math.Clamp((centerY / 1000.0) * sourceH - cropH / 2.0, 0.0, Math.Max(0.0, sourceH - cropH));
 
+            var target = points[k];
+            if (target.Visible)
+            {
+                double targetY = target.Y * sourceH / 1000.0;
+                double halfHeight = target.H * sourceH / 2000.0;
+                cropY = SafeVerticalCrop(cropY, targetY, targetY - halfHeight, targetY + halfHeight, cropH, sourceH);
+            }
             result.Keyframes.Add(new AiTrackingKeyframe
             {
                 TimeSec = Math.Round(at[k], 3),
@@ -623,6 +683,12 @@ public static class AiTrajectorySmoother
         return result;
     }
 
+    private static double SafeVerticalCrop(double cropY, double center, double head, double feet, double cropH, int sourceH)
+    {
+        double low = Math.Max(0, Math.Max(feet - cropH * SafeTargetBottom, center - cropH * 0.48));
+        double high = Math.Min(sourceH - cropH, head - cropH * SafeTargetTop);
+        return low <= high ? Math.Clamp(cropY, low, high) : Math.Clamp(cropY, 0, Math.Max(0, sourceH - cropH));
+    }
     private static double Distance(double dx, double dy) => Math.Sqrt(dx * dx + dy * dy);
 
     internal static void RejectSpikes(double[] time, bool[] seen, double[] cx, double[] cy, double[] bw, double[] bh)

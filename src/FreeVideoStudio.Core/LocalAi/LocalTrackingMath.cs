@@ -21,6 +21,19 @@ public readonly record struct MaskCandidate(PixelBox Box, double Score, int Inde
 
 public readonly record struct TrackedFrame(double TimeSec, PixelBox Box, bool Visible, double Score);
 
+public readonly record struct TrackingReference(
+    double TimeSec,
+    PixelBox Box,
+    int FrameIndex = 1,
+    float[]? Look = null,
+    LocalTrackingMath.BuiltInSignature? BuiltInSig = null);
+
+public readonly record struct ReconciledInterval(
+    IReadOnlyList<TrackedFrame> Frames,
+    bool IsUncertain,
+    double UncertainTimeSec,
+    int DisagreementCount);
+
 public static class LocalTrackingMath
 {
     public const double WaypointIntervalSec = 0.5;
@@ -129,6 +142,119 @@ public static class LocalTrackingMath
         }
         if (n > 0) for (int k = 0; k < hist.Length; k++) hist[k] /= n;
         return hist;
+    }
+
+    public readonly record struct BuiltInSignature(float[] TopHist, float[] BottomHist, float[] LumaPatch, double EdgeDensity);
+
+    public const int PatchGridSize = 6;
+
+    public static BuiltInSignature ExtractBuiltInSignature(ReadOnlySpan<byte> rgb, int size, PixelBox box, int sourceW, int sourceH)
+    {
+        var topHist = new float[AppearanceBins];
+        var botHist = new float[AppearanceBins];
+        var patch = new float[PatchGridSize * PatchGridSize];
+        if (size <= 0 || sourceW <= 0 || sourceH <= 0 || rgb.Length < size * size * 3)
+            return new(topHist, botHist, patch, 0);
+
+        double sx = size / (double)sourceW, sy = size / (double)sourceH;
+        double inX = box.Width * 0.16, inY = box.Height * 0.14;
+        int x1 = Math.Clamp((int)Math.Floor((box.X1 + inX) * sx), 0, size - 1);
+        int y1 = Math.Clamp((int)Math.Floor((box.Y1 + inY) * sy), 0, size - 1);
+        int x2 = Math.Clamp((int)Math.Ceiling((box.X2 - inX) * sx), x1 + 1, size);
+        int y2 = Math.Clamp((int)Math.Ceiling((box.Y2 - inY) * sy), y1 + 1, size);
+        int midY = (y1 + y2) / 2;
+        int nTop = 0, nBot = 0, bw = Math.Max(1, x2 - x1), bh = Math.Max(1, y2 - y1);
+        int step = Math.Max(1, (int)Math.Sqrt(bw * (double)bh / 576.0));
+        double edgeSum = 0;
+        int edgeCount = 0;
+        int coreX1 = x1 + bw / 5, coreX2 = x2 - bw / 5;
+        int coreY1 = y1 + bh / 5, coreY2 = y2 - bh / 5;
+
+        for (int y = y1; y < y2; y += step)
+        {
+            int row = y * size;
+            bool isTop = y < midY;
+            float[] dstHist = isTop ? topHist : botHist;
+            for (int x = x1; x < x2; x += step)
+            {
+                int i = (row + x) * 3;
+                int bin = (rgb[i] >> 6) * 16 + (rgb[i + 1] >> 6) * 4 + (rgb[i + 2] >> 6);
+                int weight = (x >= coreX1 && x < coreX2 && y >= coreY1 && y < coreY2) ? 2 : 1;
+                dstHist[bin] += weight;
+                if (isTop) nTop += weight; else nBot += weight;
+                if (x + 1 < x2)
+                {
+                    int ir = (row + x + 1) * 3;
+                    int l0 = (rgb[i] * 77 + rgb[i + 1] * 150 + rgb[i + 2] * 29) >> 8;
+                    int l1 = (rgb[ir] * 77 + rgb[ir + 1] * 150 + rgb[ir + 2] * 29) >> 8;
+                    edgeSum += Math.Abs(l1 - l0) / 255.0;
+                    edgeCount++;
+                }
+            }
+        }
+        if (nTop > 0) for (int k = 0; k < AppearanceBins; k++) topHist[k] /= nTop;
+        else if (nBot > 0) Array.Copy(botHist, topHist, AppearanceBins);
+        if (nBot > 0) for (int k = 0; k < AppearanceBins; k++) botHist[k] /= nBot;
+        else if (nTop > 0) Array.Copy(topHist, botHist, AppearanceBins);
+
+        for (int py = 0; py < PatchGridSize; py++)
+        {
+            int sy0 = Math.Clamp(y1 + (int)((py + 0.5) * bh / PatchGridSize), y1, y2 - 1);
+            int row = sy0 * size;
+            for (int px = 0; px < PatchGridSize; px++)
+            {
+                int sx0 = Math.Clamp(x1 + (int)((px + 0.5) * bw / PatchGridSize), x1, x2 - 1);
+                int idx = (row + sx0) * 3;
+                patch[py * PatchGridSize + px] = (rgb[idx] * 0.299f + rgb[idx + 1] * 0.587f + rgb[idx + 2] * 0.114f) / 255f;
+            }
+        }
+
+        double edgeDensity = edgeCount > 0 ? Math.Clamp(edgeSum / edgeCount, 0, 1) : 0;
+        return new(topHist, botHist, patch, edgeDensity);
+    }
+
+    public static double BuiltInSimilarity(in BuiltInSignature reference, in BuiltInSignature candidate)
+    {
+        double topSim = Similarity(reference.TopHist, candidate.TopHist);
+        double botSim = Similarity(reference.BottomHist, candidate.BottomHist);
+        double colorSim = 0.5 * topSim + 0.5 * botSim;
+        if (colorSim < 0.30) return colorSim * 0.5;
+        double patchSim = PatchSimilarity(reference.LumaPatch, candidate.LumaPatch);
+        double edgeDiff = Math.Abs(reference.EdgeDensity - candidate.EdgeDensity);
+        double edgeSim = 1.0 - Math.Clamp(edgeDiff / Math.Max(0.08, Math.Max(reference.EdgeDensity, candidate.EdgeDensity)), 0, 1);
+        return Math.Clamp(0.55 * colorSim + 0.30 * patchSim + 0.15 * edgeSim, 0, 1);
+    }
+
+    public static void BlendBuiltInSignature(ref BuiltInSignature reference, in BuiltInSignature sample, double rate)
+    {
+        Blend(reference.TopHist, sample.TopHist, rate);
+        Blend(reference.BottomHist, sample.BottomHist, rate);
+        Blend(reference.LumaPatch, sample.LumaPatch, rate);
+        reference = reference with { EdgeDensity = (1 - rate) * reference.EdgeDensity + rate * sample.EdgeDensity };
+    }
+
+    private static double PatchSimilarity(float[] a, float[] b)
+    {
+        int len = Math.Min(a.Length, b.Length);
+        if (len == 0) return 0;
+        double meanA = 0, meanB = 0;
+        for (int i = 0; i < len; i++) { meanA += a[i]; meanB += b[i]; }
+        meanA /= len; meanB /= len;
+        double num = 0, da = 0, db = 0, mad = 0;
+        for (int i = 0; i < len; i++)
+        {
+            double va = a[i] - meanA;
+            double vb = b[i] - meanB;
+            num += va * vb;
+            da += va * va;
+            db += vb * vb;
+            mad += Math.Abs(a[i] - b[i]);
+        }
+        double lvl = 1.0 - Math.Clamp(mad / len, 0, 1);
+        if (da < 1e-4 && db < 1e-4) return lvl;
+        if (da < 1e-4 || db < 1e-4) return 0.35 * lvl;
+        double ncc = Math.Clamp(num / Math.Sqrt(da * db), -1, 1);
+        return Math.Clamp(0.5 * ((ncc + 1.0) * 0.5) + 0.5 * lvl, 0, 1);
     }
 
     public static double Similarity(float[] a, float[] b)
@@ -273,5 +399,131 @@ public static class LocalTrackingMath
         values.Sort();
         int n = values.Count;
         return n % 2 == 1 ? values[n / 2] : (values[n / 2 - 1] + values[n / 2]) / 2.0;
+    }
+
+    public static ReconciledInterval ReconcileInterval(
+        IReadOnlyList<TrackedFrame> forward,
+        IReadOnlyList<TrackedFrame> backward,
+        TrackingReference refEarlier,
+        TrackingReference refLater,
+        int sourceW,
+        int sourceH)
+    {
+        if (forward.Count == 0 && backward.Count == 0)
+            return new ReconciledInterval(Array.Empty<TrackedFrame>(), false, 0, 0);
+
+        if (forward.Count == 0)
+            return new ReconciledInterval(backward, false, 0, 0);
+
+        if (backward.Count == 0)
+            return new ReconciledInterval(forward, false, 0, 0);
+
+        double tStart = refEarlier.TimeSec;
+        double tEnd = refLater.TimeSec;
+        double span = Math.Max(1e-4, tEnd - tStart);
+
+        var allTimes = new SortedSet<int>();
+        var fDict = new Dictionary<int, TrackedFrame>();
+        var bDict = new Dictionary<int, TrackedFrame>();
+
+        for (int i = 0; i < forward.Count; i++)
+        {
+            int key = (int)Math.Round(forward[i].TimeSec * 1000.0);
+            allTimes.Add(key);
+            fDict[key] = forward[i];
+        }
+        for (int i = 0; i < backward.Count; i++)
+        {
+            int key = (int)Math.Round(backward[i].TimeSec * 1000.0);
+            allTimes.Add(key);
+            bDict[key] = backward[i];
+        }
+
+        var reconciled = new List<TrackedFrame>(allTimes.Count);
+        int disagreementCount = 0;
+        double worstDisagreementTime = -1;
+        double maxDisagreementDist = 0;
+
+        foreach (int key in allTimes)
+        {
+            double t = key / 1000.0;
+            bool hasF = fDict.TryGetValue(key, out var f);
+            bool hasB = bDict.TryGetValue(key, out var b);
+            double alpha = Math.Clamp((t - tStart) / span, 0.0, 1.0);
+
+            if (hasF && hasB)
+            {
+                if (f.Visible && b.Visible)
+                {
+                    double iou = Iou(f.Box, b.Box);
+                    double dx = f.Box.Cx - b.Box.Cx;
+                    double dy = f.Box.Cy - b.Box.Cy;
+                    double dist = Math.Sqrt(dx * dx + dy * dy);
+                    double diag = Math.Max(1.0, Math.Max(
+                        Math.Sqrt(f.Box.Width * f.Box.Width + f.Box.Height * f.Box.Height),
+                        Math.Sqrt(b.Box.Width * b.Box.Width + b.Box.Height * b.Box.Height)));
+
+                    if (iou >= 0.25 || dist <= 0.35 * diag)
+                    {
+                        double x1 = (1.0 - alpha) * f.Box.X1 + alpha * b.Box.X1;
+                        double y1 = (1.0 - alpha) * f.Box.Y1 + alpha * b.Box.Y1;
+                        double x2 = (1.0 - alpha) * f.Box.X2 + alpha * b.Box.X2;
+                        double y2 = (1.0 - alpha) * f.Box.Y2 + alpha * b.Box.Y2;
+                        double score = (1.0 - alpha) * f.Score + alpha * b.Score;
+                        reconciled.Add(new TrackedFrame(t, new PixelBox(x1, y1, x2, y2).Clamp(sourceW, sourceH), true, score));
+                    }
+                    else
+                    {
+                        disagreementCount++;
+                        if (dist > maxDisagreementDist)
+                        {
+                            maxDisagreementDist = dist;
+                            worstDisagreementTime = t;
+                        }
+                        var chosen = (f.Score - b.Score > 0.25) ? f : ((b.Score - f.Score > 0.25) ? b : (alpha < 0.5 ? f : b));
+                        reconciled.Add(new TrackedFrame(t, chosen.Box.Clamp(sourceW, sourceH), true, chosen.Score));
+                    }
+                }
+                else if (f.Visible && !b.Visible)
+                {
+                    if (alpha <= 0.65 || f.Score >= 0.55)
+                    {
+                        reconciled.Add(new TrackedFrame(t, f.Box.Clamp(sourceW, sourceH), true, f.Score));
+                    }
+                    else
+                    {
+                        reconciled.Add(new TrackedFrame(t, f.Box.Clamp(sourceW, sourceH), false, f.Score));
+                    }
+                }
+                else if (!f.Visible && b.Visible)
+                {
+                    if (alpha >= 0.35 || b.Score >= 0.55)
+                    {
+                        reconciled.Add(new TrackedFrame(t, b.Box.Clamp(sourceW, sourceH), true, b.Score));
+                    }
+                    else
+                    {
+                        reconciled.Add(new TrackedFrame(t, b.Box.Clamp(sourceW, sourceH), false, b.Score));
+                    }
+                }
+                else
+                {
+                    PixelBox fallback = (alpha < 0.5 ? f.Box : b.Box).Clamp(sourceW, sourceH);
+                    reconciled.Add(new TrackedFrame(t, fallback, false, 0));
+                }
+            }
+            else if (hasF)
+            {
+                reconciled.Add(new TrackedFrame(t, f.Box.Clamp(sourceW, sourceH), f.Visible, f.Score));
+            }
+            else
+            {
+                reconciled.Add(new TrackedFrame(t, b.Box.Clamp(sourceW, sourceH), b.Visible, b.Score));
+            }
+        }
+
+        bool uncertain = disagreementCount >= 3 || (disagreementCount > 0 && disagreementCount >= Math.Max(2, allTimes.Count / 3));
+        double uncertainTime = uncertain && worstDisagreementTime >= 0 ? worstDisagreementTime : (tStart + tEnd) / 2.0;
+        return new ReconciledInterval(reconciled, uncertain, uncertainTime, disagreementCount);
     }
 }

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace FreeVideoStudio.Core.Media;
 
-public readonly record struct MusicBedSegment(string Path, double FileOffsetSec, double DurationSec, double OutputStartSec, double LeadInSec = 0.0)
+public readonly record struct MusicBedSegment(string Path, double FileOffsetSec, double DurationSec, double OutputStartSec, double LeadInSec = 0.0, int TrackIndex = -1)
 {
     public double OutputEndSec => OutputStartSec + DurationSec;
 }
@@ -134,7 +134,7 @@ public static class MusicBedPlan
                 }
                 if (duration <= 0.01) continue;
 
-                plan.Add(new MusicBedSegment(t.Path, fileIn, duration, cursor, lead));
+                plan.Add(new MusicBedSegment(t.Path, fileIn, duration, cursor, lead, i));
                 cursor += duration;
                 remaining -= duration;
                 previousDuration = duration;
@@ -145,6 +145,14 @@ public static class MusicBedPlan
         while (remaining > 0.01 && ++guard < LoopGuard);
 
         return plan;
+    }
+
+    public static int FirstSegmentOfTrack(IReadOnlyList<MusicBedSegment> plan, int trackIndex)
+    {
+        if (plan == null) return -1;
+        for (int i = 0; i < plan.Count; i++)
+            if (plan[i].TrackIndex == trackIndex) return i;
+        return -1;
     }
 
     public static double EndSec(IReadOnlyList<MusicBedSegment> plan, double startDelaySec)

@@ -698,7 +698,7 @@ public partial class MainWindow
             foreach (var tier in FreeVideoStudio.App.ViewModels.QualityLadder.Tiers)
                 labels.Add(tier.Name.ToUpperInvariant());
             qualitySlider.SetLabels(labels);
-            qualitySlider.Value = FreeVideoStudio.App.ViewModels.QualityLadder.DefaultIndex;
+            qualitySlider.Value = FreeVideoStudio.App.ViewModels.QualityLadder.ClampIndex(SettingsManager.Instance.Defaults.StartQualityIndex);
             qualitySlider.ValueChanged += (s, v) =>
             {
                 UpdateEstimatedQuality();
@@ -707,6 +707,11 @@ public partial class MainWindow
             qualitySlider.ValueChangeCompleted += (s, v) =>
             {
                 EndProjectGesture();
+                SettingsManager.Update(st =>
+                {
+                    st.Defaults.LastQualityIndex = v;
+                    st.Defaults.QualityIndex = v;
+                });
                 RuntimeLog.Info("UI", $"Quality dial resting on '{FreeVideoStudio.App.ViewModels.QualityLadder.NameOf(v)}' (tier {v}).");
             };
 
@@ -766,6 +771,7 @@ public partial class MainWindow
                     _cuts,
                     _memePlacements);
                 wizard.IsPortraitPreview = PortraitModeCheckboxCtl?.IsChecked == true;
+                wizard.RenderSoundPreview = RenderWizardSoundPreviewAsync;
 
                 if (resumeExistingMusic) wizard.InitialState = _musicWizardResult;
 

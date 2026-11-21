@@ -45,11 +45,11 @@ Old-brand clients poll `releases/latest` of the old repository address. GitHub r
    full installer under the previous download name. `GitHubReleasePublisher` creates that alias in
    a private temp folder only for the upload and deletes it afterwards; it is never kept in `obj/`
    or the repository. The old client downloads it and starts it.
-2. **Transactional install (`05` SYS-UPGRADE, UPGRADE_02…10).** `InstallDiscovery` finds the old
+2. **Transactional install (`09` SYS-UPGRADE, UPGRADE_02…10).** `InstallDiscovery` finds the old
    Program Files folder by verified signature, `UpgradeInstallWorker` installs Free Video Studio,
    moves the old folder into a 30-day backup, and `UpgradeRegistration` replaces shortcuts, uninstall
    keys, Open-With and file-type registrations. Any failure rolls back to the old app intact.
-3. **User data (`05` SYS-UPGRADE UPGRADE_04, SYS-REBRAND REBRAND_01).** Local and Roaming state is
+3. **User data (`09` SYS-UPGRADE UPGRADE_04, SYS-REBRAND REBRAND_01).** Local and Roaming state is
    moved into `FreeVideoStudio` folders (settings, crop profiles, presets, recovery, UI state).
    If the transactional path did not run (manual install), `AppDataPaths` copies the legacy roots
    on first start. The machine root is copied once per user (USERSCOPE_01).
@@ -91,8 +91,9 @@ root `*.log` files, and root `ctx_*.txt` scratch files.
 
 ```powershell
 dotnet test tests/FreeVideoStudio.Core.Tests/FreeVideoStudio.Core.Tests.csproj --filter RebrandTests
-dotnet run --project build/FvsVerify/FvsVerify.csproj -v q
 ```
+
+Other gates: README §0.4.
 
 Sentinels: `REBRAND_01` (AppDataPaths.cs), `REBRAND_02` (LegacyResidueSweep.cs),
 `REBRAND_03` (GitHubReleasePublisher.cs), `OUTNAME_01` (OutputFileNaming.cs).

@@ -38,6 +38,35 @@ public partial class TimelineLanesControl : UserControl
 
     public bool ZoomGesturesEnabled { get; set; }
 
+    private bool _boldCaret;
+
+    public bool BoldCaret
+    {
+        get => _boldCaret;
+        set
+        {
+            _boldCaret = value;
+            if (CaretLineCtl is { } line) line.Width = value ? 4 : 3;
+            UpdateCaret();
+        }
+    }
+
+    public double LaneHeightPx
+    {
+        get => LaneABorderCtl?.Height ?? 60;
+        set
+        {
+            double h = Math.Max(36, value);
+            foreach (var border in new[] { LaneABorderCtl, LaneBBorderCtl })
+            {
+                if (border == null) continue;
+                border.Height = h;
+                border.MinHeight = h;
+            }
+            QueueRefresh();
+        }
+    }
+
     public TimelineLanesControl()
     {
         InitializeComponent();
@@ -384,7 +413,7 @@ public partial class TimelineLanesControl : UserControl
 
         if (badge != null && badgeText != null)
         {
-            badge.IsVisible = _caretDragging;
+            badge.IsVisible = _caretDragging || _boldCaret;
             badgeText.Text = FormatClock(_positionSec);
 
             var scroll = LanesScrollCtl;
@@ -407,7 +436,7 @@ public partial class TimelineLanesControl : UserControl
 
         void SetHighlight(bool on)
         {
-            line.Width = on ? 5 : 3;
+            line.Width = on ? 5 : (_boldCaret ? 4 : 3);
             line.Effect = on
                 ? new Avalonia.Media.DropShadowEffect
                 {

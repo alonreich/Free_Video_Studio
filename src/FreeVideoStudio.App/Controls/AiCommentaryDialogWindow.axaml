@@ -3,11 +3,11 @@
         xmlns:vm="clr-namespace:FreeVideoStudio.App.ViewModels"
         x:Class="FreeVideoStudio.App.Controls.AiCommentaryDialogWindow"
         x:DataType="vm:AiCommentaryOptionsViewModel" x:CompileBindings="True"
-        Title="🎙️ Live Commentary Captions — AI Generation"
-        Width="680" Height="680" MinWidth="600" MinHeight="560"
+        Title="AI Commentary Captions — AI Generation"
+        Width="680" Height="700" MinWidth="600" MinHeight="560"
         Background="{DynamicResource AppSurfaceBrush}"
         WindowStartupLocation="CenterOwner"
-        CanResize="False"
+        CanResize="True"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaTitleBarHeightHint="30">
 
@@ -15,13 +15,17 @@
         <Border Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="3">
             <Grid RowDefinitions="30, Auto, *, Auto">
                 <Border Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
-                    <TextBlock Text="🎙️ LIVE COMMENTARY CAPTIONS — AI GENERATION" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
+                    <TextBlock Text="AI COMMENTARY CAPTIONS" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
                 </Border>
 
-                <StackPanel Grid.Row="1" Margin="24,14,24,10" Spacing="4">
-                    <TextBlock Text="Generate AI Live Commentary" FontSize="{DynamicResource AppFontSize18}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                    <TextBlock Text="Pick a style and where the captions go. Everything else is under Advanced."
+                <StackPanel Grid.Row="1" Margin="24,14,24,10" Spacing="6">
+                    <TextBlock Text="Generate AI Commentary Captions" FontSize="{DynamicResource AppFontSize18}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                    <TextBlock Text="Adds written captions. Does not create a voice. Pick a style and placement; everything else is under Advanced."
                                Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap"/>
+                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,7">
+                        <TextBlock Name="ProviderCapabilityNoteText" Text="{Binding ProviderCapabilityNote}"
+                                   Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
+                    </Border>
                 </StackPanel>
 
                 <ScrollViewer Grid.Row="2" Margin="24,0,24,10" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -153,7 +157,7 @@
                                 <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
                                     <Grid ColumnDefinitions="*, 16, *" RowDefinitions="Auto, 12, Auto">
                                         <StackPanel Grid.Row="0" Grid.Column="0" Spacing="8">
-                                            <TextBlock Text="HOW OFTEN IT TALKS" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                            <TextBlock Text="HOW OFTEN CAPTIONS APPEAR" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
                                             <StackPanel Orientation="Horizontal" Spacing="14">
                                                 <RadioButton GroupName="Chattiness" Content="Quiet" IsChecked="{Binding IsQuiet}" ToolTip.Tip="Only the biggest moments."/>
                                                 <RadioButton GroupName="Chattiness" Content="Normal" IsChecked="{Binding IsNormalChat}"/>
@@ -163,7 +167,7 @@
                                         <StackPanel Grid.Row="0" Grid.Column="2" Spacing="8">
                                             <TextBlock Text="CAPTION ANIMATION" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
                                             <RadioButton GroupName="CaptionStyle" Content="Word by word" IsChecked="{Binding IsWordByWord}"
-                                                         ToolTip.Tip="Each word lights up in gold as it is said."/>
+                                                         ToolTip.Tip="Each word highlights in gold along the caption timing."/>
                                             <RadioButton GroupName="CaptionStyle" Content="Plain lines" IsChecked="{Binding IsPlainLines}"/>
                                         </StackPanel>
                                         <CheckBox Grid.Row="2" Grid.Column="0" Content="Allow swearing" IsChecked="{Binding AllowSwearing}"
@@ -188,8 +192,8 @@
                 <Grid Grid.Row="3" ColumnDefinitions="Auto, *, Auto" Margin="24,10,24,18">
                     <Button Grid.Column="0" Classes="Secondary" Content="CANCEL" MinWidth="110" MinHeight="42" Cursor="Hand" IsCancel="True"
                             Command="{Binding CancelCommand}" ToolTip.Tip="Close without generating commentary"/>
-                    <Button Grid.Column="2" Classes="Success" Content="🎙️ GENERATE COMMENTARY" MinWidth="220" MinHeight="42" Cursor="Hand" IsDefault="True"
-                            Command="{Binding GenerateCommand}" ToolTip.Tip="Start generating live commentary captions with the chosen settings"/>
+                    <Button Grid.Column="2" Classes="Success" Content="GENERATE CAPTIONS" MinWidth="220" MinHeight="42" Cursor="Hand" IsDefault="True"
+                            Command="{Binding GenerateCommand}" ToolTip.Tip="Generate written AI commentary captions (no voice is created)"/>
                 </Grid>
             </Grid>
         </Border>

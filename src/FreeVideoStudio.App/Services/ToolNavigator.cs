@@ -104,6 +104,18 @@ public sealed class ToolNavigator
                     ?? ToolNavigationResult.Cancelled(toolName);
                 onToolReturned?.Invoke(result);
 
+                if (result.ExitApplication)
+                {
+                    RuntimeLog.Info("UI", $"{toolName} finished and exited the app cleanly.");
+                    _faults.Guard("UI", string.Empty, () =>
+                    {
+                        if (owner is MainWindow mw) mw.MarkExportedCleanExitForTool();
+                        RestoreMainWindowReference(owner);
+                        owner.Close();
+                    }, FaultTier.Recoverable);
+                    return;
+                }
+
                 _faults.Guard("UI",
                     "The editor could not be brought back automatically. It is still running — " +
                     "select it from the taskbar.",

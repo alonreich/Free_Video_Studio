@@ -189,7 +189,7 @@ public static class AiCostEstimator
                 120 + Thinking(vendor, AiUsage.Commentary, 1));
 
         double clamped = Math.Max(1.0, durationSec);
-        var chunks = sentParts ?? CommentaryService.PlanChunks(clamped);
+        var chunks = sentParts ?? CommentaryService.PlanChunksFor(vendor, clamped);
         int parts = chunks.Count;
         if (parts == 0) return BuildEstimate(vendor, model, 0, 0);
         double sampledSeconds = 0;

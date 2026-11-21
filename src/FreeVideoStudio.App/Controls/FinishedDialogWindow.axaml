@@ -71,6 +71,7 @@
                                 <Button Name="ViralCancelBtn" IsVisible="False" Classes="Secondary" MinHeight="28" Padding="10,2" Content="✕ CANCEL" ToolTip.Tip="Cancel writing." Click="OnViralCancelClicked"/>
                                 <Button Name="ViralSetupAiBtn" IsVisible="False" Classes="Primary" MinHeight="28" Padding="10,2" Content="SET UP AI" ToolTip.Tip="Add an AI key so the post is written for this video." Click="OnViralSetupAiClicked"/>
                                 <Button Name="ViralRegenerateBtn" IsVisible="False" Classes="Secondary" MinHeight="28" Padding="10,2" Content="↻ NEW VERSION" ToolTip.Tip="Ask the AI for a different title, caption and hashtags." Click="OnViralRegenerateClicked"/>
+                                <Button Name="ViralTurnOffBtn" Classes="Secondary" MinHeight="28" Padding="10,2" Content="TURN OFF" ToolTip.Tip="Turn off Viral Post Helper (you can turn it back on anytime in Settings › AI)." Click="OnViralTurnOffClicked"/>
                             </StackPanel>
                         </Grid>
 

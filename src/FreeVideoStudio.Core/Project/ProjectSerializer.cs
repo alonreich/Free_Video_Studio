@@ -125,6 +125,11 @@ public static class ProjectSerializer
             ["voice_over_takes"] = VoiceOverTakeJson.Write(doc.Audio.VoiceOverTakes),
             ["voice_over_duck_audio"] = doc.Audio.VoiceOverDuckAudio,
             ["voice_over_protect_music"] = doc.Audio.VoiceOverProtectFromMusic,
+            ["music_songs"] = WriteMusicSongs(doc.Audio.MusicSongs),
+            ["music_timeline_start_sec"] = doc.Audio.MusicTimelineStartSec,
+            ["music_timeline_end_sec"] = doc.Audio.MusicTimelineEndSec,
+            ["music_loop"] = doc.Audio.MusicLoop,
+            ["music_carving"] = doc.Audio.MusicCarving,
         };
 
         root[KeyExport] = new JsonObject
@@ -292,6 +297,11 @@ public static class ProjectSerializer
             VoiceOverTakes = VoiceOverTakeJson.Read(audioObj?["voice_over_takes"]),
             VoiceOverDuckAudio = ReadBool(audioObj, "voice_over_duck_audio", false),
             VoiceOverProtectFromMusic = ReadBool(audioObj, "voice_over_protect_music", true),
+            MusicSongs = ReadMusicSongs(audioObj?["music_songs"]),
+            MusicTimelineStartSec = ReadDouble(audioObj, "music_timeline_start_sec", 0),
+            MusicTimelineEndSec = ReadDouble(audioObj, "music_timeline_end_sec", 0),
+            MusicLoop = ReadBool(audioObj, "music_loop", false),
+            MusicCarving = ReadBool(audioObj, "music_carving", ReadBool(audioObj, "sidechain_ducking", false)),
         };
 
         JsonObject? exportObj = root[KeyExport] as JsonObject;
@@ -370,6 +380,38 @@ public static class ProjectSerializer
             Export = export,
             UnknownFields = unknown,
         };
+    }
+
+    private static JsonArray WriteMusicSongs(IReadOnlyList<ProjectMusicSong> songs)
+    {
+        var array = new JsonArray();
+        foreach (var song in songs)
+            array.AddNode(new JsonObject
+            {
+                ["path"] = song.Path,
+                ["full_sec"] = song.FullSec,
+                ["in_sec"] = song.InSec,
+                ["out_sec"] = song.OutSec,
+                ["user_trimmed"] = song.UserTrimmed,
+            });
+        return array;
+    }
+
+    private static IReadOnlyList<ProjectMusicSong> ReadMusicSongs(JsonNode? node)
+    {
+        if (node is not JsonArray array) return Array.Empty<ProjectMusicSong>();
+        var songs = new List<ProjectMusicSong>(array.Count);
+        foreach (var item in array)
+        {
+            if (item is not JsonObject o) continue;
+            string? path = ReadString(o, "path", null);
+            if (string.IsNullOrWhiteSpace(path)) continue;
+            double full = Math.Max(0.0, ReadDouble(o, "full_sec", 0));
+            double inSec = Math.Max(0.0, ReadDouble(o, "in_sec", 0));
+            double outSec = Math.Max(0.0, ReadDouble(o, "out_sec", 0));
+            songs.Add(new ProjectMusicSong(path!, full, inSec, outSec, ReadBool(o, "user_trimmed", false)));
+        }
+        return songs;
     }
 
     private static string? ReadString(JsonObject? o, string key, string? fallback)

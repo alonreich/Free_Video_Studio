@@ -97,7 +97,8 @@ public sealed class AiReviewFixTests
     {
         var cheap = new AiEstimatedUsage(10_000, 500, 0.01m);
         var dear = new AiEstimatedUsage(900_000, 9_000, 0.40m);
-        Assert.True(MainWindow.ScanStartsByItself(false, false, cheap, AiVendor.Google, "gemini-3.8-flash", 0));
+        Assert.False(MainWindow.ScanStartsByItself(false, false, cheap, AiVendor.Google, "gemini-3.8-flash", 0));
+        Assert.True(MainWindow.ScanStartsByItself(false, false, cheap, AiVendor.Anthropic, "claude-sonnet-5-5", 0));
         Assert.False(MainWindow.ScanStartsByItself(false, false, dear, AiVendor.Google, "gemini-3.8-flash", 0));
         Assert.True(MainWindow.ScanStartsByItself(true, false, dear, AiVendor.Google, "gemini-3.8-flash", 0));
         Assert.True(MainWindow.ScanStartsByItself(false, true, dear, AiVendor.Google, "gemini-3.8-flash", 0));

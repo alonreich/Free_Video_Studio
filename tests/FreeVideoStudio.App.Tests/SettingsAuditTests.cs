@@ -54,6 +54,14 @@ public sealed class SettingsAuditTests
 
         d.SpeedBehavior = ValueDefaultBehavior.FixedValue;
         Assert.Equal(1.1, d.StartSpeed);
+
+        var fresh = new DefaultValues();
+        Assert.Equal(6, QualityLadder.DefaultIndex);
+        Assert.Equal("Good +", QualityLadder.Tiers[QualityLadder.DefaultIndex].Name);
+        Assert.Equal(6, fresh.QualityIndex);
+        Assert.Equal(6, fresh.LastQualityIndex);
+        Assert.Equal(ValueDefaultBehavior.RememberLast, fresh.QualityBehavior);
+        Assert.Equal(6, fresh.StartQualityIndex);
     }
 
     [Fact]

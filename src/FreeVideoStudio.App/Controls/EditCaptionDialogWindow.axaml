@@ -4,7 +4,7 @@
         Title="Edit Commentary Caption"
         Width="540" MinHeight="300" SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
-        CanResize="False"
+        CanResize="True"
         Background="{DynamicResource AppSurfaceBrush}"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaTitleBarHeightHint="30">

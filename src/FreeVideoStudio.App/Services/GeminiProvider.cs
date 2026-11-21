@@ -53,6 +53,24 @@ public sealed class GeminiProvider : IAiVisionProvider
             if (live == null) throw;
             return await GenerateWithFpsFallbackAsync(apiKey, live, prompt, images, video, geminiSchema, reasoning, options, userLog, ct).ConfigureAwait(false);
         }
+        catch (GeminiException ex) when (ex.Kind == GeminiErrorKind.Overloaded && BusyFallbackModel(resolvedModel) is { } lighter)
+        {
+            string line = $"Google's '{resolvedModel}' is too busy right now — trying the lighter '{lighter}' once for this request.";
+            userLog?.Invoke(line);
+            CoreLogger.Info("AI", line);
+            return await GenerateWithFpsFallbackAsync(apiKey, lighter, prompt, images, video, geminiSchema, reasoning, options, userLog, ct).ConfigureAwait(false);
+        }
+    }
+
+    internal const string BusyFallbackTag = "AIBUSYFALLBACK_01";
+    internal static readonly string[] BusyFallbacks = { "gemini-3.6-flash", "gemini-3.5-flash-lite" };
+
+    internal static string? BusyFallbackModel(string current)
+    {
+        foreach (string m in BusyFallbacks)
+            if (!string.Equals(m, current?.Trim(), StringComparison.OrdinalIgnoreCase)
+                && !AiVisionProviders.IsRetiredModel(AiVendor.Google, m)) return m;
+        return null;
     }
 
     private async Task<string> GenerateWithFpsFallbackAsync(

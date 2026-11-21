@@ -10,7 +10,7 @@ public sealed class VoiceOverPreviewTake : IDisposable
 {
     public required VoiceOverTake Take { get; init; }
     public required FreeVideoStudio.Core.Media.WavAudioReader Reader { get; init; }
-    public required NAudio.Wave.WaveOutEvent Player { get; init; }
+    public required NAudio.Wave.WaveOut Player { get; init; }
     public double StartProjectSec { get; set; }
     public long DriftSinceMs;
 
@@ -94,7 +94,7 @@ public sealed class VoiceOverPreviewPlayer : IDisposable
                         if (_disposed) break;
                         if (string.IsNullOrWhiteSpace(take.Path) || !File.Exists(take.Path)) continue;
                         FreeVideoStudio.Core.Media.WavAudioReader? reader = null;
-                        NAudio.Wave.WaveOutEvent? player = null;
+                        NAudio.Wave.WaveOut? player = null;
                         try
                         {
                             reader = new(take.Path);

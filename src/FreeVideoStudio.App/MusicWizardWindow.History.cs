@@ -45,7 +45,7 @@ public partial class MusicWizardWindow
                 RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
         }
 
-        foreach (CheckBox? box in new[] { DuckingCheckBoxCtl, CarvingCheckBoxCtl, LoopMusicCheckBoxCtl })
+        foreach (Avalonia.Controls.Primitives.ToggleButton? box in new Avalonia.Controls.Primitives.ToggleButton?[] { DuckingCheckBoxCtl, CarvingCheckBoxCtl, LoopMusicCheckBoxCtl })
         {
             if (box != null) box.IsCheckedChanged += (_, _) => RecordWizardEdit();
         }
@@ -152,7 +152,8 @@ public partial class MusicWizardWindow
             var rebuilt = new System.Collections.Generic.List<FreeVideoStudio.Core.Media.MusicPlaylistEntry>(paths.Length);
             for (int i = 0; i < paths.Length; i++)
             {
-                int existing = IndexOfPath(paths[i]);
+                int existing = OccurrenceIndex(i, paths[i]);
+                if (existing < 0) existing = IndexOfPath(paths[i]);
                 var baseEntry = existing >= 0 ? _playlist[existing] : NewEntry(TrackFor(paths[i]));
                 double inSec = 2 * i + 1 < trims.Length ? trims[2 * i] : baseEntry.InSec;
                 double outSec = 2 * i + 1 < trims.Length ? trims[2 * i + 1] : baseEntry.OutSec;

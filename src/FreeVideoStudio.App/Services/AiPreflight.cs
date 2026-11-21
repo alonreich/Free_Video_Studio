@@ -21,8 +21,13 @@ internal static class AiPreflight
     private static string Identity(AiVendor vendor, string key, string model)
         => AiResultCache.Key("preflight-image-json-v1", vendor.ToString(), key, AiVisionProviders.EffectiveModel(vendor, model, key));
 
+    internal const string SessionReuseTag = "AIPREFLIGHTSESSION_01";
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> PassedThisSession = new(StringComparer.Ordinal);
+
+    internal static void ForgetSessionPasses() => PassedThisSession.Clear();
+
     internal static bool WillCheck(AiVendor vendor, string key, string model)
-        => !string.IsNullOrWhiteSpace(key) && !AiResultCache.Has<bool>(Identity(vendor, key, model));
+        => !string.IsNullOrWhiteSpace(key) && !PassedThisSession.ContainsKey(Identity(vendor, key, model)) && !AiResultCache.Has<bool>(Identity(vendor, key, model));
 
     internal static AiEstimatedUsage WithCheck(AiEstimatedUsage estimate, AiVendor vendor, string key, string model)
         => AiCostEstimator.WithConnectionCheck(estimate, vendor, model, WillCheck(vendor, key, model));
@@ -33,6 +38,21 @@ internal static class AiPreflight
         AiKeyHealth.ThrowIfBlocked(vendor, key);
         string effective = AiVisionProviders.EffectiveModel(vendor, model, key);
         string identity = Identity(vendor, key, model);
+        if (PassedThisSession.ContainsKey(identity)) return Task.FromResult(true);
+        return RunAndRememberAsync(identity, vendor, key, effective, ct, progress, provider);
+    }
+
+    private static async Task<bool> RunAndRememberAsync(string identity, AiVendor vendor, string key, string effective,
+        CancellationToken ct, Action<string>? progress, IAiVisionProvider? provider)
+    {
+        bool ok = await RunCheckAsync(identity, vendor, key, effective, ct, progress, provider).ConfigureAwait(false);
+        if (ok) PassedThisSession[identity] = true;
+        return ok;
+    }
+
+    private static Task<bool> RunCheckAsync(string identity, AiVendor vendor, string key, string effective,
+        CancellationToken ct, Action<string>? progress, IAiVisionProvider? provider)
+    {
         return AiResultCache.RunAsync(identity, async () =>
         {
             progress?.Invoke("Checking your AI connection…");

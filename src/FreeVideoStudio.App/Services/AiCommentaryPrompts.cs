@@ -21,7 +21,8 @@ public static class AiCommentaryPrompts
         string? playbackNotes = null,
         bool canHearAudio = true,
         IReadOnlyList<double>? killTimesInPart = null,
-        string? rewriteOf = null)
+        string? rewriteOf = null,
+        string? storyNotes = null)
     {
         ArgumentNullException.ThrowIfNull(personality);
         var mix = personality.Normalized();
@@ -29,7 +30,7 @@ public static class AiCommentaryPrompts
 
         string senses = canHearAudio
             ? "You receive this clip as video WITH its game sound."
-            : "You receive this clip as still pictures, 2 per second, each labelled with its time. There is NO sound: judge only what is visible.";
+            : "You receive this clip as still pictures, 2 per second, each labelled with its time. There is NO sound: judge ONLY what is visually shown and NEVER claim you heard speech, voices, footsteps, gunfire sounds, or audio cues.";
         string onlyWhat = canHearAudio ? "visible or audible" : "visible";
 
         string perspective = profile switch
@@ -88,7 +89,7 @@ You are the gamer playing this video game. Narrate what you are doing in real ti
 {perspective}
 {mix.DescribeForPrompt()}
 {languageLine}
-{notes}{playback}{kills}{tactical}Rules:
+{notes}{storyNotes}{playback}{kills}{tactical}Rules:
 1. Speak as the player experiencing the moment, not as a passive observer or esports caster.
 2. Keep each commentary line SHORT: at most {mix.MaxWordsPerLine} words per line.
 3. Keep each line at least {mix.MinReadableSec.ToString("0.0", ci)} seconds long so it can be easily read on screen.

@@ -166,6 +166,10 @@ public static class AiVisionProviders
 
     public static bool WatchesVideoWithAudio(AiVendor vendor) => vendor == AiVendor.Google;
 
+    public static string DescribeCommentaryCapability(AiVendor vendor) => vendor == AiVendor.Google
+        ? "Writes on-screen text captions using Google Gemini (watches video WITH game audio). Does not create a voice."
+        : $"Writes on-screen text captions using {DisplayName(vendor)} (receives still frames only — NO audio, cannot hear speech or sound effects). Does not create a voice.";
+
     internal const string FreePlanDataTag = "AIFREEDATA_01";
 
     public const string GoogleFreePlanDataNote =

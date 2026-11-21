@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using FreeVideoStudio.App.Infrastructure;
@@ -16,7 +15,8 @@ public enum AiZoomStartChoice
     Reframe,
     FollowBox,
     FindForMe,
-    DrawBox,
+    LocalSelect,
+    MultiBlock,
 }
 
 public sealed record AiZoomStartOptions(
@@ -25,7 +25,13 @@ public sealed record AiZoomStartOptions(
     bool BoxRunsOnThisPc,
     string? PreviousDescription,
     string FollowBoxCost,
-    string FindCost);
+    string FindCost,
+    AiMode Mode = AiMode.Hybrid,
+    bool NeuralPackReady = false,
+    int EligibleMultiBlockCount = 0,
+    bool CanUseCloudDiscovery = true,
+    string? MultiBlockSummary = null,
+    bool HasWorkingKey = true);
 
 public sealed record AiZoomStartResult(AiZoomStartChoice Choice, string Description);
 
@@ -33,21 +39,29 @@ public sealed class AiZoomStartWindow : Window
 {
     public const string FixTag = "AIZOOMSTART_01";
     public const string FreeLine = "Free. Nothing is sent online.";
+    public const string CloudTrackerHeading = "Cloud AI Tracker";
+    public const string LocalSelectHeading = "Let me select (free, runs on this PC)";
 
     private readonly List<(RadioButton Radio, AiZoomStartChoice Choice, string Cost)> _choices = new();
-    private readonly TextBox _description;
-    private readonly StackPanel _descriptionPanel;
     private readonly TextBlock _cost;
 
     public AiZoomStartResult Result { get; private set; } = new(AiZoomStartChoice.Cancel, string.Empty);
 
     public static AiZoomStartChoice DefaultChoice(AiZoomStartOptions o)
-        => o.CanReframe ? AiZoomStartChoice.Reframe : o.HasBox ? AiZoomStartChoice.FollowBox : AiZoomStartChoice.FindForMe;
+    {
+        if (o.HasBox) return AiZoomStartChoice.FollowBox;
+        if (o.CanReframe) return AiZoomStartChoice.Reframe;
+        bool hasCloud = o.CanUseCloudDiscovery && o.HasWorkingKey && AiSetup.UsesOnline(o.Mode) && !string.IsNullOrWhiteSpace(o.FindCost);
+        if (hasCloud) return AiZoomStartChoice.FindForMe;
+        if (o.HasWorkingKey && AiSetup.UsesOnline(o.Mode) && !string.IsNullOrWhiteSpace(o.FindCost) && !o.BoxRunsOnThisPc)
+            return AiZoomStartChoice.FindForMe;
+        return AiZoomStartChoice.LocalSelect;
+    }
 
     public AiZoomStartWindow(AiZoomStartOptions options)
     {
         Title = "AI Smart Zoom";
-        Width = 520;
+        Width = 480;
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -56,56 +70,48 @@ public sealed class AiZoomStartWindow : Window
         ExtendClientAreaTitleBarHeightHint = DialogChrome.TitleBarHeight;
 
         var root = new StackPanel { Margin = new Thickness(20), Spacing = 8 };
-        root.Children.Add(new TextBlock
-        {
-            Text = "What should the camera do?",
-            FontWeight = FontWeight.Bold,
-            [!TextBlock.FontSizeProperty] = new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("AppFontSize18"),
-            Foreground = ThemeResources.Brush(this, "AppTextPrimaryBrush", Brushes.White),
-        });
-        root.Children.Add(new TextBlock
-        {
-            Text = "Nothing changes in your video until you accept the preview.",
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 6),
-            Foreground = ThemeResources.Brush(this, "AppTextSecondaryBrush", Brushes.Gray),
-        });
 
         if (options.CanReframe)
-            Add(root, AiZoomStartChoice.Reframe, "Just re-aim the camera",
-                "Keeps the tracking you already have and applies your current Zoom strength. Instant.", FreeLine);
-        if (options.HasBox)
-            Add(root, AiZoomStartChoice.FollowBox, "Follow the box I drew",
-                options.BoxRunsOnThisPc ? "Follows what is inside your zoom box, on this PC." : "Follows what is inside your zoom box. Starts right away.",
-                options.FollowBoxCost);
-        Add(root, AiZoomStartChoice.FindForMe, "Find who to follow for me",
-            "The AI looks at 3 pictures of this part and shows you who it found. You pick one.", options.FindCost);
-        if (!options.HasBox)
-            Add(root, AiZoomStartChoice.DrawBox, "Let me aim a box myself",
-                "A box appears on the video. Aim it at who to follow, then press FOLLOW THIS BOX.", FreeLine);
+        {
+            Add(root, AiZoomStartChoice.Reframe,
+                "Re-aim existing AI zoom",
+                "Instant · " + FreeLine);
+        }
 
-        _description = new TextBox
+        if (options.HasBox)
         {
-            Text = options.PreviousDescription ?? string.Empty,
-            MaxLength = AiTrackingPrompts.MaxDescriptionLength,
-            Watermark = "e.g. the player on the roof, the red car",
-        };
-        _description.Classes.Add("FormInput");
-        ToolTip.SetTip(_description, "Optional. Say who you mean in your own words and the AI lists the best match first. Leave it empty to see everyone it finds.");
-        _descriptionPanel = new StackPanel { Spacing = 4, Margin = new Thickness(28, 0, 0, 0) };
-        _descriptionPanel.Children.Add(new TextBlock
+            Add(root, AiZoomStartChoice.FollowBox,
+                "Follow my zoom box",
+                string.IsNullOrWhiteSpace(options.FollowBoxCost) ? FreeLine : options.FollowBoxCost);
+        }
+
+        bool showCloudDiscovery = options.CanUseCloudDiscovery && options.HasWorkingKey
+            && (AiSetup.UsesOnline(options.Mode) || (options.Mode == AiMode.NotChosen && !string.IsNullOrWhiteSpace(options.FindCost)));
+        if (showCloudDiscovery)
         {
-            Text = "Who should it follow? (optional)",
-            [!TextBlock.FontSizeProperty] = new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("AppFontSize11"),
-            Foreground = ThemeResources.Brush(this, "AppTextSecondaryBrush", Brushes.Gray),
-        });
-        _descriptionPanel.Children.Add(_description);
-        root.Children.Add(_descriptionPanel);
+            string findCost = string.IsNullOrWhiteSpace(options.FindCost)
+                ? "Sends 3 sample frames to your cloud AI to mark selectable targets."
+                : options.FindCost;
+            Add(root, AiZoomStartChoice.FindForMe,
+                CloudTrackerHeading,
+                findCost);
+        }
+
+        Add(root, AiZoomStartChoice.LocalSelect,
+            LocalSelectHeading,
+            FreeLine);
+
+        if (options.EligibleMultiBlockCount >= 2)
+        {
+            Add(root, AiZoomStartChoice.MultiBlock,
+                $"Zoom all {options.EligibleMultiBlockCount} blocks…",
+                "Review estimate before tracking. One Undo reverts the whole batch.");
+        }
 
         _cost = new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 8, 0, 0),
+            Margin = new Thickness(0, 6, 0, 0),
             FontWeight = FontWeight.SemiBold,
             Foreground = ThemeResources.Brush(this, "AppTextPrimaryBrush", Brushes.White),
         };
@@ -117,11 +123,7 @@ public sealed class AiZoomStartWindow : Window
         start.Classes.Add("Primary");
         cancel.Click += (_, _) => Close();
         start.Click += (_, _) => Accept();
-        _description.KeyDown += (_, e) =>
-        {
-            if (e.Key == Key.Enter) { e.Handled = true; Accept(); }
-        };
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14, 0, 0) };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 12, 0, 0) };
         buttons.Children.Add(cancel);
         buttons.Children.Add(start);
         root.Children.Add(buttons);
@@ -132,41 +134,35 @@ public sealed class AiZoomStartWindow : Window
             c.Radio.IsCheckedChanged += (_, _) => ShowSelection();
             if (c.Choice == preset) c.Radio.IsChecked = true;
         }
+        if (_choices.TrueForAll(c => c.Radio.IsChecked != true) && _choices.Count > 0)
+            _choices[0].Radio.IsChecked = true;
         ShowSelection();
 
         Content = DialogChrome.Wrap(this, "AI Smart Zoom", root);
-        Opened += (_, _) =>
-        {
-            if (Selected() == AiZoomStartChoice.FindForMe) { _description.Focus(); _description.SelectAll(); }
-        };
+        DialogFit.Apply(this);
     }
 
-    private void Add(StackPanel root, AiZoomStartChoice choice, string heading, string line, string cost)
+    private RadioButton Add(StackPanel root, AiZoomStartChoice choice, string heading, string cost)
     {
-        var body = new StackPanel { Spacing = 2 };
-        body.Children.Add(new TextBlock
+        var label = new TextBlock
         {
             Text = heading,
             FontWeight = FontWeight.SemiBold,
-            Foreground = ThemeResources.Brush(this, "AppTextPrimaryBrush", Brushes.White),
-        });
-        body.Children.Add(new TextBlock
-        {
-            Text = line,
-            [!TextBlock.FontSizeProperty] = new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("AppFontSize11"),
             TextWrapping = TextWrapping.Wrap,
-            Foreground = ThemeResources.Brush(this, "AppTextSecondaryBrush", Brushes.Gray),
-        });
+            Foreground = ThemeResources.Brush(this, "AppTextPrimaryBrush", Brushes.White),
+        };
         var radio = new RadioButton
         {
             GroupName = "AiZoomStart",
-            Content = body,
-            Padding = new Thickness(6, 4),
+            Content = label,
+            Padding = new Thickness(6, 6),
             HorizontalAlignment = HorizontalAlignment.Stretch,
+            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
         };
         Avalonia.Automation.AutomationProperties.SetName(radio, heading);
         _choices.Add((radio, choice, cost));
         root.Children.Add(radio);
+        return radio;
     }
 
     private AiZoomStartChoice Selected()
@@ -179,7 +175,6 @@ public sealed class AiZoomStartWindow : Window
     private void ShowSelection()
     {
         AiZoomStartChoice selected = Selected();
-        _descriptionPanel.IsVisible = selected == AiZoomStartChoice.FindForMe;
         foreach (var c in _choices)
             if (c.Choice == selected) _cost.Text = c.Cost;
     }
@@ -188,8 +183,7 @@ public sealed class AiZoomStartWindow : Window
     {
         AiZoomStartChoice selected = Selected();
         if (selected == AiZoomStartChoice.Cancel) return;
-        Result = new AiZoomStartResult(selected,
-            selected == AiZoomStartChoice.FindForMe ? AiTrackingPrompts.CleanDescription(_description.Text) : string.Empty);
+        Result = new AiZoomStartResult(selected, string.Empty);
         Close();
     }
 

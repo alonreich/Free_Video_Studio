@@ -5,14 +5,19 @@ File → spec routing: [`INDEX.md`](INDEX.md) §1. Keep this map in step with th
 
 Session lifecycle:    new video over unsaved edits -> three-way question (NEWVIDEOGUARD_01, MainWindow.Project.cs);
                       after PROCESS / MERGE with no edit since -> close without asking, next start empty
-                      (DONECLEAN_01: MainWindow.Project.cs, VideoMergerWindow.Session.cs); crash restore keeps playhead,
-                      kill marks and audio choices (RECOVERYFULL_01: MainWindow.Recovery.cs / MainWindow.Restore.cs).
-                      Spec: docs/05 SYS-RECOVERY, docs/06 NEWVIDEOGUARD_01.
+                      (DONECLEAN_01: MainWindow.Project.cs, VideoMergerWindow.Session.cs; companion tool clean exit via
+                      Services\ToolLaunchContracts.cs ToolNavigationResult.ExitApplication -> ToolNavigator.cs -> MainWindow.MarkExportedCleanExitForTool);
+                      crash restore keeps playhead, kill marks and audio choices (RECOVERYFULL_01: MainWindow.Recovery.cs / MainWindow.Restore.cs);
+                      a new video starts clean: no captions, cuts or memes survive (NEWVIDEOCLEAN_01, tests NewVideoCleanTests.cs).
+                      Spec: docs/05 SYS-RECOVERY, docs/06 NEWVIDEOGUARD_01, docs/08 COMP-ROOT.
 
 ```text
 Solution:             .\FreeVideoStudio.sln
 Application project:  .\src\FreeVideoStudio.App\FreeVideoStudio.App.csproj
 Core project:         .\src\FreeVideoStudio.Core\FreeVideoStudio.Core.csproj
+Core layout:          Core\Project\ (.fvsproj model, 06) · Core\Undo\ (UndoStack, 07) · Core\Editing\ (edit state, 07 UNDO-EDITSTATE)
+                      Core\Ipc\ (named pipes, PipeAccess PIPEAUTH_01, 05 SYS-IPCLIFETIME) · Core\Abstractions\ + App\Abstractions\ (IFaultSink, seams, 08)
+                      App\Interop\ (D3D11/WGL interop, 04 UI-GPUSLOT)
 Application tests:    .\tests\FreeVideoStudio.App.Tests\FreeVideoStudio.App.Tests.csproj
 Core tests:           .\tests\FreeVideoStudio.Core.Tests\FreeVideoStudio.Core.Tests.csproj
 FvsVerify tests:      .\tests\FvsVerify.Tests\FvsVerify.Tests.csproj (sentinel checker; CI)
@@ -79,22 +84,25 @@ Installer script:     .\build\installer\FreeVideoStudio.iss  (docs/09_DISTRIBUTI
 App icon:             .\assets\icons\FreeVideoStudio.ico (APPICON_01, docs/09 DIST-IDENTITY)
 AV hardening:         NODROPPER_01, NOTEMPEXEC_01, PEIDENTITY_01, UPDATECONSENT_01, NOHIDDENTOOLS_01, NOLOGONHOOK_01,
                       NOMEMREAD_01 (.\src\FreeVideoStudio.Core\Infrastructure\ProcessImage.cs), OPENWITHHOME_01, NOMUIWIPE_01,
-                      NOLOCALPORT_01, NOLURKER_01 (docs/05 SYS-AVCLEAN); SIGNDEPS_01, FREETRUST_01, SIGNPATH_01 (docs/05 SYS-SIGNING)
+                      NOLOCALPORT_01, NOLURKER_01 (docs/05 SYS-AVCLEAN); SIGNDEPS_01, FREETRUST_01, SIGNPATH_01 (docs/09 SYS-SIGNING)
 Licence & policies:   .\LICENSE (GPL-3.0), .\PRIVACY.md, .\CODE_SIGNING_POLICY.md, .\THIRD_PARTY_NOTICES.md (SIGNPATH_01)
 Controlled folders:   .\src\FreeVideoStudio.Core\Infrastructure\ControlledFolderAccess.cs (read-only) +
-                      .\src\FreeVideoStudio.App\Infrastructure\ProtectedFolderGate.cs (CFASAFE_01, docs/05 SYS-CFASAFE)
+                      .\src\FreeVideoStudio.App\Infrastructure\ProtectedFolderGate.cs (CFASAFE_01, docs/09 SYS-CFASAFE)
 Release gate:         .\build\FvsBuild\ReleaseGate.cs (RELGATE_01: clean + pushed + linted notes + green CI + local
                       tests (RELQA_01) + protected root key (ROOTKEY_01) + typed PUBLISH, version commit + tag, undo
                       on failure; --resume finishes a failed publish, RELRESUME_01) -> GitHubReleasePublisher.cs
                       (--verify-tag, RETAIN_01/02 old files removed, pages + notes kept, BETA_01 pre-releases).
                       Withdrawn signers: .\build\revoked-signers.txt (REVOKE_01). Upgrade smoke test:
                       .\.github\workflows\upgrade-smoke.yml (UPGRADESMOKE_01). Spec: docs/09 DIST-RELEASEGATE.
+Specs (docs/):        01 timeline · 02 audio · 03 FFmpeg export · 04 UI · 05 lifecycle & storage · 06 project document ·
+                      07 undo · 08 composition · 09 distribution, signing, updates & install · 10 AI features
+                      (routing: README.md §3, INDEX.md).
 Release notes:        .\docs\changes.md (technical, '## Unreleased') -> .\docs\CHANGELOG.md (users, '## Upcoming');
                       older releases in .\docs\CHANGELOG_ARCHIVE.md / changes_ARCHIVE.md (RELRECORD_01);
                       parser/lint/promotion .\src\FreeVideoStudio.Core\Infrastructure\ReleaseChangelog.cs
                       (RELNOTES_01..03). Spec: docs/09 DIST-RELEASENOTES.
 Update trust:         elevated worker runs only from a protected %ProgramData% copy:
-                      .\src\FreeVideoStudio.App\Services\ProtectedWorkerStage.cs (WORKERSTAGE_01, docs/05
+                      .\src\FreeVideoStudio.App\Services\ProtectedWorkerStage.cs (WORKERSTAGE_01, docs/09
                       SYS-UPGRADE-TRUST); Debug-only unsigned override (UNSIGNEDDEV_01); asset hashes + capped
                       decompression (ASSETHASH_01); per-drive space check (UPDATESPACE_01); published patch
                       bases (DELTABASE_01); 6-hourly re-check (RECHECK_01). Tests: ReleaseHardeningTests.cs,
@@ -114,6 +122,8 @@ Previous-brand guard: tests\FreeVideoStudio.Core.Tests\RebrandTests.cs (old name
                       LegacyAppDataNames.txt and docs/REBRAND_MIGRATION.md)
 Cleanup boundary:     .\src\FreeVideoStudio.Core\Infrastructure\SafeDirectoryCleanup.cs
                       + tests\FreeVideoStudio.Core.Tests\SafeDirectoryCleanupTests.cs (05 CLEANUPBOUND_01).
+Temp cleanup:         .\src\FreeVideoStudio.Core\Infrastructure\TempHousekeeper.cs (startup/exit junk cleanup, TEMPCLEAN_01)
+                      + tests\FreeVideoStudio.Core.Tests\TempHousekeeperTests.cs.
 Project persistence:  ProjectSession.cs ordered background save/load queue;
                       tests\FreeVideoStudio.App.Tests\AutosaveBackgroundTests.cs (06 PROJECTIO_01).
 UI/UX audit tests:    tests\FreeVideoStudio.App.Tests\UxAuditTests.cs (04 EXPORTCLOSE_01, CROPSAVEERR_01, SEGROWTHEME_01/SEGROWA11Y_01).
@@ -135,7 +145,8 @@ Settings › Files & Folders: ONE save folder + ONE file name for both tools (SE
                       UI-SETTINGS-ABOUT (.\src\FreeVideoStudio.App\Controls\SettingsWindow.Output.cs)
 Meme library:         .\meme\ holds ALL memes (videos + pictures); .\mp4\ and .\jpeg\ are gone
                       (MEMEFOLDER_01). Cloud sync lists repo meme/ via git/trees (MEMESYNC_01..03);
-                      starter set = .\src\FreeVideoStudio.App\Infrastructure\MemeAssets.cs StarterFiles
+                      synthetic repo starter meme fixtures live in .\build\starter_meme\ (separate from user .\meme\)
+                      and match .\src\FreeVideoStudio.App\Infrastructure\MemeAssets.cs StarterFiles
                       == .\build\FvsBuild\Staging.cs StarterMeme (STARTERLIST_01, MemeLibraryTests).
                       Spec: docs/03_FFMPEG_EXPORT_PIPELINE.md, FFM-MEMELIB.
 Song library:         .\mp3\ holds ALL songs (openly licensed / no-copyright only), plus attribution notes (.txt)
@@ -146,20 +157,30 @@ Song library:         .\mp3\ holds ALL songs (openly licensed / no-copyright onl
 Folder names:         never contain spaces - %ProgramFiles%\FreeVideoStudio, Videos\FreeVideoStudio\Memes
                       (NOSPACE_01, MEMEFOLDER_02). Old spaced folders are migrated automatically.
                       Spec: docs/05_SYSTEM_LIFECYCLE_STORAGE.md, SYS-NOSPACE.
-Add Music wizard:     .\src\FreeVideoStudio.App\MusicWizardWindow.axaml(.cs) + .Playlist.cs (song list, coverage)
-                      + .SongLane.cs (song blocks on the music lane, song card) + .History.cs (undo)
+Add Music wizard:     .\src\FreeVideoStudio.App\MusicWizardWindow.axaml(.cs) + .Playlist.cs (song browser, midpoint audition, stale-load guards, coverage)
+                      + .SongLane.cs (song bar with START/END edges; hidden lane) + .History.cs (undo)
+                      + .Steps.cs (three-step navigation, per-occurrence part editing, coverage question, Sound reset)
+                      + .SoundPreview.cs (export-rendered sound on Check & finish, SOUNDMIX_01)
+                      + .PartAxis.cs (proportional video/music lanes, animated cuts, PARTAXIS_01 / PARTCUT_01)
+                      + .Guide.cs (gap warning overlay, first-time start-point demo, GAPWARN_01 / PARTDEMO_01)
+Background filmstrip: .\src\FreeVideoStudio.App\Services\WholeVideoFilmstrip.cs (whole-video quick + fine takes, WHOLESTRIP_01).
+Review timeline:      .\src\FreeVideoStudio.App\Controls\ReviewTimelineRuler.cs (Check & finish time ruler + song blocks).
+Dev player log cap:   .\src\FreeVideoStudio.App\Infrastructure\MpvLogCap.cs stops mpv_debug_*.log at 64 MB (MPVLOGCAP_01).
                       + .AiAutoFit.cs (cloud AI song auto-fit: AI picks a song by NUMBER, start point measured
                       locally from the song's loudness, visible steps + seconds counter + cancel, 45 s / 120 s
                       limits — AIMUSIC_HONEST_01 / AIMUSIC_START_01 / AIMUSIC_PROGRESS_01) + .Scan.cs (folder scan & probes) +
                       .Controls.cs + .Merger.cs (Merger-launched wizard) +
-                      ViewModels\MusicWizardViewModel.cs (bound state). Two steps: Choose music -> Fit & mix
-                      (WIZ2STEP_01). One song list, every song with its chosen part (PLAYLIST_01, MUSICWIN_01),
+                      ViewModels\MusicWizardViewModel.cs (bound state). Three steps: Choose a song -> Select music starting point
+                      -> Check & finish (MUSICWIZ3_01); repeated songs are separate occurrences (MUSICOCC_01). One song list, every song with its chosen part (PLAYLIST_01, MUSICWIN_01),
                       laid out by Core\Media\MusicBedPlan.cs with the export's crossfade from
                       Core\Media\MusicCrossfade.cs (XFADEPLAN_01); pure list maths in Core\Media\MusicPlaylist.cs.
                       Coverage handoff: .Playlist.cs maps output coverage to source endpoints (MUSICEND_01).
                       Saved windows: MusicWizardResult.Plan.cs (MusicStartsSeconds / MusicEndsSeconds, ToBedTracks).
                       Merger EDIT/REMOVE + named song blocks: VideoMergerWindow.MusicButton.cs (MERGERMUSIC_01/02).
                       Specs: docs/02 AUD-DIALOGS / AUD-MUSICWIN / AUD-MUSICFADE, docs/04 UI-MUSICWIZARD.
+Window placement:     .\src\FreeVideoStudio.App\WindowPlacement.cs (maths), WindowBoundsHelper.cs (remembered windows),
+                      Controls\DialogFit.cs (every dialog); defaults table 04 UI-WINPLACE (WINPLACE_01);
+                      tests\FreeVideoStudio.App.Tests\WindowPlacementTests.cs.
 Meme picker:          .\src\FreeVideoStudio.App\Controls\MemePickerWindow.axaml(.cs) (MEMEPICK_01..05)
                       + Controls\MemePlacementPreview.cs (live preview, drag position) + ViewModels\MemeChoiceViewModel.cs
                       + Infrastructure\MemePickerPrefsStore.cs (favourites, recent, last choice); docs/04 UI-MEMESELECT.
@@ -177,7 +198,7 @@ Freeze sound:         Core/Media/FreezeSoundEffect.cs + Core/Assets/FreezeSounds
                       Core/Media/VideoLoudnessCache.cs keeps the uploaded video's loudness so the sound sits at 83 % of it (FREEZELEVEL_01);
                       MainWindow.FreezeSound.cs plays it in the Main App's live preview (FREEZEPARITY_01);
                       MusicWizardWindow.FreezeSound.cs and VideoMergerWindow.EdlPreview.cs play it in Add Music and the Video Merger (FREEZEPARITY_02).
-UI stall watchdog:    App/Infrastructure/UiStallWatchdog.cs + Core/Infrastructure/BlockingCallTracker.cs → <Logs>\ui_stalls.log (UIWATCHDOG_01, docs/05).
+UI stall watchdog:    App/Infrastructure/UiStallWatchdog.cs + Core/Infrastructure/BlockingCallTracker.cs → <Logs>\ui_stalls.log (UIWATCHDOG_01, docs/05 SYS-LOGGING).
 Voiceover gain:       Core/Media/VoiceOverLevel.cs; Controls/VoiceOverGainSlider.cs + VoiceOverWindow.Volume.cs.
 Preview layers:       Controls/MusicBedPreviewPlayer.cs (music in Main/Speed Editor/Voice-Over previews), Models/EditorPreviewLayers.cs,
                       Core/Media/BedPreviewFollower.cs, AudioPlayerClock.cs, PreviewSpeedGovernor.cs, PreviewTimeMap.cs
@@ -187,25 +208,37 @@ Preview layers:       Controls/MusicBedPreviewPlayer.cs (music in Main/Speed Edi
 AI features:          Services\Ai*.cs (AiVisionProviders.cs, AiHttpHelper.cs, AiCostEstimator.cs, AiMusicAutoFitService.cs,
                       AiViralPostService.cs, AiEliminationTrackerService.cs, AiUsageMeter.cs, AiJsonSchema.cs, AiFfmpeg.cs,
                       AiAnswerGuard.cs, AiReasoningPolicy.cs, AiRunApproval.cs, AiPreflight.cs, AiResultCache.cs,
-                      AiAnswerDiskStore.cs, AiDiagnostics.cs, AiKeyHealth.cs (AIKEYHEALTH_01), AiAccountFix.cs (AIFIXFLOW_01), AiStatusLine.cs (AISTATUSLINE_01), AiKeyStartupCheck.cs (AIKEYSTARTUP_01), AiThinkingCalibration.cs (AITHINKCAL_01), ChatGptAuth.cs + ChatGptPlanTransport.cs (Sign in with ChatGPT, CHATGPTSIGNIN_01); AIAUDIT_04 docs/05 SYS-AISETTINGS §7.7;
-                      AIAUDIT_05 docs/05 SYS-AIAUDIT5, tests AiAudit5Tests.cs; AIAUDIT_06 docs/05 SYS-AIAUDIT6: AiFrameCrop.cs (pop-up close-ups, off unless FVS_AI_KILLCROP=1), AiUsageReport.cs (estimate vs used; developer_tools\AiBakeOff --usage-report), tests AiAudit6Tests.cs + Core PopupRegionTests.cs; AIQA_07 docs/05 SYS-AIQA7: tests AiQaAudit7Tests.cs: refusals, ChatGPT stream end, decimal boxes, song tags, Local AI processor fallback); AIQA_08 docs/05 SYS-AIQA8: tests AiQaAudit8Tests.cs: ChatGPT-plan refusals and in-stream failures, unrecognised commentary answers (open defects, tests fail until fixed),
+                      AiAnswerDiskStore.cs, AiDiagnostics.cs, AiKeyHealth.cs (AIKEYHEALTH_01), AiAccountFix.cs (AIFIXFLOW_01), AiStatusLine.cs (AISTATUSLINE_01), AiKeyStartupCheck.cs (AIKEYSTARTUP_01), AiThinkingCalibration.cs (AITHINKCAL_01), ChatGptAuth.cs + ChatGptPlanTransport.cs (Sign in with ChatGPT, CHATGPTSIGNIN_01); AIAUDIT_04 docs/10 SYS-AIAUDIT4;
+                      AIAUDIT_05 docs/10 SYS-AIAUDIT5, tests AiAudit5Tests.cs; AIAUDIT_06 docs/10 SYS-AIAUDIT6: AiFrameCrop.cs (pop-up close-ups, off unless FVS_AI_KILLCROP=1), AiUsageReport.cs (estimate vs used; developer_tools\AiBakeOff --usage-report), tests AiAudit6Tests.cs + Core PopupRegionTests.cs; AIQA_07 docs/10 SYS-AIQA7: tests AiQaAudit7Tests.cs: refusals, ChatGPT stream end, decimal boxes, song tags, Local AI processor fallback); AIQA_08 docs/10 SYS-AIQA8: tests AiQaAudit8Tests.cs: ChatGPT-plan refusals and in-stream failures, unrecognised commentary answers (AIPLANREFUSAL_01, AIPLANFAIL_01, AICOMMSHAPE_01, LOCALAISWAP_01; fixed); AIINTEG_01 docs/10 SYS-AIINTEG: tests AiIntegrationFixTests.cs: plan sign-in texts, PC tracking in every mode, bigger commentary parts, cloud-only look, busy fallback, free Google gate,
                       Core\Diagnostics\SecretRedactor.cs; Services\IAiVisionProvider.cs, Services\CommentaryPersonality.cs, Infrastructure\SecretProtector.cs (DPAPI, KEYPROTECT_01);
                       Core\Media\Caption*.cs. Vendors Gemini / Claude / OpenAI; default models: AIMODELS_02.
-                      Canonical feature map + tags: docs/05 SYS-AISETTINGS §7 (AIAUDIT_01).
+                      Canonical feature map + tags: docs/10_AI_FEATURES.md SYS-AISETTINGS (AIAUDIT_01).
                       Specs: 01 TL-AITRACKING / TL-AIHUD / TL-CAPTIONS, 02 AUD-MUSICWIN, 03 FFM-CAPTIONS,
-                      04 UI-AIZOOM / UI-AIHUDWAND / UI-AICOMMENTARY / UI-MUSICWIZARD / UI-MERGER-MULTISELECT, 05 SYS-AISETTINGS.
+                      04 UI-AIZOOM / UI-AIHUDWAND / UI-AICOMMENTARY / UI-MUSICWIZARD / UI-MERGER-MULTISELECT, 10 SYS-AISETTINGS.
                       Secret guard: tests\FreeVideoStudio.App.Tests\SecretLeakTests.cs (SECRETSCAN_01) — never commit
                       keys, .pfx, *.key.pem or *.password.txt.
 Local AI (optional):  Core\LocalAi\ (OrtRuntime.cs ONNX Runtime C API, LocalAiPack*.cs pinned pack + check,
-                      Sam2BoxTracker.cs, LocalSubjectTracker.cs, LocalTrackingMath.cs), Core\Media\SceneCutDetector.cs,
+                      Sam2BoxTracker.cs, LocalSubjectTracker.cs, LocalTrackingMath.cs, LocalSubjectDiscovery.cs, YoloOnnxDetector.cs), Core\Media\SceneCutDetector.cs,
                       RawVideoFrameReader.cs, HudOverlayEventDetector.cs (Kill Tracker on-screen check);
                       Services\LocalAiPackService.cs, LocalTrackingService.cs; Controls\SettingsWindow.LocalAi.cs,
                       pack builder developer_tools\local_ai_pack\ (Make_Local_AI_Pack.cmd -> make_pack.ps1,
                       export_sam2_onnx.py, build_pack.py; output in out\, git-ignored, used by the A/V gate). Installed pack: %LocalAppData%\FreeVideoStudio\LocalAi\v1.
-                      Specs: 01 TL-LOCALTRACK, 05 SYS-LOCALAI, 09 DIST-LOCALAIPACK.
-AI ease of use:       Controls\AiZoomStartWindow.cs (the one AI Smart Zoom start question), Controls\DialogChrome.cs (title bar for
-                      code-built dialogs). Spec: 04 UI-AIEASE.
-AI setup:             Controls\AiModeWindow.cs ("How should AI work?": PC only / Online only / Both), Services\AiSetup.cs
-                      (AiMode, setup-complete check), Controls\AiSetupWizardWindow (key step, no company pre-picked);
-                      Settings › AI › How AI works — Change…. Spec: 04 UI-AIMODE (AIMODE_01).
+                      Specs: 01 TL-LOCALTRACK, 10 SYS-LOCALAI, 09 DIST-LOCALAIPACK.
+AI ease of use:       Controls\AiZoomStartWindow.cs (clean Smart Zoom start choices: Cloud AI Tracker vs 100% Free Local AI, zero text box),
+                      Controls\AiSubjectPickerWindow.axaml(.cs/.Correction.cs) (AIZOOMWIZARD_01 3-stage wizard, AIPICKERELLIPSE_01 glowing red oval target selection & guided AskManualDescriptionAsync failover),
+                      Controls\AiMultiBlockZoomWindow.cs & Services\MultiBlockZoomPlan.cs (multi-block batch queue, atomic apply),
+                      Controls\AiZoomPreviewModalWindow.cs (dedicated Smart Zoom preview modal dialog, Stage 3 review Keep/Fix Tracking/Discard, AIPREVIEW_01),
+                      Controls\DialogChrome.cs (title bar for code-built dialogs), tests\FreeVideoStudio.App.Tests\AiWorkflowFixTests.cs.
+                      Spec: 04 UI-AIEASE / UI-AIZOOM, 07 AIUNDO_01.
+AI setup:             Controls\AiModeWindow.cs ("How should AI work?": PC only / Online only / Both; opens over its owner, not remembered), Services\AiSetup.cs
+                      (AiMode, AiCapabilityPolicy, AfterPackRemoved, setup-complete check), Controls\AiSetupWizardWindow.axaml(.cs)
+                      (resizable FitWizardWindowBounds, tracks AiSetupWizardBounds, key step, no company pre-picked);
+                      Settings › AI › How AI works — Change…. Spec: 04 UI-AIMODE (AIMODE_01), 10 SYS-AICAPABILITY (AICAPABILITY_01).
 ```
+Smart Zoom bounds/framing: GeminiTrackingService.CandidateFrameTimes and GranularSpeedEditorWindow.AiZoom enforce the selected interval; LocalTrackingService bounds motion bursts; AiTrajectorySmoother shares tighter zoom and bottom-HUD clearance across all engines (AISEGMENTONLY_01 / AIHUDCAMERA_01); AiZoomPreviewModalWindow provides dedicated preview dialog (AIPREVIEW_01).
+
+MUSICBROWSE_01: Add Music Choose screen has a full-width list, left USE SONG → buttons, no right pane, midpoint autoplay and ±20s transport (song list only). Tests: tests/FreeVideoStudio.App.Tests/MusicBrowserTests.cs, MusicWizardStepsTests.cs, MusicWizardPartAxisTests.cs.
+
+NAUDIO3OUTPUT_01: audio output consumers (PreviewAudioSync, VoiceOverPreviewPlayer, FreezeSoundPreview, UiSoundEffect, MainWindow, VoiceOverWindow) use NAudio 3 WaveOut. UiThreadBlockingTests guards supported event-driven output, buffer settings and off-thread disposal; 02 AUD-IPCSTATE / 05 SYS-WINSTATE.
+
+FRAMECANCELISO_01: tests/FreeVideoStudio.Core.Tests/LibAvFrameDecodeTests.cs checks cancellation cleanup against a private copy of the selected media under Core suite work (03 FFM-LIBAVFRAME).

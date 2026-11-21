@@ -53,7 +53,7 @@ public partial class SettingsWindow : Window
         Closed += (_, _) => _freezeSoundPreview.Dispose();
 
         InitializeComponent();
-        FreeVideoStudio.App.WindowBoundsHelper.Track(this, "SettingsBounds");
+        FreeVideoStudio.App.WindowBoundsHelper.Track(this, "SettingsBounds", capFraction: WindowPlacement.DialogCap);
         DataContext = this;
 
         Vm.PropertyChanged += OnVmPropertyChanged;

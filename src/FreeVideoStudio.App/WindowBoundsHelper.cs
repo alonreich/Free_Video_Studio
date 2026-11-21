@@ -10,7 +10,7 @@ namespace FreeVideoStudio.App;
 
 public static class WindowBoundsHelper
 {
-    public static void Track(Window window, string key, string? seedFromKey = null, bool fitDisplayOnFirstRun = false)
+    public static void Track(Window window, string key, string? seedFromKey = null, bool fitDisplayOnFirstRun = false, double capFraction = WindowPlacement.EditorCap, double firstRunMaxWidthDip = double.PositiveInfinity)
     {
         PixelPoint? appliedPosition = null;
         try
@@ -20,13 +20,15 @@ public static class WindowBoundsHelper
 
             bool applied;
             if (!hasOwnBounds && seedFromKey != null)
-                applied = ApplyBounds(window, state, seedFromKey, sizeAndPositionOnly: true);
+                applied = ApplyBounds(window, state, seedFromKey, key, capFraction, sizeAndPositionOnly: true);
             else
-                applied = ApplyBounds(window, state, key);
+                applied = ApplyBounds(window, state, key, key, capFraction);
 
-            if (!applied && fitDisplayOnFirstRun)
+            if (!applied)
             {
-                ApplyFirstRunDisplayFit(window, key);
+                var home = WindowPlacement.HomeDisplay(window, null, state);
+                if (fitDisplayOnFirstRun && home.HasValue) ApplyFirstRunDisplayFit(window, key, home.Value, capFraction, firstRunMaxWidthDip);
+                else if (home.HasValue) WindowPlacement.LowerMinimumsToFit(window, home.Value, capFraction);
             }
 
             if (window.WindowStartupLocation == WindowStartupLocation.Manual)
@@ -91,119 +93,140 @@ public static class WindowBoundsHelper
         };
     }
 
-    private static bool ApplyBounds(Window window, JsonObject state, string key, bool sizeAndPositionOnly = false)
+    private static bool ApplyBounds(Window window, JsonObject state, string key, string saveKey, double capFraction, bool sizeAndPositionOnly = false)
     {
-        if (state.TryGetPropertyValue(key, out var boundsNode) && boundsNode is JsonObject boundsObj)
+        if (!(state.TryGetPropertyValue(key, out var boundsNode) && boundsNode is JsonObject boundsObj))
         {
-            window.WindowStartupLocation = WindowStartupLocation.Manual;
-
-            double savedWidth = window.Width;
-            double savedHeight = window.Height;
-            bool hasSavedSize = false;
-
-            if (boundsObj.TryGetPropertyValue("Width", out var w) && w != null && boundsObj.TryGetPropertyValue("Height", out var h) && h != null)
-            {
-                savedWidth = Math.Max(window.MinWidth > 0 ? window.MinWidth : 320, (double)w);
-                savedHeight = Math.Max(window.MinHeight > 0 ? window.MinHeight : 240, (double)h);
-                hasSavedSize = true;
-            }
-
-            if (hasSavedSize)
-            {
-                window.Width = savedWidth;
-                window.Height = savedHeight;
-                window.SizeToContent = SizeToContent.Manual;
-            }
-
-            if (boundsObj.TryGetPropertyValue("X", out var x) && x != null && boundsObj.TryGetPropertyValue("Y", out var y) && y != null)
-            {
-                int px = (int)x;
-                int py = (int)y;
-
-                var screens = window.Screens.All;
-                double scaling = screens.FirstOrDefault()?.Scaling ?? 1.0;
-                int pixelWidth = Math.Max(1, (int)(savedWidth * scaling));
-                int pixelHeight = Math.Max(1, (int)(savedHeight * scaling));
-
-                bool isVisible = screens.Any(s => s.Bounds.Intersects(new PixelRect(px, py, pixelWidth, pixelHeight)));
-
-                if (!isVisible)
-                {
-                    var primary = window.Screens.Primary ?? screens.FirstOrDefault();
-                    if (primary != null)
-                    {
-                        px = primary.Bounds.X + Math.Max(0, (primary.Bounds.Width - pixelWidth) / 2);
-                        py = primary.Bounds.Y + Math.Max(0, (primary.Bounds.Height - pixelHeight) / 2);
-                    }
-                }
-
-                window.Position = new PixelPoint(px, py);
-            }
-
-            if (!sizeAndPositionOnly && boundsObj.TryGetPropertyValue("WindowState", out var stateNode) && stateNode != null)
-            {
-                var savedState = (WindowState)(int)stateNode;
-                window.WindowState = savedState == WindowState.Maximized
-                    ? WindowState.Maximized
-                    : WindowState.Normal;
-            }
-
-            return true;
+            if (window.WindowStartupLocation == WindowStartupLocation.Manual)
+                window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            return false;
         }
 
-        window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        return false;
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+        var displays = WindowPlacement.Displays(window);
+
+        double width = window.Width;
+        double height = window.Height;
+        bool hasSize = false;
+        if (boundsObj["Width"] is JsonNode w && boundsObj["Height"] is JsonNode h)
+        {
+            width = Math.Max(window.MinWidth > 0 ? window.MinWidth : 320, (double)w);
+            height = Math.Max(window.MinHeight > 0 ? window.MinHeight : 240, (double)h);
+            hasSize = true;
+        }
+
+        if (boundsObj["X"] is JsonNode xn && boundsObj["Y"] is JsonNode yn)
+        {
+            int px = (int)xn;
+            int py = (int)yn;
+            double sizeW = double.IsNaN(width) ? 640 : width;
+            double sizeH = double.IsNaN(height) ? 480 : height;
+
+            if (!sizeAndPositionOnly && boundsObj["Return"] is JsonObject ret
+                && ret["X"] is JsonNode rx && ret["Y"] is JsonNode ry
+                && WindowPlacement.IndexOf(displays, (string?)ret["Display"]) >= 0
+                && WindowPlacement.GrabbableDisplay(displays, (int)rx, (int)ry, sizeW) >= 0)
+            {
+                px = (int)rx;
+                py = (int)ry;
+                EnqueueReturn(saveKey, boundsObj, null);
+                RuntimeLog.Info("UI", $"'{saveKey}': its display is back; returning the window there.");
+            }
+
+            int grab = WindowPlacement.GrabbableDisplay(displays, px, py, sizeW);
+            if (grab >= 0)
+            {
+                var d = displays[grab];
+                var pixelRect = new PixelRect(px, py, Math.Max(1, (int)(sizeW * d.Scale)), Math.Max(1, (int)(sizeH * d.Scale)));
+                if (!WindowPlacement.InsideDesktop(displays, pixelRect))
+                {
+                    WindowPlacement.LowerMinimumsToFit(window, d, capFraction);
+                    var fit = WindowPlacement.FitInside(d, sizeW, sizeH, capFraction);
+                    if (fit.Width < sizeW || fit.Height < sizeH)
+                    {
+                        sizeW = Math.Max(fit.Width, window.MinWidth);
+                        sizeH = Math.Max(fit.Height, window.MinHeight);
+                        width = sizeW; height = sizeH; hasSize = true;
+                    }
+                    var inside = WindowPlacement.KeepInside(d, new PixelPoint(px, py), sizeW, sizeH);
+                    px = inside.X; py = inside.Y;
+                }
+            }
+            else
+            {
+                var home = WindowPlacement.HomeDisplay(window, null, state);
+                if (home.HasValue)
+                {
+                    var d = home.Value;
+                    WindowPlacement.LowerMinimumsToFit(window, d, capFraction);
+                    var fit = WindowPlacement.FitInside(d, sizeW, sizeH, capFraction);
+                    sizeW = Math.Max(fit.Width, window.MinWidth);
+                    sizeH = Math.Max(fit.Height, window.MinHeight);
+                    width = sizeW; height = sizeH; hasSize = true;
+                    var c = WindowPlacement.Center(d, sizeW, sizeH);
+                    if (!sizeAndPositionOnly && boundsObj["Return"] is null && boundsObj["Display"] is JsonNode lost)
+                        EnqueueReturn(saveKey, boundsObj, new JsonObject { ["X"] = px, ["Y"] = py, ["Display"] = lost.DeepClone() });
+                    RuntimeLog.Info("UI", $"'{saveKey}': saved spot ({px},{py}) has no reachable title bar on any display; moved to the centre of {d.Fingerprint} at {sizeW:0}x{sizeH:0}.");
+                    px = c.X; py = c.Y;
+                }
+            }
+
+            window.Position = new PixelPoint(px, py);
+        }
+        else
+        {
+            var home = WindowPlacement.HomeDisplay(window, null, state);
+            if (home.HasValue) WindowPlacement.LowerMinimumsToFit(window, home.Value, capFraction);
+        }
+
+        if (hasSize)
+        {
+            window.Width = width;
+            window.Height = height;
+            window.SizeToContent = SizeToContent.Manual;
+        }
+
+        if (!sizeAndPositionOnly && boundsObj["WindowState"] is JsonNode stateNode)
+        {
+            var savedState = (WindowState)(int)stateNode;
+            window.WindowState = savedState == WindowState.Maximized
+                ? WindowState.Maximized
+                : WindowState.Normal;
+        }
+
+        return true;
     }
 
-    private const double FirstRunCoverage = 0.80;
-
-    private const double FirstRunAspect = 16.0 / 9.0;
-
-    private static void ApplyFirstRunDisplayFit(Window window, string key)
+    private static void EnqueueReturn(string key, JsonObject bounds, JsonObject? ret)
     {
         try
         {
-            var screen = window.Screens.Primary ?? window.Screens.All.FirstOrDefault();
-            if (screen == null) return;
+            var copy = (JsonObject)bounds.DeepClone();
+            copy.Remove("Return");
+            if (ret != null) copy["Return"] = ret;
+            Core.Ipc.SessionStateWriter.For().Enqueue(new JsonObject { [key] = copy });
+        }
+        catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+    }
 
-            double scaling = screen.Scaling > 0 ? screen.Scaling : 1.0;
-            var area = screen.WorkingArea;
-
-            double usableWidth = area.Width / scaling;
-            double usableHeight = area.Height / scaling;
-            if (usableWidth <= 0 || usableHeight <= 0) return;
-
-            double boundWidth = usableWidth * FirstRunCoverage;
-            double boundHeight = usableHeight * FirstRunCoverage;
-
-            double width = boundWidth;
-            double height = width / FirstRunAspect;
-            if (height > boundHeight)
-            {
-                height = boundHeight;
-                width = height * FirstRunAspect;
-            }
-
-            double minWidth = window.MinWidth > 0 ? window.MinWidth : 320;
-            double minHeight = window.MinHeight > 0 ? window.MinHeight : 240;
-            width = Math.Clamp(Math.Round(width), minWidth, Math.Max(minWidth, usableWidth));
-            height = Math.Clamp(Math.Round(height), minHeight, Math.Max(minHeight, usableHeight));
+    private static void ApplyFirstRunDisplayFit(Window window, string key, DisplayArea display, double capFraction, double maxWidthDip)
+    {
+        try
+        {
+            if (display.UsableWidthDip <= 0 || display.UsableHeightDip <= 0) return;
+            WindowPlacement.LowerMinimumsToFit(window, display, capFraction);
+            var size = WindowPlacement.FirstRunSize(display, window.MinWidth, window.MinHeight, capFraction);
+            if (size.Width > maxWidthDip) size = new Size(Math.Max(window.MinWidth, maxWidthDip), size.Height);
 
             window.SizeToContent = SizeToContent.Manual;
-            window.Width = width;
-            window.Height = height;
-
-            int pixelWidth = Math.Max(1, (int)Math.Round(width * scaling));
-            int pixelHeight = Math.Max(1, (int)Math.Round(height * scaling));
-
+            window.Width = size.Width;
+            window.Height = size.Height;
             window.WindowStartupLocation = WindowStartupLocation.Manual;
-            window.Position = new PixelPoint(
-                area.X + Math.Max(0, (area.Width - pixelWidth) / 2),
-                area.Y + Math.Max(0, (area.Height - pixelHeight) / 2));
+            window.Position = WindowPlacement.Center(display, size.Width, size.Height);
 
             RuntimeLog.Info("UI",
-                $"First run for '{key}': sized {width:0}x{height:0} DIP ({width / height:0.00}:1) to cover " +
-                $"{FirstRunCoverage:P0} of a {usableWidth:0}x{usableHeight:0} DIP working area at {scaling:0.##}x scaling.");
+                $"First run for '{key}': sized {size.Width:0}x{size.Height:0} DIP ({size.Width / size.Height:0.00}:1) to cover " +
+                $"{WindowPlacement.FirstRunCoverage:P0} of a {display.UsableWidthDip:0}x{display.UsableHeightDip:0} DIP working area at {display.Scale:0.##}x scaling on {display.Fingerprint}.");
         }
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
@@ -271,17 +294,21 @@ public static class WindowBoundsHelper
         public readonly int X, Y;
         public readonly double Width, Height;
         public readonly WindowState State;
+        public readonly string? Display;
 
-        private WindowSnapshot(int x, int y, double w, double h, WindowState state)
+        private WindowSnapshot(int x, int y, double w, double h, WindowState state, string? display)
         {
-            X = x; Y = y; Width = w; Height = h; State = state;
+            X = x; Y = y; Width = w; Height = h; State = state; Display = display;
         }
 
         public static WindowSnapshot Capture(Window window)
         {
             double w = double.IsNaN(window.Width) ? window.Bounds.Width : window.Width;
             double h = double.IsNaN(window.Height) ? window.Bounds.Height : window.Height;
-            return new WindowSnapshot(window.Position.X, window.Position.Y, w, h, window.WindowState);
+            string? display = null;
+            try { display = WindowPlacement.DisplayOf(window)?.Fingerprint; }
+            catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+            return new WindowSnapshot(window.Position.X, window.Position.Y, w, h, window.WindowState, display);
         }
     }
 
@@ -305,6 +332,8 @@ public static class WindowBoundsHelper
             if (existingObj.TryGetPropertyValue("Y", out var y)) boundsObj["Y"] = y?.DeepClone();
             if (existingObj.TryGetPropertyValue("Width", out var w)) boundsObj["Width"] = w?.DeepClone();
             if (existingObj.TryGetPropertyValue("Height", out var h)) boundsObj["Height"] = h?.DeepClone();
+            if (existingObj.TryGetPropertyValue("Display", out var d)) boundsObj["Display"] = d?.DeepClone();
+            if (existingObj.TryGetPropertyValue("Return", out var r)) boundsObj["Return"] = r?.DeepClone();
         }
 
         WindowState persistedState = snapshot.State == WindowState.Minimized
@@ -318,6 +347,7 @@ public static class WindowBoundsHelper
             boundsObj["Y"] = snapshot.Y;
             boundsObj["Width"] = snapshot.Width;
             boundsObj["Height"] = snapshot.Height;
+            if (snapshot.Display != null) boundsObj["Display"] = snapshot.Display;
         }
 
         return boundsObj;

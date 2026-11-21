@@ -35,6 +35,10 @@ internal static class ChatGptAuth
     internal const string FirstRegistrationClientId = "dynamic_agent_client";
     internal const string AppName = "Free Video Studio";
     internal const string ManageUsageUrl = "https://chatgpt.com/settings/usage";
+    internal const string ApprovalTag = "CHATGPTAPPROVAL_01";
+    internal const bool PartnerApproved = false;
+    internal const string NotApprovedYetText = "Coming soon: OpenAI has to approve this app before ChatGPT Plus or Pro can be used here. Until then, use Google's free key or an OpenAI API key (paid per use).";
+    internal static bool CanOfferSignIn => PartnerApproved || IsSignedIn;
     internal const string CallbackPath = "/auth/callback";
     internal const int PreferredPort = 1455;
     internal static readonly TimeSpan SignInWait = TimeSpan.FromMinutes(5);
