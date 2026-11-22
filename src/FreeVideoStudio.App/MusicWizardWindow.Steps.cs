@@ -29,8 +29,7 @@ public partial class MusicWizardWindow
     {
         Vm.StartHereCommand = new RelayCommand(() => SetPartEdgeHere(start: true));
         Vm.EndHereCommand = new RelayCommand(() => SetPartEdgeHere(start: false));
-        Vm.ResetPartCommand = new RelayCommand(ResetPart);
-        Vm.EndWithVideoCommand = new RelayCommand(EndPartWithVideo);
+        Vm.ResetPartCommand = new RelayCommand(() => _ = ResetPartAsync());
         Vm.EditSongCommand = new RelayCommand<MusicOccurrenceChip>(chip => { if (chip != null) EditOccurrence(chip.Index); });
         Vm.ReviewSeekRequested += OnReviewSeekRequested;
         WirePartAxis();
@@ -290,27 +289,22 @@ public partial class MusicWizardWindow
 
     private void SeekPartVideo(double timelineSec) => SeekPart(PartSongSecAt(Math.Clamp(timelineSec, 0, LaneAxisSec())));
 
-    private void EndPartWithVideo()
+    private async Task ResetPartAsync()
     {
-        if (_editIndex < 0 || _editIndex >= _playlist.Count || FirstSegmentOf(_editIndex) is not MusicBedSegment s) return;
-        var e = _playlist[_editIndex];
-        double axisBefore = PartAxisSec();
-        double heardEnd = s.FileOffsetSec + s.LeadInSec + s.DurationSec;
-        if (EntrySegments(_editIndex) is { } segs) heardEnd = segs.Last.FileOffsetSec + segs.Last.LeadInSec + segs.Last.DurationSec;
-        var updated = MusicPlaylistMath.TrySetWindow(e, e.InSec, Math.Round(heardEnd, 2), out string? problem);
-        if (updated == null)
-        {
-            Vm.PartProblem = problem ?? MusicPlaylistMath.EndBeforeStartMessage;
-            return;
-        }
-        ApplyPartWindow(updated);
-        BeginPartCut(_editIndex, startSide: false, EffectiveOut(e) - EffectiveOut(updated), EntryWouldEndSec(_editIndex), axisBefore);
+        if (_editIndex < 0 || _editIndex >= _playlist.Count || !PartLanesActive) return;
+        StopPreview();
+        bool reset = await Controls.ConfirmDialogWindow.AskAsync(this,
+            "Everything you cut from this song comes back.", "Use the whole song again?", "RESET", "CANCEL", destructive: true);
+        RuntimeLog.Info("MUSIC_WIZARD", $"Reset part of song {_editIndex + 1}: {(reset ? "confirmed" : "cancelled")}.");
+        if (!reset) return;
+        ResetPart();
     }
 
     private void ResetPart()
     {
         if (_editIndex < 0 || _editIndex >= _playlist.Count) return;
         ApplyPartWindow(MusicPlaylistMath.ResetWindow(_playlist[_editIndex]));
+        SyncPartAxis();
         SeekPart(0);
     }
 
@@ -481,6 +475,7 @@ public partial class MusicWizardWindow
         UpdateNextButtonState();
         DrawSongLane();
         SyncPartAxis();
+        QueuePhase3MusicLaneRefresh();
         SeekPart(_playlist[index].InSec, play: false);
     }
 

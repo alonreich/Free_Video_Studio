@@ -237,7 +237,7 @@ AI setup:             Controls\AiModeWindow.cs ("How should AI work?": PC only /
 ```
 Smart Zoom bounds/framing: GeminiTrackingService.CandidateFrameTimes and GranularSpeedEditorWindow.AiZoom enforce the selected interval; LocalTrackingService bounds motion bursts; AiTrajectorySmoother shares tighter zoom and bottom-HUD clearance across all engines (AISEGMENTONLY_01 / AIHUDCAMERA_01); AiZoomPreviewModalWindow provides dedicated preview dialog (AIPREVIEW_01).
 
-MUSICBROWSE_01: Add Music Choose screen has a full-width list, left USE SONG → buttons, no right pane, midpoint autoplay and ±20s transport (song list only). Tests: tests/FreeVideoStudio.App.Tests/MusicBrowserTests.cs, MusicWizardStepsTests.cs, MusicWizardPartAxisTests.cs.
+MUSICBROWSE_01: Add Music Choose screen has a full-width list, left USE SONG → buttons, no right pane, midpoint autoplay and ±20s transport (song list only). Tests: tests/FreeVideoStudio.App.Tests/MusicBrowserTests.cs, MusicWizardStepsTests.cs, MusicWizardPartAxisTests.cs, MusicWizardFlowTests.cs (whole 3-step wizard in a real off-screen window, MUSICWIZTEST_01).
 
 NAUDIO3OUTPUT_01: audio output consumers (PreviewAudioSync, VoiceOverPreviewPlayer, FreezeSoundPreview, UiSoundEffect, MainWindow, VoiceOverWindow) use NAudio 3 WaveOut. UiThreadBlockingTests guards supported event-driven output, buffer settings and off-thread disposal; 02 AUD-IPCSTATE / 05 SYS-WINSTATE.
 

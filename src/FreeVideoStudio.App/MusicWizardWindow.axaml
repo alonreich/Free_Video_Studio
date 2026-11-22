@@ -25,6 +25,19 @@
                 </Animation>
             </Style.Animations>
         </Style>
+        <Style Selector="Button.UndoGlow">
+            <Setter Property="BorderBrush" Value="SeaGreen"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="Effect">
+                <DropShadowEffect Color="SeaGreen" BlurRadius="16" OffsetX="0" OffsetY="0" Opacity="1"/>
+            </Setter>
+            <Style.Animations>
+                <Animation Duration="0:0:0.5" IterationCount="Infinite" PlaybackDirection="Alternate">
+                    <KeyFrame Cue="0%"><Setter Property="Opacity" Value="1"/></KeyFrame>
+                    <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0.55"/></KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
     </Window.Styles>
 
     <Grid>
@@ -205,32 +218,22 @@
                                     </Border>
                                 </Grid>
 
-                                <Border Grid.Row="3" Name="PartPanel" IsVisible="{Binding IsPartView}" Padding="10,8" CornerRadius="6"
-                                        Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
-                                    <Grid RowDefinitions="Auto,Auto,Auto">
-                                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,6">
-                                            <TextBlock Grid.Column="0" Text="{Binding PartSongTitle}" FontSize="{DynamicResource AppFontSize12}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding PartSelectedText}" Foreground="{DynamicResource AppInfoBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                                        </Grid>
-                                        <Border Grid.Row="1" IsVisible="False" Background="{DynamicResource AppSurfaceBrush}" CornerRadius="4" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" MinHeight="46">
+                                <StackPanel Grid.Row="3" Name="PartPanel" IsVisible="{Binding IsPartView}" Spacing="4" Margin="0,2,0,0">
+                                    <Panel Name="PartTransportHost" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="{Binding PartProblem}" IsVisible="{Binding HasPartProblem}" Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="SemiBold" HorizontalAlignment="Center" TextWrapping="Wrap"/>
+                                </StackPanel>
+
+                                <Panel Grid.Row="3" IsVisible="False" Width="0" Height="0">
+                                        <Border IsVisible="False" Background="{DynamicResource AppSurfaceBrush}" CornerRadius="4" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" MinHeight="46">
                                             <Panel>
                                                 <Image Name="WaveformImage" Stretch="Fill" Opacity="0.6"/>
                                                 <Canvas Name="WaveformCanvas" Classes="TimelineSeekSurface" Background="Transparent" ClipToBounds="True" Cursor="Hand" Focusable="True" AutomationProperties.Name="Song position" ToolTip.Tip="Click or drag to move the playhead. Press Mark start and Mark end to choose the part that plays." KeyboardNavigation.IsTabStop="True" />
                                                 <TextBlock Name="WaveformLoadingText" Text="Drawing the song..." Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize12}" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="False" IsHitTestVisible="False"/>
                                             </Panel>
                                         </Border>
-                                        <WrapPanel Grid.Row="2" Orientation="Horizontal" Margin="0,6,0,0">
-                                            <Button Name="PartUndoBtn" Classes="Secondary" Content="↶ UNDO" Command="{Binding UndoCommand}" FontSize="{DynamicResource AppFontSize10}" Margin="0,0,6,0" ToolTip.Tip="Bring back what you just cut (Ctrl+Z)." AutomationProperties.Name="Undo"/>
-                                            <Button Name="PartRedoBtn" Classes="Secondary" Content="↷ REDO" Command="{Binding RedoCommand}" FontSize="{DynamicResource AppFontSize10}" Margin="0,0,10,0" ToolTip.Tip="Cut it again (Ctrl+Y)." AutomationProperties.Name="Redo"/>
-                                            <Button Classes="Secondary" Content="RESET" Command="{Binding ResetPartCommand}" FontSize="{DynamicResource AppFontSize10}" Margin="0,0,10,0" ToolTip.Tip="Use the whole song again."/>
-                                            <Button Classes="Secondary" Content="END WITH THE VIDEO" Command="{Binding EndWithVideoCommand}" IsVisible="{Binding PartOverflows}" FontSize="{DynamicResource AppFontSize10}" Margin="0,0,10,0" ToolTip.Tip="Make the song end where the video ends."/>
-                                            <TextBlock Text="{Binding PartProblem}" IsVisible="{Binding HasPartProblem}" Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                            <TextBlock Text="{Binding PartNote}" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,10,0"/>
-                                            <TextBlock Name="SmartFitStatusText" Text="" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                            <TextBlock Name="OffsetLabel" Text="" IsVisible="False"/>
-                                        </WrapPanel>
-                                    </Grid>
-                                </Border>
+                                        <TextBlock Name="SmartFitStatusText" Text="" IsVisible="False"/>
+                                        <TextBlock Name="OffsetLabel" Text="" IsVisible="False"/>
+                                </Panel>
 
                                 <Border Grid.Row="3" Name="ReviewPanel" IsVisible="{Binding IsReviewView}" Padding="10,8" CornerRadius="6"
                                         Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
@@ -264,8 +267,18 @@
                                     <Button Name="FitByEndBtn"/>
                                 </Panel>
 
-                                <Grid Grid.Row="2" IsVisible="{Binding IsPartView}" Margin="0,0,0,6" ClipToBounds="False">
-                                    <controls:TimelineLanesControl Name="Phase3Lanes" ClipToBounds="False"/>
+                                <Grid Grid.Row="2" IsVisible="{Binding IsPartView}" Margin="0,0,0,6" ColumnDefinitions="*,Auto" ClipToBounds="False">
+                                    <Panel Grid.Column="0" Height="166" VerticalAlignment="Top" ClipToBounds="False">
+                                        <controls:TimelineLanesControl Name="Phase3Lanes" VerticalAlignment="Top" ClipToBounds="False"/>
+                                    </Panel>
+                                    <Border Grid.Column="1" Name="PartEditPane" Margin="10,22,0,0" Padding="8" VerticalAlignment="Top" CornerRadius="6"
+                                            Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
+                                        <StackPanel Spacing="6" Width="96">
+                                            <Button Name="PartUndoBtn" Classes="Secondary" Content="↶ UNDO" Command="{Binding UndoCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" ToolTip.Tip="Bring back what you just cut (Ctrl+Z)." AutomationProperties.Name="Undo"/>
+                                            <Button Name="PartRedoBtn" Classes="Secondary" Content="↷ REDO" Command="{Binding RedoCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" ToolTip.Tip="Cut it again (Ctrl+Y)." AutomationProperties.Name="Redo"/>
+                                            <Button Name="PartResetBtn" Classes="Danger" Content="RESET" Command="{Binding ResetPartCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" ToolTip.Tip="Use the whole song again." AutomationProperties.Name="Reset this song"/>
+                                        </StackPanel>
+                                    </Border>
 
                                     <Panel Name="Phase3LaneContentHolder" IsVisible="False">
                                         <Panel Name="Phase3ThumbLaneContent">
@@ -307,7 +320,7 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10" IsVisible="{Binding TransportVisible}">
+                        <StackPanel Grid.Column="1" Name="TransportBar" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10" IsVisible="{Binding TransportVisible}">
                             <Button Name="PartMarkStartBtn" Classes="Secondary" Classes.Pulse="{Binding MarkStartHint}" Content="MARK START" Padding="16,8" Margin="0,0,20,0" IsVisible="{Binding IsPartView}" Command="{Binding StartHereCommand}" ToolTip.Tip="Cut away the song before the red line. The music starts exactly here."/>
                             <Button Name="SkipBackBtn" IsVisible="{Binding SkipVisible}" Classes="Secondary" MinWidth="70" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" ToolTip.Tip="{Binding SkipBackTip}" AutomationProperties.Name="{Binding SkipBackTip}">
                                 <TextBlock Text="{Binding SkipBackText}" FontWeight="Bold" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextPrimaryBrush}" />

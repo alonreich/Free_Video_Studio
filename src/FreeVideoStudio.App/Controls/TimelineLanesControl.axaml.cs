@@ -67,6 +67,26 @@ public partial class TimelineLanesControl : UserControl
         }
     }
 
+    public const double MinSplitLaneHeightPx = 20;
+
+    public void SetLaneHeights(double laneAPx, double laneBPx)
+    {
+        var lanes = LanesGridCtl;
+        var pairs = new[] { (LaneABorderCtl, laneAPx, 2), (LaneBBorderCtl, laneBPx, 3) };
+        bool changed = false;
+        foreach (var (border, px, row) in pairs)
+        {
+            if (border == null) continue;
+            double h = Math.Max(MinSplitLaneHeightPx, px);
+            if (Math.Abs(border.Height - h) < 0.5 && Math.Abs(border.MinHeight - h) < 0.5) continue;
+            border.Height = h;
+            border.MinHeight = h;
+            if (lanes != null && lanes.RowDefinitions.Count > row) lanes.RowDefinitions[row].MinHeight = h;
+            changed = true;
+        }
+        if (changed) QueueRefresh();
+    }
+
     public TimelineLanesControl()
     {
         InitializeComponent();

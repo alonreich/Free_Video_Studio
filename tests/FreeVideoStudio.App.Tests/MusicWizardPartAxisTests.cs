@@ -86,7 +86,7 @@ public sealed class MusicWizardPartAxisTests
         finally { window.Close(); }
     }
     [AvaloniaFact]
-    public void ShortSongKeepsTheVideoLengthAndVeryLongSongIsCapped()
+    public void ShortSongKeepsTheVideoLengthAndVeryLongSongIsShownWhole()
     {
         string dir = WorkDir();
         using var isolated = LiveCaptureDriver.IsolateProgramData(Path.Combine(dir, "programdata"));
@@ -95,7 +95,7 @@ public sealed class MusicWizardPartAxisTests
         try
         {
             Assert.Equal(30, (double)Call(shortSong, "PartAxisTargetSec")!, 1);
-            Assert.Equal(30 * MusicWizardWindow.PartAxisMaxVideoMultiple, (double)Call(longSong, "PartAxisTargetSec")!, 1);
+            Assert.Equal(600, (double)Call(longSong, "PartAxisTargetSec")!, 1);
         }
         finally { shortSong.Close(); longSong.Close(); }
     }
@@ -124,5 +124,25 @@ public sealed class MusicWizardPartAxisTests
         Assert.Equal(WholeVideoFilmstrip.QuickMaxFrames, WholeVideoFilmstrip.QuickFrameCount(3600));
         Assert.True(WholeVideoFilmstrip.FineFrameCount(120) > WholeVideoFilmstrip.QuickFrameCount(120));
         Assert.True(WholeVideoFilmstrip.FineHeightPx > WholeVideoFilmstrip.QuickHeightPx);
+    }
+    [Theory]
+    [InlineData(60, 60, 70, 70)]
+    [InlineData(60, 55, 70, 70)]
+    [InlineData(60, 0, 70, 70)]
+    [InlineData(60, 180, 20 + 50 * (1 - (0.9 - 1.0 / 3) / 0.9), 70 + 30 * ((0.9 - 1.0 / 3) / 0.9))]
+    [InlineData(10, 100000, 20, 100)]
+    [InlineData(100000, 10, 100, 20)]
+    public void PartLaneHeightsFollowTheLengthRatio(double video, double music, double videoPx, double musicPx)
+    {
+        var (v, m) = MusicWizardWindow.PartLaneHeights(video, music);
+        Assert.Equal(videoPx, v, 0.01);
+        Assert.Equal(musicPx, m, 0.01);
+    }
+    [Fact]
+    public void PartLaneHeightsChangeSmoothlyPastTheTenPercentBand()
+    {
+        var (a, b) = MusicWizardWindow.PartLaneHeights(100, 111);
+        Assert.InRange(a, 69, 70);
+        Assert.InRange(b, 70, 71);
     }
 }

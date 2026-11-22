@@ -207,6 +207,7 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   MusicWizardWindow.Guide.cs                 04 UI-MUSICWIZARD (GAPWARN_01 / PARTDEMO_01)
   MusicWizardWindow.PartAxis.cs              04 UI-MUSICWIZARD (PARTAXIS_01 / PARTCUT_01) | 03 FFM-THUMBSTRIP
   MusicWizardPartAxisTests.cs                04 UI-MUSICWIZARD | 03 FFM-THUMBSTRIP
+  MusicWizardFlowTests.cs                    04 UI-MUSICWIZARD (MUSICWIZTEST_01)
   WholeVideoFilmstrip.cs                     03 FFM-THUMBSTRIP (WHOLESTRIP_01)
   AiMusicAutoFitService.cs                   02 AUD-MUSICWIN | 10 SYS-AISETTINGS
   AiMusicAutoFitTests.cs                     02 AUD-MUSICWIN | 10 SYS-AISETTINGS
@@ -1354,6 +1355,11 @@ WIZNAV_01                                    04 UI-MUSICWIZARD
 GAPWARN_01                                   04 UI-MUSICWIZARD
 PARTDEMO_01                                  04 UI-MUSICWIZARD
 PASTEND_01                                   04 UI-MUSICWIZARD
+PARTLANEH_01                                 04 UI-MUSICWIZARD
+PARTLAYOUT_01                                04 UI-MUSICWIZARD
+UNDOGLOW_01                                  04 UI-MUSICWIZARD
+MUSICWIZSIZE_02                              04 UI-MUSICWIZARD | 04 UI-WINPLACE
+MUSICWIZTEST_01                              04 UI-MUSICWIZARD
 WHOLESTRIP_01                                03 FFM-THUMBSTRIP
 TEMPCLEAN_01                                 05 SYS-STORAGE-TABLE
 REVIEWRULER_01                               04 UI-MUSICWIZARD
