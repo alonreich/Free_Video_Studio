@@ -2389,8 +2389,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         catch (Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
-    #region UX Innovations (IDEA 001, 004, 005, 006, 007, 008, 009, 010, 011)
-
     private void InitializeUxInnovations()
     {
         _kineticScrub = new KineticScrubController();
@@ -2437,8 +2435,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             particleLayer.Burst(new Point(particleLayer.Bounds.Width / 2, particleLayer.Bounds.Height / 2), preset);
         }
     }
-
-    #endregion
 
     private bool _isRadialOpen = false;
 

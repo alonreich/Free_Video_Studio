@@ -1,15 +1,3 @@
-"""LOCALAIPACK_01 (docs/09 DIST-LOCALAIPACK) - assemble the Local AI pack and pin it in the app.
-
-1. Run export_sam2_onnx.py into <pack folder> first.
-2. python developer_tools/local_ai_pack/build_pack.py --pack <pack folder>
-   - downloads the OFFICIAL, Microsoft-signed onnxruntime.dll (Microsoft.ML.OnnxRuntime.DirectML) and DirectML.dll
-     (Microsoft.AI.DirectML) from nuget.org into the pack folder (the Authenticode signature is checked),
-   - writes src/FreeVideoStudio.Core/LocalAi/LocalAiPackFiles.cs with every file's URL, length and SHA-256,
-   - prints the `gh release upload` command for the human to run. This script never publishes anything.
-3. A human uploads the files to the GitHub release named in LocalAiPackManifest.ReleaseTag, runs this script again
-   with --released (Released = true) and commits LocalAiPackFiles.cs. Until then the app says the pack
-   "has not been published yet" and Install stays disabled.
-"""
 import argparse
 import hashlib
 import io

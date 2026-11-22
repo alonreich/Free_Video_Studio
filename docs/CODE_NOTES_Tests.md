@@ -2298,3 +2298,15 @@ suites this mode does not run keep their last result. Gate verdict: logs\Gate_Re
 ### near Continue (line 35)
 
 Native stderr is diagnostic text, not a PowerShell exception (including under PS 5).
+
+---
+
+Added 2026-11-22 by `developer_tools/Find_and_Remove_Comments.cmd`.
+
+## tests/DeveloperTools.Tests/test_pull_code_files.py
+
+### near dont_write_bytecode — CODEEXPORT_01 (line 1)
+
+CODEEXPORT_01 — stdlib regressions; retain this run, replace previous fixtures.
+Spec: docs/05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-CODEEXPORT.
+Run: python -B -m unittest discover -s tests/DeveloperTools.Tests -v

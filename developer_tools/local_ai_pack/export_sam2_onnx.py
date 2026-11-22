@@ -1,22 +1,3 @@
-"""LOCALAIPACK_01 (docs/09 DIST-LOCALAIPACK) - export SAM 2.1 (Hiera Small) to the two ONNX files the app reads.
-
-Run once on a developer machine, never in the app and never in CI:
-
-    python -m venv .venv-sam2 && .venv-sam2\\Scripts\\activate
-    pip install torch onnx onnxruntime "git+https://github.com/facebookresearch/sam2.git"
-    curl -L -o sam2.1_hiera_small.pt https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt
-    python developer_tools/local_ai_pack/export_sam2_onnx.py --checkpoint sam2.1_hiera_small.pt --out <pack folder>
-
-The contract (names, shapes) must match src/FreeVideoStudio.Core/LocalAi/LocalAiPackManifest.cs:
-  encoder  image[1,3,1024,1024] float32 (ImageNet-normalised RGB)
-           -> image_embed[1,256,64,64], high_res_feats_0[1,32,256,256], high_res_feats_1[1,64,128,128]
-  decoder  image_embed, high_res_feats_0, high_res_feats_1,
-           point_coords[1,N,2] (1024 space), point_labels[1,N], mask_input[1,1,256,256], has_mask_input[1]
-           -> masks[1,4,256,256] (logits: the single-mask output then the 3 multimask outputs), iou_predictions[1,4],
-           object_scores[1,1] (logit: > 0 = the object is in the picture)
-Weights are stored as float16 (input/output stay float32), which DirectML runs on the GPU's tensor cores.
-SAM 2.1 is Apache-2.0 (Meta).
-"""
 import argparse
 import os
 

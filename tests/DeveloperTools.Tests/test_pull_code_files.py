@@ -1,7 +1,3 @@
-"""CODEEXPORT_01 — stdlib regressions; retain this run, replace previous fixtures.
-Spec: docs/05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-CODEEXPORT.
-Run: python -B -m unittest discover -s tests/DeveloperTools.Tests -v
-"""
 import sys
 sys.dont_write_bytecode = True
 import contextlib

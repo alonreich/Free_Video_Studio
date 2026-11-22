@@ -1,25 +1,3 @@
-"""
-═══════════════════════════════════════════════════════════════════════════════════════════════
-REDUNDANT CODE FINDER — WRITES TWO REPORTS. READ THE RIGHT ONE.
-
-   ┌───────────────────────────────────────────────────────────────────────────────────────┐
-   │  AI AGENT?  READ  developer_tools/redundant_code_report.jsonl   — AND NOTHING ELSE.    │
-   │  HUMAN?     OPEN  developer_tools/redundant_code_report.html    in a browser.          │
-   └───────────────────────────────────────────────────────────────────────────────────────┘
-
-⚠️ AGENTS: DO NOT OPEN THE .html. It is ~5.5x larger and every extra byte is styling, colour and
-a SECOND FULL COPY of code you can already read from disk. It exists so a person can review
-findings visually. Reading it wastes context and tells you nothing the .jsonl does not.
-
-THE .jsonl IN ONE PARAGRAPH: line 1 is a header holding the run's settings and a `files` array;
-every later line is one finding. Parse with `for line in f: json.loads(line)`. A finding gives
-a similarity score and two coordinates — file index, first line, last line. Open those ranges
-yourself; the code is on disk and is deliberately NOT duplicated into the report.
-
-Both reports are deleted and rewritten on every run, so whatever is on disk is always current.
-═══════════════════════════════════════════════════════════════════════════════════════════════
-"""
-
 import sys
 import os
 
@@ -78,7 +56,6 @@ _SUBSTANTIVE_RE = re.compile(r'[A-Za-z_]\w*\s*[\(=\.]')
 
 
 def count_substantive(code_text):
-    """How many lines in this block actually do something, as opposed to bracing something."""
     n = 0
     for raw_line in code_text.split("\n"):
         line = raw_line.strip()
@@ -106,25 +83,6 @@ def display_path(filepath):
         return str(filepath)
 
 def remove_comments(source):
-    """
-    Strips C# comments and blanks out string/char literals IN ONE LEFT-TO-RIGHT PASS.
-
-    (2) WHY NOT `re.sub(r'//.*', '', ...)`.  A regex cannot tell a comment from a web address.
-        `FileName = "https://web.whatsapp.com"` would be cut down to `FileName = "https:` — and
-        43 lines in this repository contain `//` inside a string. Those chopped half-lines then
-        look identical to each other, so the tool INVENTS duplicates that do not exist. Literals
-        are recognised here and replaced by an empty token BEFORE any comment stripping happens.
-
-    (3) WHY THE NEWLINES ARE KEPT.  The old block-comment removal deleted `/* ... */` including
-        its line breaks, so every line AFTER a block comment was reported at the wrong number —
-        5 files in this repository have one. Every newline inside a comment or a literal is
-        re-emitted, so the output has EXACTLY as many lines as the input and reported line
-        numbers land on the real code.
-
-    Handles: // line, /* block */, "regular", @"verbatim" (with "" escapes), 'c', and \" escapes.
-    Not handled: C#11 raw strings (triple-quoted). None exist in this repository; if they appear,
-    the scanner ends the literal early — it can under-abstract, but it can never lose a newline.
-    """
     out = []
     i, n = 0, len(source)
     while i < n:
@@ -199,7 +157,6 @@ def remove_comments(source):
     return "".join(out)
 
 def normalize_line(line):
-    """Returns (fingerprint, tokens). Literals are already blanked by remove_comments."""
     words = re.findall(r'[a-zA-Z_]\w*|\d+|[^a-zA-Z_\d\s]', line)
     norm = []
     for w in words:
@@ -212,7 +169,6 @@ def normalize_line(line):
     return "".join(norm), norm
 
 def block_has_logic(token_lines):
-    """(4) `token_lines` is a sequence of TOKEN LISTS — one per source line."""
     joined = []
     for toks in token_lines:
         for t in toks:
@@ -228,12 +184,6 @@ def _same_shape(lines_db, a, b):
 
 
 def grow_fuzzy_block(lines_db, idx1, idx2, seed_len):
-    """
-    Grows the seed at (idx1, idx2) outwards while it stays >= MIN_SIMILARITY.
-
-    Returns (start1, start2, length, matched_lines) or None when the result is not worth
-    reporting. `idx1 < idx2` is guaranteed by the caller.
-    """
     file1, file2 = lines_db[idx1][0], lines_db[idx2][0]
     same_file = file1 == file2
     n = len(lines_db)
@@ -425,22 +375,6 @@ def generate_html_report(matches, output_path):
     print(f"\n[+] Report saved to: {output_path}")
 
 def generate_agent_report(matches, output_path, stats):
-    """
-    OUTPUT 2 — for a machine. Maximum signal per byte; no concession to human readability.
-
-    Four deliberate savings over the obvious encoding, measured on this repository:
-      1. FILE PATHS ARE INTERNED. Paths are long and repeat on nearly every record. They are
-         listed ONCE in the header's `files` array and referenced afterwards by integer index.
-      2. NO `"t":"dup"` TAG. Line 1 is the header; every other line is a finding. A per-record
-         type tag would be 470 copies of a fact the line number already establishes.
-      3. NO CODE BODIES. The code is on disk at the coordinates given. Shipping it again would
-         multiply the file size for zero information — this is the single biggest saving.
-      4. SIDES ARE ARRAYS, NOT OBJECTS. `[fileIndex, firstLine, lastLine]` beats
-         `{"f":..,"s":..,"e":..}` on every record, and the header declares the order.
-
-    The header carries `record` and `files` so the format is self-describing: an agent never has
-    to guess a key, and nothing here needs this docstring to be decoded.
-    """
     file_ids, file_list = {}, []
 
     def fid(path):
@@ -521,16 +455,6 @@ def generate_agent_report(matches, output_path, stats):
 
 
 def purge_bytecode_cache():
-    """
-    Removes any __pycache__ / .pyc this tool's own folder has accumulated.
-
-    The guards at the top stop THIS run from writing bytecode, but they cannot stop a previous
-    run under different settings, a `python -m py_compile`, or another script importing this one
-    — all of which drop a __pycache__ beside the source. Sweeping on every run means the folder
-    is clean afterwards no matter how it got dirty.
-
-    Scoped to developer_tools ONLY. It must never wander into the rest of the repository.
-    """
     tools_dir = Path(__file__).resolve().parent
     removed = []
     try:

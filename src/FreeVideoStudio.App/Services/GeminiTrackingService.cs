@@ -16,8 +16,6 @@ using SkiaSharp;
 
 namespace FreeVideoStudio.App.Services;
 
-#region Gemini JSON Models for Native AOT
-
 public class DiscoveredSubject
 {
     [JsonPropertyName("id")]
@@ -58,8 +56,6 @@ public class DiscoveredSubject
 [JsonSerializable(typeof(DiscoveredSubject))]
 [JsonSerializable(typeof(List<DiscoveredSubject>))]
 internal partial class GeminiApiJsonContext : JsonSerializerContext { }
-
-#endregion
 
 public sealed record AiDiscoveryResult(
     List<DiscoveredSubject> Subjects,
