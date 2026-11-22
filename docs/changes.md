@@ -3,7 +3,10 @@
 What ENGINEERS and AI agents read: every change, in technical terms, as it happens. User-facing notes live in [`CHANGELOG.md`](CHANGELOG.md).
 
 > **How this file works (RELNOTES_01 — full rules in [`09_DISTRIBUTION_AND_RELEASE.md`](09_DISTRIBUTION_AND_RELEASE.md#DIST-RELEASENOTES)):**
-> every task that changes logic, UI, workflow, build, docs structure or tests adds entries under `## Unreleased` before it is finished: `- <date> · <TAG> · <what changed and why> (<files>)`. Jargon, tags and file names are welcome here.
+> every task that changes logic, UI, workflow, build, docs structure or tests adds entries under `## Unreleased
+- 2026-11-22 · PARTAXIS_01 / PASTEND_01 / UNDOGLOW_01 / MUSICWIZSIZE_02 / MUSICWIZTEST_01 · Screen 2 axis has no 4× limit; the song past the video end is full brightness with its waveform (WaveTailSec); UNDO glows 3 s after each cut; each wizard screen remembers its own bounds (BoundsTracker.SwitchTo); MusicWizardFlowTests cover the 3 steps. 04 UI-MUSICWIZARD (MusicWizardWindow.*, WindowBoundsHelper.cs, tests)
+- 2026-11-22 · PASTEND_01 · Verified screen 2 by rendering it: the song past the video's end was nearly invisible (85% song under the 60% darkening now, so the music lane reads edge to edge), and the Video ends tag was clipped when the song is barely longer (now flips left). 04 UI-MUSICWIZARD (MusicWizardWindow.PartAxis.cs)
+- 2026-11-21 · PARTLANEH_01 / PARTLAYOUT_01 · Select music starting point: lane heights follow the video/music length ratio (70/70 within 10%, else up to 100/20; TimelineLanesControl.SetLaneHeights, fixed 166px area), grey blank thumbnails past the video end, plain dark music lane instead of the red gap band, transport moved under the lanes, right pane UNDO/REDO/red RESET with confirm, END WITH THE VIDEO and the title/notes row removed. 04 UI-MUSICWIZARD (MusicWizardWindow.PartAxis.cs, .SongLane.cs, .Steps.cs, .axaml(.cs), TimelineLanesControl.axaml.cs)` before it is finished: `- <date> · <TAG> · <what changed and why> (<files>)`. Jargon, tags and file names are welcome here.
 > The same task adds or merges the matching plain-English bullet in `CHANGELOG.md` → `## Upcoming` (the translation step).
 > An official stable release renames `## Unreleased` to `## v<version> — <date>`, opens a fresh `## Unreleased` and keeps the latest 10 releases.
 

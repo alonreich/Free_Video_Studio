@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -10,8 +10,20 @@ namespace FreeVideoStudio.App;
 
 public static class WindowBoundsHelper
 {
-    public static void Track(Window window, string key, string? seedFromKey = null, bool fitDisplayOnFirstRun = false, double capFraction = WindowPlacement.EditorCap, double firstRunMaxWidthDip = double.PositiveInfinity)
+    public sealed class BoundsTracker
     {
+        internal BoundsTracker(string key) => Key = key;
+
+        public string Key { get; internal set; }
+
+        internal Action<string>? SwitchImpl;
+
+        public void SwitchTo(string key) => SwitchImpl?.Invoke(key);
+    }
+
+    public static BoundsTracker Track(Window window, string key, string? seedFromKey = null, bool fitDisplayOnFirstRun = false, double capFraction = WindowPlacement.EditorCap, double firstRunMaxWidthDip = double.PositiveInfinity)
+    {
+        var tracker = new BoundsTracker(key);
         PixelPoint? appliedPosition = null;
         try
         {
@@ -59,7 +71,7 @@ public static class WindowBoundsHelper
                         return;
                     }
 
-                    SaveSnapshot(snapshot, key);
+                    SaveSnapshot(snapshot, tracker.Key);
                 };
             }
             debounce.Stop();
@@ -89,8 +101,48 @@ public static class WindowBoundsHelper
         window.Closing += (_, _) =>
         {
             try { debounce?.Stop(); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
-            SaveBoundsOnClose(window, key);
+            SaveBoundsOnClose(window, tracker.Key);
         };
+
+        var sessionBounds = new System.Collections.Generic.Dictionary<string, JsonObject>(StringComparer.Ordinal);
+        tracker.SwitchImpl = newKey =>
+        {
+            if (string.Equals(newKey, tracker.Key, StringComparison.Ordinal)) return;
+            try { debounce?.Stop(); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+            bool wasOpened = opened;
+            if (wasOpened)
+            {
+                try
+                {
+                    var writer = Core.Ipc.SessionStateWriter.For();
+                    var bounds = BuildBoundsObj(WindowSnapshot.Capture(window), writer.ReadSnapshot(), tracker.Key);
+                    sessionBounds[tracker.Key] = (JsonObject)bounds.DeepClone();
+                    writer.Enqueue(new JsonObject { [tracker.Key] = bounds });
+                }
+                catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+            }
+            string oldKey = tracker.Key;
+            tracker.Key = newKey;
+            opened = false;
+            try
+            {
+                var state = Core.Ipc.SessionStateWriter.For().ReadSnapshot();
+                if (sessionBounds.TryGetValue(newKey, out var remembered)) state[newKey] = remembered.DeepClone();
+                bool applied = ApplyBounds(window, state, newKey, newKey, capFraction);
+                if (!applied)
+                {
+                    if (window.WindowState != WindowState.Normal) window.WindowState = WindowState.Normal;
+                    var display = WindowPlacement.DisplayOf(window) ?? WindowPlacement.HomeDisplay(window, null, state);
+                    if (fitDisplayOnFirstRun && display.HasValue) ApplyFirstRunDisplayFit(window, newKey, display.Value, capFraction, firstRunMaxWidthDip);
+                }
+                if (!wasOpened && window.WindowStartupLocation == WindowStartupLocation.Manual) appliedPosition = window.Position;
+                RuntimeLog.Info("UI", $"Window bounds switched '{oldKey}' -> '{newKey}' ({(applied ? "remembered" : "first time")}).");
+            }
+            catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+            finally { opened = wasOpened; }
+        };
+
+        return tracker;
     }
 
     private static bool ApplyBounds(Window window, JsonObject state, string key, string saveKey, double capFraction, bool sizeAndPositionOnly = false)

@@ -235,7 +235,6 @@ public partial class MusicWizardWindow
         Place(OverlayText("MUSIC", 9, FontWeight.Bold, muted), VideoX0, LaneTop + LaneH + 4 + LaneH + 2);
         double musicTop = LaneTop + LaneH + 6;
         var music = (Border)Place(new Border { Height = LaneH, Background = musicBrush, CornerRadius = new CornerRadius(3) }, VideoX0, musicTop);
-        var dim = (Border)Place(new Border { Height = LaneH, Background = Brushes.Black, Opacity = PartOverflowDimOpacity, CornerRadius = new CornerRadius(3) }, VideoX1, musicTop);
         var cut = (Border)Place(new Border { Height = LaneH, Background = red, CornerRadius = new CornerRadius(3), BorderBrush = Brushes.White, BorderThickness = new Thickness(1.5) }, VideoX0, musicTop);
         var endMark = (Rectangle)Place(new Rectangle { Width = 3, Height = LaneH, Fill = Brushes.SeaGreen }, MusicX1 - 2, musicTop);
         var caret = (Rectangle)Place(new Rectangle { Width = 4, Height = 2 * LaneH + 14, Fill = red }, VideoX0, LaneTop - 4);
@@ -288,8 +287,6 @@ public partial class MusicWizardWindow
             double musicEnd = MusicX1 - shift;
             Canvas.SetLeft(music, musicStart);
             music.Width = Math.Max(1, musicEnd - musicStart);
-            Canvas.SetLeft(dim, VideoX1);
-            dim.Width = Math.Max(0, musicEnd - VideoX1);
             Canvas.SetLeft(endMark, musicEnd - 2);
             Canvas.SetLeft(caret, (t >= 3000 ? VideoX0 + cutW : caretX) - 2);
             pill.Opacity = pressed ? 1 : 0.75;

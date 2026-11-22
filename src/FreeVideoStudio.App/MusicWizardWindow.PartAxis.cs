@@ -13,13 +13,64 @@ namespace FreeVideoStudio.App;
 
 public partial class MusicWizardWindow
 {
-    public const double PartAxisMaxVideoMultiple = 4.0;
     public const double PartAxisAnimMs = 650;
     public const double PartCutHoldMs = 700;
     public const double PartCutSlideMs = 1100;
     private const double PartOverflowMinSec = 0.25;
-    public const double PartLaneHeightPx = 76;
-    public const double PartOverflowDimOpacity = 0.6;
+    public const double PartLaneEqualPx = 70;
+    public const double PartLaneMaxPx = 100;
+    public const double PartLaneMinPx = 20;
+    public const double PartLaneSameShare = 0.9;
+    public const int PartTailFrameCount = 15;
+
+    public static (double VideoPx, double MusicPx) PartLaneHeights(double videoSec, double musicSec)
+    {
+        if (videoSec <= 0.01 || musicSec <= 0.01) return (PartLaneEqualPx, PartLaneEqualPx);
+        double r = Math.Min(videoSec, musicSec) / Math.Max(videoSec, musicSec);
+        double t = Math.Clamp((PartLaneSameShare - r) / PartLaneSameShare, 0, 1);
+        double longer = PartLaneEqualPx + (PartLaneMaxPx - PartLaneEqualPx) * t;
+        double shorter = PartLaneEqualPx - (PartLaneEqualPx - PartLaneMinPx) * t;
+        return videoSec >= musicSec ? (longer, shorter) : (shorter, longer);
+    }
+
+    public const double UndoGlowMs = 3000;
+    public const string UndoGlowClass = "UndoGlow";
+    private DispatcherTimer? _undoGlowTimer;
+
+    private void StartUndoGlow()
+    {
+        if (this.FindControl<Button>("PartUndoBtn") is not { } undo) return;
+        if (!undo.Classes.Contains(UndoGlowClass)) undo.Classes.Add(UndoGlowClass);
+        if (_undoGlowTimer == null)
+        {
+            _undoGlowTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(UndoGlowMs) };
+            _undoGlowTimer.Tick += (_, _) => EndUndoGlow();
+        }
+        _undoGlowTimer.Stop();
+        _undoGlowTimer.Start();
+    }
+
+    private void EndUndoGlow()
+    {
+        _undoGlowTimer?.Stop();
+        if (this.FindControl<Button>("PartUndoBtn") is { } undo) undo.Classes.Remove(UndoGlowClass);
+    }
+
+    private double _phase3WaveSpanSec;
+
+    private double WaveTailSec(List<Phase3MusicPreviewSegment> segments)
+    {
+        var plan = CurrentPlan();
+        if (segments.Count == 0 || plan.Count == 0) return 0;
+        return EntryOverflowSec(plan[^1].TrackIndex);
+    }
+
+    private double PartMusicExtentSec()
+    {
+        double end = 0;
+        for (int i = 0; i < _playlist.Count; i++) end = Math.Max(end, EntryWouldEndSec(i));
+        return end + PartCutRemainingSec();
+    }
 
     private sealed record Phase3ThumbSlot(Image Target, string Path, double StartSec, double DurSec, int Frames);
     private readonly List<Phase3ThumbSlot> _phase3ThumbSlots = new();
@@ -41,14 +92,16 @@ public partial class MusicWizardWindow
         {
             WholeVideoFilmstrip.Improved -= OnWholeFilmstripImproved;
             _partAnimTimer?.Stop();
+            _undoGlowTimer?.Stop();
             _partCut = null;
         };
         var lanes = Phase3LanesCtl;
         if (lanes != null)
         {
             lanes.BoldCaret = true;
-            lanes.LaneHeightPx = PartLaneHeightPx;
+            lanes.SetLaneHeights(PartLaneEqualPx, PartLaneEqualPx);
             if (lanes.LaneAHost != null) lanes.LaneAHost.SizeChanged += (_, _) => ApplyPartAxisLayout();
+            if (lanes.LaneBHost != null) lanes.LaneBHost.SizeChanged += (_, _) => ApplyPartAxisLayout();
         }
         Vm.UndoCommand = new RelayCommand(() => _ = StepWizardHistoryAsync(undo: true));
         Vm.RedoCommand = new RelayCommand(() => _ = StepWizardHistoryAsync(undo: false));
@@ -96,7 +149,7 @@ public partial class MusicWizardWindow
         double video = GetPhase3VideoDurationSeconds();
         double end = video;
         for (int i = 0; i < _playlist.Count; i++) end = Math.Max(end, EntryWouldEndSec(i));
-        return Math.Clamp(end, video, video * PartAxisMaxVideoMultiple);
+        return Math.Max(end, video);
     }
 
     private (MusicBedSegment First, MusicBedSegment Last)? EntrySegments(int entry)
@@ -218,6 +271,7 @@ public partial class MusicWizardWindow
                 _partCut = null;
                 _axisShownSec = cut.AxisTo;
                 QueuePhase3MusicLaneRefresh();
+                StartUndoGlow();
             }
         }
         else if (_axisAnimating)
@@ -257,17 +311,57 @@ public partial class MusicWizardWindow
         if (_currentStep != StepFit) return;
         double video = GetPhase3VideoDurationSeconds();
         double axis = LaneAxisSec();
-        double ratio = axis > 0 ? Math.Clamp(video / axis, 0.05, 1) : 1;
+        double ratio = axis > 0 ? Math.Clamp(video / axis, 0.0005, 1) : 1;
         var lanes = Phase3LanesCtl;
+        if (lanes != null && PartLanesActive)
+        {
+            var (videoPx, musicPx) = PartLaneHeights(video, PartMusicExtentSec());
+            lanes.SetLaneHeights(videoPx, musicPx);
+        }
         if (lanes?.LaneAHost is { } host && host.Bounds.Width > 1 && FindNamedChild(host, "Phase3ThumbLaneContent") is { } thumbContent)
         {
             double right = Math.Round(host.Bounds.Width * (1 - ratio), 1);
             if (Math.Abs(thumbContent.Margin.Right - right) > 0.4) thumbContent.Margin = new Thickness(0, 0, right, 0);
+            DrawPartVideoTail(host, host.Bounds.Width * ratio);
         }
         UpdatePhase3WaveformLaneWidth();
         DrawPhase3VideoEndMarker(video, axis);
         DrawSongLane();
         UpdatePlayhead();
+    }
+
+    private void DrawPartVideoTail(Panel host, double filmWidth)
+    {
+        Canvas? tail = null;
+        foreach (var child in host.Children)
+            if (child is Canvas c && Equals(c.Tag, "video-tail")) { tail = c; break; }
+        if (tail == null)
+        {
+            tail = new Canvas { Tag = "video-tail", IsHitTestVisible = false, ClipToBounds = true };
+            host.Children.Add(tail);
+        }
+        tail.Children.Clear();
+        double w = host.Bounds.Width, h = host.Bounds.Height;
+        if (!PartLanesActive || w - filmWidth < 2 || h <= 1) return;
+        double cell = Math.Max(24, filmWidth / PartTailFrameCount);
+        IBrush fill = Infrastructure.ThemeResources.Brush(this, "AppPanelBrush", new SolidColorBrush(Color.FromRgb(51, 65, 85)));
+        IBrush edge = Infrastructure.ThemeResources.Brush(this, "AppBorderBrush", Brushes.Gray);
+        for (double x = filmWidth; x < w - 1; x += cell)
+        {
+            var box = new Border
+            {
+                Width = Math.Max(1, Math.Min(cell, w - x) - 2),
+                Height = Math.Max(1, h - 4),
+                Background = fill,
+                BorderBrush = edge,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(2),
+                Opacity = 0.55,
+            };
+            Canvas.SetLeft(box, x + 1);
+            Canvas.SetTop(box, 2);
+            tail.Children.Add(box);
+        }
     }
 
     private void DrawPhase3VideoEndMarker(double video, double axis)
@@ -307,50 +401,31 @@ public partial class MusicWizardWindow
                 Foreground = Brushes.White,
             },
         };
-        Canvas.SetLeft(tag, x + 4);
+        tag.Measure(Size.Infinity);
+        double tagW = tag.DesiredSize.Width;
+        Canvas.SetLeft(tag, x + 4 + tagW <= overlay.Bounds.Width ? x + 4 : Math.Max(0, x - 4 - tagW));
         Canvas.SetTop(tag, 26);
         overlay.Children.Add(tag);
     }
 
-    private void AddMusicPiece(Canvas canvas, double t0, double t1, double axis, double video, double w, double h, IBrush brush, double opacity, double border)
+    private void AddMusicPiece(Canvas canvas, double t0, double t1, double axis, double w, double h, IBrush brush, bool selected)
     {
-        if (t1 - t0 <= 0.001) return;
-        double split = Math.Clamp(video, t0, t1);
-        void Piece(double a, double b, bool faded)
+        double x0 = Math.Clamp(t0 / axis, 0, 1) * w, x1 = Math.Clamp(t1 / axis, 0, 1) * w;
+        if (x1 - x0 < 1) return;
+        var block = new Border
         {
-            double x0 = Math.Clamp(a / axis, 0, 1) * w, x1 = Math.Clamp(b / axis, 0, 1) * w;
-            if (x1 - x0 < 1) return;
-            var block = new Border
-            {
-                Width = Math.Max(2, x1 - x0 - 1),
-                Height = h,
-                Background = brush,
-                Opacity = faded ? opacity * 0.45 : opacity,
-                BorderBrush = brush,
-                BorderThickness = new Thickness(faded ? 1 : border),
-                CornerRadius = new CornerRadius(3),
-                IsHitTestVisible = false,
-            };
-            Canvas.SetLeft(block, x0);
-            canvas.Children.Add(block);
-        }
-        Piece(t0, split, false);
-        Piece(split, t1, true);
-        double xs = Math.Clamp(split / axis, 0, 1) * w, xe = Math.Clamp(t1 / axis, 0, 1) * w;
-        if (xe - xs >= 1)
-        {
-            var dim = new Border
-            {
-                Width = xe - xs,
-                Height = h,
-                Background = Brushes.Black,
-                Opacity = PartOverflowDimOpacity,
-                CornerRadius = new CornerRadius(3),
-                IsHitTestVisible = false,
-            };
-            Canvas.SetLeft(dim, xs);
-            canvas.Children.Add(dim);
-        }
+            Tag = "song-tail",
+            Width = Math.Max(2, x1 - x0 - 1),
+            Height = h,
+            Background = brush,
+            Opacity = selected ? 0.42 : 0.30,
+            BorderBrush = brush,
+            BorderThickness = new Thickness(selected ? 2.5 : 1.0),
+            CornerRadius = new CornerRadius(3),
+            IsHitTestVisible = false,
+        };
+        Canvas.SetLeft(block, x0);
+        canvas.Children.Add(block);
     }
 
     private void AddSongEndMarker(Canvas canvas, double x, double h)
@@ -371,26 +446,8 @@ public partial class MusicWizardWindow
             if (extra <= 0 || EntrySegments(i) is not { } segs) continue;
             double shift = PartCutShiftFor(i);
             double t0 = segs.Last.OutputEndSec + shift;
-            AddMusicPiece(canvas, t0, t0 + extra, axis, video, w, h, SongBrush(i), 0.30, 1);
+            AddMusicPiece(canvas, t0, t0 + extra, axis, w, h, SongBrush(i), i == _editIndex);
             AddSongEndMarker(canvas, Math.Clamp((t0 + extra) / axis, 0, 1) * w, h);
-            double xVideo = video / axis * w;
-            double xEnd = Math.Min(w, (t0 + extra) / axis * w);
-            if (xEnd - xVideo > 70)
-            {
-                var label = new TextBlock
-                {
-                    Text = $"✂ fades out here · {Clock(extra)} not heard",
-                    FontSize = Infrastructure.ThemeManager.ScaledFontSize(9),
-                    FontWeight = FontWeight.SemiBold,
-                    Foreground = Infrastructure.ThemeResources.Brush(this, "AppTextPrimaryBrush", Brushes.White),
-                    MaxWidth = Math.Max(40, xEnd - xVideo - 10),
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    IsHitTestVisible = false,
-                };
-                Canvas.SetLeft(label, xVideo + 6);
-                Canvas.SetTop(label, h - 18);
-                canvas.Children.Add(label);
-            }
         }
         if (_partCut is not { } cut) return;
         double rem = PartCutRemainingSec();

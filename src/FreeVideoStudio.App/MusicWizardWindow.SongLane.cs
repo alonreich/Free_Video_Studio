@@ -121,7 +121,10 @@ public partial class MusicWizardWindow
             Canvas.SetTop(block, 0);
             canvas.Children.Add(block);
 
-            if (x1 - x0 > 26)
+            double labelX1 = partLanes && EntryOverflowSec(entry) > 0
+                ? Math.Clamp((seg.OutputEndSec + shift + EntryOverflowSec(entry)) / axis, 0, 1) * w
+                : x1;
+            if (labelX1 - x0 > 26)
             {
                 string name = System.IO.Path.GetFileNameWithoutExtension(seg.Path);
                 var label = new Border
@@ -131,7 +134,7 @@ public partial class MusicWizardWindow
                     BorderThickness = new Thickness(3, 0, 0, 0),
                     CornerRadius = new CornerRadius(3),
                     Padding = new Thickness(5, 1),
-                    MaxWidth = Math.Max(20, x1 - x0 - 14),
+                    MaxWidth = Math.Max(20, labelX1 - x0 - 14),
                     IsHitTestVisible = false,
                     Child = new TextBlock
                     {
@@ -143,7 +146,7 @@ public partial class MusicWizardWindow
                     },
                 };
                 Canvas.SetLeft(label, x0 + 6);
-                Canvas.SetTop(label, 3);
+                Canvas.SetTop(label, h >= 40 ? 3 : Math.Max(0, h / 2 - 8));
                 canvas.Children.Add(label);
             }
 
@@ -154,7 +157,7 @@ public partial class MusicWizardWindow
         var c = CurrentCoverage();
         double videoX = Math.Clamp(video / axis, 0, 1) * w;
         double coveredX = Math.Clamp((c.CoveredSec + (partLanes ? PartCutRemainingSec() : 0)) / axis, 0, 1) * w;
-        if (!c.IsFull && videoX - coveredX > 2)
+        if (!partLanes && !c.IsFull && videoX - coveredX > 2)
         {
             IBrush gapBrush = Infrastructure.ThemeResources.Brush(this, "AppDangerBrush", Brushes.Red);
             var gap = new Border

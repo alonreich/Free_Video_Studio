@@ -1,4 +1,4 @@
-﻿using Avalonia.Controls;
+using Avalonia.Controls;
 
 using Avalonia.Interactivity;
 
@@ -128,6 +128,14 @@ public partial class MusicWizardWindow : Window
     }
 
     internal const double DefaultWidthDip = 1000;
+    public const string ChooseBoundsKey = "MusicWizardBounds";
+    public const string PartBoundsKey = "MusicWizardPartBounds";
+    public const string ReviewBoundsKey = "MusicWizardReviewBounds";
+    private readonly WindowBoundsHelper.BoundsTracker _bounds;
+
+    public string CurrentBoundsKey => _bounds.Key;
+
+    private string BoundsKeyForView() => _currentStep != StepFit ? ChooseBoundsKey : Vm.IsReviewView ? ReviewBoundsKey : PartBoundsKey;
     private int _currentStep = 1;
 
     private readonly ApplicationPaths _paths = ApplicationPaths.CreateDefault();
@@ -203,7 +211,7 @@ public partial class MusicWizardWindow : Window
         InitializeComponent();
         WireViewModel();
         Controls.WindowResizeGrip.Attach(this, "Drag to resize the Add Music wizard");
-        FreeVideoStudio.App.WindowBoundsHelper.Track(this, "MusicWizardBounds", fitDisplayOnFirstRun: true, firstRunMaxWidthDip: DefaultWidthDip);
+        _bounds = FreeVideoStudio.App.WindowBoundsHelper.Track(this, ChooseBoundsKey, fitDisplayOnFirstRun: true, firstRunMaxWidthDip: DefaultWidthDip);
         _playheadTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
         _playheadTimer.Tick += PlayheadTimer_Tick;
         WirePreviewDetach();
@@ -536,7 +544,7 @@ public partial class MusicWizardWindow : Window
         FreeVideoStudio.Core.Media.MpvIpcClient.GlobalMasterVolumeChanged += OnGlobalMasterVolumeChanged;
 
         this.Closing += (s, e) => {
-            WindowBoundsHelper.SaveBoundsOnClose(this, "MusicWizardBounds");
+            WindowBoundsHelper.SaveBoundsOnClose(this, _bounds.Key);
         };
 
         LoadRecentMusicPins();
@@ -891,6 +899,20 @@ public partial class MusicWizardWindow : Window
 
     private bool _suppressTrackSelectionSideEffects;
 
+    private Panel? _transportFooter;
+
+    private void PlaceTransportBar()
+    {
+        var bar = this.FindControl<StackPanel>("TransportBar");
+        var partHost = this.FindControl<Panel>("PartTransportHost");
+        if (bar == null || partHost == null) return;
+        if (_transportFooter == null && bar.Parent is Panel footer && !ReferenceEquals(footer, partHost)) _transportFooter = footer;
+        var target = _currentStep == StepFit && Vm.IsPartView ? partHost : _transportFooter;
+        if (target == null || ReferenceEquals(bar.Parent, target)) return;
+        if (bar.Parent is Panel current) current.Children.Remove(bar);
+        target.Children.Add(bar);
+    }
+
     private void UpdateStepVisibility()
     {
         this.FindControl<Grid>("Step1Panel")!.IsVisible = _currentStep == StepChoose;
@@ -899,6 +921,8 @@ public partial class MusicWizardWindow : Window
         Vm.ChoosingSong = _currentStep == StepChoose;
 
         if (_currentStep == StepChoose) Vm.View = ViewModels.MusicWizardView.Choose;
+        PlaceTransportBar();
+        _bounds.SwitchTo(BoundsKeyForView());
         ApplyStepButtons();
 
         UpdateFinalPlacementSummary();
@@ -2085,6 +2109,7 @@ public partial class MusicWizardWindow : Window
                 (waveLane.Source as IDisposable)?.Dispose();
                 waveLane.Source = null;
             }
+            _phase3WaveSpanSec = 0;
             _phase3ClipDurationsSec.Clear();
 
             _previewDetach?.Attach();
@@ -2331,6 +2356,19 @@ public partial class MusicWizardWindow : Window
                 double audibleMusicDuration = previewSegments.Count > 0
                     ? Math.Min(GetPhase3VideoDurationSeconds(), previewSegments[^1].TimelineEndSec)
                     : 0.0;
+                double tailSec = PartLanesActive ? WaveTailSec(previewSegments) : 0.0;
+                if (tailSec > 0)
+                {
+                    var last = previewSegments[^1];
+                    previewSegments[^1] = new Phase3MusicPreviewSegment
+                    {
+                        Path = last.Path,
+                        TimelineStartSec = last.TimelineStartSec,
+                        TimelineEndSec = last.TimelineEndSec + tailSec,
+                        FileStartSec = last.FileStartSec,
+                    };
+                    audibleMusicDuration = last.TimelineEndSec + tailSec;
+                }
                 waveLane.Width = double.NaN;
                 waveLane.Margin = new Avalonia.Thickness(0, 0, 0, 0);
 
@@ -2353,6 +2391,7 @@ public partial class MusicWizardWindow : Window
                             waveLane.Source = new Avalonia.Media.Imaging.Bitmap(fs);
                             DeleteTempFile(ref _lastPhase3WaveFile);
                             _lastPhase3WaveFile = wavePath;
+                            _phase3WaveSpanSec = audibleMusicDuration;
                             UpdatePhase3WaveformLaneWidth();
                         }
                         catch (System.Exception __ex) { RuntimeLog.Swallowed(__ex); }
@@ -2512,7 +2551,9 @@ public partial class MusicWizardWindow : Window
         double videoDuration = GetPhase3VideoDurationSeconds();
         if (videoDuration <= 0) return;
 
-        double ratio = Math.Min(GetQueuedMusicCoverageSeconds(), videoDuration) / Math.Max(videoDuration, LaneAxisSec());
+        double ratio = PartLanesActive && _phase3WaveSpanSec > 0
+            ? Math.Clamp(_phase3WaveSpanSec / Math.Max(videoDuration, LaneAxisSec()), 0, 1)
+            : Math.Min(GetQueuedMusicCoverageSeconds(), videoDuration) / Math.Max(videoDuration, LaneAxisSec());
         waveImg.Width = clip.Bounds.Width * ratio;
         waveImg.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
         waveImg.Height = clip.Bounds.Height > 1 ? clip.Bounds.Height : 60;
@@ -3191,7 +3232,7 @@ public partial class MusicWizardWindow : Window
         e.Cancel = true;
         this.Hide();
 
-        FreeVideoStudio.App.WindowBoundsHelper.SaveBoundsOnClose(this, "MusicWizardBounds");
+        FreeVideoStudio.App.WindowBoundsHelper.SaveBoundsOnClose(this, _bounds.Key);
         _isSafeToClose = true;
         Avalonia.Threading.Dispatcher.UIThread.Post(Close);
     }

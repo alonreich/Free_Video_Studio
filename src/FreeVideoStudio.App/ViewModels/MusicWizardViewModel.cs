@@ -181,7 +181,6 @@ public sealed class MusicWizardViewModel : ViewModelBase
     public RelayCommand? RedoCommand { get; set; }
     public RelayCommand? EndHereCommand { get; set; }
     public RelayCommand? ResetPartCommand { get; set; }
-    public RelayCommand? EndWithVideoCommand { get; set; }
 
     private bool _partOverflows;
     public bool PartOverflows { get => _partOverflows; set => SetProperty(ref _partOverflows, value); }
