@@ -30,7 +30,7 @@
 | `.github/workflows/ci.yml` | CI | `SYS-CI`, `aot-publish`, `records` (`RELRECORD_01`, `CHANGELOG_02`) | Runs the ratchets; checks the release records and the change-log duty; reports the app publish size. **⚠ CO-GOVERNED BY: 08** |
 | `.github/workflows/lfs-guard.yml` | LFS guard | `SYS-REPOWEIGHT` | Proves LFS is real and stops new large files. |
 | `.gitattributes` | EOL + LFS policy | `EOL_01`, `SYS-REPOWEIGHT` | What is stored where. |
-| `Build.cmd` | Production Release Script | `dotnet run build\FvsBuild`, `--beta`, `--yes` (+ `FVS_RELEASE_UNATTENDED=1`), `--no-publish`, `--resume`, `RELGATE_01`, `RELQA_01`, `RELRESUME_01` | **STRICT AGENT BAN**: Deploys release assets and publishes publicly to GitHub Cloud, behind the release gate. Never run by autonomous agents. **⚠ CO-GOVERNED BY: 05** |
+| `Build.cmd` | Production Release Script | `dotnet run build\FvsBuild`, `--beta`, `--yes` (ignored, RELNOPROMPT_01), `--no-publish`, `--resume`, `RELGATE_01`, `RELQA_01`, `RELRESUME_01` | **STRICT AGENT BAN**: Deploys release assets and publishes publicly to GitHub Cloud, behind the release gate. Never run by autonomous agents. **⚠ CO-GOVERNED BY: 05** |
 | `dev_build.cmd` | Local Dev Build Harness | `dotnet run build\FvsBuild -- --dev` | Local compilation check and NativeAOT publish verification. Zero git tags, zero GitHub Cloud publishing. **⚠ CO-GOVERNED BY: 05** |
 | `src/FreeVideoStudio.Core/Infrastructure/ControlledFolderAccess.cs` | `ControlledFolderAccess` | `Mode`, `IsBlocking`, `ProtectedRoots`, `IsProtectedPath`, `MayBlock`, `IsUnder`, `CFASAFE_01` | Read-only view of Windows "Controlled folder access" (SYS-CFASAFE). |
 | `src/FreeVideoStudio.App/Infrastructure/ProtectedFolderGate.cs` | `ProtectedFolderGate` | `CanWrite`, `CanWriteNow`, `FfmpegCanWrite`, `DenialIsFresh`, `ForgetDenial`, `TakePendingNotice`, `ShowNoticeAsync`, `CFASAFE_01`, `CFAFFMPEG_01` | One write attempt per protected folder, remembered refusal, the one notice (SYS-CFASAFE). |
@@ -46,7 +46,7 @@
 
 ## 0. Build Harness Disclaimers & Agent Execution Rules  {#DIST-AGENTS}
 
-> Agents never run `.\Build.cmd` (nor `--yes` / `FVS_RELEASE_UNATTENDED`); use `.\dev_build.cmd`. Canonical: [README §0.1](README.md#GOV-START).
+> Agents never run `.\Build.cmd` (it publishes with no prompt, RELNOPROMPT_01); use `.\dev_build.cmd`. Canonical: [README §0.1](README.md#GOV-START).
 
 ---
 
@@ -311,10 +311,10 @@ installer, upgrade path, signing story.
      behind); the tag `v<version>` exists neither locally nor on GitHub (versions are the UTC minute — two
      releases in one minute: wait a minute); the GitHub CLI is signed in; `docs/CHANGELOG.md` has a
      `## Upcoming` section whose bullets pass `ReleaseChangelog.LintUserNotes`; `docs/changes.md` has its
-     `## Unreleased` section. It then prints the version, branch, commit and the notes and asks the human to
-     type `PUBLISH`. With no terminal (redirected input) it refuses unless `--yes` is given on purpose —
-     **RELQA_02: and `--yes` also needs `FVS_RELEASE_UNATTENDED=1` in the environment** (one word on a
-     command line is too easy for a script or agent to add).
+     `## Unreleased` section. It then prints the version, branch, commit and the notes and publishes.
+     **RELNOPROMPT_01 (owner decision 2026-11-22):** there is no `PUBLISH` prompt; running `Build.cmd` is
+     the confirmation. `--yes` is still accepted (ignored) for old scripts; `FVS_RELEASE_UNATTENDED` and
+     RELQA_02 are retired. Every other gate check above and below still refuses a bad release.
      **RELQA_01 — before that question:** the GitHub check runs of the starting commit must be green —
      the latest run of each of `Fix sentinels`, `Release records`, `Build + test (Windows)`,
      `LFS pointers resolve`, and for a stable release `NativeAOT publish` (`RequiredChecks`, `AotCheck`,

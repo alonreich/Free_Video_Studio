@@ -14,9 +14,8 @@
 > `Build.cmd` triggers `build/FvsBuild` in production release mode, which creates git release tags and **OFFICIALLY PUBLISHES A NEW VERSION DIRECTLY TO GITHUB CLOUD** for public download worldwide.
 > If an agent must test compilation, packaging, or NativeAOT publish, it **MUST ONLY USE `.\dev_build.cmd`** (local build only, passing `--dev`, never touches GitHub or publishes to the cloud).
 > The release gate (`09` [DIST-RELEASEGATE](09_DISTRIBUTION_AND_RELEASE.md#DIST-RELEASEGATE)) makes `Build.cmd` refuse
-> a dirty, unpushed or unreviewed release and ask a human to type `PUBLISH`. That protects the release; it is
-> NOT permission for an agent to run it. Agents must never pass `--yes` or set `FVS_RELEASE_UNATTENDED`
-> (together they skip the `PUBLISH` prompt, `09` RELQA_02).
+> a dirty, unpushed or unreviewed release. There is no `PUBLISH` prompt any more: running `Build.cmd` publishes
+> (RELNOPROMPT_01, owner decision 2026-11-22). The gate protects the release; it is NOT permission for an agent to run it.
 
 * **Stop-and-Read:** never inspect or edit code without first reading and citing its mapped specification
   in `docs/` ([`SPEC_GOVERNANCE.md`](SPEC_GOVERNANCE.md) §1–§2). Files marked `⚠` are co-governed: read every spec they name.

@@ -1200,7 +1200,7 @@ RELTAG_01                                    09 DIST-RELEASEGATE | DIST-SPLIT   
 RETAIN_01                                    09 DIST-RETENTION   (5 stable + newer betas kept; tags never deleted)
 RETAIN_02                                    09 DIST-RETENTION   (retention removes old FILES only; release pages + notes kept)
 RELQA_01                                     09 DIST-RELEASEGATE   (green CI on the commit + local sentinels/tests before stamping)
-RELQA_02                                     09 DIST-RELEASEGATE   (--yes also needs FVS_RELEASE_UNATTENDED=1)
+RELNOPROMPT_01                               09 DIST-RELEASEGATE   (no PUBLISH prompt; RELQA_02 retired)
 RELRECORD_01                                 09 DIST-RETENTION | §3e   (every CHANGELOG version heading is a tag; pruned sections archived)
 RELRECORD_02                                 09 DIST-RELEASEGATE   (notes equal to the last release's = unpromoted release)
 RELRESUME_01                                 09 DIST-RELEASEGATE   (Build.cmd --resume finishes a pushed-but-unpublished release)

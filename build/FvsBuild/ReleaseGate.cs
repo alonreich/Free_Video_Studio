@@ -101,7 +101,7 @@ internal static partial class ReleaseGate
         log.Banner($"From '{branch}' at {baseSha[..Math.Min(12, baseSha.Length)]}. Release notes:");
         foreach (string line in notes.Split('\n').Take(20)) log.Info("    " + line.TrimEnd('\r'));
         log.Banner("###########################################################");
-        if (!Confirm(assumeYes, log))
+        if (!Confirm(log))
         {
             log.Warn("[RELEASE] Cancelled. Nothing was changed.");
             return null;
@@ -198,7 +198,7 @@ internal static partial class ReleaseGate
             _ => $"ABOUT TO PUBLISH {tag}{(releaseIsBeta ? " AS A BETA" : " TO EVERY USER")} (its commit and tag are already on GitHub)",
         });
         log.Banner("###########################################################");
-        return Confirm(assumeYes, log) ? new ResumePlan(plan, state, promoted) : null;
+        return Confirm(log) ? new ResumePlan(plan, state, promoted) : null;
     }
 
     internal static string PrepareNotes(bool beta, List<string> problems)
@@ -226,28 +226,12 @@ internal static partial class ReleaseGate
             : body;
     }
 
-    internal const string UnattendedVariable = "FVS_RELEASE_UNATTENDED";
+    internal const string NoPromptTag = "RELNOPROMPT_01";
 
-    private static bool Confirm(bool assumeYes, BuildLog log)
+    private static bool Confirm(BuildLog log)
     {
-        if (assumeYes)
-        {
-            if (!string.Equals(Environment.GetEnvironmentVariable(UnattendedVariable), "1", StringComparison.Ordinal))
-            {
-                log.Error($"ERROR: [RELEASE] --yes also needs {UnattendedVariable}=1 in the environment. Nothing was changed.");
-                return false;
-            }
-            log.Warn($"[RELEASE] --yes and {UnattendedVariable}=1 given: publishing without the interactive confirmation.");
-            return true;
-        }
-        if (Console.IsInputRedirected)
-        {
-            log.Error("ERROR: [RELEASE] No terminal to confirm in. Run Build.cmd in a console, or pass --yes on purpose.");
-            return false;
-        }
-        Console.Write("Type PUBLISH and press Enter to publish (anything else cancels): ");
-        string? answer = Console.ReadLine();
-        return string.Equals(answer?.Trim(), "PUBLISH", StringComparison.Ordinal);
+        log.Warn($"[RELEASE] {NoPromptTag}: publishing now. Running Build.cmd is the confirmation; no PUBLISH prompt (owner decision 2026-11-22).");
+        return true;
     }
 
     public static bool CommitVersion(ReleasePlan plan, BuildLog log)
