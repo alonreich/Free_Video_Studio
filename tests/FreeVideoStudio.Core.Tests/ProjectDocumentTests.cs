@@ -516,6 +516,24 @@ public class ProjectDocumentTests : IDisposable
     }
 
     [Fact]
+    public void Load_FileFromANewerVersion_IsRefusedEvenWhenAnOlderBackupExists()
+    {
+        string path = PathIn("montage.fvsproj");
+        ProjectStore.Save(SampleDocument() with { Title = "older" }, path);
+        ProjectStore.Save(SampleDocument() with { Title = "newer" }, path);
+        JsonObject newer = FreeVideoStudio.Core.Infrastructure.AtomicJsonFile.ReadObject(path)!;
+        newer["schema_version"] = ProjectDocument.SchemaVersion + 1;
+        FreeVideoStudio.Core.Infrastructure.AtomicJsonFile.WriteObject(path, newer);
+
+        ProjectDocument? loaded = ProjectStore.Load(path, out string? error, out bool fromBackup);
+
+        Assert.True(loaded is null, $"A project saved by a newer app version was silently replaced by its older backup ('{loaded?.Title}').");
+        Assert.False(fromBackup);
+        Assert.NotNull(error);
+        Assert.Contains("newer version", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Load_MissingFile_ReportsItRatherThanThrowing()
     {
         ProjectDocument? loaded = ProjectStore.Load(PathIn("nope.fvsproj"), out string? error, out _);

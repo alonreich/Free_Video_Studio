@@ -176,7 +176,11 @@ public partial class MainWindow : Window
     private bool? _keepMusicDuringMeme;
 
     private bool _isTimelineDrawn = false;
-    private string _loadedVideoPath = string.Empty;
+    private string _loadedVideoPath
+    {
+        get => _viewModel?.LoadedVideoPath ?? string.Empty;
+        set => _viewModel.LoadedVideoPath = string.IsNullOrWhiteSpace(value) ? null : value;
+    }
     private readonly IExportCoordinator _exportCoordinator =
         new ExportCoordinator(FreeVideoStudio.Core.Abstractions.Faults.Sink);
 
@@ -220,6 +224,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
         _projectSession.StateChanged += (_, _) => RefreshProjectTitle();
         _projectSession.DocumentApplied += (_, document) => OnProjectDocumentApplied(document);
+        _projectSession.ProjectVideoChanged += (_, path) => _ = ShowProjectVideoAsync(path);
 
         this.Opened += (s, e) => { _ = FreeVideoStudio.App.Services.UpdateService.RunStartupCheckAsync(this); };
     }
@@ -526,7 +531,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         }
         catch (Exception ex)
         {
-            Core.Abstractions.Faults.Degraded("UPLOAD", "The dropped file could not be opened. Try Upload Video instead; your current work is untouched.", ex);
+            Core.Abstractions.Faults.Degraded("UPLOAD", "The dropped file could not be opened. Try OPEN VIDEO instead; your current work is untouched.", ex);
         }
     }
 
@@ -1968,11 +1973,17 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
     private void SetMusicButtonActive(bool active)
     {
+        if (AddMusicButtonCtl == null) return;
+        _isMusicActive = active;
+        ShowMusicButtonState(active);
+        SaveRecoveryState(label: "music");
+    }
+
+    private void ShowMusicButtonState(bool active)
+    {
         var btn = AddMusicButtonCtl;
         if (btn == null) return;
         var txt = this.FindControl<TextBlock>("AddMusicText");
-
-        _isMusicActive = active;
         if (active)
         {
             btn.Classes.Remove("Primary");
@@ -1990,7 +2001,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             if (txt != null) txt.Text = " ADD MUSIC ";
             ToolTip.SetTip(btn, "Add background music to the video");
         }
-        SaveRecoveryState(label: "music");
     }
 
     private static bool HasVoiceOverWav(VoiceOverWindow.VoiceOverResult? result)

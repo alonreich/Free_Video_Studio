@@ -53,7 +53,8 @@ public static class TempHousekeeper
         var clock = Stopwatch.StartNew();
         TimeSpan budget = shutdown ? ShutdownBudget : StartupBudget;
         string stamp = Path.Combine(roots.StampDirectory, StampFileName);
-        if (!shutdown && File.Exists(stamp) && nowUtc - File.GetLastWriteTimeUtc(stamp) < StartupInterval)
+        if (!shutdown && File.Exists(stamp) && nowUtc - File.GetLastWriteTimeUtc(stamp) is { } sinceLastRun
+            && sinceLastRun >= TimeSpan.Zero && sinceLastRun < StartupInterval)
             return new Report(0, 0, 0, Skipped: true);
 
         int files = 0, folders = 0;

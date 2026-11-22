@@ -126,6 +126,8 @@ Temp cleanup:         .\src\FreeVideoStudio.Core\Infrastructure\TempHousekeeper.
                       + tests\FreeVideoStudio.Core.Tests\TempHousekeeperTests.cs.
 Project persistence:  ProjectSession.cs ordered background save/load queue;
                       tests\FreeVideoStudio.App.Tests\AutosaveBackgroundTests.cs (06 PROJECTIO_01).
+                      tests\FreeVideoStudio.App.Tests\ProjectSafetyQaTests.cs (QAREG_01: save/open/undo/recovery regression
+                      tests from the 2026-11-22 QA audit) + UiQaFixTests.cs (SHAREFAIL_01, ESCDIALOG_01, FONTMIN_01, MENUDEDUPE_01, OPENVIDEO_01).
 UI/UX audit tests:    tests\FreeVideoStudio.App.Tests\UxAuditTests.cs (04 EXPORTCLOSE_01, CROPSAVEERR_01, SEGROWTHEME_01/SEGROWA11Y_01).
                       tests\FreeVideoStudio.App.Tests\UiAuditFixTests.cs (04 THEMETOKENS_01, FONTTOKENS_01, CAPTIONEDIT_01, ERRPLAIN_01; 02 VOFAST_01).
                       Plain-English errors: src\FreeVideoStudio.App\Infrastructure\UserFacingError.cs (04 UI-SAFEGUARDS).

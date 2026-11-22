@@ -220,6 +220,11 @@ public sealed class SessionStateWriter
                 if (ok)
                 {
                     if (_primed != null) Overlay(_primed, batch);
+                    if (_unacknowledged != null)
+                    {
+                        foreach (var (key, _) in batch) _unacknowledged.Remove(key);
+                        if (_unacknowledged.Count == 0) _unacknowledged = null;
+                    }
                 }
                 else
                 {

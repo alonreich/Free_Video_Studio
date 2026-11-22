@@ -736,7 +736,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
             if (string.IsNullOrWhiteSpace(_videoPath))
             {
-                SetWizardState(1, "Upload Video", $"Editing \"{verifiedName}\". Open a reference clip to start.");
+                SetWizardState(1, "Open Video", $"Editing \"{verifiedName}\". Open a reference clip to start.");
             }
 
             if (!string.IsNullOrWhiteSpace(_pendingInitialVideoPath) && File.Exists(_pendingInitialVideoPath))

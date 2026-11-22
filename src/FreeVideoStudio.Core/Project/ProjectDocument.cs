@@ -40,6 +40,12 @@ public sealed record ProjectDocument
 
     public CaptionTrack? Captions { get; init; }
 
+    public double FreezeTimeMs { get; init; } = -1;
+
+    public double FreezeDurationS { get; init; } = 1.0;
+
+    public string OverlayText { get; init; } = string.Empty;
+
     public string Title { get; init; } = "Untitled";
 
     public DateTimeOffset CreatedUtc { get; init; } = DateTimeOffset.UtcNow;
@@ -110,7 +116,11 @@ public sealed record ProjectDocument
             && Equals(Export, other.Export)
             && string.Equals(Mask?.ProfileName, other.Mask?.ProfileName, StringComparison.Ordinal)
             && string.Equals(Mask?.Fingerprint, other.Mask?.Fingerprint, StringComparison.Ordinal)
-            && Equals(Merge, other.Merge);
+            && Equals(Merge, other.Merge)
+            && Equals(Captions, other.Captions)
+            && FreezeTimeMs.Equals(other.FreezeTimeMs)
+            && FreezeDurationS.Equals(other.FreezeDurationS)
+            && string.Equals(OverlayText ?? string.Empty, other.OverlayText ?? string.Empty, StringComparison.Ordinal);
     }
 
     public override int GetHashCode()

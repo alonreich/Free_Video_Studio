@@ -29,6 +29,8 @@ public sealed class ProjectSession
 
     private readonly UndoSidecarStore _sidecar;
 
+    private readonly RecentProjects _recent;
+
     private readonly Func<bool> _hasUnsavedWork;
     private readonly Func<ProjectMask?> _readLiveMaskFast;
 
@@ -65,7 +67,8 @@ public sealed class ProjectSession
         Func<ProjectMask?>? readLiveMask = null,
         Func<ProjectMerge?>? readMergeQueue = null,
         UndoSidecarStore? sidecar = null,
-        Func<ProjectMask?>? readLiveMaskFast = null)
+        Func<ProjectMask?>? readLiveMaskFast = null,
+        RecentProjects? recentProjects = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _picker = picker ?? throw new ArgumentNullException(nameof(picker));
@@ -82,6 +85,7 @@ public sealed class ProjectSession
         _readMergeQueue = readMergeQueue ?? (static () => null);
 
         _sidecar = sidecar ?? UndoSidecarStore.CreateDefault(Core.Infrastructure.ApplicationPaths.CreateDefault());
+        _recent = recentProjects ?? new RecentProjects(Core.Infrastructure.ApplicationPaths.CreateDefault());
 
         _lastAutosaveUtc = _clock.UtcNow;
     }
@@ -101,9 +105,19 @@ public sealed class ProjectSession
 
     public event EventHandler<ProjectDocument>? DocumentApplied;
 
+    public event EventHandler<string>? ProjectVideoChanged;
+
+    public IReadOnlyList<RecentProject> RecentProjectList()
+    {
+        try { return _recent.Read(); }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); return Array.Empty<RecentProject>(); }
+    }
+
     public void BeginHistory()
     {
         _sessionGeneration++;
+        CurrentPath = null;
+        _dirty = false;
         _history = new UndoStack<ProjectDocument>(Capture());
         _history.Changed += (_, _) => Raise();
         Raise();
@@ -113,7 +127,9 @@ public sealed class ProjectSession
     {
         if (_applying || _history is null) return;
 
-        if (_history.Apply(Capture(), label, gestureKey))
+        ProjectDocument before = _history.Current;
+        bool pushed = _history.Apply(Capture(), label, gestureKey);
+        if (pushed || !ReferenceEquals(before, _history.Current))
         {
             _dirty = true;
             _editGeneration++;
@@ -193,15 +209,17 @@ public sealed class ProjectSession
         return await WriteToAsync(_store.NormalizeExtension(chosen), announce: true);
     }
 
-    public Task<bool> OpenAsync() => RunCommandAsync(OpenCoreAsync);
+    public Task<bool> OpenAsync() => RunCommandAsync(() => OpenCoreAsync(null));
 
-    private async Task<bool> OpenCoreAsync()
+    public Task<bool> OpenAsync(string path) => RunCommandAsync(() => OpenCoreAsync(path));
+
+    private async Task<bool> OpenCoreAsync(string? requested)
     {
         long navigation = ++_navigationGeneration;
         if (!await ConfirmDiscardAsync("Open another project")) return false;
         long session = _sessionGeneration, generation = _editGeneration;
 
-        string? chosen = await _picker.OpenFileAsync(new FilePickerRequest(
+        string? chosen = requested ?? await _picker.OpenFileAsync(new FilePickerRequest(
             Title: "Open project",
             SuggestedFileName: null,
             ExtensionLabel: "Free Video Studio project",
@@ -213,6 +231,7 @@ public sealed class ProjectSession
         var loaded = await EnqueueIo(() =>
         {
             ProjectDocument? value = _store.Load(chosen, out string? problem, out bool backup);
+            if (value is not null) TouchRecent(chosen, value.Title);
             return (Document: value, Error: problem, FromBackup: backup,
                 Integrity: value?.CheckSource() ?? SourceIntegrity.Unknown,
                 History: value is null ? null : _sidecar.Load(chosen, HistoryFingerprint(value)));
@@ -240,13 +259,24 @@ public sealed class ProjectSession
                 NoticeKind.Warning);
         }
 
+        bool relinked = false;
         if (check == SourceIntegrity.Missing)
         {
-            _faults.Fatal("PROJECT",
-                "The video this project was built from is no longer at:" + Environment.NewLine +
-                document.Source.FilePath + Environment.NewLine + Environment.NewLine +
-                "Move it back, or load the video first and re-apply your edits.");
-            return false;
+            string? located = await LocateMovedVideoAsync(document.Source.FilePath);
+            if (located is not null)
+            {
+                SourceClip old = document.Source;
+                document = document with { Source = SourceClip.Probe(located, old.DurationMs, old.Width, old.Height, old.Fps) };
+                relinked = true;
+                _notifier.Notify($"Linked the project to {Path.GetFileName(located)}. Save to keep the new location.", NoticeKind.Info);
+            }
+            else
+            {
+                _notifier.Notify(
+                    "The video this project was built from is no longer at " + document.Source.FilePath +
+                    ". Your edits are open; move the video back, or open the project again and choose where it is now.",
+                    NoticeKind.Warning);
+            }
         }
 
         if (check == SourceIntegrity.Changed)
@@ -259,9 +289,12 @@ public sealed class ProjectSession
 
         _sessionGeneration++;
         _probedSource = (document.Source.FilePath, document.Source.SizeBytes, document.Source.ModifiedUtcSeconds);
+        string? previousVideo = _viewModel.LoadedVideoPath;
+        _viewModel.LoadedVideoPath = document.Source.FilePath;
+        if (document.Source.DurationMs > 0) _viewModel.Timeline.LoadedVideoDurationMs = document.Source.DurationMs;
         Apply(document);
         CurrentPath = chosen;
-        _dirty = false;
+        _dirty = relinked;
         _history = new UndoStack<ProjectDocument>(document);
         _history.Changed += (_, _) => Raise();
 
@@ -274,8 +307,40 @@ public sealed class ProjectSession
 
         Raise();
 
+        if (!string.Equals(previousVideo, document.Source.FilePath, StringComparison.OrdinalIgnoreCase)
+            && File.Exists(document.Source.FilePath))
+        {
+            try { ProjectVideoChanged?.Invoke(this, document.Source.FilePath); }
+            catch (Exception ex) { _faults.Recoverable("PROJECT", "The project's video could not be shown in the player. Your edits are open.", ex); }
+        }
+
         _notifier.Notify($"Opened {Path.GetFileNameWithoutExtension(chosen)}", NoticeKind.Success);
         return true;
+    }
+
+    private async Task<string?> LocateMovedVideoAsync(string missingPath)
+    {
+        string extension = "mp4";
+        string? suggested = null;
+        try
+        {
+            string ext = Path.GetExtension(missingPath);
+            if (!string.IsNullOrWhiteSpace(ext)) extension = ext.TrimStart('.');
+            suggested = Path.GetFileName(missingPath);
+        }
+        catch (ArgumentException ex) { RuntimeLog.Swallowed(ex); }
+        string? located = await _picker.OpenFileAsync(new FilePickerRequest(
+            Title: "Where is this project's video now?",
+            SuggestedFileName: suggested,
+            ExtensionLabel: "Video",
+            Extension: extension));
+        return located is not null && File.Exists(located) ? located : null;
+    }
+
+    private void TouchRecent(string path, string title)
+    {
+        try { _recent.Touch(path, string.IsNullOrWhiteSpace(title) ? Path.GetFileNameWithoutExtension(path) : title); }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
     public void AutosaveTick()
@@ -489,6 +554,9 @@ public sealed class ProjectSession
             Mask = ReadLiveMaskFastSafely(),
             Merge = ReadMergeQueueSafely(),
             Captions = _viewModel.CaptionTrack,
+            FreezeTimeMs = timeline.FreezeTimeMs,
+            FreezeDurationS = timeline.FreezeDurationS,
+            OverlayText = _viewModel.OverlayText ?? string.Empty,
             Title = string.IsNullOrWhiteSpace(path) ? "Untitled" : Path.GetFileNameWithoutExtension(path),
             ModifiedUtc = _clock.UtcNow,
         };
@@ -529,13 +597,20 @@ public sealed class ProjectSession
                 timeline.IsTrimEndSet = true;
             }
             timeline.MarkMemesAnchored();
+            timeline.FreezeTimeMs = document.FreezeTimeMs;
+            timeline.FreezeDurationS = document.FreezeDurationS;
+            _viewModel.OverlayText = document.OverlayText ?? string.Empty;
 
             _viewModel.IsPortraitMode = document.Export.PortraitMode;
             if (document.Export.QualityIndex >= 0)
                 _viewModel.QualitySliderValue = document.Export.QualityIndex;
 
             _viewModel.IsMusicActive = !string.IsNullOrWhiteSpace(document.Audio.MusicFilePath);
-            if (document.Audio.MusicSongs.Count > 0) _viewModel.MusicWizardResult = MusicResultFromProject(document.Audio);
+            _viewModel.MusicWizardResult = document.Audio.MusicSongs.Count > 0
+                ? MusicResultFromProject(document.Audio)
+                : !string.IsNullOrWhiteSpace(document.Audio.MusicFilePath)
+                    ? LegacyMusicResult(document)
+                    : null;
             _viewModel.VoiceOverResult = document.Audio.VoiceOverTakes.Count > 0 || document.Audio.VoiceOverFilePath != null
                 ? new VoiceOverWindow.VoiceOverResult
                 {
@@ -572,6 +647,30 @@ public sealed class ProjectSession
             songs[i] = new ProjectMusicSong(paths[i], Math.Max(0, full), Math.Max(0, inSec), Math.Max(0, outSec), true);
         }
         return songs;
+    }
+
+    internal static MusicWizardResult LegacyMusicResult(ProjectDocument document)
+    {
+        ProjectAudio audio = document.Audio;
+        double startSec = document.SourceCutStartMs / 1000.0;
+        double endMs = document.TrimmedDurationMs > 0
+            ? document.SourceCutStartMs + document.TrimmedDurationMs
+            : document.Source.DurationMs;
+        double offset = Math.Max(0, audio.MusicStartSec);
+        return new MusicWizardResult
+        {
+            MusicFilePath = audio.MusicFilePath!,
+            MusicFilePaths = new List<string> { audio.MusicFilePath! },
+            MusicStartsSeconds = new List<double> { offset },
+            OffsetSeconds = offset,
+            TimelineStartSeconds = startSec,
+            TimelineEndSeconds = Math.Max(startSec, endMs / 1000.0),
+            EnableDucking = audio.SidechainDucking,
+            EnableCarving = audio.MusicCarving,
+            VideoVolume = audio.VideoVolume,
+            MusicVolume = audio.MusicVolume,
+            LoopMusic = audio.MusicLoop,
+        };
     }
 
     internal static MusicWizardResult MusicResultFromProject(ProjectAudio audio)
@@ -679,6 +778,7 @@ public sealed class ProjectSession
                 if (result.Success)
                 {
                     reserved = null;
+                    TouchRecent(result.Path ?? target, refreshed.Title);
                     if (fingerprint is not null) _sidecar.Save(target, HistoryFingerprint(refreshed), undo!, redo!);
                 }
                 return (Result: result, Document: refreshed);

@@ -102,7 +102,7 @@ public sealed class SettingsAuditTests
     public void AboutMenus_RefreshAfterSave_LikeTheSettingsMenu()
     {
         string main = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "MainWindow.Wireup.cs"));
-        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(main, @"OpenSettingsAsync\(owner => FreeVideoStudio\.App\.Controls\.SettingsWindow\.ShowAboutAsync").Count);
+        Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(main, @"OpenSettingsAsync\(owner => FreeVideoStudio\.App\.Controls\.SettingsWindow\.ShowAboutAsync").Count);
         Assert.DoesNotContain("await FreeVideoStudio.App.Controls.SettingsWindow.ShowAboutAsync(this", main);
         string merger = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "VideoMergerWindow.axaml.cs"));
         Assert.Contains("ShowAboutAsync(this)) SyncFromSavedSettings();", merger);

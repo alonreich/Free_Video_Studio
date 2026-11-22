@@ -354,7 +354,7 @@ public sealed class ArchitectureRuleTests
     [Fact]
     public void ImperativeControlLookupsDoNotIncrease()
     {
-        const int Baseline = 630;
+        const int Baseline = 627;
 
         int count = 0;
         var perFile = new List<string>();
