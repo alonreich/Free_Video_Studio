@@ -781,6 +781,31 @@ public class IpcTests : IDisposable
     }
 
     [Fact]
+    public async Task SessionWriter_RetriedOlderValue_NeverOverwritesANewerOneAlreadyInFlight()
+    {
+        var commit = new RecordingCommit { Fail = true };
+        var writer = new SessionStateWriter(commit.Commit);
+
+        writer.Enqueue(new JsonObject { ["MainWindowBounds"] = new JsonObject { ["X"] = 1 }, ["MainVolume"] = 1.0 });
+        Assert.False(await writer.FlushAsync(TimeSpan.FromSeconds(5)));
+
+        commit.Fail = false;
+        commit.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        writer.Enqueue(new JsonObject { ["MainWindowBounds"] = new JsonObject { ["X"] = 2 } });
+        var deadline = Stopwatch.StartNew();
+        while (Volatile.Read(ref commit.Active) == 0 && deadline.Elapsed < TimeSpan.FromSeconds(5)) await Task.Delay(5);
+        Assert.Equal(1, Volatile.Read(ref commit.Active));
+
+        Task<bool> flush = writer.FlushAsync(TimeSpan.FromSeconds(5));
+        commit.Gate.SetResult();
+
+        Assert.True(await flush);
+        JsonObject last = commit.Last;
+        Assert.Equal(2, last["MainWindowBounds"]!["X"]!.GetValue<int>());
+        Assert.Equal(1.0, last["MainVolume"]!.GetValue<double>());
+    }
+
+    [Fact]
     public async Task SessionWriter_CloseDuringPendingSave_FinalSnapshotIsCommittedLast()
     {
         var commit = new RecordingCommit { Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously) };

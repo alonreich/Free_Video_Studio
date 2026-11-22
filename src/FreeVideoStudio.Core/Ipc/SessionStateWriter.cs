@@ -145,8 +145,11 @@ public sealed class SessionStateWriter
             long target = _enqueuedSeq;
             if (_unacknowledged != null)
             {
-                MergeUnderPendingLocked(_unacknowledged);
+                var retry = _unacknowledged.DeepClone().AsObject();
+                Overlay(retry, _inFlight);
+                MergeUnderPendingLocked(retry);
                 _unacknowledged = null;
+                target = ++_enqueuedSeq;
                 EnsureDrainLocked();
             }
 
