@@ -19,7 +19,7 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
 
 ```
   AVREG_01 · tests/run-av-tests.cmd · tests/FreeVideoStudio.AvRegression.Tests/ (PlayerRig, PlaybackProbe, ExportRig, Verify, MergerRig, MainEdit, TestMedia, Budget)  ->  README.md GOV-AVGATE (§0.3a)
-  developer_tools/Find_and_Remove_Comments.cmd, developer_tools/CommentRemover/ (CommentRemover.csproj, Runner, TextRewriter, Languages, CommentScanner, YamlLanguage, ExternalTokenizers), docs/CODE_NOTES_*.md, NOCOMMENTS_01, NOCOMMENTS_02, NOCOMMENTS_03, NoCSharpFileContainsAComment, tests/FreeVideoStudio.App.Tests/FvsCommentsToolTests.cs  ->  README.md GOV-START; 05 SYS-VERIFYTOOL (TAG=path#Symbol)
+  developer_tools/Find_and_Remove_Comments.cmd, developer_tools/CommentRemover/ (CommentRemover.csproj, Runner, TextRewriter, Languages, CommentScanner, YamlLanguage, ExternalTokenizers), docs/CODE_NOTES_*.md, NOCOMMENTS_01, NOCOMMENTS_02, NOCOMMENTS_03, NOCOMMENTS_04, DataFilesWithHashComments, NoCSharpFileContainsAComment, tests/FreeVideoStudio.App.Tests/FvsCommentsToolTests.cs  ->  README.md GOV-START; 05 SYS-VERIFYTOOL (TAG=path#Symbol)
   developer_tools/Pull_Code_files.py, tests/DeveloperTools.Tests/test_pull_code_files.py, CODEEXPORT_01, CODEEXPORT_02  ->  05 SYS-CODEEXPORT; offline ten-attachment AI export, coverage, secrets, encoding, snapshot/index and preservation
   Core/Media/VoiceOverPlaybackPlan.cs  ->  01 TL-OUTPUTTIMELINE; 03 FFM-TEMPO; VOCLOCK_01; 02 AUD-FREEZESFX (FREEZEPARITY_01, FreezeVideoLufs)
   Core/Media/VoiceCaptureBudget.cs, VOSAMPLE_01  ->  01 TL-OUTPUTTIMELINE; 02 AUD-VOICEOVER; sample-frame endpoint and immutable opening anchor

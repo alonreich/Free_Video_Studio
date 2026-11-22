@@ -45,6 +45,20 @@ public sealed class ExternalTokenizers : IDisposable
         out = []
         for tok in tokenize.generate_tokens(io.StringIO(text, newline='').readline):
             out.append('%s\t%d\t%d' % (tokenize.tok_name[tok.type], offset(*tok.start), offset(*tok.end)))
+        import ast, hashlib
+        def byte_col(row, col):
+            return len(lines[row - 1].encode('utf-8')[:col].decode('utf-8'))
+        tree = ast.parse(text)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
+                first = node.body[0]
+                if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+                    kind = 'SOLEDOC' if len(node.body) == 1 and not isinstance(node, ast.Module) else 'DOCSTRING'
+                    out.append('%s\t%d\t%d' % (kind, offset(first.lineno, byte_col(first.lineno, first.col_offset)), offset(first.end_lineno, byte_col(first.end_lineno, first.end_col_offset))))
+                    if kind == 'DOCSTRING':
+                        node.body = node.body[1:]
+        digest = hashlib.sha256(ast.dump(tree).encode('utf-8')).hexdigest()
+        out.append('ASTHASH\t%d\t%d' % (int(digest[:7], 16), int(digest[7:14], 16)))
         sys.stdout.write('\n'.join(out))
         """;
 
@@ -238,17 +252,26 @@ public sealed class PythonCommentLanguage : CommentLanguage
         var guarded = new List<Range>();
         int fstringStart = -1;
         int depth = 0;
-        foreach (ExternalToken t in _external.Python(text))
+        IReadOnlyList<ExternalToken> tokens = _external.Python(text);
+        foreach (ExternalToken t in tokens)
         {
             if (t.Start < 0 || t.End > text.Length || t.End < t.Start)
+            {
+                if (t.Kind == "ASTHASH") continue;
                 throw new InvalidOperationException("Python token offsets are out of range; nothing was written for this file.");
+            }
+        }
+        List<Range> docs = Docstrings(tokens);
+        comments.AddRange(docs);
+        foreach (ExternalToken t in tokens)
+        {
             switch (t.Kind)
             {
                 case "COMMENT":
                     if (!IsFunctional(text, t)) comments.Add(new Range(t.Start, t.End));
                     break;
                 case "STRING":
-                    if (text.AsSpan(t.Start, t.End - t.Start).IndexOfAny('\r', '\n') >= 0) guarded.Add(new Range(t.Start, t.End));
+                    if (!InDocstring(docs, t) && text.AsSpan(t.Start, t.End - t.Start).IndexOfAny('\r', '\n') >= 0) guarded.Add(new Range(t.Start, t.End));
                     break;
                 case "FSTRING_START":
                     if (depth++ == 0) fstringStart = t.Start;
@@ -259,8 +282,14 @@ public sealed class PythonCommentLanguage : CommentLanguage
                     break;
             }
         }
-        return new Scan(comments, guarded);
+        return new Scan(comments.OrderBy(r => r.Start).ToList(), guarded);
     }
+
+    private static List<Range> Docstrings(IEnumerable<ExternalToken> tokens) =>
+        tokens.Where(t => t.Kind == "DOCSTRING").Select(t => new Range(t.Start, t.End)).ToList();
+
+    private static bool InDocstring(List<Range> docs, ExternalToken t) =>
+        docs.Any(d => d.Start <= t.Start && t.End <= d.End);
 
     private static bool IsFunctional(string text, ExternalToken t)
     {
@@ -272,11 +301,48 @@ public sealed class PythonCommentLanguage : CommentLanguage
     public override void Verify(string before, string after) =>
         RequireEqual(Significant(before), Significant(after), "Python tokens");
 
-    private List<string> Significant(string text) =>
-        _external.Python(text)
-            .Where(t => t.Kind is not ("COMMENT" or "NL" or "ENCODING") || (t.Kind == "COMMENT" && IsFunctional(text, t)))
-            .Select(t => t.Kind == "NEWLINE" ? "NEWLINE" : t.Kind + "|" + text[t.Start..t.End])
-            .ToList();
+    private List<string> Significant(string text)
+    {
+        IReadOnlyList<ExternalToken> tokens = _external.Python(text);
+        List<Range> docs = Docstrings(tokens);
+        var result = new List<string>();
+        bool skipNewline = false;
+        foreach (ExternalToken t in tokens)
+        {
+            if (t.Kind is "DOCSTRING" or "SOLEDOC" or "ASTHASH") continue;
+            if (t.Kind is "COMMENT" or "NL" or "ENCODING")
+            {
+                if (t.Kind == "COMMENT" && IsFunctional(text, t)) result.Add(t.Kind + "|" + text[t.Start..t.End]);
+                continue;
+            }
+            if (InDocstring(docs, t))
+            {
+                skipNewline = true;
+                continue;
+            }
+            if (skipNewline && t.Kind == "NEWLINE")
+            {
+                skipNewline = false;
+                continue;
+            }
+            skipNewline = false;
+            result.Add(t.Kind == "NEWLINE" ? "NEWLINE" : t.Kind + "|" + text[t.Start..t.End]);
+        }
+        result.AddRange(tokens.Where(t => t.Kind == "ASTHASH").Select(t => $"AST|{t.Start}|{t.End}"));
+        if (!result.Any(r => r.StartsWith("AST|", StringComparison.Ordinal)))
+            throw new InvalidOperationException("Python syntax tree hash is missing; nothing was written for this file.");
+        return result;
+    }
 
-    public override string CleanLine(string line) => NoteBuilder.StripPrefix(line, "#");
+    public override string CleanLine(string line)
+    {
+        line = line.Trim();
+        foreach (string q in new[] { "\"\"\"", "'''" })
+        {
+            int open = line.IndexOf(q, StringComparison.Ordinal);
+            if (open >= 0 && open <= 2 && line[..open].All(c => "rRuUbB".Contains(c))) line = line[(open + 3)..];
+            if (line.EndsWith(q, StringComparison.Ordinal)) line = line[..^3];
+        }
+        return NoteBuilder.StripPrefix(line.Trim(), "#");
+    }
 }

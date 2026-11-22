@@ -59,9 +59,61 @@ public sealed class FvsCommentsToolTests
     [Fact]
     public void DocumentationIsNeverTouched()
     {
-        foreach (string path in new[] { "docs/05_SYSTEM_LIFECYCLE_STORAGE.md", "README.md", "build/sentinels.txt", "LICENSE" })
+        foreach (string path in new[] { "docs/05_SYSTEM_LIFECYCLE_STORAGE.md", "README.md", "project_structure.txt", "version.txt", "LICENSE" })
             Assert.True(Languages.IsDocumentation(path), path);
-        Assert.False(Languages.IsDocumentation("src/FreeVideoStudio.App/App.cs"));
+        foreach (string path in new[] { "src/FreeVideoStudio.App/App.cs", "build/sentinels.txt", "build/revoked-signers.txt" })
+            Assert.False(Languages.IsDocumentation(path), path);
+    }
+
+    [Fact]
+    public void CSharpLosesCommentsInsideEveryConditionalBranch()
+    {
+        string input = "class C\n{\n#if RELEASE\n    // a\n    string s = @\"x\n\n// kept\";\n#elif DEBUG\n    // b\n#else\n    /* c */\n#endif\n#if false\n    // d\n#endif\n}\n";
+        Assert.Equal("class C\n{\n#if RELEASE\n    string s = @\"x\n\n// kept\";\n#elif DEBUG\n#else\n#endif\n#if false\n#endif\n}\n", CommentScanner.Strip(input).Text);
+        Assert.Equal(4, CommentScanner.CountComments(input));
+    }
+
+    [Fact]
+    public void CSharpLosesRegionLinesButNotRegionLookingStrings()
+    {
+        string input = "class C\n{\n    #region Label\n    int x;\n    #endregion // tail\n    string s = \"#region no\";\n}\n";
+        StripResult r = CommentScanner.Strip(input);
+        Assert.Equal("class C\n{\n    int x;\n    string s = \"#region no\";\n}\n", r.Text);
+        Assert.Contains(r.Notes, n => n.Text.Contains("Label", StringComparison.Ordinal));
+        Assert.Equal(1, CommentScanner.CountComments(input));
+    }
+
+    [Fact]
+    public void BatchLosesRemWithAnyDelimiterAndInlineRemAfterAmpersand()
+    {
+        string input = "rem.a\r\nrem:b\r\necho x & rem c\r\necho y&&:: d\r\ndir 2>&1 & rem e\r\necho \"q & rem f\"\r\necho ^& rem g\r\necho z || rem h\r\nremove.exe\r\n";
+        Assert.Equal("echo x\r\necho y\r\ndir 2>&1\r\necho \"q & rem f\"\r\necho ^& rem g\r\necho z || rem h\r\nremove.exe\r\n", Strip(new BatchLanguage(), input));
+    }
+
+    [Fact]
+    public void DataListsLoseIndentedHashLinesButKeepSentinelTagsAndHashSymbols()
+    {
+        string input = "# REVOKE_01 header\n  # note\nA_01=src/a.cs#Name\n";
+        Assert.Equal("# REVOKE_01 header\nA_01=src/a.cs#Name\n", Strip(Languages.DataList(new[] { "REVOKE_01" }), input));
+        Assert.Equal("A_01=src/a.cs#Name\n", Strip(Languages.DataList(Array.Empty<string>()), input));
+    }
+
+    [Fact]
+    public void SolutionKeepsItsHeaderAndBlankFirstLine()
+    {
+        string input = "\r\nMicrosoft Visual Studio Solution File, Format Version 12.00\r\n# Visual Studio Version 17\r\n# note\r\nVisualStudioVersion = 17.0\r\n";
+        using var external = new ExternalTokenizers();
+        var sln = Languages.For("FreeVideoStudio.sln", external)!;
+        Assert.Equal("\r\nMicrosoft Visual Studio Solution File, Format Version 12.00\r\n# Visual Studio Version 17\r\nVisualStudioVersion = 17.0\r\n", Strip(sln, input));
+    }
+
+    [Fact]
+    public void JsonAndEditorConfigLoseComments()
+    {
+        using var external = new ExternalTokenizers();
+        string json = "{\n  // a\n  \"u\": \"http://x // no\",\n  \"v\": \"\\\"/* no */\"\n}\n";
+        Assert.Equal("{\n  \"u\": \"http://x // no\",\n  \"v\": \"\\\"/* no */\"\n}\n", Strip(Languages.For("a.json", external)!, json));
+        Assert.Equal("root = true\n", Strip(Languages.For(".editorconfig", external)!, "# a\n; b\nroot = true\n"));
     }
 
     [Fact]

@@ -79,9 +79,23 @@ public static class Languages
     private static readonly CommentLanguage Ignore = new HashLineLanguage();
     private static readonly CommentLanguage Inno = new InnoLanguage();
     private static readonly CommentLanguage Yaml = new YamlLanguage();
+    public static CommentLanguage DataList(IReadOnlyCollection<string> sentinelTags) =>
+        sentinelTags.Count == 0
+            ? new HashLineLanguage(indented: true)
+            : new HashLineLanguage(indented: true, keep: new Regex(@"(?<![\w-])(?:" + string.Join("|", sentinelTags.Select(Regex.Escape)) + @")(?![\w-])"), keepWithinLines: int.MaxValue);
+    private static readonly CommentLanguage EditorConfig = new HashLineLanguage(indented: true, markers: "#;");
+    private static readonly CommentLanguage Solution = new HashLineLanguage(indented: true, keep: new Regex(@"^# Visual Studio\b", RegexOptions.Compiled), keepWithinLines: 3, commentLinesOnly: true);
+    private static readonly CommentLanguage Json = new JsonLanguage();
+
+    public static readonly IReadOnlySet<string> DataFilesWithHashComments = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "build/sentinels.txt",
+        "build/revoked-signers.txt",
+    };
 
     public static bool IsDocumentation(string relativePath)
     {
+        if (DataFilesWithHashComments.Contains(relativePath)) return false;
         string name = Path.GetFileName(relativePath).ToLowerInvariant();
         string ext = Path.GetExtension(name);
         return relativePath.StartsWith("docs/", StringComparison.OrdinalIgnoreCase)
@@ -92,6 +106,7 @@ public static class Languages
     public static CommentLanguage? For(string relativePath, ExternalTokenizers external)
     {
         if (IsDocumentation(relativePath)) return null;
+        if (DataFilesWithHashComments.Contains(relativePath)) return DataList(Array.Empty<string>());
         string name = Path.GetFileName(relativePath).ToLowerInvariant();
         return Path.GetExtension(name) switch
         {
@@ -102,6 +117,9 @@ public static class Languages
             ".cmd" or ".bat" => Batch,
             ".yml" or ".yaml" => Yaml,
             ".iss" => Inno,
+            ".sln" => Solution,
+            ".json" or ".jsonc" => Json,
+            _ when name is ".editorconfig" => EditorConfig,
             _ when name is ".gitignore" or ".gitattributes" or ".agignore" or ".dockerignore" or ".clineignore" or ".codexignore" or ".geminiignore" => Ignore,
             _ => null,
         };
@@ -326,7 +344,8 @@ public sealed class XmlLanguage : CommentLanguage
 
 public sealed class BatchLanguage : CommentLanguage
 {
-    private static readonly Regex CommentLine = new(@"^\s*(?:@?rem(?:\s|$)|::)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex CommentLine = new(@"^\s*(?:@?rem(?:[\s.:,;=]|$)|::)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex InlineStart = new(@"\G[ \t]*(?:rem(?:[\s.:,;=]|$)|::)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public override string Name => "Batch";
 
@@ -336,36 +355,171 @@ public sealed class BatchLanguage : CommentLanguage
         foreach (var (start, end, _) in Lines(text))
         {
             string line = text[start..end];
-            if (!CommentLine.IsMatch(line)) continue;
+            int from = CommentLine.IsMatch(line) ? 0 : InlineComment(line);
+            if (from < 0) continue;
             if (line.TrimEnd().EndsWith('^'))
                 throw new InvalidOperationException("A REM line ends with ^ (continues onto the next line); nothing was written for this file.");
+            comments.Add(new Range(start + from, end));
+        }
+        return new Scan(comments, Array.Empty<Range>());
+    }
+
+    private static int InlineComment(string line)
+    {
+        bool quoted = false;
+        for (int i = 0; i < line.Length; i++)
+        {
+            char c = line[i];
+            if (c == '"') { quoted = !quoted; continue; }
+            if (quoted) continue;
+            if (c == '^') { i++; continue; }
+            if (c != '&' || (i > 0 && line[i - 1] is '>' or '<')) continue;
+            int amp = i;
+            if (amp > 0 && line[amp - 1] == '&') amp--;
+            int after = i + 1;
+            if (after < line.Length && line[after] == '&') after++;
+            if (!InlineStart.IsMatch(line, after)) continue;
+            while (amp > 0 && line[amp - 1] is ' ' or '\t') amp--;
+            return amp;
+        }
+        return -1;
+    }
+
+    public override void Verify(string before, string after) =>
+        RequireEqual(CodeLines(before, Find(before).Comments), CodeLines(after, Array.Empty<Range>()), "commands");
+
+    public override string CleanLine(string line)
+    {
+        line = NoteBuilder.StripPrefix(line.TrimStart('&', ' ', '\t', '@'), "rem", "::");
+        return line.Length > 0 && line[0] is '.' or ':' or ',' or ';' or '=' ? line[1..].TrimStart() : line;
+    }
+}
+
+public sealed class HashLineLanguage : CommentLanguage
+{
+    private readonly bool _indented;
+    private readonly string _markers;
+    private readonly Regex? _keep;
+    private readonly int _keepWithinLines;
+
+    private readonly bool _commentLinesOnly;
+
+    public HashLineLanguage(bool indented = false, string markers = "#", Regex? keep = null, int keepWithinLines = 0, bool commentLinesOnly = false)
+    {
+        _commentLinesOnly = commentLinesOnly;
+        _indented = indented;
+        _markers = markers;
+        _keep = keep;
+        _keepWithinLines = keepWithinLines;
+    }
+
+    public override string Name => _indented ? "hash-comment list" : "ignore/attributes";
+
+    public override Scan Find(string text)
+    {
+        var comments = new List<Range>();
+        int number = 0;
+        foreach (var (start, end, _) in Lines(text))
+        {
+            number++;
+            int first = start;
+            if (_indented)
+                while (first < end && text[first] is ' ' or '\t') first++;
+            if (first >= end || _markers.IndexOf(text[first]) < 0) continue;
+            if (_keep is not null && number <= _keepWithinLines && _keep.IsMatch(text[first..end])) continue;
             comments.Add(new Range(start, end));
         }
         return new Scan(comments, Array.Empty<Range>());
     }
 
     public override void Verify(string before, string after) =>
-        RequireEqual(CodeLines(before, Find(before).Comments), CodeLines(after, Array.Empty<Range>()), "commands");
+        RequireEqual(CodeLines(before, Find(before).Comments), CodeLines(after, Array.Empty<Range>()), "patterns");
 
-    public override string CleanLine(string line) => NoteBuilder.StripPrefix(line.TrimStart('@'), "rem", "::");
+    public override string CleanLine(string line) => NoteBuilder.StripPrefix(line.TrimStart(_markers.ToCharArray()), "");
+
+    public override StripResult Strip(string text)
+    {
+        if (!_commentLinesOnly) return base.Strip(text);
+        Scan scan = Find(text);
+        if (scan.Comments.Count == 0) return new StripResult(text, Array.Empty<CommentNote>(), 0, 0);
+        var starts = new HashSet<int>(scan.Comments.Select(c => c.Start));
+        var sb = new System.Text.StringBuilder(text.Length);
+        foreach (var (start, _, breakEnd) in Lines(text))
+            if (!starts.Contains(start)) sb.Append(text, start, breakEnd - start);
+        string result = sb.ToString();
+        Verify(text, result);
+        if (Find(result).Comments.Count != 0)
+            throw new InvalidOperationException("Comments remain after removal; nothing was written for this file.");
+        return new StripResult(result, NoteBuilder.Build(text, scan.Comments, result, CleanLine), scan.Comments.Count, scan.Comments.Count, scan.Comments);
+    }
 }
 
-public sealed class HashLineLanguage : CommentLanguage
+public sealed class JsonLanguage : CommentLanguage
 {
-    public override string Name => "ignore/attributes";
+    public override string Name => "JSON";
 
     public override Scan Find(string text)
     {
         var comments = new List<Range>();
-        foreach (var (start, end, _) in Lines(text))
-            if (end > start && text[start] == '#') comments.Add(new Range(start, end));
+        int i = 0;
+        int n = text.Length;
+        while (i < n)
+        {
+            char c = text[i];
+            if (c == '"')
+            {
+                i++;
+                while (i < n && text[i] != '"')
+                {
+                    if (text[i] == '\\') i++;
+                    i++;
+                }
+                if (i >= n) throw new InvalidOperationException("Unterminated JSON string; nothing was written for this file.");
+                i++;
+            }
+            else if (c == '/' && i + 1 < n && text[i + 1] == '/')
+            {
+                int end = i;
+                while (end < n && text[end] != '\n' && text[end] != '\r') end++;
+                comments.Add(new Range(i, end));
+                i = end;
+            }
+            else if (c == '/' && i + 1 < n && text[i + 1] == '*')
+            {
+                int close = text.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                if (close < 0) throw new InvalidOperationException("Unterminated /* */ in JSON; nothing was written for this file.");
+                comments.Add(new Range(i, close + 2));
+                i = close + 2;
+            }
+            else i++;
+        }
         return new Scan(comments, Array.Empty<Range>());
     }
 
     public override void Verify(string before, string after) =>
-        RequireEqual(CodeLines(before, Find(before).Comments), CodeLines(after, Array.Empty<Range>()), "patterns");
+        RequireEqual(new[] { Canonical(before) }, new[] { Canonical(after) }, "JSON content");
 
-    public override string CleanLine(string line) => NoteBuilder.StripPrefix(line, "#");
+    private static string Canonical(string text)
+    {
+        try
+        {
+            var options = new System.Text.Json.JsonDocumentOptions { CommentHandling = System.Text.Json.JsonCommentHandling.Skip, AllowTrailingCommas = true };
+            using var doc = System.Text.Json.JsonDocument.Parse(text, options);
+            return System.Text.Json.JsonSerializer.Serialize(doc.RootElement);
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            throw new InvalidOperationException($"JSON does not parse ({ex.Message}); nothing was written for this file.");
+        }
+    }
+
+    public override string CleanLine(string line)
+    {
+        line = NoteBuilder.StripPrefix(line, "//", "/*");
+        if (line.EndsWith("*/", StringComparison.Ordinal)) line = line[..^2];
+        if (line.StartsWith('*')) line = line[1..];
+        return line.Trim();
+    }
 }
 
 public sealed class InnoLanguage : CommentLanguage

@@ -1520,3 +1520,1627 @@ Windows shows a security confirmation; answer Yes. No administrator rights neede
 ### near ERRORLEVEL — SIGNLOCAL_01 (line 2)
 
 SIGNLOCAL_01 - stop trusting the FVS local development root on this Windows account.
+
+---
+
+Added 2026-11-22 by `developer_tools/Find_and_Remove_Comments.cmd`.
+
+## build/revoked-signers.txt
+
+### near REVOKE_01 (line 2)
+
+One SHA-256 certificate thumbprint (64 hex characters) per line. Lines starting with # are comments.
+These are PUBLIC fingerprints, not secrets: this file belongs in git.
+
+When a signing key may have leaked (stolen laptop, copied ssl-certificate folder, shared PFX):
+  1. Issue a new leaf from the SAME root:  delete (or move away) ssl-certificate\fvs-codesign.pfx and run
+     dev_build.cmd once with FVS_ROOT_KEY_PASS set — CodeSigning.EnsureLocalLeaf issues a fresh leaf.
+  2. Add the OLD leaf's thumbprint below (certutil -dump old.pfx, "Cert Hash(sha256)").
+  3. Add the same thumbprint to PublisherRoot.RevokedSignerThumbprints (a test fails if they differ).
+  4. Publish a release. FvsBuild refuses to sign with a listed certificate, copies this list into every
+     signed update.json, and every copy that checks for updates refuses the old leaf from then on.
+
+This costs nothing and needs no certificate authority.
+
+## build/sentinels.txt
+
+### near TESTCLEAN_01 (line 1)
+
+══════════════════════════════════════════════════════════════════════════════════════════════
+FIX SENTINELS — THE LIST OF FIXES THAT MUST STILL BE IN THE SOURCE.
+Test-suite audit: executable evidence and bounded generated-output ownership.
+
+### near DEVVERIFY_01 — TESTCLEAN_02, NOCOMMENTS_01, TESTOUT_01 (line 6)
+
+RETIRED TESTCLEAN_02 (tests/TestArtifactDirectory.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED TESTOUT_01 (tests/TestArtifactDirectory.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near LAYOUTLOOP_01 — TESTDESKTOP_01, NOCOMMENTS_01, MERGERBOUNDARY_01, MERGERGAPLESS_01, MERGERPROBE_01, OUTPUTCOMMIT_01, VERIFYHALT_01, VERIFYLOOP_01, LISTCOMMENT_01, BATCHPARENS_01 (line 9)
+
+RETIRED TESTDESKTOP_01 (tests/DesktopPreviewSmoke/Program.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED MERGERBOUNDARY_01 (tests/DesktopPreviewSmoke/MergerSmokeApp.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED MERGERGAPLESS_01 (src/FreeVideoStudio.App/VideoMergerWindow.EdlPreview.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED MERGERPROBE_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED MERGERPROBE_01 (tests/DesktopPreviewSmoke/MergerSmokeApp.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED OUTPUTCOMMIT_01 (src/FreeVideoStudio.Core/Media/FinalOutputCommit.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+SYS-DEVBUILD / VERIFYHALT_01. Each entry names a comment tag that sits next to a specific fix and
+the file it must appear in. If a tag is absent, the fix was reverted (a test cycle is about to be
+wasted on a binary that does not contain it) or the fix was superseded and the sentinel is stale.
+Either way a human decides; the build halts.
+
+⚠️ WHY THIS IS A DATA FILE AND NOT A BATCH `FOR` LIST — SYS-VERIFYTOOL.
+  The list used to live inside `for %%P in (...)` in dev.cmd, and that host broke it three separate
+  times, each time SILENTLY:
+    • VERIFYLOOP_01 — `call :CHECK_TAG` resolved labels by BYTE OFFSET through a mixed-EOL file.
+      Two seeks landed badly, so 2 of 49 sentinels were never checked and the run reported clean.
+    • LISTCOMMENT_01 — `REM` is not a comment inside a FOR list. cmd.exe tokenises on whitespace,
+      so every annotation line became six or seven bogus sentinels. ~400 false [no-file] entries.
+    • BATCHPARENS_01/02 — a round bracket anywhere in an annotation, even inside a REM, closes
+      the FOR list early and the next word is executed as a command.
+  And on top of all three, VERIFYHALT_01: the result variable was assigned and never read, so the
+  whole subroutine was a no-op for its entire existence.
+
+  None of those are bugs in the sentinel idea. They are bugs in expressing a list of 164 strings
+  in a language with no list type, no comments inside a list, and no escaping. The list now lives
+  here, in a format with exactly one rule, and the checker that reads it is C# with its own tests
+  — `FvsVerify` for the pre-build halt, `ArchitectureRuleTests.EveryFixSentinelStillResolves` for
+  CI. Both read THIS file, so they cannot disagree.
+
+FORMAT — one rule:
+  TAG=relative/path/to/file            a sentinel. The tag is searched for verbatim in the file.
+  # anything                           a comment. Brackets, quotes, equals signs, all fine.
+  RETIRED TAG — reason                 a sentinel deliberately withdrawn. Kept so the next person
+                                       finds out what happened to it instead of re-adding it.
+
+Paths use forward slashes and are relative to the repository root. Windows and Linux both accept
+them, which is what lets CI run this check on either.
+
+To add a sentinel: add one line. That is the whole procedure.
+══════════════════════════════════════════════════════════════════════════════════════════════
+
+### near EndThumbnailMarkerDrag — EDGEGUARD_01, DRAGCOST_01, STRIPCOST_01, VERIFYHALT_01 (line 58)
+
+RETIRED EDGEGUARD_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED DRAGCOST_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED STRIPCOST_01 — superseded, not reverted.
+  It guarded "scale with a RenderTransform, never with Width" on the per-slot filmstrip Image.
+  Commit ad0b7bd deleted that code path entirely and replaced it with Controls/TimelineFilmstrip,
+  which draws through DrawingContext.DrawImage with explicit source and destination rects — no
+  layout box to oversize, no 32768px bitmap for Skia to rasterise. The defect is structurally
+  unreachable, so there is no fix left to protect. Found the moment VERIFYHALT_01 made this
+  check able to speak at all.
+
+### near _previewParkedAtEnd — TRANSPORT_TRACE_01, MPVEOF_01 (line 71)
+
+RETIRED TRANSPORT_TRACE_01 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED MPVEOF_01 (src/FreeVideoStudio.Core/Media/MpvIpcClient.cs) — comment removed in 9aed91d refactor
+
+### near IsAotCompatible — MICSMOKE_01 (line 78)
+
+RETIRED MICSMOKE_01 (tests/VoiceOverNativeSmoke/Program.cs) — comment removed in 9aed91d refactor
+
+### near RunPhase3ThumbnailLaneAsync — LIST_06 (line 81)
+
+RETIRED LIST_06 (src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near CalculateEffectiveDurationMs — QUALITY_04 (line 98)
+
+RETIRED QUALITY_04 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — comment removed in 9aed91d refactor
+
+### near EstimatedFileSizeDescription — SIZEESTIMATE_01 (line 100)
+
+RETIRED SIZEESTIMATE_01 (src/FreeVideoStudio.App/MainWindow.SizeEstimate.cs) — comment removed in 9aed91d refactor
+
+### near LIST_07 — SIZEESTIMATE_01 (line 102)
+
+RETIRED SIZEESTIMATE_01 (src/FreeVideoStudio.App/MainWindow.Export.cs) — comment removed in 9aed91d refactor
+RETIRED SIZEESTIMATE_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near LAYOUT_01 — SIZEESTIMATE_01, DOUBLEFIRE_01 (line 105)
+
+RETIRED SIZEESTIMATE_01 (src/FreeVideoStudio.Core/Media/OutputFileSize.cs) — comment removed in 9aed91d refactor
+RETIRED DOUBLEFIRE_01 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — comment removed in 9aed91d refactor
+
+### near LastEditedCropProfile — WIZPROGRESS_01, WIZCOMPACT_01, QUALITY_04, CROPZOOMRESET_01, CROPSAVEPROMPT_02, CROPUNSAVED_01 (line 113)
+
+RETIRED WIZPROGRESS_01 — superseded, not reverted.
+  It guarded a ProgressBar added to fix a dead FindControl reference. WIZCOMPACT_01 then deleted
+  the bar, the field AND the writer. A guard for a deleted fix is a permanent false alarm —
+  exactly the QUALITY_04 failure this list already learned from once.
+RETIRED CROPZOOMRESET_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED CROPSAVEPROMPT_02 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED CROPUNSAVED_01 (src/FreeVideoStudio.App/Controls/ConfirmDialogWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED CROPUNSAVED_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near FORTNITEDEFAULT_02 — CROPFIRSTBOOT_01 (line 124)
+
+RETIRED CROPFIRSTBOOT_01 (src/FreeVideoStudio.App/Infrastructure/MaskOverlayManager.cs) — comment removed in 9aed91d refactor
+
+### near ApplySnapshotZoomInternal — CROPFALLBACK_02, SPECTATINGDEFAULT_01, SAVECONFIRM_01, MAGICWAND_01, DELETEBTN_01, DELETESET_01 (line 126)
+
+RETIRED CROPFALLBACK_02 (src/FreeVideoStudio.Core/Ipc/CropConfigStore.cs) — comment removed in 9aed91d refactor
+RETIRED SPECTATINGDEFAULT_01 (src/FreeVideoStudio.App/ViewModels/MainViewModel.cs) — comment removed in 9aed91d refactor
+RETIRED NO_BOSS_HP_01 (src/FreeVideoStudio.Core/Media/MobileFilterBuilder.cs) — comment removed in 9aed91d refactor
+RETIRED SAVECONFIRM_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED MAGICWAND_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED DELETEBTN_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED DELETESET_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near BEZEL_01 (line 136)
+
+RETIRED PAN_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near ColumnDefinitions (line 139)
+
+Crop Tools rework, phase 3: the right pane is gone and naming happens at the box. ---
+
+### near BuildItemContextMenu — AUTOPLAY_01 (line 146)
+
+RETIRED AUTOPLAY_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near GeometryVerified — ITEMHIT_01 (line 148)
+
+Crop Tools rework, phase 4: hit-testing, ghosts, and vertical space. ---
+RETIRED ITEMHIT_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near ComposerBackgroundImage — RELAUNCHARG_01, HANDLECURSOR_01, NODUPES_01, COMPOSERDIM_01 (line 160)
+
+Crop Tools rework, phase 5. ---
+RETIRED RELAUNCHARG_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED HANDLECURSOR_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED NODUPES_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED COMPOSERDIM_01 (src/FreeVideoStudio.App/CropToolWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near _importedImages (line 173)
+
+Concurrency / lifetime audit, 2026-09-18. Each tag guards a fix that cost a full
+diagnosis cycle to find and would revert silently. See docs/05 and docs/03.
+Finding 1 - GPU image slots were mutated by three threads with no synchronisation.
+
+### near SETTINGSATOMIC_01 (line 178)
+
+Finding 2 - settings.json was written non-atomically to a fixed temp name, cross-process.
+
+### near _exportCoordinator (line 181)
+
+Finding 3 - cancel re-armed PROCESS before the pipeline stopped; the next export disposed
+the CancellationTokenSource the previous worker was still registered on.
+
+### near _exportCoordinator — EXPORTSESSION_01 (line 184)
+
+RETIRED EXPORTSESSION_01 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — comment removed in 9aed91d refactor
+
+### near ExportCoordinator (line 186)
+
+Mission 7B - export lifecycle ownership extracted from MainWindow.
+
+### near TryRescueFinishedRender — CANCELREG_01 (line 189)
+
+RETIRED CANCELREG_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+
+### near FLUSHCEILING_01 — ISSUE_11, WORKERLIFETIME_01, WORKERLIFETIME_02 (line 191)
+
+Finding 4 - ProcessWorker is IDisposable and was never disposed, so ISSUE_11's
+kill-the-tree backstop was unreachable code.
+RETIRED WORKERLIFETIME_01 (src/FreeVideoStudio.App/Services/MainMediaController.cs) — comment removed in 9aed91d refactor
+RETIRED WORKERLIFETIME_02 (src/FreeVideoStudio.App/Services/MainMediaController.cs) — comment removed in 9aed91d refactor
+Finding 5 - the session-state flush debounce had no maximum-wait ceiling, and teardown
+disposed the CancellationTokenSource under a live listener.
+
+### near ServerMutexName — IPCTEARDOWN_01 (line 198)
+
+RETIRED IPCTEARDOWN_01 (src/FreeVideoStudio.Core/Ipc/NamedPipeStateServer.cs) — comment removed in 9aed91d refactor
+
+### near GRANPROBE_01 — PIPEDRAIN_01 (line 201)
+
+Finding 6 - the two-pass tail disposed the Process while its pipe readers were still live.
+RETIRED PIPEDRAIN_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+Finding 7 - Cancel re-read a non-volatile Process field between the null test and Kill.
+
+### near COMPOSITION_01 — PROCGATE_02 (line 205)
+
+RETIRED PROCGATE_02 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+Finding 9 - the Granular editor constructor blocked the UI thread on ffprobe.
+
+### near COMPOSITION_01 — GRANPROBE_01 (line 208)
+
+RETIRED GRANPROBE_01 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — comment removed in 9aed91d refactor
+Architecture remediation, phase 0 - foundation. docs/08_APPLICATION_COMPOSITION.md
+Composition root, fault tiers, signing mandate and the executable spec rules.
+
+### near COMPOSITION_02 — COMPOSITION_01 (line 212)
+
+RETIRED COMPOSITION_01 (src/FreeVideoStudio.App/Program.cs) — comment removed in 9aed91d refactor
+
+### near PROJSESSION_01 (line 231)
+
+Architecture remediation, phase 1. Document model wired to the UI + one undo.
+
+### near RefreshProjectTitle — PROJSESSION_04 (line 236)
+
+RETIRED PROJSESSION_04 (src/FreeVideoStudio.App/MainWindow.Shortcuts.cs) — comment removed in 9aed91d refactor
+
+### near UNDO_20 — PROJSESSION_06, PROJSESSION_07 (line 238)
+
+RETIRED PROJSESSION_06 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED PROJSESSION_07 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near TOOLNAV_01 (line 243)
+
+Architecture remediation, phase 2. Companion tools open in-process.
+
+### near TOOLNAV_02 — TOOLNAV_01 (line 245)
+
+RETIRED TOOLNAV_01 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near PIPELIFE_01 (line 251)
+
+Architecture remediation, phase 3. One FFmpeg job lifetime for both pipelines.
+
+### near MVVM_01 (line 257)
+
+Architecture remediation, phase 4. View-model extraction ratchets.
+
+### near SaveForExitAsync — BATCHPARENS_01, BATCHPARENS_02, LISTCOMMENT_01, PROJSESSION_08, PROJSESSION_09 (line 260)
+
+dev.cmd parse guards. Retained: they now assert that dev.cmd DELEGATES rather than parses.
+RETIRED BATCHPARENS_01 (tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs) — comment removed in 9aed91d refactor
+RETIRED BATCHPARENS_02 — the file format it guarded no longer exists.
+  It guarded DevCmdBracketsBalance, which counted round brackets across dev.cmd because one
+  stray bracket inside the FOR-list annotations closed the list early and ran the next word
+  as a command. The list is now build/sentinels.txt, dev.cmd parses nothing, and the script
+  is 10KB instead of 29KB with no list in it at all. A bracket in dev.cmd can no longer
+  truncate a sentinel list, because there is no sentinel list in dev.cmd.
+  What replaced it: ArchitectureRuleTests.DevCmdDelegatesTheSentinelCheckRatherThanParsingIt,
+  which fails if anyone ever moves the list back.
+RETIRED LISTCOMMENT_01 (tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs) — comment removed in 9aed91d refactor
+Close-path save guard. PROJSESSION_08 dirty model, PROJSESSION_09 no-dialog exit save.
+
+### near SaveForExitAsync — PROJSESSION_08 (line 273)
+
+RETIRED PROJSESSION_08 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near SentinelList (line 276)
+
+──────────────────────────────────────────────────────────────────────────────────────────────
+Remediation pass, 2026-09-21. Findings 1-6, 8 and 9 of the architecture review.
+──────────────────────────────────────────────────────────────────────────────────────────────
+
+### near SentinelList (line 280)
+
+Finding 8 — the sentinel check moved out of cmd.exe into code that has its own tests.
+
+### near ReadDouble (line 282)
+
+RETIRED SYS-VERIFYTOOL (build/FvsVerify/Program.cs) — comment removed in 9aed91d refactor
+
+### near ReadDouble — UNDO_23, PROJ_10 (line 285)
+
+Finding 1 — two live, platform-independent test failures nobody was looking at.
+UNDO_23: the re-entrancy guard reset before Changed was raised, so every Ctrl+Z recorded the
+control echo as a fresh edit and undo could never reach the beginning.
+RETIRED UNDO_23 (src/FreeVideoStudio.Core/Undo/UndoStack.cs) — comment removed in 9aed91d refactor
+PROJ_10: JsonValue.TryGetValue is an exact-type accessor. The long-backed source fingerprint
+read back as 0 on every load, so the integrity warning fired for every project ever reopened.
+
+### near CITEST_01 — CITEST_01 (line 292)
+
+CITEST_01: five Windows-only tests FAILED rather than skipped off Windows, which is how a
+permanently-red suite hid the two real failures above.
+
+### near name (line 295)
+
+Finding 1 — the ratchets, the sentinels and ~190 behavioural tests now run on a machine rather
+than on a developer remembering. A deleted CI file is a silently disarmed architecture.
+
+### near CoreLogger — FAULTTIER_02 (line 299)
+
+Finding 5 — the fault tiers existed and 3 of ~900 catch blocks used them. FAULTTIER_02 makes the
+sink reachable from static helpers and window code-behind, and routes the two Swallowed helpers
+through it, converting 576 sites in one edit instead of 576.
+
+### near DiagnosticReport — FAULTTIER_02 (line 304)
+
+RETIRED FAULTTIER_02 (src/FreeVideoStudio.App/RuntimeLog.cs) — comment removed in 9aed91d refactor
+RETIRED FAULTTIER_02 (src/FreeVideoStudio.App/Infrastructure/AppServices.cs) — comment removed in 9aed91d refactor
+
+### near DiagnosticReport (line 308)
+
+Finding 9 — an encoder failure on a GPU that is not the developer's was invisible. A plain-text
+bundle the user can read and send is the honest version of telemetry.
+
+### near UndoSidecarStore (line 313)
+
+Finding 3 — history that survives the window, and history that survives the app.
+
+### near _readLiveMask (line 317)
+
+Finding 2 — the HUD mask and the merge queue are properties of the project, not of the machine.
+
+### near _readLiveMask — PROJ_11 (line 319)
+
+RETIRED PROJ_11 (src/FreeVideoStudio.Core/Project/ProjectSerializer.cs) — comment removed in 9aed91d refactor
+
+### near PROJ_12 — PROJ_11 (line 324)
+
+RETIRED PROJ_11 (src/FreeVideoStudio.App/MainWindow.Project.cs) — comment removed in 9aed91d refactor
+
+### near MVVM_03 — PROJ_12, AOTSAFETY_06 (line 326)
+
+RETIRED PROJ_12 (src/FreeVideoStudio.Core/Project/ProjectSerializer.cs) — comment removed in 9aed91d refactor
+RETIRED AOTSAFETY_06 (src/FreeVideoStudio.Core/Project/ProjectSerializer.cs) — comment removed in 9aed91d refactor
+
+### near MVVM_03 — MVVM_03, MVVM_02 (line 329)
+
+Finding 4 — 973 imperative control lookups, 342 of them repeat resolutions of the SAME control.
+MVVM_03 collapses those onto one cached accessor per control, in its own partial file so the
+MVVM_02 ceiling is respected rather than raised.
+RETIRED MVVM_03 (tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs) — comment removed in 9aed91d refactor
+
+### near PAYLOADSPLIT (line 343)
+
+Finding 6 — a one-line fix cost every user a 322MB re-download of codec binaries that did not
+change. SYS-PAYLOADSPLIT lets a patch ship the app alone when the installed runtime already
+matches; SYS-REPOWEIGHT stops the 2.7GB repository getting worse.
+
+### near AOTSAFETY_03 — COMPACTGONE_01 (line 347)
+
+RETIRED SYS-PAYLOADSPLIT (UpdateService.cs) — 9aed91d removed compact-package selection; smart/full fallback is guarded by COMPACTGONE_01.
+RETIRED SYS-PAYLOADSPLIT (build/FvsBuild/Staging.cs) — comment removed in 9aed91d refactor
+
+### near GPUPRESENT_02 (line 351)
+
+── 2026-09-25 critical audit remediation ─────────────────────────────────────────────────
+
+### near ReserveVersionForTests — COLOR_01 (line 363)
+
+RETIRED COLOR_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+RETIRED COLOR_01 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
+
+### near NamedSystemMutex — WRITEORDER_02 (line 367)
+
+RETIRED WRITEORDER_02 (src/FreeVideoStudio.Core/Ipc/NamedPipeStateServer.cs) — comment removed in 9aed91d refactor
+
+### near ClipIntroTagSec (line 371)
+
+── 2026-09-25 Thumbnail Scraper ──────────────────────────────────────────────────────────
+
+### near ClipIntroTagSec — SCRAPER_01 (line 373)
+
+RETIRED SCRAPER_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+
+### near AOTCLEAN_01 (line 382)
+
+── 2026-09-25 zero-warning AOT build ─────────────────────────────────────────────────────
+
+### near IlcInternalCrashMarkers — AOTCLEAN_02, AOTCLEAN_03, AOTCLEAN_04 (line 385)
+
+RETIRED AOTCLEAN_02 (src/FreeVideoStudio.App/UiSoundEffect.cs) — comment removed in 9aed91d refactor
+RETIRED AOTCLEAN_03 (src/FreeVideoStudio.App/Interop/D3D11Interop.cs) — comment removed in 9aed91d refactor
+RETIRED AOTCLEAN_03 (src/FreeVideoStudio.App/MpvVideoView.cs) — comment removed in 9aed91d refactor
+RETIRED AOTCLEAN_04 (src/FreeVideoStudio.Core/Media/TextOverlayGenerator.cs) — comment removed in 9aed91d refactor
+
+### near IlcInternalCrashMarkers — SIGNLOCAL_01 (line 390)
+
+RETIRED SIGNLOCAL_01 (build/FvsBuild/Program.cs) — comment removed in 9aed91d refactor
+
+### near TrimStartEpsilonSec — FRAMESNAP_01 (line 396)
+
+RETIRED FRAMESNAP_01 (src/FreeVideoStudio.Core/Media/MergeClipAnalyzer.cs) — comment removed in 9aed91d refactor
+
+### near DescribeRestoreProblems — MERGEEDL_01 (line 398)
+
+RETIRED MERGEEDL_01 (src/FreeVideoStudio.Core/Media/MergeEdl.cs) — comment removed in 9aed91d refactor
+
+### near DescribeRestoreProblems — EDLNULL_01 (line 400)
+
+RETIRED EDLNULL_01 (src/FreeVideoStudio.App/VideoMergerWindow.Session.cs) — comment removed in 9aed91d refactor
+RETIRED EDLNULL_01 (src/FreeVideoStudio.App/VideoMergerWindow.Effects.cs) — comment removed in 9aed91d refactor
+
+### near MergedClip — RESTOREMISS_01 (line 403)
+
+RETIRED RESTOREMISS_01 (src/FreeVideoStudio.App/VideoMergerWindow.Session.cs) — comment removed in 9aed91d refactor
+
+### near Merge — MERGEEDIT_01 (line 406)
+
+RETIRED MERGEEDIT_01 (src/FreeVideoStudio.Core/Media/MergeEditorBridge.cs) — comment removed in 9aed91d refactor
+
+### near MaxWidth — MERGEEDIT_02 (line 408)
+
+RETIRED MERGEEDIT_02 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED MERGEEDIT_02 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.History.cs) — comment removed in 9aed91d refactor
+
+### near MergedSecToBodyOutputSec — MERGEGRAPH_01 (line 415)
+
+RETIRED MERGEGRAPH_01 (src/FreeVideoStudio.App/VideoMergerWindow.Scraper.cs) — comment removed in 9aed91d refactor
+
+### near MergerAutosaveStore — MERGESESSION_01 (line 419)
+
+RETIRED MERGESESSION_01 (src/FreeVideoStudio.Core/Media/MergerSession.cs) — comment removed in 9aed91d refactor
+
+### near PublishMergeEdl — MERGESESSION_01 (line 422)
+
+RETIRED MERGESESSION_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near MergerClipBlocksLane — LANES_01 (line 427)
+
+RETIRED LANES_01 (src/FreeVideoStudio.Core/Media/ProgressiveLanes.cs) — comment removed in 9aed91d refactor
+
+### near TimelineAnts — ANTS_01 (line 432)
+
+RETIRED ANTS_01 (src/FreeVideoStudio.App/VideoMergerWindow.Timeline.cs) — comment removed in 9aed91d refactor
+
+### near SeekMerged — TOOLRETURN_01 (line 436)
+
+RETIRED TOOLRETURN_01 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near OutputSizeEstimator — MERGEPREVIEW_01 (line 442)
+
+RETIRED MERGEPREVIEW_01 (src/FreeVideoStudio.App/VideoMergerWindow.Session.cs) — comment removed in 9aed91d refactor
+
+### near OutputSizeEstimator — MERGEPREVIEW_01 (line 444)
+
+RETIRED MERGEPREVIEW_01 (src/FreeVideoStudio.App/VideoMergerWindow.Timeline.cs) — comment removed in 9aed91d refactor
+
+### near MergeMemeInput — MERGESIZE_01, MEMELEVEL_01, MEMELEVEL_02, LOUDSTD_REMOVED_01 (line 447)
+
+RETIRED MERGESIZE_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED MERGESIZE_01 (src/FreeVideoStudio.App/VideoMergerWindow.Session.cs) — comment removed in 9aed91d refactor
+RETIRED MERGESIZE_01 (src/FreeVideoStudio.App/VideoMergerWindow.Scraper.cs) — comment removed in 9aed91d refactor
+RETIRED MEMELEVEL_01 — superseded by MEMELEVEL_02 (2026-10-02 audio audit).
+  MEMELEVEL_01 pinned every meme to a fixed -14 LUFS. With the gameplay deliberately left at its
+  recorded level (LOUDSTD_REMOVED_01) that made memes 6-11 dB louder than the video they cut into.
+  Memes are now matched to the measured gameplay instead; see MEMELEVEL_02 below.
+
+### near GameplayLoudnessLufs — MEMELEVEL_02 (line 455)
+
+RETIRED MEMELEVEL_02 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
+
+### near MUSICPAD_01 — CLIPFRAMES_01 (line 458)
+
+RETIRED CLIPFRAMES_01 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
+
+### near FollowPlayhead — MUSICPAD_01 (line 460)
+
+RETIRED MUSICPAD_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+
+### near SetMergerThumbnailButton — MERGERUX_01 (line 463)
+
+RETIRED MERGERUX_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near NoteClipsRemoved — MERGEQUALITY_01 (line 472)
+
+RETIRED MERGEQUALITY_01 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
+RETIRED MERGEQUALITY_01 (src/FreeVideoStudio.App/Services/OutputSizeEstimator.cs) — comment removed in 9aed91d refactor
+
+### near ExecuteRemoveSelected — REMOVEUX_01 (line 476)
+
+RETIRED REMOVEUX_01 (src/FreeVideoStudio.App/VideoMergerWindow.ClipActions.cs) — comment removed in 9aed91d refactor
+
+### near IsOnSeekRows — EMPTYQUEUE_01 (line 479)
+
+RETIRED EMPTYQUEUE_01 (src/FreeVideoStudio.App/VideoMergerWindow.Session.cs) — comment removed in 9aed91d refactor
+
+### near AppPlayheadBrush — MERGERPLAYHEAD_01 (line 482)
+
+RETIRED MERGERPLAYHEAD_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near MainDefaultBaseName — REBRAND_02, REBRAND_03 (line 488)
+
+RETIRED REBRAND_02 (src/FreeVideoStudio.App/Program.cs) — comment removed in 9aed91d refactor
+RETIRED REBRAND_02 (src/FreeVideoStudio.App/DeploymentFootprint.cs) — comment removed in 9aed91d refactor
+RETIRED REBRAND_03 (build/FvsBuild/GitHubReleasePublisher.cs) — comment removed in 9aed91d refactor
+RETIRED REBRAND_03 (build/FvsBuild/Staging.cs) — comment removed in 9aed91d refactor
+
+### near MemeCategoryFolder (line 498)
+
+Meme library consolidation (mp4\ + jpeg\ -> meme\), space-free folder names, ADD MEME review.
+
+### near MemeDirectoryPath — MEMEFOLDER_01 (line 501)
+
+RETIRED MEMEFOLDER_01 (build/FvsBuild/Staging.cs) — comment removed in 9aed91d refactor
+
+### near STARTERLIST_01 — MEMEFOLDER_02 (line 504)
+
+RETIRED MEMEFOLDER_02 (src/FreeVideoStudio.App/MainWindow.Restore.cs) — comment removed in 9aed91d refactor
+
+### near MEMESYNC_01 — STARTERLIST_01 (line 506)
+
+RETIRED STARTERLIST_01 (build/FvsBuild/Staging.cs) — comment removed in 9aed91d refactor
+
+### near RetargetAfterLaterMachineMoveAsync — NOSPACE_01 (line 517)
+
+RETIRED NOSPACE_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — comment removed in 9aed91d refactor
+
+### near _gameplayLoudnessLufs (line 521)
+
+── 2026-10-02 AUDIO AUDIT (docs/02_AUDIO_ENGINE_MASTERING.md) ──
+
+### near AutoSpikeFlattening — LOUDSTD_REMOVED_01 (line 525)
+
+RETIRED LOUDSTD_REMOVED_01 (src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED LOUDSTD_REMOVED_01 (src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near VOPRIO_01 — VOGATE_01 (line 535)
+
+RETIRED VOGATE_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+
+### near MergerMatchClipLoudness — SPLICE_03 (line 539)
+
+RETIRED SPLICE_03 (src/FreeVideoStudio.Core/Media/MergeClipGraph.cs) — comment removed in 9aed91d refactor
+RETIRED SPLICE_03 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+RETIRED SPLICE_03 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
+
+### near GetPreviewVideoBalance — CLIPLEVEL_01, SETMERGERMOVED_01 (line 544)
+
+RETIRED CLIPLEVEL_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.axaml) — Settings Video Merger section moved to the merger (SETMERGERMOVED_01)
+
+### near PreviewMuted — VOLMUTE_01 (line 547)
+
+RETIRED VOLMUTE_01 (src/FreeVideoStudio.Core/Media/MpvIpcClient.cs) — comment removed in 9aed91d refactor
+
+### near WindowsAudioSessionSync — VOLSHARED_01 (line 551)
+
+RETIRED VOLSHARED_01 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — comment removed in 9aed91d refactor
+
+### near WindowsAudioSessionSync — VOLSHARED_01 (line 553)
+
+RETIRED VOLSHARED_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near FluidVolumeSlider — VOLSYNC_01 (line 555)
+
+RETIRED VOLSYNC_01 (src/FreeVideoStudio.Core/Media/MpvIpcClient.cs) — comment removed in 9aed91d refactor
+
+### near AudioPreviewOutputPath — UISND_01 (line 557)
+
+RETIRED UISND_01 (src/FreeVideoStudio.App/UiSoundEffect.cs) — comment removed in 9aed91d refactor
+
+### near DefaultStrength — VOPREVIEW_01 (line 563)
+
+RETIRED VOPREVIEW_01 (src/FreeVideoStudio.App/MainWindow.PreviewAudio.cs) — comment removed in 9aed91d refactor
+
+### near AudioProtection — DUCKSTRENGTH_01 (line 565)
+
+RETIRED DUCKSTRENGTH_01 (src/FreeVideoStudio.Core/Media/AudioFilterChain.cs) — comment removed in 9aed91d refactor
+
+### near ApplyMixSwitchesFromSettings — DUCKSTRENGTH_01, SETSOUNDONE_01 (line 567)
+
+RETIRED DUCKSTRENGTH_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.axaml) — strength handles replaced by Keep game sounds clear (SETSOUNDONE_01)
+
+### near BuildAtempoChain — DUCKSTRENGTH_01, TEMPO_01 (line 570)
+
+RETIRED DUCKSTRENGTH_01 (src/FreeVideoStudio.App/MainWindow.Export.cs) — comment removed in 9aed91d refactor
+TEMPO_01 — 03 FFM-TEMPO: one audio tempo builder for every export route (Rubber Band below 1.0x when verified).
+
+### near SafetyLimiterFilter — TEMPO_01, AVSYNC_02 (line 574)
+
+RETIRED TEMPO_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+RETIRED TEMPO_01 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
+AVSYNC_02 — 03 FFM-TEMPO: Rubber Band runs with window=short (seam onsets +8.7 ms -> +4.2 ms; 440 Hz exact).
+
+### near RubberbandStartPadSamples — AVSYNC_02, AVSYNC_03 (line 578)
+
+RETIRED AVSYNC_02 (tests/FreeVideoStudio.Core.Tests/AudioTempoFilterBuilderTests.cs) — comment removed in 9aed91d refactor
+AVSYNC_03 — 02 AUD-MASTERING: the safety limiter compensates its 1 ms lookahead (latency=1).
+
+### near AudioTempoFilterBuilderTests — AVSYNC_04 (line 581)
+
+AVSYNC_04 — 03 FFM-TEMPO: Rubber Band start pad/delay compensation (FFmpeg omits it), output bounded to input/tempo.
+
+### near AudioTempoFilterBuilderTests — AVSYNC_04 (line 583)
+
+RETIRED AVSYNC_04 (src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs) — comment removed in 9aed91d refactor
+RETIRED AVSYNC_04 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+RETIRED AVSYNC_04 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
+
+### near ExportVideoPipeline — CUDATAG_01 (line 587)
+
+CUDATAG_01 — 03 FFM-HWENC: resident CUDA graphs carry the output colour tags (setparams) so FFmpeg never inserts a software auto_scale.
+
+### near Corner — MERGESCRIPT_01, MEMEMODE_01 (line 589)
+
+MERGESCRIPT_01 — 03 FFM-HWENC: every Merger attempt rewrites filter_complex.txt with its own planned graph.
+RETIRED MERGESCRIPT_01 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
+MEMEMODE_01 — 01 TL-MEME / 03 FFM-MEMECORNER: dual-mode memes (full screen = insertion, corner overlay = zero duration).
+
+### near IsCornerOverlay — MEMEMODE_01 (line 595)
+
+RETIRED MEMEMODE_01 (src/FreeVideoStudio.Core/Media/CompositeTimeline.cs) — comment removed in 9aed91d refactor
+
+### near PREVIEWMIX_02 — MEMEMODE_01 (line 597)
+
+RETIRED MEMEMODE_01 (src/FreeVideoStudio.Core/Project/ProjectSerializer.cs) — comment removed in 9aed91d refactor
+RETIRED MEMEMODE_01 (src/FreeVideoStudio.App/Infrastructure/MemePreviewDirector.cs) — comment removed in 9aed91d refactor
+
+### near RefreshPreviewMixState — PREVIEWMIX_02 (line 601)
+
+PREVIEWMIX_02 — 02 AUD-PREVIEWMIX: one gate decides which rendered mix may be heard (fresh-signature
+completion, newest ticket only, overwritten slot invalidated, failure latched); tempo triggers the mix.
+
+### near VoiceProtectionPulseAt — PREVIEWMIX_02, VOPREVIEW_02 (line 605)
+
+RETIRED PREVIEWMIX_02 (src/FreeVideoStudio.App/MainWindow.PreviewAudio.cs) — comment removed in 9aed91d refactor
+VOPREVIEW_02 — 02 AUD-PREVIEWMIX: live voice-protection pulse = the export's summed expression; Voice Over studio dip.
+
+### near EvaluateExportCrop — VOPREVIEW_02 (line 608)
+
+RETIRED VOPREVIEW_02 (src/FreeVideoStudio.App/MainWindow.PreviewMix.cs) — comment removed in 9aed91d refactor
+
+### near EvaluateExportCrop — AIPARITY_01 (line 610)
+
+AIPARITY_01 — 03 FFM-ZOOMGRAPH: preview evaluates the export's AI crop expression; chunk clock offset.
+
+### near CORNERPARITY_01 — AIPARITY_01, CORNERPARITY_01 (line 612)
+
+RETIRED AIPARITY_01 (src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs) — comment removed in 9aed91d refactor
+RETIRED AIPARITY_01 (src/FreeVideoStudio.Core/Media/ZoomPreviewSimulator.cs) — comment removed in 9aed91d refactor
+CORNERPARITY_01 — 03 FFM-MEMECORNER: corner preview on the export's frame, all overlays, freeze-aware clock.
+
+### near ZoomPreviewSimulator — CORNERPARITY_01, PREVIEWFIDELITY_01 (line 616)
+
+RETIRED CORNERPARITY_01 (src/FreeVideoStudio.App/MainWindow.CornerMemes.cs) — comment removed in 9aed91d refactor
+RETIRED CORNERPARITY_01 (src/FreeVideoStudio.App/VideoMergerWindow.CornerMemes.cs) — comment removed in 9aed91d refactor
+PREVIEWFIDELITY_01 — 04 UI-PREVIEWFIDELITY: the preview says when it is not the export.
+
+### near PreviewFidelityBadge — PREVIEWFIDELITY_01 (line 621)
+
+RETIRED PREVIEWFIDELITY_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+
+### near InterruptStateHandle (line 625)
+
+── 2026-10-03 native libav metadata probe (03 FFM-LIBAVPROBE) ───────────────────────────────
+
+### near AVInputFormatView — LIBAVPROBE_03 (line 631)
+
+RETIRED LIBAVPROBE_03 (src/FreeVideoStudio.App/Services/OutputSizeEstimator.cs) — comment removed in 9aed91d refactor
+
+### near AVInputFormatView (line 633)
+
+── 2026-10-04 native libav single-frame decode (03 FFM-LIBAVFRAME) ───────────────────────────
+
+### near GrabFrameAsync — LIBAVFRAME_02 (line 636)
+
+RETIRED LIBAVFRAME_02 (src/FreeVideoStudio.Core/Media/Native/LibAvLibrary.cs) — comment removed in 9aed91d refactor
+
+### near FinalizeUiResourcesOnUiThreadAsync — VOAPPLY_01 (line 641)
+
+── 2026-10-07 VoiceOver Apply and Preview Shutdown resilience (05 SYS-WINSTATE / 02 AUD-VOICEOVER) ──
+RETIRED VOAPPLY_01 (src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near ExecuteDetachedNativeTeardown — VOAPPLY_03, VOAPPLY_04 (line 644)
+
+RETIRED VOAPPLY_03 (src/FreeVideoStudio.App/Services/VoiceCaptureSession.cs) — comment removed in 9aed91d refactor
+RETIRED VOAPPLY_04 (src/FreeVideoStudio.Core/Media/MpvIpcClient.cs) — comment removed in 9aed91d refactor
+
+### near VoiceOverRecoveryManager — WRITEORDER_03 (line 648)
+
+── 2026-10-09 VoiceOver failed-take recovery transaction (02 AUD-VOICEOVER / 05 WRITEORDER_03) ──
+
+### near VORECOVERY_02 — VORECOVERY_01 (line 651)
+
+RETIRED VORECOVERY_01 (src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near MicrophoneSpectrumAnalyzer — SESSIONOWNER_01 (line 656)
+
+RETIRED SESSIONOWNER_01 (src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near MicrophoneSpectrumAnalyzer — SPECTRUM_01 (line 658)
+
+── 2026-10-09 Voice Over microphone frequency spectrum (02 AUD-VOICEOVER SPECTRUM_01..04) ──
+
+### near SpectrumAdmittedForTesting — SPECTRUM_05 (line 667)
+
+2026-10-09 audit: first in-flight spectrum published after stop/fault (02 AUD-VOICEOVER SPECTRUM_05)
+
+### near RecordingPulseLimit — SPECTRUM_05, VOREC_01, VOLIVE_01, VOREC_02 (line 669)
+
+RETIRED SPECTRUM_05 (tests/FreeVideoStudio.App.Tests/VoiceCaptureSessionTests.cs) — comment removed in 9aed91d refactor
+── 2026-10-09 Voice Over recording state + live timeline (02 AUD-VOICEOVER VOREC_01/03, VOLIVE_01; 01 TL-OUTPUTTIMELINE VOREC_02) ──
+VOREC_01: one writer of the recording state; RECORDING only after delivered buffers; pulse bounded.
+
+### near ConfigureEditForTesting — VOREC_02 (line 677)
+
+VOREC_02: a take's end is mapped through OutputTimeline, not StartSec + wavSeconds.
+
+### near UpdateLiveRecordingVisuals — VOREC_02 (line 679)
+
+RETIRED VOREC_02 (src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near UpdateLiveRecordingVisuals — VOREC_03 (line 681)
+
+VOREC_03: live block painted above the thumbnail-loading scrim (declaration order).
+
+### near LiveTakeSnapshot — VOLIVE_01 (line 685)
+
+VOLIVE_01: bounded live take meter fed by the recorder's own PCM.
+
+### near DescribeDownloadProgress — UPDATEUX_01, BGUPDATE_01 (line 690)
+
+UPDATEUX_01..06 (05 SYS-AUTOUPDATE): the in-app updater never has a silent moment.
+RETIRED UPDATEUX_01 — superseded by BGUPDATE_01 (R3): the 4-button question was removed; the update card asks Restart & update / Later.
+
+### near LastResultFile — UPDATEUX_05, UPDATEPIN_01 (line 696)
+
+RETIRED UPDATEUX_05 — superseded by UPDATEPIN_01: every copy now verifies updates against the pinned publisher root.
+
+### near ProgressRelay — UPDATEUX_06, UPGRADEUX_01 (line 698)
+
+RETIRED UPDATEUX_06 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — comment removed in 9aed91d refactor
+UPGRADEUX_01..05 (05 SYS-UPGRADEUX): install/update broker shows every step.
+
+### near UPGRADEUX_03 — UPGRADEUX_01 (line 703)
+
+RETIRED UPGRADEUX_01 (src/FreeVideoStudio.App/AvaloniaApp.axaml.cs) — comment removed in 9aed91d refactor
+
+### near TryReopenPreviousVersion — UPGRADEUX_02 (line 705)
+
+RETIRED UPGRADEUX_02 (src/FreeVideoStudio.App/Services/UpgradeCoordinator.cs) — comment removed in 9aed91d refactor
+
+### near UPGRADEUX_06 — UPGRADEUX_05 (line 709)
+
+RETIRED UPGRADEUX_05 (src/FreeVideoStudio.App/AvaloniaApp.axaml.cs) — comment removed in 9aed91d refactor
+
+### near ExecutionPolicy — UPGRADEUX_06, DEVDATA_01, DEVISOLATION_01 (line 711)
+
+RETIRED UPGRADEUX_06 (src/FreeVideoStudio.App/Services/UpgradeBrokerHost.cs) — comment removed in 9aed91d refactor
+DEVDATA_01 / DEVISOLATION_01 (05 SYS-DEVBUILD): preserved dev preferences, no production access.
+
+### near DevCache — DEVFAST_01, DEVINCREMENTAL_01 (line 716)
+
+DEVFAST_01 hot reload retired; DEVINCREMENTAL_01 retains outputs with current-source Release publishing.
+
+### near DEVISOLATION_01 — DEVINCREMENTAL_01 (line 719)
+
+RETIRED DEVINCREMENTAL_01 (build/FvsBuild/Staging.cs) — comment removed in 9aed91d refactor
+
+### near DEVISOLATION_01 — DEVPARITY_01 (line 721)
+
+RETIRED DEVPARITY_01 (build/FvsBuild/Staging.cs) — comment removed in 9aed91d refactor
+
+### near IsSignedByPinnedPublisher (line 724)
+
+R1/R2/R4-R8 — pinned publisher root, background update card, resumable downloads, smart per-file
+updates with binary patches, fast install, one backup (05 SYS-SIGNING/SYS-UPGRADE, 09 DIST-SMART).
+
+### near StreamBufferSize — BINDELTA_02 (line 739)
+
+BINDELTA_02 (09 DIST-SMART): patches apply by streaming through 64 KiB buffers, never whole-EXE arrays.
+
+### near DirectoryUpgrade — BINDELTA_02, FASTINSTALL_01 (line 741)
+
+RETIRED BINDELTA_02 (src/FreeVideoStudio.App/Services/UpdatePreparer.cs) — comment removed in 9aed91d refactor
+RETIRED FASTINSTALL_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — comment removed in 9aed91d refactor
+
+### near ReadTargetAsync — ONEBACKUP_01, NOSYSTEMTASK_01 (line 745)
+
+RETIRED ONEBACKUP_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — comment removed in 9aed91d refactor
+SYS-AVCLEAN — antivirus-clean deployment behaviour (05).
+RETIRED NOSYSTEMTASK_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — comment removed in 9aed91d refactor
+
+### near DeploymentLifecycle — NOPOWERSHELL_02 (line 751)
+
+RETIRED NOPOWERSHELL_02 (src/FreeVideoStudio.App/Program.cs) — comment removed in 9aed91d refactor
+
+### near CrashedRestoreAttempts — NEWRELEASE_01 (line 755)
+
+NEWRELEASE_01 — Build.cmd prepares the Microsoft submission and opens docs/New-Release.md (09).
+
+### near PreserveFailedRestoreSnapshotAsync — NEWRELEASE_01 (line 757)
+
+RETIRED NEWRELEASE_01 (build/FvsBuild/Program.cs) — comment removed in 9aed91d refactor
+── 2026-10-11 Non-destructive restore crash-loop recovery (05 SYS-RECOVERY / SYS-WRITEORDER) ──
+
+### near PreserveFailedRestoreSnapshotAsync — RESTORECRASH_01 (line 760)
+
+RETIRED RESTORECRASH_01 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — comment removed in 9aed91d refactor
+
+### near ApplyDelayForTests (line 762)
+
+── 2026-10-11 One authoritative session-state owner; no disk write behind a live IPC server (05 SYS-IPCLIFETIME / SYS-WRITEORDER) ──
+
+### near IpcChildProcess — IPCOWNER_01 (line 765)
+
+RETIRED IPCOWNER_01 (tests/FreeVideoStudio.Core.Tests/IpcTests.cs) — comment removed in 9aed91d refactor
+
+### near CACHEBOUND_01 — CACHEBOUND_01 (line 767)
+
+── 2026-10-11 Bounded caches: lane disk cache, meme thumbnail memory, viewport-driven picker (04 UI-MERGERQUEUE / UI-MEMESELECT, 05 SYS-ATOMICWRITE) ──
+CACHEBOUND_01 — LaneDiskCache prunes continuously under entry AND byte budgets (was: once per process).
+
+### near MemoryBudgetBytes — CACHEBOUND_02 (line 771)
+
+CACHEBOUND_02 — meme thumbnails live in a byte-budgeted LRU that owns and disposes the bitmaps (was: unbounded static dictionary).
+
+### near _thumbs — CACHEBOUND_02, CACHEBOUND_03 (line 774)
+
+RETIRED CACHEBOUND_02 (tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs) — comment removed in 9aed91d refactor
+CACHEBOUND_03 — the picker decodes only realized + near-visible rows, cancels stale requests, releases far rows.
+
+### near LaneDiskStore — CACHEBOUND_03, ATOMICBYTES_01 (line 778)
+
+RETIRED CACHEBOUND_03 (tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs) — comment removed in 9aed91d refactor
+ATOMICBYTES_01 — one shared atomic write for byte payloads; the lane cache no longer carries its own copy (05 SYS-ATOMICWRITE).
+
+### near CornerMemeFrameWindow — ATOMICBYTES_01, CACHEBOUND_04 (line 782)
+
+RETIRED ATOMICBYTES_01 (tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs) — comment removed in 9aed91d refactor
+CACHEBOUND_04 — Merger filmstrip strips are owned (byte budget, disposal) and leased while on the lane (04 UI-MERGERQUEUE).
+
+### near CornerMemeFrameWindow — CACHEBOUND_04, CACHEBOUND_05 (line 785)
+
+RETIRED CACHEBOUND_04 (tests/FreeVideoStudio.App.Tests/CacheBoundsTests.cs) — comment removed in 9aed91d refactor
+CACHEBOUND_05 — Corner meme preview frames: bounded window decoding, owned LRU cache, presenter leases and safe detachment (04 UI-MEMESELECT, 03 FFM-MEMECORNER).
+
+### near WaveformEnvelope — WAVEPIXEL_01 (line 789)
+
+WAVEPIXEL_01 — Merger waveform lane: pixel-resolution envelope off the dispatcher, reconciled tiles, shared per-clip peak fetch (04 UI-MERGERQUEUE).
+
+### near FilmLanePresenter — FILMPIXEL_01 (line 796)
+
+FILMPIXEL_01 — Merger filmstrip lane: reconciled tiles with one lease each, one shared ffmpeg stream per clip across runs (04 UI-MERGERQUEUE).
+
+### near StartCommit — UIIPC_01 (line 802)
+
+UIIPC_01 — UI never blocks on session-state IPC: enqueue-only writes, memory-only reads, bounded final flush (05 SYS-IPCLIFETIME / SYS-WINSTATE).
+
+### near IpcTests — UIIPC_01 (line 807)
+
+RETIRED UIIPC_01 (src/FreeVideoStudio.App/Program.cs) — comment removed in 9aed91d refactor
+
+### near ExchangeAsync — UIIPC_01, IPCDEADLINE_01 (line 812)
+
+RETIRED UIIPC_01 (tests/FreeVideoStudio.App.Tests/AutosaveBackgroundTests.cs) — comment removed in 9aed91d refactor
+IPCDEADLINE_01 — one end-to-end deadline for connect + write + read; no synchronous pipe client (05 SYS-IPCLIFETIME).
+
+### near ReduceStreamAsync — IPCDEADLINE_01, PCMSTREAM_01 (line 816)
+
+RETIRED IPCDEADLINE_01 (tests/FreeVideoStudio.Core.Tests/IpcTests.cs) — comment removed in 9aed91d refactor
+PCMSTREAM_01/02/03 — decoded PCM streamed through a bounded buffer; ffmpeg child always reaped (04 UI-MERGERQUEUE, 02 AUD-DIALOGS).
+
+### near FfmpegPcmPipe — PCMSTREAM_01 (line 820)
+
+RETIRED PCMSTREAM_01 (tests/FreeVideoStudio.Core.Tests/ProgressiveLanesTests.cs) — comment removed in 9aed91d refactor
+
+### near LaneTile — LANEINSTANCE_01 (line 825)
+
+LANEINSTANCE_01 — Merger lanes: occurrence identity for tiles/leases, source identity for caches/decodes (04 UI-MERGERQUEUE).
+
+### near InnoInstaller — NODROPPER_01 (line 833)
+
+NODROPPER_01 — the release is an Inno Setup package; the program never embeds a payload (05 SYS-AVCLEAN, 09 DIST-INSTALLER).
+
+### near SetupAssetName — NODROPPER_01 (line 840)
+
+RETIRED NODROPPER_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — comment removed in 9aed91d refactor
+
+### near UpdatesRoot — NOTEMPEXEC_01, NOCOMMENTS_01 (line 846)
+
+NOTEMPEXEC_01 — no self-copy to %TEMP%, nothing elevated staged in %TEMP%; leftovers go on the delete-on-restart list (05 SYS-AVCLEAN).
+RETIRED NOTEMPEXEC_01 (src/FreeVideoStudio.App/DeploymentLifecycle.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near AvCleanRuleTests — NOTEMPEXEC_01 (line 850)
+
+RETIRED NOTEMPEXEC_01 (src/FreeVideoStudio.App/Program.cs) — comment removed in 9aed91d refactor
+
+### near PeIdentity — PEIDENTITY_01 (line 852)
+
+PEIDENTITY_01 — OriginalFilename/InternalName name the shipped file; app.manifest version = file version (05 SYS-SIGNING).
+
+### near UpdateConsentAsked — UPDATECONSENT_01 (line 858)
+
+UPDATECONSENT_01 — no network at startup: one-time consent question, first check 5 minutes after launch (05 SYS-AUTOUPDATE).
+
+### near UpdateConsent01_NoNetworkAtStartupBeforeConsentAndBeforeFiveMinutes — UPDATECONSENT_01 (line 861)
+
+RETIRED UPDATECONSENT_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.Save.cs) — comment removed in 9aed91d refactor
+
+### near GeminiErrorKind (line 863)
+
+AI review 2026-10-12 — AI SMART ZOOM and Magic Wand fixes (01 TL-AITRACKING / TL-AIHUD, 04 UI-AIZOOM / UI-AIHUDWAND, 05 SYS-AISETTINGS, 07 UNDO-GRANULAR-APPLY).
+
+### near RawWaypoints — AITIME_01 (line 874)
+
+RETIRED AITIME_01 (src/FreeVideoStudio.Core/Media/AiTrajectorySmoother.cs) — comment removed in 9aed91d refactor
+
+### near EndAiPreviewLoop — AIPORTRAIT_ZOOM_01, AIPORTRAIT_MARGINS_01 (line 877)
+
+RETIRED AIPORTRAIT_ZOOM_01 (src/FreeVideoStudio.Core/Media/AiTrajectorySmoother.cs) — comment removed in 9aed91d refactor
+RETIRED AIPORTRAIT_MARGINS_01 (src/FreeVideoStudio.Core/Media/AiTrajectorySmoother.cs) — comment removed in 9aed91d refactor
+
+### near DiscoverSubjectsWithLookaheadAsync — AILOOKAHEAD_01 (line 884)
+
+RETIRED AILOOKAHEAD_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs) — comment removed in 9aed91d refactor
+
+### near AppWandCandidateBrush — WANDCOLOR_01 (line 893)
+
+RETIRED WANDCOLOR_01 (src/FreeVideoStudio.App/CropToolWindow.MagicWand.cs) — comment removed in 9aed91d refactor
+
+### near VOSAMPLE_01 — VOREC_INIT_01, UPDATEPIN_PEM_01, WGLUNBIND_01 (line 907)
+
+RETIRED VOREC_INIT_01 (src/FreeVideoStudio.App/VoiceOverWindow.RecordingState.cs) — comment removed in 9aed91d refactor
+RETIRED UPDATEPIN_PEM_01 (src/FreeVideoStudio.Core/Infrastructure/PublisherRoot.cs) — comment removed in 9aed91d refactor
+RETIRED WGLUNBIND_01 (src/FreeVideoStudio.App/MpvVideoView.cs) — comment removed in 9aed91d refactor
+
+### near CaptionStyle — AIPROVIDER_ROUTING_01 (line 925)
+
+RETIRED AIPROVIDER_ROUTING_01 (src/FreeVideoStudio.App/CropToolWindow.MagicWand.cs) — comment removed in 9aed91d refactor
+RETIRED AIPROVIDER_ROUTING_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs) — comment removed in 9aed91d refactor
+
+### near WindowTitleBorder — CAPTIONS_01 (line 940)
+
+RETIRED CAPTIONS_01 (src/FreeVideoStudio.Core/Project/ProjectSerializer.cs) — comment removed in 9aed91d refactor
+RETIRED CAPTIONS_01 (src/FreeVideoStudio.Core/Editing/GranularRecoveryCodec.cs) — comment removed in 9aed91d refactor
+
+### near UpdateStepProgress — LIST_05, LIST_06, LIST_07, LIST_08 (line 945)
+
+══════════════════════════════════════════════════════════════════════════════════════════════
+ADD MUSIC REFACTOR (2026-10-16) — both wizards (Main App + Video Merger). docs/02 AUD-DIALOGS /
+AUD-MUSICWIN, docs/04 UI-MUSICWIZARD. LIST_05 / LIST_06 / LIST_07 stay: their frame, permanent
+scrollbar and gutter were kept when LIST_08 made the song table full width.
+
+### near TransportVisible — PREVIEWSTOP_01 (line 952)
+
+RETIRED PREVIEWSTOP_01 (src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near AddToPlaylist — PREVIEW1_03, MUSICWIZ3_01 (line 955)
+
+RETIRED PREVIEW1_03 (MusicWizardWindow.axaml.cs#OnTrackSelected) — single-song replace path removed; every choice now goes through PlaceChosenOccurrence (MUSICWIZ3_01, 2026-11-20)
+
+### near MusicPlaylistEntry — LIST_08 (line 957)
+
+RETIRED LIST_08 (src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near AppOverlayBrush — SONGCARD_01, MUSICWIZ3_01 (line 969)
+
+RETIRED SONGCARD_01 (MusicWizardWindow.axaml#SongCard) — song card replaced by the Choose the part panel (MUSICWIZ3_01, 2026-11-20)
+
+### near MusicStartsSeconds — SOUNDOPT_01, SOUNDPANEL_01 (line 974)
+
+RETIRED SOUNDOPT_01 (MusicWizardWindow.axaml#SoundOptionsBtn) — Sound options flyout replaced by the Sound panel (SOUNDPANEL_01, 2026-11-20)
+
+### near CaptureWizardSnapshot — MUSICWIN_01 (line 980)
+
+RETIRED MUSICWIN_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED MUSICWIN_01 (src/FreeVideoStudio.App/MainWindow.Export.cs) — comment removed in 9aed91d refactor
+RETIRED MUSICWIN_01 (src/FreeVideoStudio.App/MainWindow.PreviewAudio.cs) — comment removed in 9aed91d refactor
+RETIRED MUSICWIN_01 (src/FreeVideoStudio.App/MainWindow.Recovery.cs) — comment removed in 9aed91d refactor
+RETIRED MUSICWIN_01 (src/FreeVideoStudio.App/MainWindow.Restore.cs) — comment removed in 9aed91d refactor
+RETIRED MUSICWIN_01 (src/FreeVideoStudio.App/MainWindow.PreviewMix.cs) — comment removed in 9aed91d refactor
+RETIRED MUSICWIN_01 (src/FreeVideoStudio.App/VideoMergerWindow.MusicPreview.cs) — comment removed in 9aed91d refactor
+RETIRED MUSICWIN_01 (src/FreeVideoStudio.App/VideoMergerWindow.Session.cs) — comment removed in 9aed91d refactor
+
+### near DrawMergedMusicSongs — MERGERMUSIC_01 (line 996)
+
+RETIRED MERGERMUSIC_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near AIFFMPEG_01 — AISCHEMA_01 (line 1000)
+
+RETIRED AISCHEMA_01 (src/FreeVideoStudio.App/Services/ClaudeProvider.cs) — comment removed in 9aed91d refactor
+RETIRED AISCHEMA_01 (src/FreeVideoStudio.App/Services/OpenAiProvider.cs) — comment removed in 9aed91d refactor
+
+### near AICOMMENTARY_SPEED_01 — AIDEFAULT_01, SETAIONE_01 (line 1005)
+
+RETIRED AIDEFAULT_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — per-feature AI rows removed (SETAIONE_01)
+
+### near ReplaceRetiredAiModels — AIMUSIC_UNDO_01 (line 1016)
+
+RETIRED AIMUSIC_UNDO_01 (src/FreeVideoStudio.App/MusicWizardWindow.AiAutoFit.cs) — comment removed in 9aed91d refactor
+
+### near ReplaceRetiredAiModels — AIAUDIT_01 (line 1018)
+
+AIAUDIT_01 — 2026-10-16 AI audit fixes (docs/05 SYS-AISETTINGS §7.3/7.4).
+
+### near ReplaceRetiredAiModels — AIMODELS_02 (line 1020)
+
+RETIRED AIMODELS_02 (src/FreeVideoStudio.App/Services/GeminiClient.cs) — comment removed in 9aed91d refactor
+RETIRED AIMODELS_02 (src/FreeVideoStudio.App/Services/ClaudeProvider.cs) — comment removed in 9aed91d refactor
+RETIRED AIMODELS_02 (src/FreeVideoStudio.App/Services/OpenAiProvider.cs) — comment removed in 9aed91d refactor
+
+### near PrefersDefaultTemperature — AIMODELFALLBACK_02, AITEMP_02 (line 1025)
+
+RETIRED AIMODELFALLBACK_02 (src/FreeVideoStudio.App/Services/GeminiProvider.cs) — comment removed in 9aed91d refactor
+RETIRED AIMODELFALLBACK_02 (src/FreeVideoStudio.App/Services/ClaudeProvider.cs) — comment removed in 9aed91d refactor
+RETIRED AIMODELFALLBACK_02 (src/FreeVideoStudio.App/Services/OpenAiProvider.cs) — comment removed in 9aed91d refactor
+RETIRED AIMODELFALLBACK_02 (src/FreeVideoStudio.App/Services/GeminiHudDetectionService.cs) — comment removed in 9aed91d refactor
+RETIRED AITEMP_02 (src/FreeVideoStudio.App/Services/ClaudeProvider.cs) — comment removed in 9aed91d refactor
+RETIRED AITEMP_02 (src/FreeVideoStudio.App/Services/GeminiProvider.cs) — comment removed in 9aed91d refactor
+
+### near AICAPTION_PREVIEWSUB_01 — AIELIM_03 (line 1039)
+
+RETIRED AIELIM_03 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — comment removed in 9aed91d refactor
+
+### near AiZoomCloudConsentVendor — AIPROFILE_ONE_01 (line 1043)
+
+RETIRED AIPROFILE_ONE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — comment removed in 9aed91d refactor
+
+### near AICAPTION_EXPORT_02 — AICONSENT_02, SETNOCONSENTUI_01, AIVENDORCAPS_01 (line 1046)
+
+RETIRED AICONSENT_02 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs) — comment removed in 9aed91d refactor
+RETIRED AICONSENT_02 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — comment removed in 9aed91d refactor
+RETIRED AICONSENT_02 (src/FreeVideoStudio.App/CropToolWindow.MagicWand.cs) — comment removed in 9aed91d refactor
+RETIRED AICONSENT_02 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — permission boxes removed, a saved key is the permission (SETNOCONSENTUI_01)
+RETIRED AIVENDORCAPS_01 (src/FreeVideoStudio.App/Services/AiCommentaryPrompts.cs) — comment removed in 9aed91d refactor
+
+### near AICAPTION_EXPORT_02 — AIZEROFRAMES_01, AICOMMENTARY_ESTIMATE_01 (line 1052)
+
+RETIRED AIZEROFRAMES_01 (src/FreeVideoStudio.App/Services/CommentaryService.cs) — comment removed in 9aed91d refactor
+RETIRED AIZEROFRAMES_01 (src/FreeVideoStudio.App/Services/GeminiTrackingService.cs) — comment removed in 9aed91d refactor
+RETIRED AICOMMENTARY_ESTIMATE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — comment removed in 9aed91d refactor
+
+### near MobileFilterBuilder — AICAPTION_EXPORT_02 (line 1056)
+
+RETIRED AICAPTION_EXPORT_02 (src/FreeVideoStudio.App/MainWindow.Export.cs) — comment removed in 9aed91d refactor
+RETIRED AICAPTION_EXPORT_02 (src/FreeVideoStudio.App/Services/MainMediaController.cs) — comment removed in 9aed91d refactor
+
+### near AICAPTION_MEMESHIFT_01 — AICAPTION_LAYOUT_02 (line 1059)
+
+RETIRED AICAPTION_LAYOUT_02 (src/FreeVideoStudio.Core/Media/CaptionAssWriter.cs) — comment removed in 9aed91d refactor
+
+### near AICAPTION_MEMESHIFT_01 — AICAPTION_LAYOUT_02 (line 1061)
+
+RETIRED AICAPTION_LAYOUT_02 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+
+### near AiRateLimitSnapshot — AICAPTION_MEMESHIFT_01 (line 1063)
+
+RETIRED AICAPTION_MEMESHIFT_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+
+### near ReportAiUsage — AIUSAGE_01 (line 1065)
+
+RETIRED AIUSAGE_01 (src/FreeVideoStudio.App/Services/GeminiClient.cs) — comment removed in 9aed91d refactor
+RETIRED AIUSAGE_01 (src/FreeVideoStudio.App/Services/ClaudeProvider.cs) — comment removed in 9aed91d refactor
+RETIRED AIUSAGE_01 (src/FreeVideoStudio.App/Services/OpenAiProvider.cs) — comment removed in 9aed91d refactor
+
+### near AiCommentaryLastTone — AIUSAGE_01 (line 1069)
+
+RETIRED AIUSAGE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — comment removed in 9aed91d refactor
+
+### near ProtectedWorkerStage (line 1073)
+
+══════════════════════════════════════════════════════════════════════════════════════════════
+RELEASE & UPDATE AUDIT (2026-10-17) — docs/05 SYS-UPGRADE-TRUST / SYS-AUTOUPDATE / SYS-DEVBUILD,
+docs/09 DIST-SMART / DIST-RELEASEGATE / DIST-RELEASENOTES / DIST-RETENTION, docs/README.md §0.
+
+### near RestrictDllSearchToSystem32 — WORKERSTAGE_01 (line 1078)
+
+RETIRED WORKERSTAGE_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — comment removed in 9aed91d refactor
+
+### near TerminateProcesses — WORKERSTAGE_01, UNSIGNEDDEV_01 (line 1081)
+
+RETIRED WORKERSTAGE_01 (src/FreeVideoStudio.App/DeploymentLifecycle.cs) — comment removed in 9aed91d refactor
+RETIRED UNSIGNEDDEV_01 (src/FreeVideoStudio.App/Services/UpdatePreparer.cs) — comment removed in 9aed91d refactor
+RETIRED UNSIGNEDDEV_01 (src/FreeVideoStudio.App/Services/ProtectedWorkerStage.cs) — comment removed in 9aed91d refactor
+
+### near DecompressFile — RELNOTES_03 (line 1099)
+
+RETIRED RELNOTES_03 (src/FreeVideoStudio.App/Services/UpdateService.Background.cs) — comment removed in 9aed91d refactor
+
+### near EnsurePublishedBases — ASSETHASH_01 (line 1103)
+
+RETIRED ASSETHASH_01 (build/FvsBuild/SmartUpdateBuilder.cs) — comment removed in 9aed91d refactor
+
+### near LevelNames (line 1110)
+
+AI COMMENTARY BRAIN & CAPTION LOOK (2026-10-17) — docs/01 TL-CAPTIONS, docs/04 UI-AICOMMENTARY, docs/03 FFM-CAPTIONS.
+
+### near AiCommentaryOptionsViewModel — COMMENTARYMIX_01 (line 1114)
+
+RETIRED COMMENTARYMIX_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — comment removed in 9aed91d refactor
+
+### near LongLinesFromTactical — TACTICAL_01 (line 1119)
+
+RETIRED TACTICAL_01 (src/FreeVideoStudio.App/Services/AiCommentaryPrompts.cs) — comment removed in 9aed91d refactor
+
+### near BuildCaptionContextMenu — TACTICAL_03, SWEARING_01 (line 1124)
+
+RETIRED TACTICAL_03 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — comment removed in 9aed91d refactor
+RETIRED SWEARING_01 (src/FreeVideoStudio.App/Services/AiCommentaryPrompts.cs) — comment removed in 9aed91d refactor
+
+### near CAPTIONSIZE_01 — CAPTIONLOOK_01 (line 1131)
+
+RETIRED CAPTIONLOOK_01 (src/FreeVideoStudio.Core/Media/CaptionTrackJson.cs) — comment removed in 9aed91d refactor
+
+### near CAPTIONRTL_01 — CAPTIONSIZE_01 (line 1133)
+
+RETIRED CAPTIONSIZE_01 (src/FreeVideoStudio.Core/Media/CaptionTrackJson.cs) — comment removed in 9aed91d refactor
+
+### near LastSpeed — CAPTIONRTL_01 (line 1135)
+
+RETIRED CAPTIONRTL_01 (src/FreeVideoStudio.App/Services/AiCommentaryPrompts.cs) — comment removed in 9aed91d refactor
+
+### near SETTINGSVM_01 — SETDEFAULTS_01 (line 1137)
+
+RETIRED SETDEFAULTS_01 (src/FreeVideoStudio.App/ViewModels/MainViewModel.cs) — comment removed in 9aed91d refactor
+RETIRED SETDEFAULTS_01 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near SETTINGSVM_01 — SETDEFAULTS_01, SETCONFIRM_01 (line 1140)
+
+RETIRED SETDEFAULTS_01 (src/FreeVideoStudio.App/Services/ProjectRecoveryService.cs) — comment removed in 9aed91d refactor
+RETIRED SETCONFIRM_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near CameraViewForGame — MEMEPENDING_01, SETSAVEFAIL_01 (line 1148)
+
+RETIRED MEMEPENDING_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.Save.cs) — comment removed in 9aed91d refactor
+RETIRED SETSAVEFAIL_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.Save.cs) — comment removed in 9aed91d refactor
+
+### near CameraViewForGame — SETZOOM_01, SETZOOMONE_01 (line 1151)
+
+RETIRED SETZOOM_01 (src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs) — fast-move zoom follows the strength (SETZOOMONE_01)
+
+### near SyncOutputFolderFromSettings — SETAITEST_01 (line 1154)
+
+RETIRED SETAITEST_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — comment removed in 9aed91d refactor
+
+### near RebaseMemesAfterTrimChange — MEMEAUDIT_01 (line 1162)
+
+MEMEAUDIT_01 — 2026-10-17 meme audit (36 fixes/improvements): docs/01 TL-MEME, 02 AUD-MUSICFADE, 03 FFM-MEMECONCAT/MEMECORNER/MEMEPREVIEW, 04 UI-MEMESELECT, 06 PROJ-SCHEMA.
+
+### near AskKeepMusicIfNeededAsync — MEMERULER_01 (line 1166)
+
+RETIRED MEMERULER_01 (src/FreeVideoStudio.Core/Editing/GranularEditSession.Memes.cs) — comment removed in 9aed91d refactor
+
+### near AskKeepMusicIfNeededAsync — MEMEMAIN_02 (line 1168)
+
+RETIRED MEMEMAIN_02 (src/FreeVideoStudio.App/MainWindow.Export.cs) — comment removed in 9aed91d refactor
+
+### near DropMemesInsideCuts — MEMEMUSIC_02, MEMEMARK_02 (line 1170)
+
+RETIRED MEMEMUSIC_02 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — comment removed in 9aed91d refactor
+RETIRED MEMEMARK_02 (src/FreeVideoStudio.App/MainWindow.Canvas.cs) — comment removed in 9aed91d refactor
+
+### near ResnapMemesOffBlocks — MEMECUT_02 (line 1173)
+
+RETIRED MEMECUT_02 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near MemeSeparationIsSafe — MEMESNAP_03 (line 1176)
+
+RETIRED MEMESNAP_03 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near DrawCornerMemeBands — MEMEDRAG_02 (line 1178)
+
+RETIRED MEMEDRAG_02 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.MemeBands.cs) — comment removed in 9aed91d refactor
+
+### near ApplyMergeMemeRules — CORNERPARITY_03 (line 1182)
+
+RETIRED CORNERPARITY_03 (src/FreeVideoStudio.App/VideoMergerWindow.CornerMemes.cs) — comment removed in 9aed91d refactor
+
+### near FreshStartWindowSec — MEMEKEYS_01 (line 1186)
+
+RETIRED MEMEKEYS_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — comment removed in 9aed91d refactor
+
+### near MEMESOUND_02 — MEMESOUND_02 (line 1189)
+
+RETIRED MEMESOUND_02 (src/FreeVideoStudio.App/Infrastructure/MemePreviewDirector.cs) — comment removed in 9aed91d refactor
+
+### near HasCustomPosition — MEMEEND_01 (line 1191)
+
+RETIRED MEMEEND_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+
+### near HasCustomPosition — MEMETRIM_01 (line 1193)
+
+RETIRED MEMETRIM_01 (src/FreeVideoStudio.Core/Media/MergerWorker.cs) — comment removed in 9aed91d refactor
+RETIRED MEMETRIM_01 (src/FreeVideoStudio.Core/Media/CornerMemeOverlayGraph.cs) — comment removed in 9aed91d refactor
+RETIRED MEMETRIM_01 (src/FreeVideoStudio.App/Infrastructure/CornerMemeOverlayPresenter.cs) — comment removed in 9aed91d refactor
+
+### near CornerMemeOverlayGraph — MEMEANIM_01 (line 1198)
+
+RETIRED MEMEANIM_01 (src/FreeVideoStudio.Core/Media/CornerMemeOverlayGraph.cs) — comment removed in 9aed91d refactor
+RETIRED MEMEANIM_01 (src/FreeVideoStudio.App/Infrastructure/CornerMemeOverlayPresenter.cs) — comment removed in 9aed91d refactor
+
+### near RevokedSignerThumbprints — AICOMMENTARY_CLOSE_01, AICOMMENTARY_LOG_01 (line 1211)
+
+AICOMMENTARY_CLOSE_01 / AICOMMENTARY_LOG_01 — docs/04 UI-AICOMMENTARY: APPLY keeps a pending commentary preview; runs are logged.
+
+### near RevokedSignerThumbprints — AICOMMENTARY_CLOSE_01, AICOMMENTARY_LOG_01 (line 1213)
+
+RETIRED AICOMMENTARY_CLOSE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED AICOMMENTARY_LOG_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — comment removed in 9aed91d refactor
+
+### near RevokedSignerThumbprints (line 1216)
+
+RELEASE & UPDATE AUDIT (2026-10-18) — docs/09 DIST-RELEASEGATE / DIST-RETENTION / DIST-UPGRADESMOKE, docs/05 SYS-SIGNING / SYS-AUTOUPDATE / SYS-UPGRADE.
+
+### near VerifySignature — REVOKE_01 (line 1221)
+
+RETIRED REVOKE_01 (build/FvsBuild/SmartUpdateBuilder.cs) — comment removed in 9aed91d refactor
+
+### near ROOTKEY_01 — SIGNEXPIRY_01 (line 1224)
+
+RETIRED SIGNEXPIRY_01 (src/FreeVideoStudio.App/Services/UpdatePreparer.cs) — comment removed in 9aed91d refactor
+
+### near ROOTKEY_01 — ROOTKEY_01 (line 1226)
+
+RETIRED ROOTKEY_01 (build/FvsBuild/ReleaseGate.cs) — comment removed in 9aed91d refactor
+
+### near RETAIN_02 — RELRESUME_01 (line 1239)
+
+RETIRED RELRESUME_01 (build/FvsBuild/GitHubReleasePublisher.cs) — comment removed in 9aed91d refactor
+
+### near StartupCrashGuard — HEALTHWIN_01 (line 1243)
+
+RETIRED HEALTHWIN_01 (src/FreeVideoStudio.App/AvaloniaApp.axaml.cs) — comment removed in 9aed91d refactor
+RETIRED HEALTHWIN_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — comment removed in 9aed91d refactor
+
+### near INSTALLONEXIT_01 — CRASHLOOP_01 (line 1246)
+
+RETIRED CRASHLOOP_01 (src/FreeVideoStudio.App/AvaloniaApp.axaml.cs) — comment removed in 9aed91d refactor
+
+### near PendingNotesFile — RESTARTSAFE_01 (line 1248)
+
+RETIRED RESTARTSAFE_01 (src/FreeVideoStudio.App/Services/UpdateService.Background.cs) — comment removed in 9aed91d refactor
+
+### near UpdateFinishedWindow — PAUSESTICK_01 (line 1250)
+
+RETIRED PAUSESTICK_01 (src/FreeVideoStudio.App/Services/UpdateService.cs) — comment removed in 9aed91d refactor
+
+### near UpdateFinishedWindow — WHATSNEW_01 (line 1252)
+
+RETIRED WHATSNEW_01 (src/FreeVideoStudio.App/Services/UpgradeFinishedNotice.cs) — comment removed in 9aed91d refactor
+
+### near UPGRADESMOKE_01 — WHATSNEW_01, COMPACTGONE_01 (line 1254)
+
+RETIRED WHATSNEW_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — comment removed in 9aed91d refactor
+RETIRED COMPACTGONE_01 (src/FreeVideoStudio.App/Services/UpdateService.cs) — comment removed in 9aed91d refactor
+RETIRED COMPACTGONE_01 (src/FreeVideoStudio.App/Services/UpdatePreparer.cs) — comment removed in 9aed91d refactor
+
+### near VoiceOverGainSlider — VOLEVEL_01 (line 1262)
+
+VOLEVEL_01: shared take gain and unity stereo voice mapping.
+
+### near DEVSHAREMEDIA_01 — DEVSHAREMEDIA_01 (line 1267)
+
+RETIRED DEVSHAREMEDIA_01 (src/FreeVideoStudio.Core/Infrastructure/DevelopmentEnvironment.cs) — comment removed in 9aed91d refactor
+RETIRED DEVSHAREMEDIA_01 (src/FreeVideoStudio.Core/Infrastructure/ApplicationPaths.cs) — comment removed in 9aed91d refactor
+
+### near ClipHasAudio — DEVHELPERTEMP_01 (line 1276)
+
+RETIRED DEVHELPERTEMP_01 (src/FreeVideoStudio.Core/Infrastructure/DevelopmentEnvironment.cs) — comment removed in 9aed91d refactor
+
+### near ClipHasAudio — MUSICEND_01 (line 1278)
+
+RETIRED MUSICEND_01 (src/FreeVideoStudio.App/MusicWizardWindow.Playlist.cs) — comment removed in 9aed91d refactor
+
+### near ClipHasAudio — KEEPMUSIC_02 (line 1280)
+
+RETIRED KEEPMUSIC_02 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — comment removed in 9aed91d refactor
+
+### near CreateOwnerOnlySecurity — PIPEAUTH_01 (line 1288)
+
+PIPEAUTH_01 — owner-only pipe DACL, FirstPipeInstance and client-side server identity check (05 SYS-IPCLIFETIME).
+
+### near CreateSecuredPipeServer — PIPEAUTH_01, NOCOMMENTS_01 (line 1290)
+
+RETIRED PIPEAUTH_01 (src/FreeVideoStudio.Core/Ipc/NamedPipeStateServer.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED PIPEAUTH_01 (src/FreeVideoStudio.Core/Ipc/IpcProtocol.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near MEDIALICENSE_01 — MEDIALICENSE_01, STARTER_01, NOCOMMENTS_01 (line 1293)
+
+MEDIALICENSE_01 — only original/royalty-free media is staged into the installer and served by Download more (03 STARTER_01).
+RETIRED MEDIALICENSE_01 (build/FvsBuild/Staging.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near OpenSettingsAsync — SETCONSENTVENDOR_01, SETNOCONSENTUI_01 (line 1297)
+
+Settings audit round 2 (2026-11-10): AI permission per company, '/' refused as a shortcut, File-menu backup goes through Settings.
+RETIRED SETCONSENTVENDOR_01 (src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs) — permission boxes removed (SETNOCONSENTUI_01)
+
+### near OnDispatcherUnhandledException (line 1301)
+
+Architecture audit 2026-11-11 (docs/changes.md): crash-safe handlers, frozen settings snapshot, pure meme lookup,
+non-blocking texture import, settings seams, typed settings, disposing cancellation and shell launches.
+
+### near CrashLogDigest — NOHIDDENTOOLS_01 (line 1315)
+
+NOHIDDENTOOLS_01 — no hidden Windows event / force-kill tool; the task tool only when an old task exists (05 SYS-AVCLEAN).
+
+### near AvFriendlyBehaviourTests — NOHIDDENTOOLS_01, NOCOMMENTS_01 (line 1318)
+
+RETIRED NOHIDDENTOOLS_01 (src/FreeVideoStudio.App/DeploymentLifecycle.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED NOHIDDENTOOLS_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near ControlledFolderAccess — NOLOGONHOOK_01, NOCOMMENTS_01, CFASAFE_01 (line 1321)
+
+NOLOGONHOOK_01 — no Active Setup run-at-logon entry (05 SYS-AVCLEAN).
+RETIRED NOLOGONHOOK_01 (src/FreeVideoStudio.App/Services/UpgradeRegistration.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+CFASAFE_01 — the app keeps working, quietly, under Windows "Controlled folder access" (05 SYS-CFASAFE).
+
+### near DesktopWritable — CFASAFE_01, NOCOMMENTS_01 (line 1327)
+
+RETIRED CFASAFE_01 (src/FreeVideoStudio.App/Infrastructure/MemeAssets.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED CFASAFE_01 (src/FreeVideoStudio.App/Infrastructure/OutputFolderResolver.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near ShellFileAssociation — CFASAFE_01, NOCOMMENTS_01 (line 1330)
+
+RETIRED CFASAFE_01 (src/FreeVideoStudio.App/MainWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+2026-11-11 false-positive audit, part 2 (05 SYS-AVCLEAN / SYS-SIGNING / SYS-CFASAFE).
+
+### near ShellFileAssociation — NOMEMREAD_01, NOCOMMENTS_01 (line 1333)
+
+RETIRED NOMEMREAD_01 (src/FreeVideoStudio.App/DeploymentLifecycle.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED NOMEMREAD_01 (src/FreeVideoStudio.App/Services/InstallDiscovery.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near CreateUpgradeServer — NOMUIWIPE_01, NOCOMMENTS_01 (line 1336)
+
+RETIRED NOMUIWIPE_01 (src/FreeVideoStudio.App/DeploymentLifecycle.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near FfmpegCanWrite — NOLOCALPORT_01, NOCOMMENTS_01, NOLURKER_01 (line 1339)
+
+RETIRED NOLOCALPORT_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED NOLURKER_01 (src/FreeVideoStudio.App/Services/UpdateService.Background.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near SharedPublisherName — CFAFFMPEG_01, NOCOMMENTS_01, SIGNPATH_01, OSSMEDIA_01 (line 1343)
+
+RETIRED CFAFFMPEG_01 (src/FreeVideoStudio.App/Infrastructure/OutputFolderResolver.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+SIGNPATH_01 — SignPath Foundation signature trusted only with the publisher-signed hash; OSSMEDIA_01 open media (05 SYS-SIGNING, 03).
+
+### near SyncFromSavedSettings — SIGNPATH_01, NOCOMMENTS_01 (line 1346)
+
+RETIRED SIGNPATH_01 (src/FreeVideoStudio.App/Services/UpdatePreparer.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED SIGNPATH_01 (src/FreeVideoStudio.App/Services/ProtectedWorkerStage.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED SIGNPATH_01 (src/FreeVideoStudio.App/Services/UpgradeInstallWorker.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near SyncFromSavedSettings — OSSMEDIA_01, NOCOMMENTS_01, SETABOUTSAVE_01 (line 1350)
+
+RETIRED OSSMEDIA_01 (src/FreeVideoStudio.App/Infrastructure/MemeAssets.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED OSSMEDIA_01 (build/FvsBuild/Staging.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED SETABOUTSAVE_01 (src/FreeVideoStudio.App/MainWindow.Wireup.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near SETRESTORECONFIRM_01 — SETFREEZEDEF_01, NOCOMMENTS_01, SETKEYSFIRST_01, SETCHOICES_01, SETSTARTONE_01, SETUPDCOPY_01, SETUPDATEONE_01, SETNOMETERED_01, SETZOOMCAP_01, SETZOOMONE_01 (line 1356)
+
+RETIRED SETFREEZEDEF_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED SETKEYSFIRST_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED SETCHOICES_01 (src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs) — start-value lists replaced by one choice (SETSTARTONE_01)
+RETIRED SETUPDCOPY_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.axaml) — update check boxes replaced by one choice (SETUPDATEONE_01)
+RETIRED SETNOMETERED_01 (src/FreeVideoStudio.App/Services/UpdateService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED SETZOOMCAP_01 (src/FreeVideoStudio.App/Controls/SettingsWindow.axaml) — fast-move zoom slider removed (SETZOOMONE_01)
+
+### near GeneralAdvancedExpander — SETNOBETA_01, NOCOMMENTS_01 (line 1369)
+
+RETIRED SETNOBETA_01 (src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near KeepOverlayTextBetweenVideos — SETSAFEONE_01, NOCOMMENTS_01 (line 1374)
+
+RETIRED SETSAFEONE_01 (src/FreeVideoStudio.App/Infrastructure/SettingsManager.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near ClearSoundStrengths — SETFOLDERONE_01, NOCOMMENTS_01 (line 1378)
+
+RETIRED SETFOLDERONE_01 (src/FreeVideoStudio.App/Infrastructure/OutputFolderResolver.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED SETFOLDERONE_01 (src/FreeVideoStudio.App/VideoMergerWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near SETNOCONSENTUI_01 — SETMUSICVOL_01, NOCOMMENTS_01, SETVOICEONE_01 (line 1381)
+
+RETIRED SETMUSICVOL_01 (src/FreeVideoStudio.App/MusicWizardWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED SETVOICEONE_01 (src/FreeVideoStudio.App/VoiceOverWindow.axaml.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED SETVOICEONE_01 (src/FreeVideoStudio.App/Infrastructure/VoiceOverAudioTools.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near SyncCameraViewToGame — SETAIONE_01, NOCOMMENTS_01 (line 1387)
+
+RETIRED SETAIONE_01 (src/FreeVideoStudio.App/ViewModels/SettingsViewModel.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near SyncCameraViewToGame — SETZOOMONE_01, NOCOMMENTS_01 (line 1389)
+
+RETIRED SETZOOMONE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near IsFreeze — FREEZESFX_01, NOCOMMENTS_01 (line 1392)
+
+RETIRED FREEZESFX_01 (src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near FreezeOutputRanges — FREEZESFX_01, NOCOMMENTS_01 (line 1394)
+
+RETIRED FREEZESFX_01 (src/FreeVideoStudio.Core/Media/ProcessWorker.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near AIREASONING_02 — AIANSWER_01, NOCOMMENTS_01, AICLAUDETOOL_01 (line 1405)
+
+RETIRED AIANSWER_01 (src/FreeVideoStudio.App/Services/OpenAiProvider.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED AIANSWER_01 (src/FreeVideoStudio.App/Services/ClaudeProvider.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED AICLAUDETOOL_01 (src/FreeVideoStudio.App/Services/ClaudeProvider.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near ToJson — AIREASONING_02, NOCOMMENTS_01, AIFPSFALLBACK_02, AIPREFLIGHT_03, AIREUSE_03 (line 1409)
+
+RETIRED AIREASONING_02 (src/FreeVideoStudio.App/Services/GeminiProvider.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED AIFPSFALLBACK_02 (src/FreeVideoStudio.App/Services/GeminiProvider.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED AIPREFLIGHT_03 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED AIPREFLIGHT_03 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED AIPREFLIGHT_03 (src/FreeVideoStudio.App/Services/AiEliminationTrackerService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED AIREUSE_03 (src/FreeVideoStudio.App/Services/GeminiTrackingService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED AIREUSE_03 (src/FreeVideoStudio.App/Services/AiMusicAutoFitService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near AICOMMENTARY_CUTS_01 — AICOMMENTARY_KEEP_01, NOCOMMENTS_01, AICOMMENTARY_ONCE_01 (line 1421)
+
+RETIRED AICOMMENTARY_KEEP_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED AICOMMENTARY_ONCE_01 (src/FreeVideoStudio.App/Services/CommentaryService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near AIHUDERRORS_01 — AIUSAGE_04, NOCOMMENTS_01 (line 1426)
+
+RETIRED AIUSAGE_04 (src/FreeVideoStudio.App/Controls/SettingsWindow.AiTracking.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near AIHUDERRORS_01 — AIAPPROVE_01, NOCOMMENTS_01, AIHUDTRANSPORT_01, AIHUDERRORS_01 (line 1428)
+
+RETIRED AIAPPROVE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiZoom.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED AIAPPROVE_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED AIHUDTRANSPORT_01 (src/FreeVideoStudio.App/Services/GeminiHudDetectionService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED AIHUDERRORS_01 (src/FreeVideoStudio.App/Services/GeminiHudDetectionService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near AIMERGEKILLS_01 — AIELIM_04, NOCOMMENTS_01 (line 1434)
+
+RETIRED AIELIM_04 (src/FreeVideoStudio.App/MainWindow.AiElimination.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near AIPROGRESS_02 — AIMERGEKILLS_01, NOCOMMENTS_01 (line 1436)
+
+RETIRED AIMERGEKILLS_01 (src/FreeVideoStudio.App/GranularSpeedEditorWindow.AiCommentary.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+
+### near LocalAiPack — AIPARITY_02, NOCOMMENTS_01, AIELIM_05 (line 1438)
+
+RETIRED AIPARITY_02 (src/FreeVideoStudio.Core/Media/GranularSpeedBuilder.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+RETIRED AIELIM_05 (src/FreeVideoStudio.App/Services/AiEliminationTrackerService.cs) — in-code comment removed by the no-comments rule (NOCOMMENTS_01, 2026-11-13); the rule lives in its spec, behaviour is guarded by tests
+Local AI pack and on-device Smart Zoom tracking (05 SYS-LOCALAI, 01 TL-LOCALTRACK, 09 DIST-LOCALAIPACK, 04 UI-AIZOOM).
+
+### near CleanDescription — TEXTTARGET_01, AIZOOMSTART_01 (line 1452)
+
+RETIRED TEXTTARGET_01 (src/FreeVideoStudio.App/Controls/AiTargetDescriptionWindow.cs) — file deleted 2026-11-14: the description box moved into AiZoomStartWindow (AIZOOMSTART_01)
+
+### near AiZoomStartWindow (line 1464)
+
+AI ease-of-use review 2026-11-14 (04 UI-AIMODE / UI-AIZOOM / UI-AIAPPROVE, 01 TL-AITRACKING).
+
+### near AIRETRYONE_01 (line 1468)
+
+AI audit 5 (2026-11-14): one retry owner, billing errors, real key check, Merger kill scan, caption canvas, estimates, reuse, parallel parts, traceable logs.
+
+### near AIELIMOWNER_01 (line 1483)
+
+QA audit fixes 2026-11-14.
+
+### near AIELIMGATE_01 — AIAUDIT_06 (line 1519)
+
+AI audit 6 (AIAUDIT_06, 2026-11-16, docs/05 SYS-AIAUDIT6).
+
+### near NEWVIDEOGUARD_01 — NEWVIDEOGUARD_01 (line 1535)
+
+UX audit 2 (2026-11-16, docs/04 UI-SAFEGUARDS, 05 SYS-RECOVERY, 06 NEWVIDEOGUARD_01).
+
+### near EditorPreviewLayers (line 1545)
+
+Preview stutter + cross-screen parity (2026-11-16, docs/02 AUD-PREVIEWSYNC).
+
+### near MusicDipChains — FREEZESFX_03, FREEZESFX_05 (line 1556)
+
+Freeze sound redesign (2026-11-16, docs/02 AUD-FREEZESFX).
+RETIRED FREEZESFX_03 (src/FreeVideoStudio.Core/Media/SoundExpr.cs) — synthesised freeze sound replaced by recorded sounds (FREEZESFX_05, 2026-11-17); SoundExpr.cs deleted
+
+### near FREEZESFX_04 — FREEZESFX_04, FREEZESFX_05 (line 1582)
+
+RETIRED FREEZESFX_04 (FreezeSoundEffect.Shape) — synthesised freeze sound replaced by recorded sounds (FREEZESFX_05, 2026-11-17)
+
+### near RingOut (line 1585)
+
+Recorded freeze sounds, picked in Settings (2026-11-17, docs/02 AUD-FREEZESFX).
+
+## developer_tools/Redundant_Code_Finder.py
+
+### near import (line 1)
+
+═══════════════════════════════════════════════════════════════════════════════════════════════
+REDUNDANT CODE FINDER — WRITES TWO REPORTS. READ THE RIGHT ONE.
+
+┌───────────────────────────────────────────────────────────────────────────────────────┐
+│  AI AGENT?  READ  developer_tools/redundant_code_report.jsonl   — AND NOTHING ELSE.    │
+│  HUMAN?     OPEN  developer_tools/redundant_code_report.html    in a browser.          │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+
+⚠️ AGENTS: DO NOT OPEN THE .html. It is ~5.5x larger and every extra byte is styling, colour and
+a SECOND FULL COPY of code you can already read from disk. It exists so a person can review
+findings visually. Reading it wastes context and tells you nothing the .jsonl does not.
+
+THE .jsonl IN ONE PARAGRAPH: line 1 is a header holding the run's settings and a `files` array;
+every later line is one finding. Parse with `for line in f: json.loads(line)`. A finding gives
+a similarity score and two coordinates — file index, first line, last line. Open those ranges
+yourself; the code is on disk and is deliberately NOT duplicated into the report.
+
+Both reports are deleted and rewritten on every run, so whatever is on disk is always current.
+═══════════════════════════════════════════════════════════════════════════════════════════════
+
+### near code_text (line 81)
+
+How many lines in this block actually do something, as opposed to bracing something.
+
+### near source (line 109)
+
+Strips C# comments and blanks out string/char literals IN ONE LEFT-TO-RIGHT PASS.
+
+(2) WHY NOT `re.sub(r'//.*', '', ...)`.  A regex cannot tell a comment from a web address.
+`FileName = "https://web.whatsapp.com"` would be cut down to `FileName = "https:` — and
+43 lines in this repository contain `//` inside a string. Those chopped half-lines then
+look identical to each other, so the tool INVENTS duplicates that do not exist. Literals
+are recognised here and replaced by an empty token BEFORE any comment stripping happens.
+
+(3) WHY THE NEWLINES ARE KEPT.  The old block-comment removal deleted `/* ... */` including
+its line breaks, so every line AFTER a block comment was reported at the wrong number —
+5 files in this repository have one. Every newline inside a comment or a literal is
+re-emitted, so the output has EXACTLY as many lines as the input and reported line
+numbers land on the real code.
+
+Handles: // line, /* block */, "regular", @"verbatim" (with "" escapes), 'c', and \" escapes.
+Not handled: C#11 raw strings (triple-quoted). None exist in this repository; if they appear,
+the scanner ends the literal early — it can under-abstract, but it can never lose a newline.
+
+### near findall (line 202)
+
+Returns (fingerprint, tokens). Literals are already blanked by remove_comments.
+
+### near token_lines (line 215)
+
+(4) `token_lines` is a sequence of TOKEN LISTS — one per source line.
+
+### near same_file (line 231)
+
+Grows the seed at (idx1, idx2) outwards while it stays >= MIN_SIMILARITY.
+
+Returns (start1, start2, length, matched_lines) or None when the result is not worth
+reporting. `idx1 < idx2` is guaranteed by the caller.
+
+### near file_list (line 428)
+
+OUTPUT 2 — for a machine. Maximum signal per byte; no concession to human readability.
+
+Four deliberate savings over the obvious encoding, measured on this repository:
+1. FILE PATHS ARE INTERNED. Paths are long and repeat on nearly every record. They are
+listed ONCE in the header's `files` array and referenced afterwards by integer index.
+2. NO `"t":"dup"` TAG. Line 1 is the header; every other line is a finding. A per-record
+type tag would be 470 copies of a fact the line number already establishes.
+3. NO CODE BODIES. The code is on disk at the coordinates given. Shipping it again would
+multiply the file size for zero information — this is the single biggest saving.
+4. SIDES ARE ARRAYS, NOT OBJECTS. `[fileIndex, firstLine, lastLine]` beats
+`{"f":..,"s":..,"e":..}` on every record, and the header declares the order.
+
+The header carries `record` and `files` so the format is self-describing: an agent never has
+to guess a key, and nothing here needs this docstring to be decoded.
+
+### near __file__ (line 524)
+
+Removes any __pycache__ / .pyc this tool's own folder has accumulated.
+
+The guards at the top stop THIS run from writing bytecode, but they cannot stop a previous
+run under different settings, a `python -m py_compile`, or another script importing this one
+— all of which drop a __pycache__ beside the source. Sweeping on every run means the folder
+is clean afterwards no matter how it got dirty.
+
+Scoped to developer_tools ONLY. It must never wander into the rest of the repository.
+
+## developer_tools/local_ai_pack/build_pack.py
+
+### near argparse — LOCALAIPACK_01 (line 1)
+
+LOCALAIPACK_01 (docs/09 DIST-LOCALAIPACK) - assemble the Local AI pack and pin it in the app.
+
+1. Run export_sam2_onnx.py into <pack folder> first.
+2. python developer_tools/local_ai_pack/build_pack.py --pack <pack folder>
+- downloads the OFFICIAL, Microsoft-signed onnxruntime.dll (Microsoft.ML.OnnxRuntime.DirectML) and DirectML.dll
+(Microsoft.AI.DirectML) from nuget.org into the pack folder (the Authenticode signature is checked),
+- writes src/FreeVideoStudio.Core/LocalAi/LocalAiPackFiles.cs with every file's URL, length and SHA-256,
+- prints the `gh release upload` command for the human to run. This script never publishes anything.
+3. A human uploads the files to the GitHub release named in LocalAiPackManifest.ReleaseTag, runs this script again
+with --released (Released = true) and commits LocalAiPackFiles.cs. Until then the app says the pack
+"has not been published yet" and Install stays disabled.
+
+## developer_tools/local_ai_pack/export_sam2_onnx.py
+
+### near argparse — LOCALAIPACK_01 (line 1)
+
+LOCALAIPACK_01 (docs/09 DIST-LOCALAIPACK) - export SAM 2.1 (Hiera Small) to the two ONNX files the app reads.
+
+Run once on a developer machine, never in the app and never in CI:
+
+python -m venv .venv-sam2 && .venv-sam2\\Scripts\\activate
+pip install torch onnx onnxruntime "git+https://github.com/facebookresearch/sam2.git"
+curl -L -o sam2.1_hiera_small.pt https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt
+python developer_tools/local_ai_pack/export_sam2_onnx.py --checkpoint sam2.1_hiera_small.pt --out <pack folder>
+
+The contract (names, shapes) must match src/FreeVideoStudio.Core/LocalAi/LocalAiPackManifest.cs:
+encoder  image[1,3,1024,1024] float32 (ImageNet-normalised RGB)
+-> image_embed[1,256,64,64], high_res_feats_0[1,32,256,256], high_res_feats_1[1,64,128,128]
+decoder  image_embed, high_res_feats_0, high_res_feats_1,
+point_coords[1,N,2] (1024 space), point_labels[1,N], mask_input[1,1,256,256], has_mask_input[1]
+-> masks[1,4,256,256] (logits: the single-mask output then the 3 multimask outputs), iou_predictions[1,4],
+object_scores[1,1] (logit: > 0 = the object is in the picture)
+Weights are stored as float16 (input/output stay float32), which DirectML runs on the GPU's tensor cores.
+SAM 2.1 is Apache-2.0 (Meta).

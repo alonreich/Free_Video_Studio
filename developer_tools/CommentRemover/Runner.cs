@@ -26,7 +26,9 @@ public static class Runner
         {
             foreach (string rel in files)
             {
-                CommentLanguage? language = Languages.For(rel, external);
+                CommentLanguage? language = Languages.DataFilesWithHashComments.Contains(rel)
+                    ? Languages.DataList(SentinelTagsFor(root, rel))
+                    : Languages.For(rel, external);
                 string full = Path.Combine(root, rel);
                 if (language is null || !File.Exists(full)) continue;
                 scanned++;
@@ -63,6 +65,7 @@ public static class Runner
         int rewritten = 0;
         var unresolved = new List<string>();
         var repointed = new List<string>();
+        var replacements = new Dictionary<string, string>(StringComparer.Ordinal);
         for (int i = 0; i < sentinelLines.Length; i++)
         {
             Match m = SentinelEntry.Match(sentinelLines[i].Trim());
@@ -79,8 +82,21 @@ public static class Runner
                 continue;
             }
             repointed.Add($"build/sentinels.txt line {i + 1}: {tag}={path} -> {tag}={path}#{note.Symbol}");
+            replacements[sentinelLines[i].Trim()] = $"{tag}={path}#{note.Symbol}";
             sentinelLines[i] = $"{tag}={path}#{note.Symbol}";
             rewritten++;
+        }
+        const string SentinelRel = "build/sentinels.txt";
+        if (rewritten > 0 && results.TryGetValue(SentinelRel, out var strippedSentinels))
+        {
+            string[] kept = strippedSentinels.Result.Text.Split('\n');
+            for (int k = 0; k < kept.Length; k++)
+            {
+                bool cr = kept[k].EndsWith('\r');
+                string core = cr ? kept[k][..^1] : kept[k];
+                if (replacements.TryGetValue(core.Trim(), out string? repl)) kept[k] = repl + (cr ? "\r" : "");
+            }
+            results[SentinelRel] = (strippedSentinels.Result with { Text = string.Join("\n", kept) }, strippedSentinels.Bom, strippedSentinels.Original, strippedSentinels.Before);
         }
 
         int comments = results.Values.Sum(v => v.Result.CommentCount);
@@ -122,7 +138,7 @@ public static class Runner
             byte[] body = new UTF8Encoding(false).GetBytes(appended);
             staged.Add(new Staged(notesPath, existing is null ? Bom.Concat(body).ToArray() : existing.Concat(body).ToArray(), existing));
         }
-        if (rewritten > 0)
+        if (rewritten > 0 && !results.ContainsKey(SentinelRel))
         {
             byte[] newSentinels = new UTF8Encoding(false).GetBytes(string.Join(nl, sentinelLines));
             staged.Add(new Staged(sentinelPath, sentinelBom ? Bom.Concat(newSentinels).ToArray() : newSentinels, sentinelBytes));
@@ -246,6 +262,18 @@ public static class Runner
         }
         foreach (var (_, backup) in done)
             if (backup is not null && File.Exists(backup)) File.Delete(backup);
+    }
+
+    public static IReadOnlyList<string> SentinelTagsFor(string root, string rel)
+    {
+        string path = Path.Combine(root, "build", "sentinels.txt");
+        if (!File.Exists(path)) return Array.Empty<string>();
+        return File.ReadAllLines(path)
+            .Select(l => SentinelEntry.Match(l.Trim()))
+            .Where(m => m.Success && string.Equals(m.Groups["path"].Value, rel, StringComparison.Ordinal))
+            .Select(m => m.Groups["tag"].Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
     }
 
     public static string? FindRoot(string startDir)

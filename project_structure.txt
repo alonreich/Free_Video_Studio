@@ -20,7 +20,10 @@ DEVELOPER TOOLS (DEVTOOLS_01): every developer-only tool lives in
     local_ai_pack\              builds the optional Local AI pack
     Find_and_Remove_Comments.cmd  removes every comment and extra blank line
                                 from all code files (.cs, .ps1, .py, .cmd,
-                                .yml, .axaml/XML, .iss, ignore files). It first
+                                .yml, .axaml/XML, .iss, .json, .sln,
+                                .editorconfig, ignore files, and the data
+                                lists build\sentinels.txt and
+                                build\revoked-signers.txt). It first
                                 lists every comment (full path, line, text) and
                                 changes nothing unless you answer Y:
         .\developer_tools\Find_and_Remove_Comments.cmd   (or double-click it;

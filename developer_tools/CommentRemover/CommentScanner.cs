@@ -31,21 +31,62 @@ public static class CommentScanner
     private static SyntaxTree Parse(string text, string[] symbols) =>
         CSharpSyntaxTree.ParseText(text, new CSharpParseOptions(LanguageVersion.Preview, DocumentationMode.None, SourceCodeKind.Regular, symbols));
 
-    private static List<Found> FindComments(string text)
+    public static bool IsRegion(SyntaxTrivia t) =>
+        t.IsKind(SyntaxKind.RegionDirectiveTrivia) || t.IsKind(SyntaxKind.EndRegionDirectiveTrivia);
+
+    private static IEnumerable<(SyntaxTrivia Trivia, int Offset, SyntaxTree Tree)> AllTrivia(string text, string[] symbols)
     {
-        var bySpan = new Dictionary<TextSpan, Found>();
-        foreach (string[] symbols in SymbolSets)
+        SyntaxTree tree = Parse(text, symbols);
+        foreach (SyntaxTrivia t in tree.GetRoot().DescendantTrivia(descendIntoTrivia: true))
         {
-            SyntaxNode root = Parse(text, symbols).GetRoot();
-            foreach (SyntaxTrivia t in root.DescendantTrivia(descendIntoTrivia: true))
+            if (t.IsKind(SyntaxKind.DisabledTextTrivia))
             {
-                if (IsComment(t) && !bySpan.ContainsKey(t.Span)) bySpan[t.Span] = new Found(t.Span, t);
+                yield return (t, 0, tree);
+                SyntaxTree fragment = Parse(text.Substring(t.Span.Start, t.Span.Length), symbols);
+                foreach (SyntaxTrivia inner in fragment.GetRoot().DescendantTrivia(descendIntoTrivia: true))
+                    if (IsComment(inner)) yield return (inner, t.Span.Start, fragment);
             }
+            else yield return (t, 0, tree);
         }
-        return bySpan.Values.OrderBy(f => f.Span.Start).ToList();
     }
 
-    public static int CountComments(string text) => FindComments(text).Count;
+    private static List<Found> FindComments(string text, bool regions = true)
+    {
+        var bySpan = new Dictionary<TextSpan, Found>();
+        var regionLines = new List<TextSpan>();
+        foreach (string[] symbols in SymbolSets)
+        {
+            SyntaxTree tree = Parse(text, symbols);
+            var disabledOwners = tree.GetRoot().DescendantTrivia(descendIntoTrivia: true).Where(t => t.IsKind(SyntaxKind.DisabledTextTrivia)).ToList();
+            foreach (var (t, offset, _) in AllTrivia(text, symbols))
+            {
+                if (regions && IsRegion(t))
+                {
+                    int end = t.Span.Start;
+                    while (end < text.Length && text[end] != '\n' && text[end] != '\r') end++;
+                    var span = TextSpan.FromBounds(t.Span.Start, end);
+                    if (!bySpan.ContainsKey(span))
+                    {
+                        bySpan[span] = new Found(span, t);
+                        regionLines.Add(span);
+                    }
+                }
+                else if (IsComment(t))
+                {
+                    var span = new TextSpan(t.Span.Start + offset, t.Span.Length);
+                    if (bySpan.ContainsKey(span)) continue;
+                    SyntaxTrivia owner = offset == 0 ? t : disabledOwners.FirstOrDefault(d => d.Span.Start == offset);
+                    bySpan[span] = new Found(span, offset == 0 || owner == default ? t : owner);
+                }
+            }
+        }
+        return bySpan.Values
+            .Where(f => !regionLines.Any(r => r != f.Span && r.Contains(f.Span)))
+            .OrderBy(f => f.Span.Start)
+            .ToList();
+    }
+
+    public static int CountComments(string text) => FindComments(text, regions: false).Count;
 
     public static IReadOnlyList<Range> CommentRanges(string text) =>
         FindComments(text).Select(f => new Range(f.Span.Start, f.Span.End)).ToList();
@@ -55,13 +96,28 @@ public static class CommentScanner
         var ranges = new List<Range>();
         foreach (string[] symbols in SymbolSets)
         {
-            foreach (SyntaxToken t in Parse(text, symbols).GetRoot().DescendantTokens(descendIntoTrivia: true))
+            foreach (var (token, offset) in AllTokens(text, symbols))
             {
-                if (t.Span.Length > 0 && text.AsSpan(t.Span.Start, t.Span.Length).IndexOfAny('\r', '\n') >= 0)
-                    ranges.Add(new Range(t.Span.Start, t.Span.End));
+                if (token.Span.Length > 0 && text.AsSpan(token.Span.Start + offset, token.Span.Length).IndexOfAny('\r', '\n') >= 0)
+                    ranges.Add(new Range(token.Span.Start + offset, token.Span.End + offset));
             }
         }
         return ranges;
+    }
+
+    private static IEnumerable<(SyntaxToken Token, int Offset)> AllTokens(string text, string[] symbols)
+    {
+        SyntaxNode root = Parse(text, symbols).GetRoot();
+        foreach (SyntaxToken t in root.DescendantTokens(descendIntoTrivia: true))
+        {
+            if (t.Parent?.AncestorsAndSelf().Any(n => n is RegionDirectiveTriviaSyntax or EndRegionDirectiveTriviaSyntax) == true) continue;
+            yield return (t, 0);
+        }
+        foreach (SyntaxTrivia d in root.DescendantTrivia(descendIntoTrivia: true).Where(t => t.IsKind(SyntaxKind.DisabledTextTrivia)))
+        {
+            foreach (SyntaxToken t in Parse(text.Substring(d.Span.Start, d.Span.Length), symbols).GetRoot().DescendantTokens(descendIntoTrivia: true))
+                if (!t.IsKind(SyntaxKind.EndOfFileToken)) yield return (t, d.Span.Start);
+        }
     }
 
     public static int MaxBlank(string previous, string next) =>
@@ -74,7 +130,7 @@ public static class CommentScanner
         (string result, int removedLines) = TextRewriter.Apply(text, comments, MultiLineTokens(text), true, MaxBlank);
         if (result == text) return new StripResult(text, Array.Empty<CommentNote>(), 0, 0);
         VerifyTokens(text, result);
-        if (CountComments(result) != 0)
+        if (FindComments(result).Count != 0)
             throw new InvalidOperationException("Comments remain after removal; nothing was written for this file.");
         return new StripResult(result, found.Count == 0 ? Array.Empty<CommentNote>() : BuildNotes(found, text), found.Count, removedLines, comments);
     }
@@ -83,8 +139,8 @@ public static class CommentScanner
     {
         foreach (string[] symbols in SymbolSets)
         {
-            var a = Parse(before, symbols).GetRoot().DescendantTokens(descendIntoTrivia: true).Select(t => (t.Kind(), t.Text)).ToList();
-            var b = Parse(after, symbols).GetRoot().DescendantTokens(descendIntoTrivia: true).Select(t => (t.Kind(), t.Text)).ToList();
+            var a = AllTokens(before, symbols).Select(t => (t.Token.Kind(), t.Token.Text)).ToList();
+            var b = AllTokens(after, symbols).Select(t => (t.Token.Kind(), t.Token.Text)).ToList();
             if (!a.SequenceEqual(b))
                 throw new InvalidOperationException("Removing comments would change the code tokens; nothing was written for this file.");
         }
@@ -176,7 +232,9 @@ public static class CommentScanner
             foreach (string l0 in part.Replace("\r\n", "\n").Split('\n'))
             {
                 string l = l0.Trim();
-                if (l.StartsWith("///", StringComparison.Ordinal)) l = l[3..];
+                if (l.StartsWith("#region", StringComparison.Ordinal)) l = l[7..];
+                else if (l.StartsWith("#endregion", StringComparison.Ordinal)) l = l[10..];
+                else if (l.StartsWith("///", StringComparison.Ordinal)) l = l[3..];
                 else if (l.StartsWith("//", StringComparison.Ordinal)) l = l[2..];
                 else
                 {
