@@ -27,7 +27,7 @@ internal static class Program
             Console.WriteLine("Usage: FvsBuild [--no-publish] [--dev] [--beta] [--yes] [--stage-only]");
             Console.WriteLine("  (default)     official STABLE release: release gate, build, publish to GitHub as latest");
             Console.WriteLine("  --beta        official BETA release: published as a pre-release (Beta update channel only)");
-            Console.WriteLine("  --yes         skip the 'type PUBLISH' confirmation; also needs FVS_RELEASE_UNATTENDED=1 (RELQA_02)");
+            Console.WriteLine("  --yes         accepted for old scripts; there is no confirmation prompt (RELNOPROMPT_01)");
             Console.WriteLine("  --resume      finish the last release whose commit + tag were pushed but whose publish or");
             Console.WriteLine("                notes promotion failed. Builds nothing (RELRESUME_01).");
             Console.WriteLine("  --protect-root-key  give the publisher root key its own passphrase (ROOTKEY_01).");

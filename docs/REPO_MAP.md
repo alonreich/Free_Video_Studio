@@ -89,7 +89,7 @@ Licence & policies:   .\LICENSE (GPL-3.0), .\PRIVACY.md, .\CODE_SIGNING_POLICY.m
 Controlled folders:   .\src\FreeVideoStudio.Core\Infrastructure\ControlledFolderAccess.cs (read-only) +
                       .\src\FreeVideoStudio.App\Infrastructure\ProtectedFolderGate.cs (CFASAFE_01, docs/09 SYS-CFASAFE)
 Release gate:         .\build\FvsBuild\ReleaseGate.cs (RELGATE_01: clean + pushed + linted notes + green CI + local
-                      tests (RELQA_01) + protected root key (ROOTKEY_01) + typed PUBLISH, version commit + tag, undo
+                      tests (RELQA_01) + protected root key (ROOTKEY_01) + no PUBLISH prompt (RELNOPROMPT_01), version commit + tag, undo
                       on failure; --resume finishes a failed publish, RELRESUME_01) -> GitHubReleasePublisher.cs
                       (--verify-tag, RETAIN_01/02 old files removed, pages + notes kept, BETA_01 pre-releases).
                       Withdrawn signers: .\build\revoked-signers.txt (REVOKE_01). Upgrade smoke test:
