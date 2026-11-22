@@ -807,6 +807,8 @@ UIIPC_01=src/FreeVideoStudio.App/WindowBoundsHelper.cs#CloseFlushBudget
 # RETIRED UIIPC_01 (src/FreeVideoStudio.App/Program.cs) — comment removed in 9aed91d refactor
 UIIPC_01=tests/FreeVideoStudio.Core.Tests/IpcTests.cs
 UIIPC_01=tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs
+UIIPC_02=src/FreeVideoStudio.Core/Ipc/SessionStateWriter.cs#FlushAsync
+UIIPC_02=tests/FreeVideoStudio.Core.Tests/IpcTests.cs#SessionWriter_RetriedOlderValue_NeverOverwritesANewerOneAlreadyInFlight
 # RETIRED UIIPC_01 (tests/FreeVideoStudio.App.Tests/AutosaveBackgroundTests.cs) — comment removed in 9aed91d refactor
 # IPCDEADLINE_01 — one end-to-end deadline for connect + write + read; no synchronous pipe client (05 SYS-IPCLIFETIME).
 IPCDEADLINE_01=src/FreeVideoStudio.Core/Ipc/IpcProtocol.cs#ExchangeAsync
