@@ -159,6 +159,8 @@ public class IpcTests : IDisposable
             ["MainVolume"] = 80.0
         };
 
+        Assert.NotNull(await NamedPipeStateClient.GetStateAsync(TimeSpan.FromSeconds(5)));
+
         var sw = Stopwatch.StartNew();
         bool updated = await NamedPipeStateClient.UpdatePropertiesAsync(handoff, TimeSpan.FromSeconds(2));
         var state = await NamedPipeStateClient.GetStateAsync(TimeSpan.FromSeconds(2));
