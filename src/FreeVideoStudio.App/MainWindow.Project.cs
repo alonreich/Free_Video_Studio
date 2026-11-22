@@ -31,6 +31,7 @@ public partial class MainWindow
     {
         var services = Infrastructure.AppServices.Current;
 
+        ShowMusicButtonState(_viewModel.IsMusicActive);
         Services.ToolNavigator.RestoreMergeQueue(document.Merge);
         ApplyVoiceOverState(_viewModel.VoiceOverResult, isRestore: true);
 
@@ -53,6 +54,73 @@ public partial class MainWindow
 
                 RequestSizeEstimate();
             });
+    }
+
+    internal const string ProjectVideoTag = "PROJVIDEO_01";
+
+    private async Task ShowProjectVideoAsync(string path)
+    {
+        var videoHost = _videoHost;
+        if (videoHost?.IpcClient == null) return;
+        RuntimeLog.Info("UI", $"{ProjectVideoTag}: showing the opened project's video {System.IO.Path.GetFileName(path)}.");
+        _isTimelineDrawn = false;
+        double previousDuration = videoHost.IpcClient.Duration;
+        videoHost.IsVisible = true;
+        await videoHost.IpcClient.LoadFileAsync(path);
+        await videoHost.IpcClient.SetPropertyAsync("pause", "yes");
+        if (!await WaitForVideoMetadataAsync(previousDuration))
+        {
+            ShowTacticalFeedback("Video preview failed to load. Your project edits are still open.");
+            return;
+        }
+        _loadedVideoDurationMs = videoHost.IpcClient.Duration * 1000.0;
+        _viewModel.Timeline.LoadedVideoDurationMs = _loadedVideoDurationMs;
+        BeginWholeVideoFilmstrip();
+        UpdateSpeedLabel();
+        UpdateEstimatedQuality();
+        UpdatePortraitOverlay();
+        var uploadOverlay = UploadOverlayCtl;
+        if (uploadOverlay != null) uploadOverlay.IsVisible = false;
+        EnableEditingControls();
+        UpdateTimelineMarkers();
+        QueueTimelineRedrawPass(Avalonia.Threading.DispatcherPriority.Render);
+        _ = RunAudioPeakCheckAsync(path);
+    }
+
+    private void OnMenuOpenProjectClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_projectSession is { } session) _ = RunAfterVoiceTimingAsync(() => session.OpenAsync());
+    }
+
+    private void OnMenuSaveProjectClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_projectSession is { } session) _ = RunAfterVoiceTimingAsync(() => session.SaveAsync());
+    }
+
+    private void OnMenuSaveProjectAsClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_projectSession is { } session) _ = RunAfterVoiceTimingAsync(() => session.SaveAsAsync());
+    }
+
+    private void OnMenuOpenRecentOpened(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not Avalonia.Controls.MenuItem menu || _projectSession is not { } session) return;
+        if (!ReferenceEquals(e.Source, menu)) return;
+        menu.Items.Clear();
+        var recent = session.RecentProjectList();
+        if (recent.Count == 0)
+        {
+            menu.Items.Add(new Avalonia.Controls.MenuItem { Header = "No recent projects yet", IsEnabled = false });
+            return;
+        }
+        foreach (RecentProject project in recent)
+        {
+            var item = new Avalonia.Controls.MenuItem { Header = project.Title, IsEnabled = project.Exists };
+            Avalonia.Controls.ToolTip.SetTip(item, project.Exists ? project.Path : project.Path + " (not found right now)");
+            string path = project.Path;
+            item.Click += (_, _) => _ = RunAfterVoiceTimingAsync(() => session.OpenAsync(path));
+            menu.Items.Add(item);
+        }
     }
 
     private void BeginProjectHistory()

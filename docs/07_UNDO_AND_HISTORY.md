@@ -222,3 +222,5 @@ canvases and timers. It now lives in Core, in types that cannot reference Avalon
 * Tests: `GranularEditSessionTests`, `CropEditSessionTests` (Core), `EditStateExtractionTests` (App).
 
 PROJECTIO_01: project save/open sidecars share the ordered background I/O queue. History branches are copied on the dispatcher before enqueueing; the saved fingerprint uses the metadata of the actual saved document. Delayed I/O never enumerates a live undo stack. Regression coverage: `tests/FreeVideoStudio.App.Tests/AutosaveBackgroundTests.cs`.
+
+CAPTIONUNDO_01 / GESTUREDIRTY_01 (2026-11-22): `ProjectDocument.Equals` compares `Captions`, the freeze frame and the overlay text, so a caption-only apply is its own undo step and undoing an earlier edit no longer drops captions added after it. `ProjectSession.PushEdit` marks the project dirty and bumps the edit generation whenever `UndoStack.Current` changed, including a coalesced gesture step (which `Apply` reports as `false`); an autosave that lands mid-drag therefore no longer clears the unsaved state while the final value is unwritten.

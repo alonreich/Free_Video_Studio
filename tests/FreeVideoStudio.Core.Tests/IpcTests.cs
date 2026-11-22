@@ -806,6 +806,40 @@ public class IpcTests : IDisposable
     }
 
     [Fact]
+    public async Task SessionWriter_FailedOlderValue_NeverOverwritesANewerOneAlreadyCommitted()
+    {
+        var commit = new RecordingCommit { Fail = true };
+        var writer = new SessionStateWriter(commit.Commit);
+        writer.Prime(new JsonObject { ["schema_version"] = 1 });
+        int Committed() { lock (commit.Batches) return commit.Batches.Count; }
+
+        writer.Enqueue(new JsonObject { ["MergerOutputDirectory"] = "old" });
+        Assert.False(await writer.FlushAsync(TimeSpan.FromSeconds(5)));
+
+        commit.Fail = false;
+        commit.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        writer.Enqueue(new JsonObject { ["MergerOutputDirectory"] = "new" });
+        var deadline = Stopwatch.StartNew();
+        while (Volatile.Read(ref commit.Active) == 0 && deadline.Elapsed < TimeSpan.FromSeconds(5)) await Task.Delay(5);
+        Assert.Equal(1, Volatile.Read(ref commit.Active));
+        writer.Enqueue(new JsonObject { ["MainVolume"] = 0.5 });
+        commit.Gate.SetResult();
+        while (Committed() < 2 && deadline.Elapsed < TimeSpan.FromSeconds(10)) await Task.Delay(5);
+        Assert.Equal(2, Committed());
+        string? seenBeforeExitFlush = writer.ReadSnapshot()["MergerOutputDirectory"]?.GetValue<string>();
+
+        Assert.True(await writer.FlushAsync(TimeSpan.FromSeconds(5)));
+        var persisted = new JsonObject();
+        lock (commit.Batches)
+            foreach (JsonObject batch in commit.Batches)
+                foreach (var (key, value) in batch) persisted[key] = value?.DeepClone();
+
+        Assert.Equal("new", persisted["MergerOutputDirectory"]?.GetValue<string>());
+        Assert.Equal("new", seenBeforeExitFlush);
+        Assert.Equal("new", writer.ReadSnapshot()["MergerOutputDirectory"]?.GetValue<string>());
+    }
+
+    [Fact]
     public async Task SessionWriter_CloseDuringPendingSave_FinalSnapshotIsCommittedLast()
     {
         var commit = new RecordingCommit { Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously) };

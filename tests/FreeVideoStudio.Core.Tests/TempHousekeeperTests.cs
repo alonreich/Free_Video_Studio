@@ -131,6 +131,27 @@ public sealed class TempHousekeeperTests
     }
 
     [Fact]
+    public void AStampLeftInTheFutureByAClockJumpDoesNotStopCleanup()
+    {
+        var roots = NewRoots("futurestamp");
+        string stamp = Touch(roots.StampDirectory, TempHousekeeper.StampFileName, TimeSpan.Zero);
+        File.SetLastWriteTimeUtc(stamp, Now + TimeSpan.FromDays(365));
+        string thumb = Touch(roots.TempRoot, "fvs_thumb_" + Guid.NewGuid().ToString("N") + ".png", TimeSpan.FromDays(2));
+        Assert.False(TempHousekeeper.Run(roots, Now, shutdown: false, _ => false).Skipped,
+            "A cleanup stamp dated a year ahead (wrong clock once) must not switch the startup cleanup off for a year.");
+        Assert.False(File.Exists(thumb));
+    }
+
+    [Fact]
+    public void UnreadableRecentHistoryIsKept()
+    {
+        var roots = NewRoots("badhistory");
+        string broken = Touch(roots.HistoryDirectory!, "BROKEN.history.json", TimeSpan.FromDays(5), "{ not json");
+        TempHousekeeper.Run(roots, Now, shutdown: false, _ => false);
+        Assert.True(File.Exists(broken));
+    }
+
+    [Fact]
     public void OldFreezeRendersAreDropped()
     {
         var roots = NewRoots("freeze");

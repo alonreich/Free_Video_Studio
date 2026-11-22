@@ -64,7 +64,7 @@ public static class SingleInstanceGuard
     internal static string HandoffFailureMessage(string videoPath)
         => "Free Video Studio is already open, but this video could not be passed to it:" + Environment.NewLine + Environment.NewLine +
            Path.GetFileName(videoPath) + Environment.NewLine + Environment.NewLine +
-           "In the open window, click UPLOAD VIDEO and pick the file, or drag it onto the window.";
+           "In the open window, click OPEN VIDEO and pick the file, or drag it onto the window.";
 
     public static bool AppliesTo(string[] args)
     {

@@ -33,13 +33,19 @@
                 </Border>
                 <Menu Grid.Row="1" Background="{DynamicResource AppSurfaceBrush}" Foreground="{DynamicResource AppTextMutedBrush}" Padding="10,0" FontSize="{DynamicResource AppFontSize12}">
                     <MenuItem Header="_File">
-                        <MenuItem Name="MenuUploadVideo" Header="Upload Video..." ToolTip.Tip="Upload an MP4 or MKV video file from your computer to start editing." />
+                        <MenuItem Name="MenuUploadVideo" Header="_Open Video..." ToolTip.Tip="Open an MP4, MKV, AVI or MOV video from this PC to start editing. Nothing is uploaded." />
+                        <Separator />
+                        <MenuItem Name="MenuOpenProject" Header="Open _Project...    Ctrl+O" ToolTip.Tip="Open a saved project with its video and every edit." Click="OnMenuOpenProjectClick" />
+                        <MenuItem Name="MenuOpenRecent" Header="Open _Recent" ToolTip.Tip="Projects you saved or opened lately. A greyed entry is on a drive or folder that is not there right now." SubmenuOpened="OnMenuOpenRecentOpened">
+                            <MenuItem Header="No recent projects yet" IsEnabled="False" />
+                        </MenuItem>
+                        <MenuItem Name="MenuSaveProject" Header="_Save Project    Ctrl+S" ToolTip.Tip="Save your edits to the project file." Click="OnMenuSaveProjectClick" />
+                        <MenuItem Name="MenuSaveProjectAs" Header="Save Project _As...    Ctrl+Shift+S" ToolTip.Tip="Save your edits to a new project file." Click="OnMenuSaveProjectAsClick" />
                         <Separator />
                         <MenuItem Name="MenuExportConfig" Header="Backup Settings..." ToolTip.Tip="Save all your settings to one file, for example to move them to a new computer. Your AI keys are left out on purpose." />
                         <MenuItem Name="MenuImportConfig" Header="Restore Settings..." ToolTip.Tip="Load your settings from a backup file. You can look them over first: nothing changes until you press SAVE." />
                         <Separator />
                         <MenuItem Name="MenuSettingsBtn" Header="_Settings" ToolTip.Tip="Open the settings menu to tweak how the application works." />
-                        <MenuItem Name="MenuAboutBtn" Header="_About" ToolTip.Tip="View application version, system details, and check for updates." />
                         <Separator />
                         <MenuItem Name="MenuExit" Header="E_xit" ToolTip.Tip="Close the application." />
                     </MenuItem>
@@ -49,9 +55,6 @@
                     </MenuItem>
                     <MenuItem Header="_View">
                         <MenuItem Name="MenuTogglePreviewMonitor" Header="Detach Preview Monitor" ToolTip.Tip="Pop out the video player into its own separate floating window so you can move it around." />
-                        <Separator />
-                        <MenuItem Name="MenuShowShortcuts" Header="Keyboard Shortcuts    ?" ToolTip.Tip="Show every keyboard shortcut, using your own key choices. Shortcut: press ?" />
-                        <MenuItem Name="MenuShowHelp" Header="Show Me Around" ToolTip.Tip="Replay the short walkthrough that points out what everything on this screen does." />
                     </MenuItem>
                     <MenuItem Header="_Help">
                         <MenuItem Name="MenuHelpShortcuts" Header="Keyboard Shortcuts    ?" ToolTip.Tip="Show every keyboard shortcut, using your own key choices. Shortcut: press ?" />
@@ -126,7 +129,7 @@
                                 </Border>
                                 <TextBlock Text="Drag &amp; Drop Videos Here:" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize18}" FontWeight="SemiBold" HorizontalAlignment="Center" IsHitTestVisible="False" />
                                 <TextBlock Text="or" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" HorizontalAlignment="Center" IsHitTestVisible="False" />
-                                <Button Name="CenterUploadButton" Classes="Primary" Content="UPLOAD VIDEO" HorizontalAlignment="Center" ToolTip.Tip="Click here to browse your computer and upload a video file to start editing." Padding="20,10" />
+                                <Button Name="CenterUploadButton" Classes="Primary" Content="OPEN VIDEO" HorizontalAlignment="Center" ToolTip.Tip="Click here to pick a video on this PC and start editing. It stays on your computer; nothing is uploaded." Padding="20,10" />
                                 <TextBlock Text="MP4 · MKV · AVI · MOV" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" HorizontalAlignment="Center" IsHitTestVisible="False" />
                                 <StackPanel Orientation="Horizontal" Spacing="24" HorizontalAlignment="Center" Margin="0,10,0,0" IsHitTestVisible="False">
                                     <StackPanel Spacing="4">
@@ -207,7 +210,7 @@
                     <Button Name="SetThumbnailButton" Classes="Secondary" Padding="16,8" HorizontalAlignment="Left" VerticalAlignment="Center" IsEnabled="False" ToolTip.Tip="Save the exact frame you are looking at right now to be the cover image for your video.">
                         <StackPanel Orientation="Horizontal" Spacing="0" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Path Fill="{DynamicResource AppTextPrimaryBrush}" Width="{DynamicResource AppFontSize18}" Height="{DynamicResource AppFontSize18}" Stretch="Uniform" VerticalAlignment="Center" Data="{DynamicResource AppImageIconGeometry}" />
-                            <TextBlock Name="SetThumbnailText" Text=" SET THUMBNAIL " FontSize="{DynamicResource AppFontSize9}" VerticalAlignment="Center" Margin="6,0,6,0" />
+                            <TextBlock Name="SetThumbnailText" Text=" SET THUMBNAIL " FontSize="{DynamicResource AppFontSize12}" VerticalAlignment="Center" Margin="6,0,6,0" />
                             <Path Fill="{DynamicResource AppTextPrimaryBrush}" Width="{DynamicResource AppFontSize18}" Height="{DynamicResource AppFontSize18}" Stretch="Uniform" VerticalAlignment="Center" Data="{DynamicResource AppImageIconGeometry}" />
                         </StackPanel>
                     </Button>
@@ -232,7 +235,7 @@
                     <Button Name="VoiceOverButton" Classes="VoiceOverEntry" Padding="16,8" HorizontalAlignment="Left" VerticalAlignment="Center" IsEnabled="False" ToolTip.Tip="Record your own voice over the video.">
                         <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Path Fill="{DynamicResource AppOnAccentTextBrush}" Width="{DynamicResource AppFontSize16}" Height="{DynamicResource AppFontSize16}" Stretch="Uniform" VerticalAlignment="Center" Data="{DynamicResource AppVoiceOverIconGeometry}"/>
-                            <TextBlock Name="VoiceOverText" Text="VOICE OVER" FontSize="{DynamicResource AppFontSize9}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Name="VoiceOverText" Text="VOICE OVER" FontSize="{DynamicResource AppFontSize12}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                         </StackPanel>
                     </Button>
 
@@ -301,7 +304,7 @@
                 <Grid RowDefinitions="Auto, Auto">
                     <StackPanel Grid.Row="0" Spacing="10" Margin="0,0,0,15">
                         <TextBlock Text="FILE OPERATIONS" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold"/>
-                        <Button Name="UploadButton" Classes="Primary" Content="UPLOAD VIDEO" HorizontalAlignment="Stretch" ToolTip.Tip="Click here to browse your computer and upload a video file to start editing."/>
+                        <Button Name="UploadButton" Classes="Primary" Content="OPEN VIDEO" HorizontalAlignment="Stretch" ToolTip.Tip="Click here to pick a video on this PC and start editing. It stays on your computer; nothing is uploaded."/>
                         <Button Name="AddMusicButton" Classes="Secondary" HorizontalAlignment="Stretch" IsEnabled="False" ToolTip.Tip="Add a background song to play over your video.">
                             <StackPanel Orientation="Horizontal" Spacing="0" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <Path Fill="{DynamicResource AppTextPrimaryBrush}" Width="{DynamicResource AppFontSize14}" Height="{DynamicResource AppFontSize14}" Stretch="Uniform" VerticalAlignment="Center" Data="{DynamicResource AppMusicNoteIconGeometry}" />
@@ -334,7 +337,7 @@
                             <StackPanel Spacing="18" Margin="0,8,0,0">
 
                                 <StackPanel Spacing="2">
-                                    <TextBlock Text="LAYOUTS" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize9}" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,3"/>
+                                    <TextBlock Text="LAYOUTS" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,3"/>
                                     <Grid ColumnDefinitions="*, Auto">
                                         <TextBlock Text="Portrait (9:16)" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0" />
                                         <ToggleSwitch Name="PortraitModeCheckbox" IsChecked="{Binding IsPortraitMode, Mode=TwoWay}" IsEnabled="False" OnContent="{x:Null}" OffContent="{x:Null}" MinWidth="36" MinHeight="36" Grid.Column="1" AutomationProperties.Name="Portrait mode (9:16)" ToolTip.Tip="Turn this on to make the video tall for mobile phones like TikTok or YouTube Shorts." />
@@ -345,7 +348,7 @@
                                 <Separator Name="InGameOverlaysSeparator" Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,6,0,6"/>
 
                                 <StackPanel Name="InGameOverlaysPanel" Spacing="2">
-                                    <TextBlock Text="IN-GAME OVERLAYS" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize9}" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,3"/>
+                                    <TextBlock Text="IN-GAME OVERLAYS" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,3"/>
                                     <Grid ColumnDefinitions="*, Auto">
                                         <TextBlock Text="Teammate HP" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center" />
                                         <ToggleSwitch Name="TeammatesCheckbox" IsChecked="{Binding IsTeammates, Mode=TwoWay}" IsEnabled="False" OnContent="{x:Null}" OffContent="{x:Null}" MinWidth="36" MinHeight="36" Grid.Column="1" AutomationProperties.Name="Teammate HP overlay" ToolTip.Tip="Turn this on to show your teammates' health in the video." />
@@ -359,7 +362,7 @@
                                 <Separator Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,6,0,6"/>
 
                                 <StackPanel Spacing="2">
-                                    <TextBlock Text="EFFECTS &amp; MEMES" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize9}" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,3"/>
+                                    <TextBlock Text="EFFECTS &amp; MEMES" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,3"/>
                                     <Grid ColumnDefinitions="*, Auto">
                                         <TextBlock Text="Enable Fade" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center" />
                                         <ToggleSwitch Name="EnableFadeCheckbox" IsChecked="{Binding IsEnableFade, Mode=TwoWay}" IsEnabled="False" OnContent="{x:Null}" OffContent="{x:Null}" MinWidth="36" MinHeight="36" Grid.Column="1" AutomationProperties.Name="Enable fade" ToolTip.Tip="Turn this on to make the video slowly fade in at the start and fade out at the end." />

@@ -82,6 +82,8 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   AiQaAudit8Tests.cs                         10 SYS-AIQA8 (AIQA_08)
   AiIntegrationFixTests.cs                   10 SYS-AIINTEG (AIINTEG_01)
   NewVideoCleanTests.cs                      05 SYS-RECOVERY (NEWVIDEOCLEAN_01)
+  ProjectSafetyQaTests.cs                    06 PROJ-DISK | 06 PROJ-CLOSEGUARD | 06 PROJ-INTEGRITY | 06 PROJ-RECENT | 07 | 05 SYS-RECOVERY (QAREG_01)
+  UiQaFixTests.cs                            04 UI-SAFEGUARDS (SHAREFAIL_01, ESCDIALOG_01, FONTMIN_01, MENUDEDUPE_01, OPENVIDEO_01)
   AiFrameCrop.cs                             10 SYS-AIAUDIT6 (AIKILLCROP_01) | 01 TL-AITRACKING
   AiUsageReport.cs                           10 SYS-AIAUDIT6 (AIUSAGEREPORT_01)
   PopupRegionTests.cs                        01 TL-AITRACKING (AIKILLCROP_01) | 10 SYS-AIAUDIT6

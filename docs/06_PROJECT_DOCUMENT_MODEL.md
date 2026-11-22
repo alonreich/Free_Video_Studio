@@ -55,6 +55,7 @@ decide how those chunks render. Nothing derived is ever written to the file.
 
 ## 3. Schema Versioning & The Amputation Rule  {#PROJ-SCHEMA}
 * **PROJMUSIC_01 — schema 9 (2026-11-20):** `ProjectAudio.MusicSongs` is the ordered list of music occurrences (`ProjectMusicSong(Path, FullSec, InSec, OutSec, UserTrimmed)`, JSON `audio.music_songs[]`), so the same song may appear several times, each with its own part; plus `MusicTimelineStartSec` / `MusicTimelineEndSec` / `MusicLoop` / `MusicCarving`. `ProjectSession` writes them from the music result and, when the list is not empty, rebuilds the whole `MusicWizardResult` on open (`MusicResultFromProject`). Missing keys read as before (empty list, carving = the old `sidechain_ducking`). Bumped because the keys live inside `audio`, where a v8 reader keeps no unknown keys and would silently drop every song but the first on save. Equality is elementwise so an unchanged list is a no-op in undo.
+* **PROJFREEZE_01 (2026-11-22, no schema bump):** the main-screen freeze frame and the portrait overlay text are part of the edit, so they are stored as root keys `freeze` (`time_ms`, -1 = none; `duration_s`) and `overlay_text`. Older readers keep unknown ROOT keys (PROJ_03), so no bump is needed; missing keys read as no freeze and no text. `ProjectSession.Capture` / `Apply` carry them and `ProjectDocument.Equals` compares them (with `Captions`, CAPTIONUNDO_01), so they are undoable and mark the project unsaved. **LEGACYMUSIC_01 / UNDOMUSIC_01:** `Apply` sets the music result from the document every time: the song list (schema 9), else the single legacy `music_path` (`LegacyMusicResult`, start point, volumes, ducking), else no music, so undoing "add music" also removes it from the export and an older project never keeps the previous session's song.
 * **VOLEVEL_01 — schema 8:** each voice take stores optional `gain` (linear 0–1.5; missing/null = 1). `VoiceOverTakeJson` is shared by project and main-session recovery serialization. Gain participates in take equality, project dirty state and undo/redo. Old projects retain 100%; older writers cannot read schema 8 and silently discard nested gain. WAV samples are unchanged; gain is applied once on playback/export.
 * **MEMEAUDIT_01 — schema 7:** each meme object may carry `clipIn` (seconds into the file), `posX` / `posY` (dragged corner position, −1 = in its corner), `animation` (`none` | `fade` | `slide`) and `transition` (`cut` | `fade` | `zoom`), via `MemePresentationJson`. Missing keys read as the old behaviour. Bumped for the same reason as schema 4: the keys live inside a meme object, so a v6 reader would play a trimmed meme in full and drop them on save.
 * **CAPTIONS_01 — schema 6:** added `Captions` (`CaptionTrack?`), storing AI Live Commentary Captions lines, words, styling, tone, and placement. Serialized reflection-free via `CaptionTrackJson`. Legacy schema 1-5 documents roundtrip with `Captions = null`. Unrecognized future fields are preserved via the Amputation Rule.
@@ -147,6 +148,7 @@ fixed by muting it again — the rule is fix, or annotate one statement with a r
   folder holding five numbered copies of every montage is its own kind of damage. A zero-length live
   file is never promoted over a good backup. A failed backup never blocks a save.
 * **Damaged live file falls back to the backup, and SAYS SO.** `Load` reports `loadedFromBackup`.
+* **NEWERREFUSE_01 — a newer-version file never falls back.** When the live file is refused because its `schema_version` is above `SchemaVersion`, `Load` returns that refusal and does NOT open the `.bak` (which may be an older format): opening it would label a healthy file "damaged" and the next saves would overwrite the newer work.
   A user shown yesterday's version without being told will keep editing and re-save over the good
   copy.
 * **Failure is returned, never thrown.** A save that throws out of a close handler is how an app
@@ -175,6 +177,7 @@ fixed by muting it again — the rule is fix, or annotate one statement with a r
   nagging about every one of them trains the warning away.
 * **PROJ_10 — every numeric read tries every numeric backing.** `SizeBytes` and `ModifiedUtcSeconds` are `long`; `JsonValue.TryGetValue<double>` is exact-type and returns false on a long, so a double-only reader loaded 0 and `CheckSource` answered `Changed` for every reopened project. `ReadLong` exists because `(long)ReadDouble(...)` rounds past 2^53. A warning that is always on is a warning that is off.
 * **`Missing` never blocks opening.** The project loads so the user can relink.
+* **RELINK_01:** on `Missing`, `ProjectSession.OpenAsync` asks where the video is now (`LocateMovedVideoAsync`, file picker filtered to the original extension). A chosen file is probed into `Source` and the project is marked unsaved; cancelling still opens the edits with a warning. Never a Fatal.
 
 ---
 
@@ -193,6 +196,7 @@ fixed by muting it again — the rule is fix, or annotate one statement with a r
   out and a non-text `title` falls back to the file name; the entries after it are still read. The read
   used to stop at the first such entry, and the next `Touch` wrote the shortened list back.
 * **A damaged recent list is cosmetic.** It must never stop the app starting, and never surface as an
+* **RECENTMENU_01 (2026-11-22):** `ProjectSession` touches the list after every successful save and open (`TouchRecent`, on the I/O queue); File › Open Recent (`MainWindow.OnMenuOpenRecentOpened`) lists it, greys missing entries and opens a row through `ProjectSession.OpenAsync(path)`. File also has Open Project / Save Project / Save Project As (same commands as Ctrl+O / Ctrl+S / Ctrl+Shift+S).
   error to dismiss on every launch.
 
 ---
@@ -239,6 +243,10 @@ The model and its persistence exist and are unit-tested
 * **`NEWVIDEOGUARD_01` — loading another video never silently wipes edits.** Upload, drag-and-drop and an Explorer hand-off all go through `LoadVideoIntoEditorAsync`, which first calls `MainWindow.ConfirmReplaceLoadedVideoAsync`: no prompt when nothing is loaded, when no edit was made yet (`HasUnsavedWork` false: no mark start/end, cut, speed, music, voice, meme, thumbnail…) or right after a successful PROCESS (DONECLEAN_01); otherwise the UNSAVEDPROJ_01 three-way question ("…before you open another video?"), where only Save changes or Discard changes loads the new video. A second request while the question is open is ignored.
 * **`DONECLEAN_01` — a finished export closes without questions.** See 05 SYS-RECOVERY: after a successful PROCESS (or MERGE in the Merger) with no edit since, closing skips the save question and leaves an empty state for the next start.
 * **`PROJECTLABEL_01`** — the Save/Open project picker's file type is named "Free Video Studio project".
+* **`VMVIDEO_01` — the editor's loaded video lives in the view model.** `MainWindow._loadedVideoPath` is a proxy of `MainViewModel.LoadedVideoPath`. It used to be a separate field, so the view model never knew a video was loaded: `HasUnsavedWork` was always false (no save question on close, new video or tool switch; crash recovery cleared instead of saved), Save As refused with "Load a video before saving a project." and autosave never ran.
+* **`NEWVIDEOPATH_01`:** `ProjectSession.BeginHistory` (a new video loaded) starts an untitled, clean document (`CurrentPath = null`), so Ctrl+S and autosave never write a new video's edits into the previous project file.
+* **`PROJVIDEO_01`:** opening a project binds the editor to the project's video (`LoadedVideoPath`, duration) before applying its edits and raises `ProjectVideoChanged`; `MainWindow.ShowProjectVideoAsync` loads it in the player WITHOUT resetting the just-applied edits or the history. Saving afterwards keeps the project linked to its own footage.
+* **Tests:** `tests/FreeVideoStudio.App.Tests/ProjectSafetyQaTests.cs` (QAREG_01).
 
 ---
 

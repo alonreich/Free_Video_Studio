@@ -28,11 +28,15 @@ public static class ProjectSerializer
 
     private const string KeyCaptions = "captions";
 
+    private const string KeyFreeze = "freeze";
+
+    private const string KeyOverlayText = "overlay_text";
+
     private static readonly HashSet<string> KnownKeys = new(StringComparer.Ordinal)
     {
         KeyFormat, KeySchema, KeyTitle, KeyCreated, KeyModified, KeySource, KeyBaseSpeed,
         KeyCutStart, KeyTrimmed, KeySegments, KeyCuts, KeyMemes, KeyAudio, KeyExport,
-        KeyMask, KeyMerge, KeyCaptions,
+        KeyMask, KeyMerge, KeyCaptions, KeyFreeze, KeyOverlayText,
     };
 
     public static JsonObject Write(ProjectDocument doc)
@@ -70,6 +74,8 @@ public static class ProjectSerializer
         root[KeyBaseSpeed] = doc.BaseSpeed;
         root[KeyCutStart] = doc.SourceCutStartMs;
         root[KeyTrimmed] = doc.TrimmedDurationMs;
+        root[KeyFreeze] = new JsonObject { ["time_ms"] = doc.FreezeTimeMs, ["duration_s"] = doc.FreezeDurationS };
+        root[KeyOverlayText] = doc.OverlayText ?? string.Empty;
 
         JsonArray segments = new();
         foreach (SpeedSegment s in doc.Segments)
@@ -360,6 +366,9 @@ public static class ProjectSerializer
         }
 
         CaptionTrack? captions = CaptionTrackJson.Read(root[KeyCaptions]);
+        JsonObject? freezeObj = root[KeyFreeze] as JsonObject;
+        double freezeMs = ReadDouble(freezeObj, "time_ms", -1);
+        double freezeSec = ReadDouble(freezeObj, "duration_s", 1.0);
 
         return new ProjectDocument
         {
@@ -373,6 +382,9 @@ public static class ProjectSerializer
             Mask = mask,
             Merge = merge,
             Captions = captions,
+            FreezeTimeMs = double.IsFinite(freezeMs) && freezeMs >= 0 ? freezeMs : -1,
+            FreezeDurationS = double.IsFinite(freezeSec) && freezeSec > 0 ? freezeSec : 1.0,
+            OverlayText = ReadString(root, KeyOverlayText, string.Empty) ?? string.Empty,
             Segments = segments,
             Cuts = cuts,
             Memes = memes,

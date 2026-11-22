@@ -158,29 +158,6 @@ public partial class MainWindow
         if (menuVideoMerger != null) menuVideoMerger.Click += async (s, e) =>
             await SwitchToCompanionAppAsync("--merger", "Video Merger");
 
-        var menuShowShortcuts = this.FindControl<MenuItem>("MenuShowShortcuts");
-        if (menuShowShortcuts != null) menuShowShortcuts.Click += (s, e) =>
-        {
-            var sheet = ShortcutSheetOverlayCtl;
-            if (sheet == null) return;
-            if (!sheet.IsVisible) BuildShortcutSheetRows();
-            sheet.IsVisible = !sheet.IsVisible;
-            RuntimeLog.Info("UI", $"Keyboard shortcut sheet {(sheet.IsVisible ? "opened" : "closed")} from the View menu.");
-        };
-
-        var menuShowHelp = this.FindControl<MenuItem>("MenuShowHelp");
-        if (menuShowHelp != null) menuShowHelp.Click += (s, e) => CoachOverlay.Replay(this);
-
-        var menuAboutBtn = this.FindControl<MenuItem>("MenuAboutBtn");
-        if (menuAboutBtn != null)
-        {
-            menuAboutBtn.Click += async (s, e) =>
-            {
-                RuntimeLog.Info("UI", "User clicked File -> About.");
-                await OpenSettingsAsync(owner => FreeVideoStudio.App.Controls.SettingsWindow.ShowAboutAsync(owner, SettingsServices));
-            };
-        }
-
         var menuHelpAbout = this.FindControl<MenuItem>("MenuHelpAbout");
         if (menuHelpAbout != null)
         {

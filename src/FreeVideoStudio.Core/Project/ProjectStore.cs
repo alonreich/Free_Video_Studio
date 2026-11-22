@@ -73,6 +73,7 @@ public static class ProjectStore
 
         ProjectDocument? doc = TryReadOne(path, out error);
         if (doc != null) return doc;
+        if (IsFromANewerVersion(path)) return null;
 
         string backup = path + BackupSuffix;
         if (!File.Exists(backup)) return null;
@@ -121,6 +122,22 @@ public static class ProjectStore
             CoreLogger.Fail("PROJECT", $"Load failed: {ex}");
             error = "The project could not be opened. The log has the details.";
             return null;
+        }
+    }
+
+    private static bool IsFromANewerVersion(string path)
+    {
+        try
+        {
+            JsonObject? root = AtomicJsonFile.ReadObject(path);
+            if (root?["schema_version"] is not JsonValue value) return false;
+            long schema = value.TryGetValue(out long l) ? l : value.TryGetValue(out double d) ? (long)d : 0;
+            return schema > ProjectDocument.SchemaVersion;
+        }
+        catch (Exception ex)
+        {
+            CoreLogger.Swallowed(ex);
+            return false;
         }
     }
 

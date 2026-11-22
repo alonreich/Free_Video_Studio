@@ -57,7 +57,7 @@ public sealed class UxAudit2Tests
     {
         string message = SingleInstanceGuard.HandoffFailureMessage(@"C:\clips\match 12.mp4");
         Assert.Contains("match 12.mp4", message);
-        Assert.Contains("UPLOAD VIDEO", message);
+        Assert.Contains("OPEN VIDEO", message);
         Assert.Contains("HandoffFailedNotifier(", Src("SingleInstanceGuard.cs"));
     }
 

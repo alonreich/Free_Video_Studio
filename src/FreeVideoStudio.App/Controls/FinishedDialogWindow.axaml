@@ -39,7 +39,8 @@
             <Button Grid.Row="0" HorizontalAlignment="Right"
                     Classes="CloseBtn" Content="✕"
                     AutomationProperties.Name="Close dialog"
-                    ToolTip.Tip="Close dialog"
+                    ToolTip.Tip="Close dialog (Esc)"
+                    IsCancel="True"
                     Click="OnCloseClicked" />
 
             <StackPanel Grid.Row="1" Spacing="12" VerticalAlignment="Center">
@@ -47,6 +48,9 @@
                            Text="File successfully saved to:&#x0a;..."
                            FontSize="{DynamicResource AppFontSize16}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}"
                            TextAlignment="Center" HorizontalAlignment="Center" TextWrapping="Wrap"/>
+                <TextBlock Name="ShareStatusText" IsVisible="False"
+                           FontSize="{DynamicResource AppFontSize12}" FontWeight="SemiBold" Foreground="{DynamicResource AppWarningBrush}"
+                           TextAlignment="Center" HorizontalAlignment="Center" TextWrapping="Wrap" MaxWidth="720"/>
                 <Border Name="AttributionCard" IsVisible="False" Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppWarningBrush}" BorderThickness="1.5" CornerRadius="8" Padding="14,10" MaxWidth="720" HorizontalAlignment="Center">
                     <Grid RowDefinitions="Auto, Auto" ColumnDefinitions="*, Auto">
                         <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="8">
