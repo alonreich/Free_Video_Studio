@@ -47,60 +47,80 @@ public sealed class ProjectSafetyQaTests : IDisposable
     public async Task EditedVideo_ClosingTheAppAsksToSaveChanges()
     {
         var editor = await EditorWithVideoAsync();
-        MarkEndAt(editor, 12);
-        bool closes = await (Task<bool>)Call(editor.Window, "ConfirmProjectDiscardOnCloseAsync")!;
-        Assert.True(_notifier.SavePrompts == 1, "Closing after an edit must ask Save / Back to editing / Discard; the app closed silently and the edit was lost.");
-        Assert.False(closes);
+        try
+        {
+            MarkEndAt(editor, 12);
+            bool closes = await (Task<bool>)Call(editor.Window, "ConfirmProjectDiscardOnCloseAsync")!;
+            Assert.True(_notifier.SavePrompts == 1, "Closing after an edit must ask Save / Back to editing / Discard; the app closed silently and the edit was lost.");
+            Assert.False(closes);
+        }
+        finally { await SettleAsync(editor); }
     }
 
     [AvaloniaFact]
     public async Task EditedVideo_OpeningAnotherVideoAsksFirst()
     {
         var editor = await EditorWithVideoAsync();
-        MarkEndAt(editor, 12);
-        bool replaces = await (Task<bool>)Call(editor.Window, "ConfirmReplaceLoadedVideoAsync", NewFile("other.mp4"))!;
-        Assert.True(_notifier.SavePrompts == 1, "NEWVIDEOGUARD_01: loading another video over edits must ask first; the edits were wiped without a question.");
-        Assert.False(replaces);
+        try
+        {
+            MarkEndAt(editor, 12);
+            bool replaces = await (Task<bool>)Call(editor.Window, "ConfirmReplaceLoadedVideoAsync", NewFile("other.mp4"))!;
+            Assert.True(_notifier.SavePrompts == 1, "NEWVIDEOGUARD_01: loading another video over edits must ask first; the edits were wiped without a question.");
+            Assert.False(replaces);
+        }
+        finally { await SettleAsync(editor); }
     }
 
     [AvaloniaFact]
     public async Task EditedVideo_IsKeptForCrashRecovery()
     {
         var editor = await EditorWithVideoAsync();
-        MarkEndAt(editor, 12);
-        Call(editor.Window, "SaveRecoveryState", true, false, "flush", null);
-        string recoveryFile = ApplicationPaths.CreateDefault().RecoveryStateFile;
-        Assert.True(File.Exists(recoveryFile), "RECOVERYFULL_01: after an edit the crash-recovery file must hold the work; it was cleared instead.");
-        Assert.Contains(Path.GetFileName(editor.Video), File.ReadAllText(recoveryFile), StringComparison.OrdinalIgnoreCase);
+        try
+        {
+            MarkEndAt(editor, 12);
+            Call(editor.Window, "SaveRecoveryState", true, false, "flush", null);
+            string recoveryFile = ApplicationPaths.CreateDefault().RecoveryStateFile;
+            Assert.True(File.Exists(recoveryFile), "RECOVERYFULL_01: after an edit the crash-recovery file must hold the work; it was cleared instead.");
+            Assert.Contains(Path.GetFileName(editor.Video), File.ReadAllText(recoveryFile), StringComparison.OrdinalIgnoreCase);
+        }
+        finally { await SettleAsync(editor); }
     }
 
     [AvaloniaFact]
     public async Task EditedVideo_SaveProjectWritesAProjectForThatVideo()
     {
         var editor = await EditorWithVideoAsync();
-        MarkEndAt(editor, 12);
-        string project = Path.Combine(_root, "montage.fvsproj");
-        _picker.NextSave = project;
-        bool saved = await Session(editor.Window).SaveAsAsync();
-        Assert.True(saved, "Ctrl+Shift+S with a loaded, edited video must save; it answered: " + string.Join(" | ", _notifier.Notices));
-        ProjectDocument? reopened = ProjectStore.Load(project, out _, out _);
-        Assert.NotNull(reopened);
-        Assert.Equal(editor.Video, reopened!.Source.FilePath, ignoreCase: true);
+        try
+        {
+            MarkEndAt(editor, 12);
+            string project = Path.Combine(_root, "montage.fvsproj");
+            _picker.NextSave = project;
+            bool saved = await Session(editor.Window).SaveAsAsync();
+            Assert.True(saved, "Ctrl+Shift+S with a loaded, edited video must save; it answered: " + string.Join(" | ", _notifier.Notices));
+            ProjectDocument? reopened = ProjectStore.Load(project, out _, out _);
+            Assert.NotNull(reopened);
+            Assert.Equal(editor.Video, reopened!.Source.FilePath, ignoreCase: true);
+        }
+        finally { await SettleAsync(editor); }
     }
 
     [AvaloniaFact]
     public async Task UndoingAddMusic_LeavesNoMusicInTheExport()
     {
         var editor = await EditorWithVideoAsync();
-        editor.Vm.MusicWizardResult = Music(NewFile("song.mp3"), 0, 30);
-        Call(editor.Window, "SetMusicButtonActive", true);
-        ProjectSession session = Session(editor.Window);
-        Assert.True(session.CanUndo);
-        session.Undo();
-        Assert.False(editor.Vm.IsMusicActive);
-        var payload = await (Task<ExportPayload>)Call(editor.Window, "ComposeExportPayloadAsync", _root, null, 3, null, null)!;
-        Assert.True(payload.MusicTracks is null || payload.MusicTracks.Count == 0,
-            $"Ctrl+Z removed the music from the editor, but the export still carries {payload.MusicTracks?.Count} music segment(s).");
+        try
+        {
+            editor.Vm.MusicWizardResult = Music(NewFile("song.mp3"), 0, 30);
+            Call(editor.Window, "SetMusicButtonActive", true);
+            ProjectSession session = Session(editor.Window);
+            Assert.True(session.CanUndo);
+            session.Undo();
+            Assert.False(editor.Vm.IsMusicActive);
+            var payload = await (Task<ExportPayload>)Call(editor.Window, "ComposeExportPayloadAsync", _root, null, 3, null, null)!;
+            Assert.True(payload.MusicTracks is null || payload.MusicTracks.Count == 0,
+                $"Ctrl+Z removed the music from the editor, but the export still carries {payload.MusicTracks?.Count} music segment(s).");
+        }
+        finally { await SettleAsync(editor); }
     }
 
     [AvaloniaFact]
@@ -345,6 +365,18 @@ public sealed class ProjectSafetyQaTests : IDisposable
         string video = NewFile("clip.mp4");
         await (Task)Call(window, "LoadVideoIntoEditorAsync", video, "uploaded")!;
         return new Editor(window, (MainViewModel)window.DataContext!, ipc, video);
+    }
+
+    private static async Task SettleAsync(Editor editor)
+    {
+        var probe = typeof(MainWindow).GetField("_peakProbeCts", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(editor.Window) as CancellationTokenSource;
+        try { probe?.Cancel(); } catch (ObjectDisposedException) { }
+        WholeVideoFilmstrip.Clear();
+        for (int i = 0; i < 10; i++)
+        {
+            await Task.Delay(50);
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        }
     }
 
     private static void MarkEndAt(Editor editor, double seconds)
