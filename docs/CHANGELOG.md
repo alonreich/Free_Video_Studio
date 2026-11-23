@@ -9,6 +9,9 @@ What people who use Free Video Studio read: plain-English notes about what chang
 ---
 
 ## Upcoming
+
+## v2026.11.23.0836 — 2026-11-23
+
 - **AI Commentary Captions, Clarified:** Writes timed on-screen captions in fewer, bigger pieces, so it is faster and follows the whole story. It says plainly what the AI is doing and why it waits, shows whether your AI hears game audio, and right-click rewrites a line. Online-only buttons are dimmed in PC-only mode.
 - **AI Smart Zoom:** Pick who to follow across three clear pictures, check, then Keep, Fix Tracking or Discard. Following now always runs on your PC (faster, steadier, any length), the camera no longer pumps on tracker wobbles, lost targets are searched for again, and the bottom HUD stays clear.
 - **One Simple AI Setup, Windows That Fit:** Three steps: open the key page, come back, connected. The free Google key is recommended; Claude Pro/Max and ChatGPT plans cannot be used here yet. Windows fit your screen, open where you work and return if a monitor is unplugged. Video Quality starts at Good+.

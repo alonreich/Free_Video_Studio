@@ -15,6 +15,9 @@ What ENGINEERS and AI agents read: every change, in technical terms, as it happe
 ---
 
 ## Unreleased
+
+## v2026.11.23.0836 — 2026-11-23
+
 - 2026-11-22 · RELNOPROMPT_01 · Owner decision: Build.cmd no longer asks to type PUBLISH; running it is the confirmation. ReleaseGate.Confirm only logs; --yes is ignored; FVS_RELEASE_UNATTENDED and RELQA_02 retired. All other release-gate checks unchanged. 09 DIST-RELEASEGATE (build/FvsBuild/ReleaseGate.cs, Program.cs, build/sentinels.txt, docs)
 - 2026-11-22 · VMVIDEO_01 · MainWindow kept the loaded video in a private field and never set MainViewModel.LoadedVideoPath, so HasUnsavedWork was always false: no save question on close/new video/tool switch, recovery cleared instead of saved, Save As refused, autosave never ran. _loadedVideoPath now proxies the view model. 06 PROJ-CLOSEGUARD (MainWindow.axaml.cs)
 - 2026-11-22 · NEWVIDEOPATH_01 / PROJVIDEO_01 / RELINK_01 · BeginHistory (new video) clears CurrentPath, so Ctrl+S/autosave never overwrite the previous project. Open binds LoadedVideoPath to the project's video and MainWindow.ShowProjectVideoAsync loads it without resetting edits. A missing video asks where it is now; cancel still opens. 06 PROJ-CLOSEGUARD, PROJ-INTEGRITY (ProjectSession.cs, MainWindow.Project.cs)
