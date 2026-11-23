@@ -144,9 +144,9 @@ public class SharedHistoryMigrationTests
     [Fact]
     public void UndoStack_TouchGestureExtendsOnlyTheOpenGesture()
     {
-        var s = new UndoStack<MusicWizardSnapshot>(Music(), gestureIdleMs: 250);
+        var s = new UndoStack<MusicWizardSnapshot>(Music(), gestureIdleMs: 1500);
         s.Apply(Music(music: 90), "m", "k");
-        for (int i = 0; i < 4; i++) { Thread.Sleep(120); s.TouchGesture("k"); }
+        for (int i = 0; i < 4; i++) { Thread.Sleep(500); s.TouchGesture("k"); }
         s.Apply(Music(music: 80), "m", "k");
         Assert.Equal(1, s.UndoCount);
 
