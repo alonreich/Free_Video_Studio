@@ -1,4 +1,3 @@
-﻿
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,10 +11,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// MPVSHUTDOWN_01 / VOAPPLY_02 / VOAPPLY_04 / VOAPPLY_05 — preview teardown and shutdown coordinator tests.
-/// Verifies idempotency, quiescence, gate handling, off-dispatcher execution, and handle abandonment protection.
-/// </summary>
 public sealed class PreviewShutdownTests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
@@ -130,36 +125,31 @@ public sealed class PreviewShutdownTests
     {
         Assert.True(Dispatcher.UIThread.CheckAccess());
 
-        var releaseStarted = new ManualResetEventSlim(false);
-        var blockRelease = new ManualResetEventSlim(false);
-
-        int timeoutMs = 200;
-        var backgroundWorker = Task.Run(() =>
-        {
-            releaseStarted.Set();
-            blockRelease.Wait();
-            return PreviewShutdownResult.Ok;
-        });
-
-        Assert.True(releaseStarted.Wait(TimeSpan.FromSeconds(2)));
-
+        var host = new MpvVideoView();
+        var blockedRelease = new TaskCompletionSource<PreviewShutdownResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        host.ActiveNativeReleaseTask = blockedRelease.Task;
         int heartbeatCount = 0;
-        var timer = new DispatcherTimer(
-            TimeSpan.FromMilliseconds(20),
-            DispatcherPriority.Normal,
+        var timer = new DispatcherTimer(TimeSpan.FromMilliseconds(20), DispatcherPriority.Normal,
             (s, e) => Interlocked.Increment(ref heartbeatCount));
         timer.Start();
-
-        var timeoutTask = Task.Delay(timeoutMs);
-        var completed = await Task.WhenAny(backgroundWorker, timeoutTask);
-        Assert.Same(timeoutTask, completed);
-
-        await Task.Delay(100);
-        timer.Stop();
-        Assert.True(heartbeatCount > 0, "Dispatcher heartbeat was stalled by background teardown wait.");
-
-        blockRelease.Set();
-        await backgroundWorker.WaitAsync(Timeout);
+        try
+        {
+            using var bound = new CancellationTokenSource(200);
+            var result = await host.ShutdownAsync(bound.Token).WaitAsync(Timeout);
+            Assert.False(result.Succeeded);
+            Assert.Equal(PreviewShutdownStatus.Failed, result.Status);
+            Assert.False(blockedRelease.Task.IsCompleted);
+            Assert.True(heartbeatCount > 0, "Production ShutdownAsync stalled the dispatcher.");
+            Assert.All(host.PresentGates, gate => Assert.Equal(1, gate.CurrentCount));
+            blockedRelease.SetResult(PreviewShutdownResult.Ok);
+            Assert.True((await host.ShutdownAsync().WaitAsync(Timeout)).Succeeded);
+        }
+        finally
+        {
+            timer.Stop();
+            blockedRelease.TrySetResult(PreviewShutdownResult.Ok);
+            await host.ShutdownAsync().WaitAsync(Timeout);
+        }
     }
 
     [Fact]

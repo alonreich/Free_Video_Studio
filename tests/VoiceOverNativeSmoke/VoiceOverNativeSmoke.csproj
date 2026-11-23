@@ -6,9 +6,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <NuGetAudit>false</NuGetAudit>
-    <!-- MICSMOKE_01: opt-in hardware smoke. PublishAot applies to `dotnet publish` only, so the
-         published exe exercises the production capture classes under NativeAOT - the failure mode
-         (WaveHeaderUnprepared) disappears under JIT. Never run in CI. -->
     <PublishAot>true</PublishAot>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>

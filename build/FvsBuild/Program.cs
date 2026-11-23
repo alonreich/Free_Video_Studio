@@ -2,17 +2,6 @@
 
 namespace FvsBuild;
 
-/// <summary>
-/// FvsBuild - structured replacement for the old monolithic Build.cmd.
-/// Pipeline: [release gate: preflight -> version commit + tag (RELGATE_01)] -> stop this repository's
-/// processes (BUILDKILL_01) -> clean -> detect MSVC toolchain -> NativeAOT publish to staging -> PE identity
-/// (PEIDENTITY_01) -> sign the program -> stage backend/frontend/starter files -> manifests -> smart-update
-/// assets + signed file list -> Inno Setup installer into .\compiled (NODROPPER_01) -> sign it -> release
-/// update.json -> validate exactly one file -> cleanup -> [push commit + tag -> GitHub release from that tag
-/// -> promote the release notes (RELNOTES_01)].
-/// Exit codes (consumed by CI and by Build.cmd): 0 = OK, 1 = BUILD FAILED (or the release gate refused),
-/// 2 = build OK but the GitHub publish did not complete.
-/// </summary>
 internal static class Program
 {
     private const int ExitOk = 0;
@@ -21,6 +10,11 @@ internal static class Program
 
     private static int Main(string[] args)
     {
+        if (args.Contains("--dev-runtime") && args.Length != 1)
+        {
+            Console.Error.WriteLine("--dev-runtime must be used alone; no release pipeline was started.");
+            return ExitBuildFailed;
+        }
         bool noPublish = args.Any(a => a.Equals("--no-publish", StringComparison.OrdinalIgnoreCase));
         bool devMode = args.Any(a => a.Equals("--dev", StringComparison.OrdinalIgnoreCase));
         bool stageOnly = args.Any(a => a.Equals("--stage-only", StringComparison.OrdinalIgnoreCase));
@@ -33,7 +27,7 @@ internal static class Program
             Console.WriteLine("Usage: FvsBuild [--no-publish] [--dev] [--beta] [--yes] [--stage-only]");
             Console.WriteLine("  (default)     official STABLE release: release gate, build, publish to GitHub as latest");
             Console.WriteLine("  --beta        official BETA release: published as a pre-release (Beta update channel only)");
-            Console.WriteLine("  --yes         skip the 'type PUBLISH' confirmation; also needs FVS_RELEASE_UNATTENDED=1 (RELQA_02)");
+            Console.WriteLine("  --yes         accepted for old scripts; there is no confirmation prompt (RELNOPROMPT_01)");
             Console.WriteLine("  --resume      finish the last release whose commit + tag were pushed but whose publish or");
             Console.WriteLine("                notes promotion failed. Builds nothing (RELRESUME_01).");
             Console.WriteLine("  --protect-root-key  give the publisher root key its own passphrase (ROOTKEY_01).");
@@ -46,6 +40,15 @@ internal static class Program
         }
 
         Environment.CurrentDirectory = FindRepoRoot();
+        if (args.Length == 1 && args[0] == "--dev-runtime")
+        {
+            string destination = Path.GetFullPath(".dev-run/app");
+            Directory.CreateDirectory(destination);
+            using BuildLog runtimeLog = new(Path.GetFullPath(".dev-run/staging.log"));
+            if (!Staging.StageDependencies(runtimeLog, destination)) return ExitBuildFailed;
+            FreeVideoStudio.Core.Infrastructure.RuntimePayloadManifest.FromFolder(destination).Write(destination);
+            return ExitOk;
+        }
         try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch (IOException) { }
 
         DateTimeOffset started = DateTimeOffset.Now;
@@ -211,7 +214,7 @@ internal static class Program
             log.Warn("BUILD OK - but the release was NOT published.");
             log.Warn($"The commit and tag {tag} ARE on GitHub; only the release itself is missing (reason above).");
             log.Warn("docs/CHANGELOG.md still has its notes under '## Upcoming'. Finish THIS release with: Build.cmd --resume (RELRESUME_01).");
-            log.Warn(".\\compiled\\FreeVideoStudio-Setup.exe is good and usable.");
+            log.Warn(".\\compiled\\FreeVideoStudio.exe is good and usable.");
             log.Banner("###########################################################");
             log.WriteVerdictAndClose(ExitPublishIncomplete, DateTimeOffset.Now - started);
             return ExitPublishIncomplete;
@@ -223,10 +226,6 @@ internal static class Program
         }
     }
 
-    /// <summary>
-    /// RELRESUME_01 — finishes the last release from what its own run left behind: publishes it (or replaces
-    /// its unverified draft) and records its notes. Builds and stamps nothing.
-    /// </summary>
     private static int RunResume(BuildLog log, bool beta, bool assumeYes, DateTimeOffset started)
     {
         ReleaseGate.ResumePlan? resume = ReleaseGate.PreflightResume(beta, assumeYes, log);
@@ -254,17 +253,12 @@ internal static class Program
         return ExitOk;
     }
 
-    /// <summary>RELGATE_01 — a failed release build takes its version commit and tag back with it.</summary>
     private static int FailRelease(ReleasePlan? plan, BuildLog log, DateTimeOffset started)
     {
         if (plan is not null) ReleaseGate.Undo(plan, log);
         return FailBuild(log, started);
     }
 
-    /// <summary>
-    /// The :BUILD_NATIVE ladder. NODROPPER_01: ONE NativeAOT publish (the program); the release is
-    /// packed by Inno Setup, not embedded in a second program.
-    /// </summary>
     private static bool RunNativeAotStages(BuildLog log, string buildVersion)
     {
         Staging.PurgeTempArtifacts(log);
@@ -279,6 +273,7 @@ internal static class Program
         }
         if (!PeIdentity.FixOriginalFilename(Staging.StagedProgramPath, log)) return false;
         if (!CodeSigning.SignIfNeeded(Staging.StagedProgramPath, log)) return false;
+        if (!CodeSigning.SignDependenciesWhenPubliclyTrusted(Staging.StagingDirPath, Staging.StagedProgramPath, log)) return false;
         if (!Staging.WriteManifests(log))
         {
             return false;

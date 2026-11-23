@@ -9,10 +9,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// AICOMMENTARY_UI_01, AIUNDO_01 — unit tests for AI Commentary dialog models,
-/// consent persistence, and session undo/redo parity.
-/// </summary>
 public sealed class AiCommentaryUiTests
 {
     [Fact]

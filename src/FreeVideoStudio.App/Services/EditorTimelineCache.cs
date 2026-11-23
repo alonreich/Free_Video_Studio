@@ -2,7 +2,6 @@
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>GRANULARPERF_01 — UI-owned timeline snapshots; unchanged reads allocate no strings or lists.</summary>
 public sealed class EditorTimelineCache
 {
     private OutputTimeline? _timeline;

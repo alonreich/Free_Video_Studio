@@ -1,9 +1,8 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>UPGRADE_03 — durable, restartable directory replacement. Backups survive confirmation.</summary>
 public sealed class DirectoryUpgrade
 {
     public const int RetentionDays = 30;
@@ -77,9 +76,6 @@ public sealed class DirectoryUpgrade
         return new DirectoryUpgrade(directory, journal);
     }
 
-    /// <summary>Existing destination wins; conflicting legacy files are permanently preserved.</summary>
-    /// <param name="progress">UPGRADEUX_01 — fraction (0..1) of the existing files already carried
-    /// into the candidate. Reporting only; it never changes what is copied.</param>
     public void Prepare(Action<string>? completeCandidate = null, Func<string, bool>? include = null, Action<double>? progress = null)
     {
         if (Phase != "Preparing") throw new InvalidOperationException("Upgrade was already prepared.");
@@ -195,9 +191,6 @@ public sealed class DirectoryUpgrade
         Persist();
     }
 
-    /// <param name="supersededByNewer">ONEBACKUP_01 — a NEWER update has been committed since this one.
-    /// Its backup is then removed regardless of age: only the latest previous version is kept, which is
-    /// all a rollback ever needs. Every update used to leave a full copy for 30 days.</param>
     public bool PruneBackup(DateTimeOffset now, bool supersededByNewer = false)
     {
         if (Phase != "Committed" || ConfirmedAt is not { } at) return false;

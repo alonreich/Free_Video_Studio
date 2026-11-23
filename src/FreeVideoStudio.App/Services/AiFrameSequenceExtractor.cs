@@ -11,22 +11,12 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AIFRAMESEQ_01 (docs/05 SYS-AISETTINGS) — frame-sequence fallback extraction for AI providers
-/// that lack native video file upload (Anthropic Claude, OpenAI).
-/// Samples video segments at a fixed frame rate (default 2 fps, 640 px width) and produces
-/// timestamp-labelled <see cref="AiImageInput"/> frames respecting provider image limits.
-/// </summary>
 public static class AiFrameSequenceExtractor
 {
     public const double DefaultFps = 2.0;
     public const int DefaultWidth = 640;
     public const int DefaultMaxImagesPerRequest = 60;
 
-    /// <summary>
-    /// Samples frames across [<paramref name="startSec"/>, <paramref name="startSec"/> + <paramref name="durationSec"/>]
-    /// at <paramref name="fps"/> rate, scaled to <paramref name="targetWidth"/> (maintaining aspect ratio).
-    /// </summary>
     public static async Task<IReadOnlyList<AiImageInput>> SampleFramesAsync(
         string videoPath,
         double startSec,
@@ -69,15 +59,21 @@ public static class AiFrameSequenceExtractor
                 pattern
             }) psi.ArgumentList.Add(arg);
 
+            log?.Invoke($"FFmpeg: sampling frames ({durationSec.ToString("0.0", ci)}s @ {fps} fps, {targetWidth}px wide)…");
             var (exitCode, _, stderr) = await AsyncProcessRunner.RunAsync(psi, TimeSpan.FromSeconds(30), ct).ConfigureAwait(false);
+            string[] extractedFiles = Directory.GetFiles(tempDir, "frame_*.jpg")
+                .OrderBy(f => f, StringComparer.Ordinal)
+                .ToArray();
+
+            if (exitCode != 0 && extractedFiles.Length == 0)
+            {
+                string detail = FreeVideoStudio.Core.Diagnostics.SecretRedactor.RedactSecrets(GeminiClient.Truncate(stderr, 240));
+                throw new InvalidOperationException($"FFmpeg failed to extract frames (exit {exitCode}): {detail}");
+            }
             if (exitCode != 0)
             {
                 log?.Invoke($"Warning: FFmpeg frame sampling returned exit code {exitCode}: {GeminiClient.Truncate(stderr, 200)}");
             }
-
-            string[] extractedFiles = Directory.GetFiles(tempDir, "frame_*.jpg")
-                .OrderBy(f => f, StringComparer.Ordinal)
-                .ToArray();
 
             var result = new List<AiImageInput>(extractedFiles.Length);
             double interval = fps > 0 ? 1.0 / fps : 0.5;
@@ -108,10 +104,6 @@ public static class AiFrameSequenceExtractor
         }
     }
 
-    /// <summary>
-    /// Partitions an image sequence into chunks of at most <paramref name="maxImagesPerChunk"/>
-    /// to respect vendor per-request constraints.
-    /// </summary>
     public static IReadOnlyList<IReadOnlyList<AiImageInput>> Partition(
         IReadOnlyList<AiImageInput> images,
         int maxImagesPerChunk = DefaultMaxImagesPerRequest)
@@ -130,21 +122,14 @@ public static class AiFrameSequenceExtractor
         return chunks;
     }
 
-    /// <summary>
-    /// Resolves max recommended images per request according to the vendor vision guidelines.
-    /// </summary>
     public static int GetMaxImagesPerRequest(AiVendor vendor) => vendor switch
     {
         AiVendor.Google => 100,
-        AiVendor.Anthropic => 60,
+        AiVendor.Anthropic => 20,
         AiVendor.OpenAI => 50,
         _ => DefaultMaxImagesPerRequest,
     };
 
-    /// <summary>
-    /// Samples frames from an in-memory MP4 video slice bytes at <paramref name="fps"/> rate,
-    /// scaled to <paramref name="targetWidth"/> (maintaining aspect ratio).
-    /// </summary>
     public static async Task<IReadOnlyList<AiImageInput>> SampleFramesFromMp4BytesAsync(
         byte[] mp4Bytes,
         double fps = DefaultFps,

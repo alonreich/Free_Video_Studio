@@ -5,20 +5,24 @@ using System.Text.RegularExpressions;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// AICAPTION_MODEL_01 — Pure mathematics and timeline mapping for live commentary captions.
-/// Maps source-time caption lines and words through OutputTimeline transformations (speed changes,
-/// freezes, cuts, and meme insertions) into finished-video output time and ASS \k centisecond durations.
-/// </summary>
 public static class CaptionTimeline
 {
     private static readonly Regex WordSplitRegex = new(@"\s+", RegexOptions.Compiled);
     private static readonly Regex VowelGroupRegex = new(@"[aeiouy]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    /// <summary>
-    /// Estimates the syllable count of an English word using vowel grouping and terminal-e suppression heuristics.
-    /// Minimum count is always 1.
-    /// </summary>
+    public const string EmphasisKeyTag = "CAPTIONEMPH_02";
+
+    public static string EmphasisKey(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+        var sb = new System.Text.StringBuilder(text.Length);
+        foreach (char c in text)
+        {
+            if (char.IsLetterOrDigit(c)) sb.Append(char.ToLowerInvariant(c));
+        }
+        return sb.ToString();
+    }
+
     public static int EstimateSyllables(string? word)
     {
         if (string.IsNullOrWhiteSpace(word)) return 1;
@@ -41,10 +45,6 @@ public static class CaptionTimeline
         return Math.Max(1, count);
     }
 
-    /// <summary>
-    /// Distributes a line of text into sequential words with estimated syllables and source timings proportional
-    /// to syllable weighting.
-    /// </summary>
     public static IReadOnlyList<CaptionWord> DistributeWords(string text, double startSec, double endSec)
     {
         if (string.IsNullOrWhiteSpace(text)) return Array.Empty<CaptionWord>();
@@ -80,16 +80,6 @@ public static class CaptionTimeline
         return result;
     }
 
-    /// <summary>
-    /// Maps a source-time <see cref="CaptionTrack"/> through an <see cref="OutputTimeline"/> into
-    /// output-time <see cref="MappedCaptionLine"/> items.
-    /// <list type="bullet">
-    ///   <item><description>Cuts: words falling completely inside cuts are dropped; lines with zero surviving words are pruned.</description></item>
-    ///   <item><description>Speed ramps: each word is stretched or compressed proportionally to the footage speed.</description></item>
-    ///   <item><description>Freezes: pauses and extends the duration of the held word.</description></item>
-    ///   <item><description>Durations: centisecond precision for ASS \k karaoke tags.</description></item>
-    /// </list>
-    /// </summary>
     public static IReadOnlyList<MappedCaptionLine> Map(CaptionTrack track, OutputTimeline? timeline = null, double baseOffsetSec = 0.0)
     {
         if (track.Lines == null || track.Lines.Count == 0) return Array.Empty<MappedCaptionLine>();
@@ -125,8 +115,8 @@ public static class CaptionTimeline
                 : DistributeWords(line.Text, line.SourceStartSec, line.SourceEndSec);
 
             var emphasisSet = new HashSet<string>(
-                line.Emphasis?.Select(e => Regex.Replace(e.Trim().ToLowerInvariant(), @"[^a-z0-9]", "")) ?? Enumerable.Empty<string>(),
-                StringComparer.OrdinalIgnoreCase);
+                line.Emphasis?.Select(EmphasisKey).Where(k => k.Length > 0) ?? Enumerable.Empty<string>(),
+                StringComparer.Ordinal);
 
             var mappedWords = new List<MappedCaptionWord>(words.Count);
 
@@ -149,8 +139,8 @@ public static class CaptionTimeline
                     outEnd = outStart;
 
                 int durationCsec = Math.Max(1, (int)Math.Round((outEnd - outStart) * 100.0));
-                string cleanWord = Regex.Replace(w.Text.Trim().ToLowerInvariant(), @"[^a-z0-9]", "");
-                bool isEmphasized = emphasisSet.Contains(cleanWord);
+                string cleanWord = EmphasisKey(w.Text);
+                bool isEmphasized = cleanWord.Length > 0 && emphasisSet.Contains(cleanWord);
 
                 mappedWords.Add(new MappedCaptionWord(w.Text, outStart, outEnd, durationCsec, isEmphasized));
             }

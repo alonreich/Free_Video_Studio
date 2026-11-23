@@ -2,12 +2,6 @@
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// VOCLOCK_01: the recording picture is rendered by the export's timing compiler, then played
-/// at 1x. A UI timer never changes its speed, seeks over a cut or implements a freeze.
-/// Source coordinates remain useful for editing; only the player runs in output seconds.
-/// Memes are deliberately absent: narration pauses across inserted cutaways in the export.
-/// </summary>
 public sealed class VoiceOverPlaybackPlan
 {
     public double SourceStartSec { get; }
@@ -39,7 +33,6 @@ public sealed class VoiceOverPlaybackPlan
 
     public double OutputAt(double sourceSec) => Timeline.SourceToOutput(sourceSec);
 
-    /// <summary>A seek to a freeze marker starts at the beginning of its hold, not after it.</summary>
     public double SeekOutputAt(double sourceSec)
     {
         double output = 0;
@@ -52,13 +45,16 @@ public sealed class VoiceOverPlaybackPlan
         return OutputAt(sourceSec);
     }
 
+    public double? FreezeVideoLufs { get; init; }
+
     public (string Graph, string Video, string Audio, double Duration) BuildGraph(bool hasAudio)
     {
         if (Timeline.TotalOutputSeconds <= 0)
             throw new InvalidOperationException("There is no picture left to record over.");
         var graph = GranularSpeedBuilder.Build((SourceEndSec - SourceStartSec) * 1000,
             Segments.ToList(), BaseSpeed, SourceStartSec * 1000,
-            inputAudioLabel: hasAudio ? "[0:a]" : null, targetFps: "60", needHudBranch: false, cuts: Cuts);
+            inputAudioLabel: hasAudio ? "[0:a]" : null, targetFps: "60", needHudBranch: false, cuts: Cuts,
+            freezeVideoLufs: FreezeVideoLufs);
         string filters = graph.filterGraph + ";" + graph.videoLabel +
             "scale=w='trunc(min(1280,iw)/2)*2':h=-2:flags=fast_bilinear,fps=60,setsar=1[v_recording]";
         return (filters, "[v_recording]", graph.audioLabel, graph.finalDuration);

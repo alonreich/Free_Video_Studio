@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -12,41 +11,14 @@ using FreeVideoStudio.Core.Undo;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// UNDO_28 — UNDO / REDO FOR THE ADD MUSIC WIZARD (docs/07 §5 "Still not done" item 2).
-///
-/// One <see cref="UndoStack{T}"/> of <see cref="MusicWizardSnapshot"/>: the song, the auto-fill
-/// queue in order, the song start, both balance faders and the ducking / smooth-blend / loop
-/// switches — exactly what <c>MusicWizardResult</c> hands to the export. NOT the waveform, the
-/// preview player, the beat analysis, the phase-3 thumbnails or any other derived resource.
-///
-/// <list type="bullet">
-///   <item><description>Every edit path calls <see cref="RecordWizardEdit"/> AFTER it changed the
-///   state; <see cref="MusicWizardSnapshot.DescribeChange"/> names the step and supplies the U1
-///   gesture key, so a fader sweep, a wheel spin or a waveform scrub is ONE step. Pointer release
-///   closes the gesture (<see cref="EndWizardGesture"/>).</description></item>
-///   <item><description>Restoring raises the very control events that record edits; the
-///   <c>_restoringHistory</c> guard plus <see cref="UndoStack{T}"/>'s own re-entrancy guard keep a
-///   restore from recording itself.</description></item>
-///   <item><description>Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z via <see cref="HistoryShortcut"/>. A focused
-///   text box (the song search) keeps its own text undo.</description></item>
-/// </list>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class MusicWizardWindow
 {
     private readonly UndoStack<MusicWizardSnapshot> _history =
         new(MusicWizardSnapshot.Create(null, null, 0, 100, 100, true, true, false));
 
-    /// <summary>False until the window has settled on its opening state (resume included). Nothing before that is an edit.</summary>
     private bool _historyReady;
 
     private bool _restoringHistory;
-    /// <summary>
-    /// MUSICWIN_01 — the song list is the queue (all songs when there are two or more), the first
-    /// song is the track, and every song's chosen part rides along as in/out pairs.
-    /// </summary>
     private MusicWizardSnapshot CaptureWizardSnapshot() => MusicWizardSnapshot.Create(
         _playlist.Count > 0 ? _playlist[0].Path : null,
         _playlist.Count > 1 ? _playlist.Select(e => e.Path) : null,
@@ -57,7 +29,6 @@ public partial class MusicWizardWindow
         CarvingCheckBoxCtl?.IsChecked ?? true,
         LoopMusicCheckBoxCtl?.IsChecked ?? false,
         _playlist.SelectMany(e => new[] { e.InSec, e.OutSec }));
-
 
     private void WireWizardHistory()
     {
@@ -74,7 +45,7 @@ public partial class MusicWizardWindow
                 RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
         }
 
-        foreach (CheckBox? box in new[] { DuckingCheckBoxCtl, CarvingCheckBoxCtl, LoopMusicCheckBoxCtl })
+        foreach (Avalonia.Controls.Primitives.ToggleButton? box in new Avalonia.Controls.Primitives.ToggleButton?[] { DuckingCheckBoxCtl, CarvingCheckBoxCtl, LoopMusicCheckBoxCtl })
         {
             if (box != null) box.IsCheckedChanged += (_, _) => RecordWizardEdit();
         }
@@ -85,14 +56,12 @@ public partial class MusicWizardWindow
         };
     }
 
-    /// <summary>The opening state: no history before it.</summary>
     private void ResetWizardHistory()
     {
         _history.Reset(CaptureWizardSnapshot());
         _historyReady = true;
     }
 
-    /// <summary>Records whatever just changed as one named step (or folds it into the open gesture).</summary>
     private void RecordWizardEdit()
     {
         if (!_historyReady || _restoringHistory) return;
@@ -111,11 +80,6 @@ public partial class MusicWizardWindow
         _history.EndGesture();
     }
 
-    /// <summary>
-    /// A DERIVED change, not an edit — e.g. the song start resetting to 0:00 when Next confirms a
-    /// newly chosen song. It belongs to the "choose song" step already recorded, so it moves the
-    /// baseline without adding an entry (and without burning redo).
-    /// </summary>
     private void SyncWizardHistoryBaseline()
     {
         if (!_historyReady || _restoringHistory) return;
@@ -175,12 +139,6 @@ public partial class MusicWizardWindow
             RuntimeLog.Fail("MUSIC_WIZARD", $"{(undo ? "Undo" : "Redo")} of '{label}' failed: {ex.Message}");
         }
     }
-    /// <summary>
-    /// Makes the wizard show <paramref name="target"/>: the song list is rebuilt from the snapshot
-    /// (songs in order, each with its chosen part), then the faders and switches. Songs never
-    /// require the Fit &amp; Mix video to be rebuilt — only the music changes — so this returns
-    /// false unless the list became empty, which returns the user to the song list.
-    /// </summary>
     private Task<bool> ApplyWizardSnapshotAsync(MusicWizardSnapshot target)
     {
         _restoringHistory = true;
@@ -194,7 +152,8 @@ public partial class MusicWizardWindow
             var rebuilt = new System.Collections.Generic.List<FreeVideoStudio.Core.Media.MusicPlaylistEntry>(paths.Length);
             for (int i = 0; i < paths.Length; i++)
             {
-                int existing = IndexOfPath(paths[i]);
+                int existing = OccurrenceIndex(i, paths[i]);
+                if (existing < 0) existing = IndexOfPath(paths[i]);
                 var baseEntry = existing >= 0 ? _playlist[existing] : NewEntry(TrackFor(paths[i]));
                 double inSec = 2 * i + 1 < trims.Length ? trims[2 * i] : baseEntry.InSec;
                 double outSec = 2 * i + 1 < trims.Length ? trims[2 * i + 1] : baseEntry.OutSec;

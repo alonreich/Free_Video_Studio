@@ -3,11 +3,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// AICOMMENTARY_CLOSE_01 / AICOMMENTARY_LOG_01 (2026-10-18): the Speed Editor's APPLY used to close the window,
-/// and closing threw an unapplied commentary preview away — and cancelled a running one — without a word, so a
-/// user who waited for the AI and pressed APPLY exported a video with no captions.
-/// </summary>
 public sealed class AiCommentaryCloseTests
 {
     private static string Src(string file) =>
@@ -40,5 +35,18 @@ public sealed class AiCommentaryCloseTests
     {
         string ai = Src("GranularSpeedEditorWindow.AiCommentary.cs");
         Assert.Contains("\"APPLY (incl. commentary)\"", ai);
+    }
+
+    [Fact]
+    public void MergeModeCommentary_ChecksEffectivePath_AndMapsTimestamps()
+    {
+        string ai = Src("GranularSpeedEditorWindow.AiCommentary.cs");
+        Assert.Contains("!File.Exists(effectiveVideoPath)", ai);
+        Assert.Contains("mergeClip.ToSourceUs", ai);
+        Assert.Contains("finalTrack = generatedTrack with { Lines = remappedLines };", ai);
+
+        string lane = Src("GranularSpeedEditorWindow.CaptionsLane.cs");
+        Assert.Contains("!File.Exists(videoPath)", lane);
+        Assert.Contains("clip.ToSourceUs", lane);
     }
 }

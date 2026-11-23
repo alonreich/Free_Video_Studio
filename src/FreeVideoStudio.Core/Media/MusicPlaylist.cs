@@ -3,67 +3,32 @@ using System.Collections.Generic;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// PLAYLIST_01 — THE ADD MUSIC WIZARD'S SONG LIST, AS PLAIN NUMBERS.
-///
-/// The wizard used to hold ONE song plus an "auto-fill queue" of whole files that always played
-/// from 0:00 to their very last sample. Users could not say where the second song should start or
-/// stop, so silent intros and outros became dead air in the middle of the video, and they could not
-/// see which song played over which clip. Every song is now an entry with its own window
-/// (<see cref="InSec"/> → <see cref="OutSec"/>) and the whole list is laid out by the same plan the
-/// export uses (<see cref="MusicBedPlan.Build(IReadOnlyList{MusicBedTrack}, double, bool, double, bool)"/>).
-///
-/// <see cref="UserTrimmed"/> records that the user moved an edge by hand, so a late-arriving
-/// silence analysis never overwrites a deliberate choice.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public sealed record MusicPlaylistEntry(string Path, double FullSec, double InSec, double OutSec, bool UserTrimmed = false)
 {
-    /// <summary>The window as a plan track.</summary>
     public MusicBedTrack ToTrack() => new(Path, FullSec, InSec, OutSec);
 
-    /// <summary>Length of the chosen window, 0 when the song length is not known yet.</summary>
     public double WindowSec => FullSec > 0 ? Math.Max(0.0, Math.Min(OutSec > InSec ? OutSec : FullSec, FullSec) - InSec) : 0.0;
 }
 
-/// <summary>How much of the video the music covers (PLAYLIST_01 — the one answer every coverage label reads).</summary>
 public readonly record struct MusicCoverage(double VideoSec, double CoveredSec, bool Looping)
 {
-    /// <summary>Seconds at the END of the video with no music. Below half a second counts as covered.</summary>
     public double SilentSec => Looping ? 0.0 : (VideoSec - CoveredSec > 0.5 ? VideoSec - CoveredSec : 0.0);
 
-    /// <summary>True when the whole video has music.</summary>
     public bool IsFull => SilentSec <= 0.0;
 
-    /// <summary>0..100, rounded down so 99.6% never reads as "100%" while a gap remains.</summary>
     public int Percent => VideoSec <= 0.01 || IsFull ? 100 : (int)Math.Floor(Math.Clamp(CoveredSec / VideoSec, 0.0, 1.0) * 100.0);
 }
 
-/// <summary>PLAYLIST_01 — pure helpers behind the wizard's song list. No UI, no I/O.</summary>
 public static class MusicPlaylistMath
 {
-    /// <summary>The shortest window a song may be trimmed to. Anything shorter is not a song any more.</summary>
     public const double MinWindowSec = 2.0;
 
-    /// <summary>
-    /// SILENCETRIM_01 — energy below this share of the song's own average audible energy is "silent".
-    /// The same third that FITEND_01 uses to find where a song really ends.
-    /// </summary>
     public const double AudibleShareOfAverage = 1.0 / 3.0;
 
-    /// <summary>Kept after the last audible moment so a decaying final note is not clipped (FITEND_01's cushion).</summary>
     public const double TailCushionSec = 0.35;
 
-    /// <summary>Kept before the first audible moment so the first hit is not clipped.</summary>
     public const double HeadCushionSec = 0.10;
 
-    /// <summary>
-    /// SILENCETRIM_01 — the audible part of a song from its 50 ms energy buckets: from the first bucket
-    /// that reaches a third of the song's average audible energy to the last one, plus small cushions.
-    /// Returns the whole song when nothing can be decided (no energy, all silent, or a window that
-    /// would be shorter than <see cref="MinWindowSec"/>).
-    /// </summary>
     public static (double InSec, double OutSec) AudibleWindow(IReadOnlyList<double> energy, double bucketSec, double fullSec)
     {
         if (energy == null || energy.Count == 0 || bucketSec <= 0 || fullSec <= 0) return (0.0, Math.Max(0.0, fullSec));
@@ -94,7 +59,6 @@ public static class MusicPlaylistMath
         return (inSec, outSec);
     }
 
-    /// <summary>Moves the IN edge, keeping at least <see cref="MinWindowSec"/> before the OUT edge.</summary>
     public static MusicPlaylistEntry WithIn(MusicPlaylistEntry e, double inSec)
     {
         double full = e.FullSec > 0 ? e.FullSec : Math.Max(inSec, e.OutSec);
@@ -103,7 +67,6 @@ public static class MusicPlaylistMath
         return e with { InSec = clamped, OutSec = outSec, UserTrimmed = true };
     }
 
-    /// <summary>Moves the OUT edge, keeping at least <see cref="MinWindowSec"/> after the IN edge.</summary>
     public static MusicPlaylistEntry WithOut(MusicPlaylistEntry e, double outSec)
     {
         double full = e.FullSec > 0 ? e.FullSec : Math.Max(outSec, e.OutSec);
@@ -111,7 +74,6 @@ public static class MusicPlaylistMath
         return e with { OutSec = clamped, UserTrimmed = true };
     }
 
-    /// <summary>Slides the whole window by <paramref name="deltaSec"/>, keeping its length and staying inside the song.</summary>
     public static MusicPlaylistEntry Slide(MusicPlaylistEntry e, double deltaSec)
     {
         double full = e.FullSec;
@@ -122,7 +84,63 @@ public static class MusicPlaylistMath
         return e with { InSec = newIn, OutSec = Math.Min(full, newIn + length), UserTrimmed = true };
     }
 
-    /// <summary>The plan tracks for a list of entries, in order.</summary>
+    public const string EndBeforeStartMessage = "End must come after start.";
+
+    public static string? WindowProblem(MusicPlaylistEntry e, double inSec, double outSec)
+    {
+        if (!double.IsFinite(inSec) || !double.IsFinite(outSec)) return "Type a time like 1:05.";
+        if (inSec < 0) return "Start cannot be before the song begins.";
+        if (e.FullSec > 0 && outSec > e.FullSec + 0.01) return "End cannot be after the song ends.";
+        if (outSec <= inSec) return EndBeforeStartMessage;
+        if (outSec - inSec < MinWindowSec - 1e-6) return $"Choose at least {MinWindowSec:0} seconds.";
+        return null;
+    }
+
+    public static MusicPlaylistEntry? TrySetWindow(MusicPlaylistEntry e, double inSec, double outSec, out string? problem)
+    {
+        problem = WindowProblem(e, inSec, outSec);
+        if (problem != null) return null;
+        double full = e.FullSec > 0 ? e.FullSec : outSec;
+        return e with { InSec = inSec, OutSec = Math.Min(outSec, full), UserTrimmed = true };
+    }
+
+    public static bool TryParseClock(string? text, out double seconds)
+    {
+        seconds = 0;
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        string[] parts = text.Trim().Split(':');
+        if (parts.Length > 3) return false;
+        double total = 0;
+        for (int i = 0; i < parts.Length; i++)
+        {
+            bool last = i == parts.Length - 1;
+            if (!double.TryParse(parts[i], System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.CultureInfo.InvariantCulture, out double v)) return false;
+            if (v < 0 || (!last && v != Math.Floor(v)) || (i > 0 && v >= 60)) return false;
+            total = total * 60 + v;
+        }
+        seconds = total;
+        return double.IsFinite(total);
+    }
+
+    public static string FormatClock(double seconds)
+    {
+        var ts = TimeSpan.FromSeconds(Math.Max(0, Math.Round(seconds, 1)));
+        string whole = ts.TotalHours >= 1 ? ts.ToString(@"h\:mm\:ss") : ts.ToString(@"m\:ss");
+        return ts.Milliseconds >= 50 ? $"{whole}.{ts.Milliseconds / 100}" : whole;
+    }
+
+    public static string SpokenDuration(double seconds)
+    {
+        int total = (int)Math.Round(Math.Max(0, seconds));
+        if (total < 60) return total == 1 ? "1 second" : $"{total} seconds";
+        int minutes = total / 60, rest = total % 60;
+        string m = minutes == 1 ? "1 minute" : $"{minutes} minutes";
+        return rest == 0 ? m : $"{m} {rest} second{(rest == 1 ? "" : "s")}";
+    }
+
+    public static MusicPlaylistEntry ResetWindow(MusicPlaylistEntry e)
+        => e.FullSec > 0 ? e with { InSec = 0.0, OutSec = e.FullSec, UserTrimmed = true } : e;
+
     public static IReadOnlyList<MusicBedTrack> ToTracks(IReadOnlyList<MusicPlaylistEntry> entries)
     {
         var tracks = new List<MusicBedTrack>(entries?.Count ?? 0);
@@ -131,14 +149,9 @@ public static class MusicPlaylistMath
         return tracks;
     }
 
-    /// <summary>The bed for the wizard: output second 0 is the first second of the finished video.</summary>
     public static IReadOnlyList<MusicBedSegment> Layout(IReadOnlyList<MusicPlaylistEntry> entries, double videoSec, bool loop)
         => MusicBedPlan.Build(ToTracks(entries), videoSec, loop, 0.0);
 
-    /// <summary>
-    /// Coverage of a laid-out bed against the video. <paramref name="songCount"/> is how many songs
-    /// the list holds: the bed only counts as LOOPING when it actually had to repeat one of them.
-    /// </summary>
     public static MusicCoverage Coverage(IReadOnlyList<MusicBedSegment> plan, double videoSec, bool loop, int songCount)
     {
         double covered = Math.Min(Math.Max(0.0, videoSec), MusicBedPlan.EndSec(plan, 0.0));
@@ -146,10 +159,6 @@ public static class MusicPlaylistMath
         return new MusicCoverage(Math.Max(0.0, videoSec), covered, repeated);
     }
 
-    /// <summary>
-    /// The plain-English coverage sentence shown under the song list and on the Fit &amp; Mix screen.
-    /// One wording everywhere, so the user never has to reconcile two descriptions of one fact.
-    /// </summary>
     public static string Describe(MusicCoverage c, Func<double, string> clock)
     {
         ArgumentNullException.ThrowIfNull(clock);

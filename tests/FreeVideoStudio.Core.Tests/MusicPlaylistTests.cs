@@ -10,10 +10,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// PLAYLIST_01 / MUSICWIN_01 / XFADEPLAN_01 / SILENCETRIM_01 — the Add Music wizard's song list,
-/// laid out exactly the way the export plays it.
-/// </summary>
 public class MusicPlaylistTests
 {
     private static MusicBedTrack T(string p, double known, double inSec = 0, double outSec = 0) => new(p, known, inSec, outSec);
@@ -126,7 +122,6 @@ public class MusicPlaylistTests
         Assert.Equal(new MusicBedSegment("b.mp3", 0, 30, 25), plan[1]);
     }
 
-
     [Fact]
     public void SilentIntroAndOutroAreTrimmedOff()
     {
@@ -147,7 +142,6 @@ public class MusicPlaylistTests
         Assert.Equal((0.0, 30.0), MusicPlaylistMath.AudibleWindow(Array.Empty<double>(), 0.05, 30.0));
     }
 
-
     [Fact]
     public void EdgesNeverCrossAndSlidingKeepsTheLength()
     {
@@ -164,7 +158,6 @@ public class MusicPlaylistTests
         Assert.Equal(40, slid.OutSec - slid.InSec, 6);
         Assert.Equal(100, slid.OutSec, 6);
     }
-
 
     [Fact]
     public void CoverageSaysExactlyHowMuchOfTheVideoIsSilent()
@@ -201,7 +194,6 @@ public class MusicPlaylistTests
         Assert.True(c.IsFull);
         Assert.False(c.Looping);
     }
-
 
     [Fact]
     public void SongWindowsSurviveTheMergerEditListRoundTrip()

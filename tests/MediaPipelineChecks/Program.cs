@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
 using FreeVideoStudio.Core.Ipc;
 using FreeVideoStudio.Core.Media;
+using FreeVideoStudio.Testing;
 
 if (args.Length == 5 && args[0] == "--libavframe-cold")
 {
@@ -32,8 +33,8 @@ if (args.Length == 4 && args[0] == "--libav-cold")
 string root = Directory.GetCurrentDirectory();
 string ffmpeg = Path.Combine(root, "binaries", "ffmpeg.exe");
 if (!File.Exists(ffmpeg)) throw new InvalidOperationException("Run from the workspace root.");
-string work = Path.Combine(root, "tests", "MediaPipelineChecks", "artifacts", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss"));
-Directory.CreateDirectory(work);
+using var outputLease = TestArtifactDirectory.Begin(root,
+    args.Contains("--libav-soak") ? "DecoderSoak" : "Media", out string work);
 Directory.CreateDirectory(Path.Combine(work, "temp"));
 Environment.SetEnvironmentVariable("TMP", Path.Combine(work, "temp"));
 Environment.SetEnvironmentVariable("TEMP", Path.Combine(work, "temp"));
@@ -855,7 +856,7 @@ await Check("Export errors: missing encoder classification", async () =>
     collector.AddStderrLine("Error initializing output stream 0:0 -- Error while opening encoder for output stream #0:0 - maybe incorrect parameters such as bit_rate, rate, width or height");
     var attempt = new ExportAttemptIdentity { AttemptIndex = 1, Operation = "SinglePassEncode", Encoder = "h264_nvenc_test" };
     var failure = FfmpegErrorClassifier.Classify(ExportStage.Encoding, attempt, processExitCode: 1, processStartException: null, isTimeout: false, isCancellation: false, collector: collector);
-    
+
     Require(failure.Category == ExportFailureCategory.MissingEncoder, $"Expected MissingEncoder, got {failure.Category}");
     Require(failure.Summary.Contains("encoder", StringComparison.OrdinalIgnoreCase), $"Unexpected summary: {failure.Summary}");
     Require(failure.SpecificCause != null && failure.SpecificCause.Contains("Unknown encoder", StringComparison.OrdinalIgnoreCase), $"SpecificCause was {failure.SpecificCause}");

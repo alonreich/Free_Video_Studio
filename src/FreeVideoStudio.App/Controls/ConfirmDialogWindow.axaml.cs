@@ -6,24 +6,31 @@ namespace FreeVideoStudio.App.Controls;
 
 public partial class ConfirmDialogWindow : Window
 {
-
     public enum ConfirmDialogResult { Cancelled, Yes, No, Alt }
-    
+
     public ConfirmDialogResult DialogResult { get; private set; } = ConfirmDialogResult.Cancelled;
     public bool Result => DialogResult == ConfirmDialogResult.Yes;
 
     public enum SaveChangesChoice { BackToEditing, Save, Discard }
 
-    public static async System.Threading.Tasks.Task<SaveChangesChoice> AskSaveChangesAsync(
+    public static System.Threading.Tasks.Task<SaveChangesChoice> AskSaveChangesAsync(
         Window owner, string profileName, string destination)
+        => AskSaveChangesWithMessageAsync(owner, "Save your changes?",
+            $"Save your changes to \"{profileName}\" before {destination}?\n\n" +
+            "Discard changes will lose your unsaved edits.");
+
+    public static async System.Threading.Tasks.Task<SaveChangesChoice> AskSaveChangesWithMessageAsync(
+        Window owner, string title, string message)
     {
         try
         {
             var dlg = new ConfirmDialogWindow();
-            dlg.SetTitle("Save your changes?");
-            dlg.SetMessage($"Save your changes to \"{profileName}\" before {destination}?\n\n" +
-                           "Discard changes will lose your unsaved edits.");
+            dlg.SetTitle(title);
+            dlg.SetMessage(message);
             dlg.SetButtonText("Save changes", "Back to editing", "Discard changes");
+            if (dlg.YesBtnCtl is { } yesTip) ToolTip.SetTip(yesTip, "Save your work, then continue.");
+            if (dlg.NoBtnCtl is { } noTip) ToolTip.SetTip(noTip, "Close this question and keep editing. Nothing is lost.");
+            if (dlg.AltBtnCtl is { } altTip) ToolTip.SetTip(altTip, "Throw away the changes you have not saved.");
             dlg.SetButtonClasses("Success", "Secondary", "Danger");
             var save = dlg.FindControl<Button>("YesBtn")!;
             var back = dlg.FindControl<Button>("NoBtn")!;
@@ -48,6 +55,7 @@ public partial class ConfirmDialogWindow : Window
     public ConfirmDialogWindow()
     {
         InitializeComponent();
+        DialogFit.Apply(this, drag: true);
         var yesBtn = YesBtnCtl;
         var noBtn = NoBtnCtl;
         var altBtn = AltBtnCtl;
@@ -69,15 +77,6 @@ public partial class ConfirmDialogWindow : Window
         this.Title = title;
     }
 
-    /// <summary>
-    /// DIALOG_02 — recolours the two buttons for a DESTRUCTIVE question.
-    ///
-    /// The default dressing is YES=Success / NO=Secondary, which reads "the green one is the safe
-    /// one". For a question whose YES destroys something that reading is backwards and dangerous:
-    /// the eye goes to green and green is now the button that deletes. This flips them so the
-    /// destructive answer wears Danger and the escape wears Success, matching the colour language
-    /// used everywhere else in the suite.
-    /// </summary>
     public void UseDestructiveStyling()
     {
         var yesBtn = YesBtnCtl;
@@ -97,16 +96,6 @@ public partial class ConfirmDialogWindow : Window
         }
     }
 
-    /// <summary>
-    /// EDIT3_01 — dresses the dialog for the THREE-WAY "you already have one of these" question:
-    /// change it, throw it away, or leave everything alone.
-    ///
-    /// The colour language is the whole point. EDIT is the ordinary action, so it wears Primary.
-    /// CANCEL wears Secondary and takes the Enter key, because doing nothing must be what a reflex
-    /// keypress does. REMOVE destroys work that can take a user twenty minutes to rebuild, so it
-    /// wears Danger — it was Primary blue, which put the safest-looking button on the one choice
-    /// that deletes everything.
-    /// </summary>
     public void UseEditOrRemoveStyling()
     {
         var yesBtn = YesBtnCtl;
@@ -134,17 +123,6 @@ public partial class ConfirmDialogWindow : Window
         }
     }
 
-    /// <summary>
-    /// COVER_01 — repaints the three buttons for a question that is NOT a yes/no.
-    ///
-    /// The stock dressing (YES green, NO grey, ALT blue) encodes "green is safe, grey is escape".
-    /// Some questions have three genuinely different actions and no safe/unsafe axis at all — the
-    /// music-coverage question is one: add more music, move the start, or accept the silence.
-    /// Rather than inventing a UseXxxStyling method per question, callers name the class they want
-    /// on each button. Pass null to leave one alone.
-    ///
-    /// Valid classes are the four the root dictionary defines: Primary, Secondary, Success, Danger.
-    /// </summary>
     public void SetButtonClasses(string? yesClass, string? noClass, string? altClass)
     {
         Repaint(YesBtnCtl, yesClass);
@@ -162,32 +140,13 @@ public partial class ConfirmDialogWindow : Window
         }
     }
 
-    /// <summary>EDIT3_01 — what the user chose in <see cref="AskEditOrRemoveAsync"/>.</summary>
     public enum EditOrRemoveChoice
     {
-        /// <summary>Leave the existing work exactly as it is. Also what closing the dialog means.</summary>
         Cancelled,
-        /// <summary>Reopen the editor on the existing work so it can be changed.</summary>
         Edit,
-        /// <summary>Throw the existing work away.</summary>
         Remove
     }
 
-    /// <summary>
-    /// EDIT3_01 — THE SHARED "EDIT / CANCEL / REMOVE" QUESTION.
-    ///
-    /// Pressing an already-active feature button used to be a two-way choice in two of the three
-    /// editors: the Granular Speed and Add Music buttons DELETED everything on the spot, with no
-    /// prompt at all. So changing one thing about a music placement, or one segment out of twelve,
-    /// meant destroying the lot and rebuilding it from scratch. The Voice Over button already had
-    /// the third option; this is that behaviour lifted out so all three share ONE implementation
-    /// and cannot drift apart in wording, colour or keyboard behaviour.
-    ///
-    /// Anything other than an explicit EDIT or REMOVE — closing the window, Escape, a failure to
-    /// show the dialog at all — returns <see cref="EditOrRemoveChoice.Cancelled"/>, so the
-    /// existing work survives. A prompt that cannot be shown must never be read as consent to
-    /// delete.
-    /// </summary>
     public static async System.Threading.Tasks.Task<EditOrRemoveChoice> AskEditOrRemoveAsync(
         Window owner,
         string title,
@@ -226,11 +185,15 @@ public partial class ConfirmDialogWindow : Window
         var altBtn = AltBtnCtl;
         if (yesBtn != null)
         {
+            if (!string.Equals(yesBtn.Content as string, yesText, System.StringComparison.OrdinalIgnoreCase))
+                ToolTip.SetTip(yesBtn, null);
             yesBtn.Content = yesText;
             Avalonia.Automation.AutomationProperties.SetName(yesBtn, yesText);
         }
         if (noBtn != null)
         {
+            if (!string.Equals(noBtn.Content as string, noText, System.StringComparison.OrdinalIgnoreCase))
+                ToolTip.SetTip(noBtn, null);
             noBtn.Content = noText;
             Avalonia.Automation.AutomationProperties.SetName(noBtn, noText);
         }
@@ -242,25 +205,6 @@ public partial class ConfirmDialogWindow : Window
         }
     }
 
-    /// <summary>
-    /// DIALOG_01 — THE THEMED REPLACEMENT FOR <c>NativeDialog.ShowQuestion</c>.
-    ///
-    /// NativeDialog goes straight to the Win32 MessageBox. That box knows nothing about the app:
-    /// wrong font, wrong colours, wrong corner radius, a Windows title bar, and it ignores the
-    /// theme and the Settings font scale entirely. Inside a styled full-screen editor it reads as
-    /// a different program interrupting you — which is exactly the complaint about DELETE PARTS.
-    ///
-    /// This window is ordinary Avalonia content, so it inherits the whole root dictionary for free.
-    ///
-    /// ⚠️ USE THIS ONLY WHERE A REAL OWNER WINDOW EXISTS AND THE UI THREAD IS FREE TO PUMP.
-    /// NativeDialog is still correct for install/uninstall and startup failures (DeploymentLifecycle,
-    /// Program.cs): those run before — or after — there is any Avalonia window to own a dialog, and
-    /// a modal that needs a live UI thread would deadlock or silently never appear there.
-    /// </summary>
-    /// <param name="destructive">
-    /// DIALOG_02 — true when YES destroys something. Paints YES red and NO green, and moves the
-    /// Enter key onto NO so a reflex keypress cannot delete anything.
-    /// </param>
     public static async System.Threading.Tasks.Task<bool> AskAsync(
         Window owner, string message, string title, string yesText = "Yes", string noText = "No",
         bool destructive = false)
@@ -282,11 +226,6 @@ public partial class ConfirmDialogWindow : Window
         }
     }
 
-    /// <summary>
-    /// AIZOOMUX_01 — a three-way question with no safe/unsafe axis (COVER_01 dressing): YES and ALT
-    /// are two different actions, NO is "leave it". Closing the window, Escape, or a dialog that
-    /// cannot be shown returns <see cref="ConfirmDialogResult.Cancelled"/> — never read as consent.
-    /// </summary>
     public static async System.Threading.Tasks.Task<ConfirmDialogResult> AskThreeWayAsync(
         Window owner, string title, string message, string yesText, string altText, string noText = "Cancel")
     {

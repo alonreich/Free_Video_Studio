@@ -1,10 +1,9 @@
-﻿using System;
+using System;
 using FreeVideoStudio.Core.Media;
 using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>MERGEEDL_01 — Video-Merger-Migration.md P2.1 (T2.1a equality, T2.1b JSON round-trip).</summary>
 public class MergeEdlTests
 {
     private static readonly Guid A = Guid.Parse("11111111-1111-1111-1111-111111111111");
@@ -88,12 +87,6 @@ public class MergeEdlTests
         Assert.Equal(-1, edl.IndexOf(Guid.Empty));
     }
 
-    /// <summary>
-    /// EDLNULL_01 regression — an autosave written BEFORE a field existed (here: no "Cuts", no "Effects",
-    /// empty "Effects") must load with empty lists, compare equal, and never throw. The source-generated
-    /// reader does not run property initializers; before the fix these came back null, every capture
-    /// threw, the Merger's autosave froze on an old queue and IsEmpty crashed the app.
-    /// </summary>
     [Fact]
     public void OldAutosaveShapes_LoadWithEmptyLists_AndCompare()
     {
@@ -114,5 +107,38 @@ public class MergeEdlTests
         Assert.Equal(edl, MergeEdl.FromJson(edl.ToJson()));
         Assert.True(edl.Clips[2].Effects.Equals(EdlEffects.None));
         Assert.Equal(MergeEdl.Empty, MergeEdl.FromJson("{\"Version\":1}") ?? MergeEdl.Empty);
+    }
+
+    [Fact]
+    public void Captions_RoundTrip_AndEquality()
+    {
+        var track = new CaptionTrack(
+            CaptionStyle.PopIn,
+            CaptionPosition.Top,
+            CaptionTone.Chill,
+            "en",
+            new[]
+            {
+                new CaptionLine(1, 0.5, 2.5, "Healing behind cover", new[] { "Healing" }, 0.95,
+                    new[] { new CaptionWord("Healing", 0.5, 1.2, 2), new CaptionWord("behind", 1.2, 1.8, 2), new CaptionWord("cover", 1.8, 2.5, 2) })
+            },
+            CaptionLook.Box,
+            CaptionSize.Large);
+
+        var edl = Sample() with { Captions = track };
+        string json = edl.ToJson();
+        var back = MergeEdl.FromJson(json);
+
+        Assert.NotNull(back);
+        Assert.NotNull(back.Captions);
+        Assert.Equal(edl, back);
+        Assert.Equal(edl.GetHashCode(), back.GetHashCode());
+        Assert.Equal(CaptionStyle.PopIn, back.Captions!.Style);
+        Assert.Equal(CaptionPosition.Top, back.Captions.Position);
+        Assert.Equal(CaptionTone.Chill, back.Captions.Tone);
+        Assert.Equal(CaptionLook.Box, back.Captions.Look);
+        Assert.Equal(CaptionSize.Large, back.Captions.Size);
+        Assert.Single(back.Captions.Lines!);
+        Assert.Equal("Healing behind cover", back.Captions.Lines![0].Text);
     }
 }

@@ -1,5 +1,4 @@
-﻿
-namespace FreeVideoStudio.Core.Infrastructure;
+﻿namespace FreeVideoStudio.Core.Infrastructure;
 
 public sealed class ApplicationPaths
 {
@@ -18,11 +17,22 @@ public sealed class ApplicationPaths
 
     public string ProgramDataRoot { get; }
 
-    public string SessionStateFile => Path.Combine(ProgramDataRoot, "session_state.json");
+    private bool IsNormalDevelopment => DevelopmentEnvironment.ShareUserMedia &&
+        string.Equals(ProgramDataRoot, DevelopmentEnvironment.DataRoot, StringComparison.OrdinalIgnoreCase);
+    private bool IsProductionDefault => !DevelopmentEnvironment.IsActive &&
+        string.Equals(ProgramDataRoot, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppDirectoryName), StringComparison.OrdinalIgnoreCase);
+    public string PreferencesDirectory => IsNormalDevelopment ? DevelopmentEnvironment.TemporaryDataRoot : ProgramDataRoot;
+    public string SettingsFile => Path.Combine(PreferencesDirectory, "settings.json");
+    public string SessionStateFile => Path.Combine(PreferencesDirectory, "session_state.json");
+    public string ChatGptSignInFile => Path.Combine(PreferencesDirectory, "chatgpt_signin.dat");
 
     public string CropCoordinatesFile => Path.Combine(ProgramDataRoot, "crops_coordinations.conf");
 
-    public string LogsDirectory => Path.Combine(ProgramDataRoot, "logs");
+    public string LogsDirectory => Path.Combine(PreferencesDirectory, "logs");
+
+    public string VoiceOverDirectory => IsNormalDevelopment
+        ? Path.Combine(DevelopmentEnvironment.SystemTempRoot, "FreeVideoStudio_DEV", "voiceovers")
+        : Path.Combine(IsProductionDefault ? TempDirectory : ProgramDataRoot, "voiceovers");
 
     public string TempDirectory
     {
@@ -31,9 +41,9 @@ public sealed class ApplicationPaths
             string? overrideRoot = Environment.GetEnvironmentVariable(ProgramDataRootOverrideEnvironmentVariable);
             if (!string.IsNullOrWhiteSpace(overrideRoot))
             {
-                return Path.Combine(Path.GetTempPath(), "FreeVideoStudio_DEV");
+                return Path.Combine(PreferencesDirectory, "scratch", "work");
             }
-            return Path.Combine(Path.GetTempPath(), "FreeVideoStudio");
+            return Path.Combine(DevelopmentEnvironment.SystemTempRoot, "FreeVideoStudio");
         }
     }
 
@@ -41,55 +51,27 @@ public sealed class ApplicationPaths
 
     public string SafeModeSentinelFile => Path.Combine(ProgramDataRoot, "safe_mode.sentinel");
 
-    /// <summary>
-    /// RECOVERY_02 — "the user meant to close the app" marker.
-    ///
-    /// Written SYNCHRONOUSLY as the very first act of MainWindow.OnClosing, before any await, and
-    /// deleted by the normal cleanup. Its whole purpose is the case where the app is closing
-    /// legitimately but never reaches <see cref="RecoveryManager.CleanupLock"/> — most commonly a
-    /// Windows shutdown / restart / sign-out, where the OS terminates the process partway through
-    /// the asynchronous close. Without it the leftover session lock makes the next launch announce
-    /// a crash that never happened.
-    ///
-    /// Deliberately lives beside the other recovery sentinels rather than in UiStateStore
-    /// (ISSUE_09): it is part of the crash-detection family, must be readable before any UI state
-    /// exists, and must be writable with one synchronous call on a shutting-down process.
-    /// </summary>
     public string CleanShutdownIntentFile => Path.Combine(ProgramDataRoot, "clean_shutdown.intent");
 
     public string RecoveryStateFile => Path.Combine(ProgramDataRoot, "recovery_v2.json");
 
-    /// <summary>MERGESESSION_01 — the Video Merger's autosaved edit list (MergerAutosaveStore).</summary>
     public string MergerSessionFile => Path.Combine(ProgramDataRoot, "merger_session.json");
 
-    /// <summary>LANECACHE_02 — the Merger's filmstrip frames and waveform peaks, per clip, across sessions.</summary>
-    public string LaneCacheDirectory => Path.Combine(ProgramDataRoot, "cache", "lanes");
+    public string LaneCacheDirectory => Path.Combine(IsProductionDefault ? TempDirectory : PreferencesDirectory, "cache", "lanes");
+
+    public string FreezeSoundCacheDirectory => Path.Combine(IsProductionDefault ? TempDirectory : PreferencesDirectory, "cache", "freeze");
+
+    public string AiAnswerCacheDirectory => Path.Combine(IsProductionDefault ? TempDirectory : PreferencesDirectory, "cache", "ai");
+
+    public string LocalAiDirectory => Path.Combine(ProgramDataRoot, "LocalAi");
 
     public string InstallerReportFile => Path.Combine(TempDirectory, "FreeVideoStudio_Install_Report.txt");
 
-    /// <summary>
-    /// ISSUE_09 — the SINGLE home for small per-user UI state files (onboarding counters,
-    /// dismissed hints, and anything similar).
-    ///
-    /// WHY THIS EXISTS: these files used to be scattered in
-    /// <c>%APPDATA%\FreeVideoStudio\Settings</c> — a THIRD state root, separate from
-    /// ProgramData (settings.json, session_state.json, recovery) and %TMP% (logs, staging).
-    /// That fragmentation is exactly what made the "preserve my settings" upgrade option leaky:
-    /// the uninstaller/upgrader had to know about every root, and it did not.
-    ///
-    /// New small state files belong HERE. Do not create another root.
-    /// </summary>
-    public string UiStateDirectory => Path.Combine(ProgramDataRoot, "uistate");
+    public string UiStateDirectory => Path.Combine(PreferencesDirectory, "uistate");
 
-    /// <summary>
-    /// ISSUE_09 — the legacy %APPDATA% location, kept ONLY so existing installs can be migrated
-    /// once (see UiStateStore.Migrate). Never write here.
-    /// </summary>
     public static string LegacyRoamingUiStateDirectory => Path.Combine(
         AppDataPaths.AppDataDir, "Settings");
 
-
-    /// <summary>USERSCOPE_01 — the pre-migration machine-wide root. Read once for migration; never written.</summary>
     public static string LegacyMachineRoot
     {
         get
@@ -103,7 +85,6 @@ public sealed class ApplicationPaths
         }
     }
 
-    /// <summary>USERSCOPE_01 — the per-user root.</summary>
     public static string DefaultUserRoot
     {
         get
@@ -128,7 +109,6 @@ public sealed class ApplicationPaths
         return new ApplicationPaths(DefaultUserRoot);
     }
 
-    /// <summary>Written into the user root once the legacy copy has been attempted.</summary>
     public const string MigrationMarkerName = ".migrated_from_programdata";
 
     private static readonly HashSet<string> NotMigratedFiles = new(StringComparer.OrdinalIgnoreCase)
@@ -141,11 +121,6 @@ public sealed class ApplicationPaths
         "logs", "Diagnostics", "voiceovers",
     };
 
-    /// <summary>
-    /// USERSCOPE_01 — one-time, copy-only migration from the legacy machine root. Never overwrites
-    /// a file the user root already has and never touches the legacy folder. Returns true when
-    /// anything was copied.
-    /// </summary>
     public static bool MigrateLegacyMachineRoot(string userRoot, string legacyRoot)
     {
         try

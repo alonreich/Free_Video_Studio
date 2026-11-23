@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -7,51 +6,34 @@ using System.Globalization;
 
 namespace FreeVideoStudio.Core.Media;
 
-
-/// <summary>Sample encoding of a capture buffer.</summary>
 public enum PcmSampleEncoding
 {
-    /// <summary>Signed little-endian integer PCM.</summary>
     Pcm,
-    /// <summary>32-bit IEEE float, little-endian.</summary>
     IeeeFloat,
 }
 
-/// <summary>The real format of a capture buffer. Never assumed — the analyzer decodes by it.</summary>
 public readonly record struct PcmCaptureFormat(int SampleRate, int Channels, int BitsPerSample, PcmSampleEncoding Encoding)
 {
-    /// <summary>The fixed production capture contract (MicLevelMonitor / VoiceRecorder): 44.1 kHz, mono, PCM16.</summary>
     public static PcmCaptureFormat ProductionMicrophone { get; } = new(44100, 1, 16, PcmSampleEncoding.Pcm);
 
-    /// <summary>Bytes per interleaved frame.</summary>
     public int BlockAlign => Channels * (BitsPerSample / 8);
 
     public override string ToString()
         => string.Create(CultureInfo.InvariantCulture, $"{SampleRate} Hz / {Channels} ch / {BitsPerSample}-bit {Encoding}");
 }
 
-/// <summary>
-/// One PCM callback, raised by the capture devices. ⚠️ <see cref="Data"/> is the driver's own
-/// buffer and is only valid for the duration of the event: consume it synchronously, never keep it.
-/// </summary>
 public readonly record struct PcmBuffer(byte[] Data, int Count, PcmCaptureFormat Format)
 {
     public ReadOnlySpan<byte> Span => Data.AsSpan(0, Math.Clamp(Count, 0, Data.Length));
 }
 
-/// <summary>A display band: a defined, ascending frequency range and the FFT bins it owns.</summary>
 public readonly record struct SpectrumBand(int Index, double LowHz, double HighHz, int FirstBin, int LastBin)
 {
-    /// <summary>Geometric centre of the band.</summary>
     public double CenterHz => Math.Sqrt(LowHz * HighHz);
 
-    /// <summary>True when <paramref name="hz"/> falls inside [LowHz, HighHz).</summary>
     public bool Contains(double hz) => hz >= LowHz && hz < HighHz;
 }
 
-/// <summary>
-/// SPECTRUM_01 — one immutable analysis result. Safe to hand across threads; never mutated.
-/// </summary>
 public sealed class MicrophoneSpectrumSnapshot
 {
     internal MicrophoneSpectrumSnapshot(
@@ -74,16 +56,12 @@ public sealed class MicrophoneSpectrumSnapshot
         DisplayCeilingDb = ceilingDb;
     }
 
-    /// <summary>Ascending frequency bands, left to right.</summary>
     public ImmutableArray<SpectrumBand> Bands { get; }
 
-    /// <summary>Unclamped band level in dBFS (0 dBFS = full-scale sine). Finite; floors at -120.</summary>
     public ImmutableArray<double> BandDbfs { get; }
 
-    /// <summary>Display level per band, 0..1 over [<see cref="DisplayFloorDb"/>, <see cref="DisplayCeilingDb"/>].</summary>
     public ImmutableArray<double> Levels { get; }
 
-    /// <summary>Analyses performed by the producing analyzer since its last reset (1-based).</summary>
     public long Sequence { get; }
 
     public PcmCaptureFormat Format { get; }
@@ -91,10 +69,8 @@ public sealed class MicrophoneSpectrumSnapshot
     public double DisplayFloorDb { get; }
     public double DisplayCeilingDb { get; }
 
-    /// <summary>Frequency resolution of the analysis: one FFT bin.</summary>
     public double BinWidthHz => (double)Format.SampleRate / FftSize;
 
-    /// <summary>Index of the loudest band.</summary>
     public int PeakBandIndex
     {
         get
@@ -106,7 +82,6 @@ public sealed class MicrophoneSpectrumSnapshot
     }
 }
 
-/// <summary>SPECTRUM_01 — windowed-FFT band analyzer over real capture PCM.</summary>
 public sealed class MicrophoneSpectrumAnalyzer
 {
     public const int DefaultFftSize = 4096;
@@ -117,7 +92,6 @@ public sealed class MicrophoneSpectrumAnalyzer
     public const double DisplayFloorDb = -60.0;
     public const double DisplayCeilingDb = 0.0;
 
-    /// <summary>Floor of the dBFS scale. Digital silence reads exactly this, never -∞.</summary>
     public const double SilenceDb = -120.0;
     private const double SilencePower = 1e-12;
 
@@ -219,34 +193,18 @@ public sealed class MicrophoneSpectrumAnalyzer
     public int HopSize => _hopSize;
     public ImmutableArray<SpectrumBand> Bands { get; private set; }
 
-    /// <summary>Frequency resolution: one FFT bin, SampleRate / FftSize.</summary>
     public double BinWidthHz => (double)Format.SampleRate / _fftSize;
 
-    /// <summary>Upper edge actually used: min(requested max, Nyquist - 2 bins).</summary>
-    public double EffectiveMaxHz => Bands.IsDefaultOrEmpty ? _maxHz : Bands[^1].HighHz;
-
-    /// <summary>Latency of one complete analysis window in seconds.</summary>
-    public double WindowSeconds => (double)_fftSize / Format.SampleRate;
-
-    /// <summary>Most recent result, or null before the first complete window since the last reset.</summary>
     public MicrophoneSpectrumSnapshot? Latest => _latest;
 
-    /// <summary>Total complete frames decoded since the last reset (proves no sample vanishes across callbacks).</summary>
     public long FramesConsumed => _framesConsumed;
 
-    /// <summary>Bytes of an incomplete frame carried to the next callback (0..BlockAlign-1).</summary>
     public int CarriedBytes => _carryCount;
 
-    /// <summary>Total managed state held, in elements. Constant for the instance's lifetime.</summary>
     public int StateElementCount
         => _ring.Length + _window.Length + _re.Length + _im.Length + _cos.Length + _sin.Length
          + _bitReverse.Length + _bandPower.Length + _carry.Length;
 
-    /// <summary>
-    /// Validates <paramref name="format"/>, recomputes the band layout for its sample rate and
-    /// resets all state. Unsupported formats throw <see cref="NotSupportedException"/> — they are
-    /// never reinterpreted as mono PCM16.
-    /// </summary>
     public void Reconfigure(PcmCaptureFormat format)
     {
         Validate(format);
@@ -255,7 +213,6 @@ public sealed class MicrophoneSpectrumAnalyzer
         Reset();
     }
 
-    /// <summary>Discards all buffered audio and the latest result (device / session change).</summary>
     public void Reset()
     {
         Array.Clear(_ring);
@@ -270,7 +227,6 @@ public sealed class MicrophoneSpectrumAnalyzer
         _latest = null;
     }
 
-    /// <summary>True when the analyzer can decode <paramref name="format"/>.</summary>
     public static bool IsSupported(PcmCaptureFormat format, out string reason)
     {
         if (format.SampleRate < 8000 || format.SampleRate > 384000)
@@ -299,12 +255,6 @@ public sealed class MicrophoneSpectrumAnalyzer
             throw new NotSupportedException($"Spectrum analyzer cannot decode {format}: {reason}.");
     }
 
-    /// <summary>
-    /// Feeds raw interleaved bytes in <see cref="Format"/>. Any length is accepted: an incomplete
-    /// trailing frame is carried into the next call. Every <see cref="HopSize"/> new frames (once a
-    /// full window exists) one FFT runs. Returns the number of windows analysed by this call; when
-    /// it is > 0, <see cref="Latest"/> holds the newest result.
-    /// </summary>
     public int Process(ReadOnlySpan<byte> data)
     {
         int analyses = 0;
@@ -341,7 +291,6 @@ public sealed class MicrophoneSpectrumAnalyzer
         return analyses;
     }
 
-    /// <summary>Convenience for tests and synthetic sources: mono float samples in [-1, 1].</summary>
     public int ProcessSamples(ReadOnlySpan<float> monoSamples)
     {
         if (Format.Channels != 1 || Format.Encoding != PcmSampleEncoding.IeeeFloat)
@@ -455,7 +404,6 @@ public sealed class MicrophoneSpectrumAnalyzer
             _sequence, Format, _fftSize, DisplayFloorDb, DisplayCeilingDb);
     }
 
-    /// <summary>Normalised band power to dBFS, floored at <see cref="SilenceDb"/>. Always finite.</summary>
     internal static double PowerToDbfs(double power, double reference)
     {
         double normalised = power / reference;
@@ -463,18 +411,12 @@ public sealed class MicrophoneSpectrumAnalyzer
         return 10.0 * Math.Log10(normalised);
     }
 
-    /// <summary>dBFS to the 0..1 display scale over [-60, 0] dBFS. Always finite and clamped.</summary>
     public static double DbfsToLevel(double dbfs)
     {
         if (!double.IsFinite(dbfs)) return dbfs > 0 ? 1.0 : 0.0;
         return Math.Clamp((dbfs - DisplayFloorDb) / (DisplayCeilingDb - DisplayFloorDb), 0.0, 1.0);
     }
 
-    /// <summary>
-    /// Log-spaced ascending bands with every band at least one bin wide. A band that would be
-    /// narrower than one bin is widened to exactly one bin, and the REMAINING range is re-spaced
-    /// logarithmically so the top edge still lands on the effective maximum.
-    /// </summary>
     private ImmutableArray<SpectrumBand> BuildBands(int sampleRate)
     {
         double bin = (double)sampleRate / _fftSize;
@@ -511,24 +453,14 @@ public sealed class MicrophoneSpectrumAnalyzer
     }
 }
 
-/// <summary>
-/// SPECTRUM_01 — meter ballistics on the display side: fast attack, slower release, and decay to
-/// zero when no NEW snapshot has arrived for <see cref="StaleAfterSeconds"/> (callbacks stopped,
-/// device failed, session reset). Time is supplied by the caller, so behaviour is deterministic
-/// and testable. Not thread-safe; the UI thread owns it.
-/// </summary>
 public sealed class SpectrumMeterBallistics
 {
-    /// <summary>Attack time constant (s). Rising bars reach 63% of a step in 20 ms.</summary>
     public const double AttackSeconds = 0.020;
 
-    /// <summary>Release time constant (s). Falling bars lose 63% of their height in 220 ms.</summary>
     public const double ReleaseSeconds = 0.220;
 
-    /// <summary>No new snapshot for this long ⇒ the input is treated as absent and the bars fall.</summary>
     public const double StaleAfterSeconds = 0.300;
 
-    /// <summary>Below this a bar is drawn as empty (and the meter is allowed to stop repainting).</summary>
     public const double ZeroThreshold = 0.002;
 
     private double[] _levels = Array.Empty<double>();
@@ -536,16 +468,12 @@ public sealed class SpectrumMeterBallistics
     private double _lastSnapshotTime = double.NegativeInfinity;
     private double _lastTime = double.NaN;
 
-    /// <summary>Current displayed level per band, 0..1.</summary>
     public IReadOnlyList<double> Levels => _levels;
 
-    /// <summary>The band layout of the last snapshot seen (empty before the first).</summary>
     public ImmutableArray<SpectrumBand> Bands { get; private set; } = ImmutableArray<SpectrumBand>.Empty;
 
-    /// <summary>True when every bar is at zero and no live input is driving them.</summary>
     public bool IsSettled { get; private set; } = true;
 
-    /// <summary>Drops all bars to zero immediately.</summary>
     public void Reset()
     {
         Array.Clear(_levels);
@@ -555,11 +483,6 @@ public sealed class SpectrumMeterBallistics
         IsSettled = true;
     }
 
-    /// <summary>
-    /// Advances the meter to <paramref name="nowSeconds"/>. <paramref name="snapshot"/> is the
-    /// newest available result (or null when there is no live input). Returns true when any bar
-    /// changed visibly, i.e. the caller should repaint.
-    /// </summary>
     public bool Update(MicrophoneSpectrumSnapshot? snapshot, double nowSeconds)
     {
         if (!double.IsFinite(nowSeconds)) return false;

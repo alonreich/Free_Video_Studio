@@ -1,5 +1,4 @@
-﻿
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using FreeVideoStudio.App.Infrastructure;
 using FreeVideoStudio.Core.Media;
@@ -8,41 +7,20 @@ using System.Threading.Tasks;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// The answer the user gave to an audio warning.
-/// </summary>
-/// <param name="Apply">Whether to fix THIS video.</param>
-/// <param name="Remember">
-/// What to remember for next time. <see cref="AudioFixPrompt.Ask"/> means "ask me again",
-/// i.e. neither checkbox was ticked.
-/// </param>
 public readonly record struct AudioFixDecision(bool Apply, AudioFixPrompt Remember);
 
-/// <summary>
-/// Shared warning dialog for both audio problems the app can detect on upload:
-///
-///   1. LOUDNESS — the recording's average volume sits outside the band viewers expect, so the
-///      audience has to reach for their volume control.
-///   2. HARSH PEAKS — the recording is fine on average but hides a sudden bang far above it,
-///      which is the thing that actually hurts somebody wearing headphones.
-///
-/// One window serves both because the shape of the question is identical (here is what is wrong,
-/// shall I fix it, and should I remember your answer). Only the wording differs, and that lives
-/// in the two factory methods below so the two messages cannot drift apart in style.
-/// </summary>
 public partial class AudioFixPromptWindow : Window
 {
     private CheckBox? _alwaysCheck;
     private CheckBox? _neverCheck;
     private bool _suppressCheckSync;
 
-    /// <summary>The user's answer. Defaults to "don't fix, don't remember" so a force-closed
-    /// dialog can never silently opt the user into changing their audio.</summary>
     public AudioFixDecision Decision { get; private set; } = new(false, AudioFixPrompt.Ask);
 
     public AudioFixPromptWindow()
     {
         InitializeComponent();
+        DialogFit.Apply(this);
 
         _alwaysCheck = this.FindControl<CheckBox>("AlwaysCheck");
         _neverCheck = this.FindControl<CheckBox>("NeverCheck");
@@ -104,9 +82,6 @@ public partial class AudioFixPromptWindow : Window
         }
     }
 
-    /// <summary>
-    /// Builds the HARSH PEAK warning — the average is acceptable but there is a sudden bang.
-    /// </summary>
     public static AudioFixPromptWindow ForHarshPeaks(LoudnessReading reading)
     {
         var win = new AudioFixPromptWindow();
@@ -146,12 +121,6 @@ public partial class AudioFixPromptWindow : Window
         if (no != null) ToolTip.SetTip(no, noTip);
     }
 
-    /// <summary>
-    /// Resolves what to do about one detected audio problem, honouring anything the user has
-    /// already told us. Shows the dialog only when the stored preference is
-    /// <see cref="AudioFixPrompt.Ask"/>, and persists a new preference when the user sets one.
-    /// </summary>
-    /// <returns>True when the fix should be applied to this video.</returns>
     public static async Task<bool> ResolveAsync(
         Window owner,
         AudioFixPrompt current,

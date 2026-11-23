@@ -4,7 +4,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>TIMINGTAG_02 — Video-Merger-Migration.md P1 (T1.1a–c, T1.3a).</summary>
 public class ExportTimingTagTests
 {
     [Theory]

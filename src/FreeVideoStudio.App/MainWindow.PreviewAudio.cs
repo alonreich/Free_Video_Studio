@@ -5,43 +5,22 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// MUSICSYNC_01 / MUSICSYNC_02 — PREVIEW AUDIO FOLLOWS THE VIDEO, IN OUTPUT TIME.
-///
-/// The master clock is the video player's position, mapped to FINISHED-VIDEO seconds through
-/// OutputTimeline (North Star #2). The music bed and every voice-over take are followers.
-///
-/// What was wrong. The music preview computed the song position from RAW SOURCE seconds and
-/// played at 1.0x beside a video running at the base speed (1.1x by default), with cuts skipped
-/// and freezes held. It resynced only when the playhead jumped more than 0.5 s between ticks, so
-/// during normal playback it drifted freely, and it disagreed with the export (which has always
-/// placed music in output time, CUTS_02) wherever playback started. Voice-over takes tolerated
-/// 0.5 s of error on 300 ms of uncompensated buffering.
-///
-/// ⚠️ THE MUSIC ALWAYS PLAYS AT ITS OWN NORMAL SPEED. Only the video speed changes. The music
-/// player's "speed" is pinned to 1.0 on every start and is never adjusted; sync is corrected by
-/// SEEKING the music to where the export will have it.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class MainWindow
 {
-    /// <summary>After a load or seek, time-pos needs a moment to report the new position.</summary>
-    private const int MusicSyncSettleMs = 350;
+    private Controls.MusicBedPreviewPlayer? _musicBed;
 
-    private string? _musicPreviewPath;
-    private int _musicDriftStrikes;
-    private long _musicSyncHoldUntilTicks;
+    private Controls.MusicBedPreviewPlayer MusicBed => _musicBed ??= NewMusicBed();
 
-    private object? _musicPlanKey;
-    private IReadOnlyList<MusicBedSegment> _musicPlan = Array.Empty<MusicBedSegment>();
+    private Controls.MusicBedPreviewPlayer NewMusicBed() =>
+        new() { GainSource = () => (_musicWizardResult?.MusicVolume ?? 1.0) * PreviewMusicDuckGain() };
 
-    /// <summary>
-    /// MUSICSYNC_01 — the video's current position in FINISHED-VIDEO seconds. It is the same
-    /// OutputTimeline mapping the export uses. It is non-mutating and cached, so it is safe per tick.
-    /// While a freeze is being held on screen, the output clock keeps running even though the
-    /// source position does not.
-    /// </summary>
+    private void DisposeMusicPreview()
+    {
+        try { _musicBed?.Dispose(); }
+        catch (Exception ex) { RuntimeLog.Fail("UI", $"Music preview teardown reported: {ex.Message}"); }
+        _musicBed = null;
+    }
+
     private double PreviewOutputSeconds(double sourceTimeSec)
     {
         var timeline = _viewModel.Timeline;
@@ -55,49 +34,47 @@ public partial class MainWindow
         return timeline.PreviewSourceToOutputSeconds(sourceTimeSec * 1000.0);
     }
 
-    /// <summary>
-    /// MUSICSYNC_01 — the music bed exactly as the export will lay it: same start/end marker
-    /// mapping, same first-track offset, same multi-track order, same LOOP_01 repeat
-    /// (<see cref="MusicBedPlan.Build"/> is shared with MainWindow.Export). Rebuilt only when an
-    /// input changes.
-    /// </summary>
-    private IReadOnlyList<MusicBedSegment> GetMusicPreviewPlan()
+    internal Models.EditorPreviewLayers CurrentEditorPreviewLayers() =>
+        new(_musicWizardResult, _keepMusicDuringMeme ?? false, _voiceOverResult);
+
+    private double PreviewVideoEndMs() => _trimEndMs > 0 ? _trimEndMs : _loadedVideoDurationMs;
+
+    private double PreviewSourceMsToOutputSec(double sourceMs) => _viewModel.Timeline.PreviewSourceToOutputSeconds(sourceMs);
+
+    private List<(double AnchorOutputSec, double DurationSec)> PreviewInlineMemes()
     {
-        var result = _musicWizardResult;
-        if (result == null || string.IsNullOrEmpty(result.MusicFilePath)) return Array.Empty<MusicBedSegment>();
-
-        double videoEndMs = _trimEndMs > 0 ? _trimEndMs : _loadedVideoDurationMs;
-        double musicStartMs = Math.Max(_trimStartMs, result.TimelineStartSeconds * 1000.0);
-        double musicEndMs = Math.Min(videoEndMs, result.TimelineEndSeconds * 1000.0);
-
-        double startDelay = _viewModel.Timeline.PreviewSourceToOutputSeconds(musicStartMs);
-        double outputEnd = _viewModel.Timeline.PreviewSourceToOutputSeconds(musicEndMs);
-        double bedDuration = outputEnd - startDelay;
-        if (bedDuration <= 0) bedDuration = 1.0;
-
-        var key = (result, startDelay, bedDuration, result.OffsetSeconds, result.LoopMusic,
-                   result.MusicFilePath, result.MusicFilePaths?.Count ?? 0, result.MusicDurationSeconds,
-                   string.Join(",", result.MusicStartsSeconds ?? new List<double>()) + "|" + string.Join(",", result.MusicEndsSeconds ?? new List<double>()));
-        if (Equals(key, _musicPlanKey)) return _musicPlan;
-
-        _musicPlan = MusicBedPlan.Build(result.ToBedTracks(), bedDuration, result.LoopMusic, startDelay);
-        _musicPlanKey = key;
-        return _musicPlan;
+        var list = new List<(double, double)>();
+        foreach (var m in MemePlacement.InlineOnly(EffectiveMemePlacements()))
+            list.Add((PreviewSourceMsToOutputSec(_trimStartMs + m.AtSourceSecRelative * 1000.0), m.DurationSec));
+        return list;
     }
 
-    /// <summary>MUSICSYNC_01/02 — called on every playback tick with the video's SOURCE time.</summary>
+    private List<(double StartOutputSec, double EndOutputSec)>? PreviewFreezeWindows()
+    {
+        if (_freezeTimeMs < 0) return null;
+        var t = _viewModel.Timeline;
+        double startMs = _trimStartMs, endMs = PreviewVideoEndMs();
+        if (endMs <= startMs) return null;
+        return PreviewTimeMap.Create(startMs, endMs, t.BuildExportSpeedSegments(), _baseSpeed, _cuts).FreezeOutputRanges();
+    }
+
+    private IReadOnlyList<MusicBedSegment> GetMusicPreviewPlan()
+    {
+        var bed = MusicBed;
+        bed.Result = _musicWizardResult;
+        bed.KeepMusicDuringMeme = _keepMusicDuringMeme ?? false;
+        return bed.Bed(_trimStartMs, PreviewVideoEndMs(), PreviewSourceMsToOutputSec, PreviewInlineMemes()).Plan;
+    }
+
     private void UpdateMusicPreview(double sourceTimeSec, bool videoEnded)
     {
         RefreshPreviewMixState();
+        var bed = MusicBed;
+        bed.Result = _musicWizardResult;
+        bed.KeepMusicDuringMeme = _keepMusicDuringMeme ?? false;
         if (PreviewMixActive)
         {
-            if (_isMusicPreviewPlaying) StopMusicPreview();
-            return;
-        }
-
-        if (_musicWizardResult == null || string.IsNullOrEmpty(_musicWizardResult.MusicFilePath))
-        {
-            if (_isMusicPreviewPlaying) StopMusicPreview();
+            bed.Stop();
             return;
         }
 
@@ -106,86 +83,40 @@ public partial class MainWindow
         if (_isCurrentlyFrozen) isPaused = false;
         bool isDraggingAnyMarker = _draggingStartMarker || _draggingEndMarker || _draggingMusicStart || _draggingMusicEnd || _draggingMusicBlock;
 
-        (string Path, double PositionSec, int SegmentIndex)? target = null;
-        if (!isPaused && !videoEnded)
-        {
-            target = MusicBedPlan.Locate(GetMusicPreviewPlan(), PreviewOutputSeconds(sourceTimeSec));
-        }
-
-        if (target is not { } want)
-        {
-            if (_isMusicPreviewPlaying) StopMusicPreview();
-            return;
-        }
-
-        if (ipc?.IsSeeking == true) return;
-        if (!_isMusicPreviewPlaying)
-        {
-            if (!isDraggingAnyMarker) StartMusicPreview(want.Path, want.PositionSec);
-            return;
-        }
-
-        if (!string.Equals(want.Path, _musicPreviewPath, StringComparison.OrdinalIgnoreCase))
-        {
-            StartMusicPreview(want.Path, want.PositionSec);
-            return;
-        }
-
-        if (Environment.TickCount64 < _musicSyncHoldUntilTicks || _musicPreviewIpcClient == null || _musicPreviewIpcClient.IsSeeking) return;
-
-        double actual = _musicPreviewIpcClient.CurrentTime;
-        if (Math.Abs(actual - want.PositionSec) <= Infrastructure.PreviewAudioSync.DriftToleranceSec)
-        {
-            _musicDriftStrikes = 0;
-            return;
-        }
-
-        if (++_musicDriftStrikes < Infrastructure.PreviewAudioSync.DriftStrikes) return;
-        _musicDriftStrikes = 0;
-
-        _ = _musicPreviewIpcClient.SendCommandAsync("seek", want.PositionSec, "absolute");
-        _musicSyncHoldUntilTicks = Environment.TickCount64 + MusicSyncSettleMs;
+        bed.Update(new Controls.MusicPreviewFrame(_trimStartMs, PreviewVideoEndMs(), PreviewSourceMsToOutputSec,
+            PreviewOutputSeconds(sourceTimeSec), !isPaused && !videoEnded, ipc?.IsSeeking == true, !isDraggingAnyMarker,
+            false, PreviewInlineMemes(), false, PreviewFreezeWindows()));
     }
 
-    private async void StartMusicPreview(string path, double positionSec)
+    private void StopMusicPreview() => _musicBed?.Stop();
+
+    private void UpdateMusicDuringMeme()
     {
-        if (_musicWizardResult == null || string.IsNullOrEmpty(path)) return;
-
-        string mpvExe = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Environment.ProcessPath) ?? System.AppContext.BaseDirectory, "binaries", "mpv.exe");
-        if (!System.IO.File.Exists(mpvExe)) mpvExe = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Environment.ProcessPath) ?? System.AppContext.BaseDirectory, "..", "..", "..", "..", "..", "binaries", "mpv.exe");
-        if (!System.IO.File.Exists(mpvExe)) mpvExe = "mpv.exe";
-
-        if (_musicPreviewIpcClient == null)
-        {
-            _musicPreviewIpcClient = new FreeVideoStudio.Core.Media.MpvIpcClient();
-            await _musicPreviewIpcClient.StartAudioOnlyAsync(mpvExe);
-        }
-
-        await _musicPreviewIpcClient.ApplyPreviewGainAsync(_musicWizardResult.MusicVolume * PreviewMusicDuckGain());
-        await _musicPreviewIpcClient.SetPropertyDoubleAsync("speed", 1.0);
-        await _musicPreviewIpcClient.LoadFileAsync(path, Math.Max(0, positionSec));
-
-        _musicPreviewPath = path;
-        _musicDriftStrikes = 0;
-        _musicSyncHoldUntilTicks = Environment.TickCount64 + MusicSyncSettleMs;
-        _isMusicPreviewPlaying = true;
-        _lastMusicPreviewSyncTime = positionSec;
-        _playingMusicTimelineStartSeconds = _musicWizardResult.TimelineStartSeconds;
+        if (_musicBed == null || PreviewMixActive) return;
+        _musicBed.Update(new Controls.MusicPreviewFrame(_trimStartMs, PreviewVideoEndMs(), PreviewSourceMsToOutputSec,
+            0, true, false, false, true, null,
+            _memePreview?.CurrentPhase == Infrastructure.MemePreviewDirector.Phase.PlayingMeme));
     }
 
-    private async void StopMusicPreview()
+    private void OnMainMemeCutawayStarted()
     {
-        if (_musicPreviewIpcClient != null)
-        {
-            await _musicPreviewIpcClient.SetPropertyAsync("pause", "yes");
-            await _musicPreviewIpcClient.SendCommandAsync("stop");
-        }
-        _isMusicPreviewPlaying = false;
-        _musicPreviewPath = null;
-        _musicDriftStrikes = 0;
+        if (!BedPreviewFollower.PlaysDuringMeme(_keepMusicDuringMeme ?? false)) StopMusicPreview();
+        PauseLiveVoiceTakes();
     }
 
-    /// <summary>MUSICSYNC_02 — every voice-over take follows the video in output time.</summary>
+    private void PauseLiveVoiceTakes()
+    {
+        foreach (var take in _voiceOverPreviewTakes)
+        {
+            try
+            {
+                if (take.Player.PlaybackState == NAudio.Wave.PlaybackState.Playing) take.Player.Pause();
+                take.DriftSinceMs = 0;
+            }
+            catch (Exception ex) { RuntimeLog.SwallowedThrottled(ex); }
+        }
+    }
+
     private void UpdateVoiceOverPreview(double sourceTimeSec, bool videoEnded)
     {
         if (_voiceOverResult == null || _voiceOverPreviewTakes.Count == 0) return;
@@ -204,12 +135,12 @@ public partial class MainWindow
             take.StartProjectSec = timeline.PreviewSourceToOutputSeconds(take.Take.StartSec * 1000.0) + take.Take.OutputOffsetSec;
 
             double voiceTime = editedTime - take.StartProjectSec;
-            take.Reader.Volume = (float)MpvIpcClient.MasterLinearGain;
+            take.Reader.Volume = VoiceOverLevel.PreviewGain(take.Take.Gain, MpvIpcClient.MasterLinearGain);
             bool shouldPlayVoice = !PreviewMixActive && !isPaused && !videoEnded && voiceTime >= 0 && voiceTime <= take.Reader.TotalTime.TotalSeconds;
 
             try
             {
-                Infrastructure.PreviewAudioSync.SyncVoiceTake(take.Reader, take.Player, shouldPlayVoice, voiceTime, ref take.DriftStrikes);
+                Infrastructure.PreviewAudioSync.SyncVoiceTake(take.Reader, take.Player, shouldPlayVoice, voiceTime, ref take.DriftSinceMs);
             }
             catch (Exception ex) { RuntimeLog.SwallowedThrottled(ex); }
         }

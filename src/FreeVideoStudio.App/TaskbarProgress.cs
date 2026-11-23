@@ -1,33 +1,11 @@
-﻿
-using System;
+﻿using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// IDEA_3 — the little progress bar that fills the app's Windows taskbar icon during an export,
-/// plus a flash when it finishes.
-///
-/// WHY IT IS WRITTEN THIS WAY. Windows only exposes this through the COM interface ITaskbarList3.
-/// The usual C# route is a [ComImport] interface, which relies on the built-in COM marshaller —
-/// something this project cannot use, because it publishes with NativeAOT (PublishAot + TrimMode
-/// full) and that marshaller is trimmed away. So the vtable is walked by hand with unmanaged
-/// function pointers: no reflection, no runtime code generation, nothing for the trimmer to remove.
-///
-/// FAILURE POLICY. Every entry point is best-effort and swallows everything. If COM refuses, the
-/// shell is not running, the OS is older, or the session is remote, the export must carry on
-/// EXACTLY as before — just with no bar on the icon. Nothing here may ever throw into a caller or
-/// slow an encode down.
-///
-/// THREADING. All calls marshal to the UI thread internally via the caller; the COM object is
-/// created once, apartment-agnostic for our purposes since we only ever touch it from the UI
-/// thread. Do not call these from the FFmpeg reader threads — route through Dispatcher first, as
-/// PhaseOverlayControl already does.
-/// </summary>
 internal static unsafe partial class TaskbarProgress
 {
-    /// <summary>Matches the native TBPFLAG enum.</summary>
     internal enum State
     {
         NoProgress = 0,
@@ -75,7 +53,6 @@ internal static unsafe partial class TaskbarProgress
 
     private const uint FLASHW_TRAY = 0x00000002;
 
-    /// <summary>Creates the shell object once. Returns false forever after the first failure.</summary>
     private static bool TryGetTaskbar(out void** taskbar)
     {
         taskbar = null;
@@ -128,10 +105,6 @@ internal static unsafe partial class TaskbarProgress
         }
     }
 
-    /// <summary>
-    /// Logs once, never throws. Deliberately mirrors UiSoundEffect.SafeLog: an optional cosmetic
-    /// feature must not be able to disturb the thing it decorates.
-    /// </summary>
     private static void SafeLog(string message)
     {
         try { RuntimeLog.Info("Taskbar", message); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
@@ -142,10 +115,6 @@ internal static unsafe partial class TaskbarProgress
         try { ((delegate* unmanaged<void**, uint>)((void**)*obj)[VT_RELEASE])(obj); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
-    /// <summary>
-    /// Shows determinate progress, 0-100. Values are clamped. A window handle of zero is ignored,
-    /// which is what happens on the platforms where Avalonia has no Win32 handle to give us.
-    /// </summary>
     public static void SetProgress(IntPtr hwnd, int percent)
     {
         if (hwnd == IntPtr.Zero) return;
@@ -172,23 +141,8 @@ internal static unsafe partial class TaskbarProgress
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
-    /// <summary>Clears the bar completely. Safe to call when nothing is running.</summary>
     public static void Clear(IntPtr hwnd) => SetState(hwnd, State.NoProgress);
 
-    /// <summary>
-    /// Flashes the taskbar button a FIXED number of times and then stops, whether or not the user
-    /// ever comes back to the window.
-    ///
-    /// This used to flash forever (FLASHW_TIMERNOFG, uCount ignored), which is hostile on a
-    /// machine the user has walked away from: come back an hour later and the button is still
-    /// blinking. Five slow blinks reads as "it finished" and then leaves the taskbar alone.
-    ///
-    /// dwTimeout is the interval between blinks in milliseconds. Zero would mean "use the system
-    /// cursor blink rate", which is roughly 500 ms and reads as an alarm rather than a
-    /// notification, so it is passed explicitly.
-    /// </summary>
-    /// <param name="count">Number of blinks. Clamped to 1-30.</param>
-    /// <param name="intervalMs">Milliseconds per blink. Clamped to 120-3000.</param>
     public static void Flash(IntPtr hwnd, int count = 5, int intervalMs = 750)
     {
         if (hwnd == IntPtr.Zero) return;
@@ -208,7 +162,6 @@ internal static unsafe partial class TaskbarProgress
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
-    /// <summary>Cancels an in-flight flash, e.g. if a new export starts before the blinks finish.</summary>
     public static void StopFlash(IntPtr hwnd)
     {
         if (hwnd == IntPtr.Zero) return;
@@ -228,10 +181,6 @@ internal static unsafe partial class TaskbarProgress
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
-    /// <summary>
-    /// Releases the shell object. Called from the desktop lifetime Exit hook alongside the other
-    /// process-wide teardown, so the COM reference is not left dangling at shutdown.
-    /// </summary>
     public static void Shutdown()
     {
         lock (Sync)

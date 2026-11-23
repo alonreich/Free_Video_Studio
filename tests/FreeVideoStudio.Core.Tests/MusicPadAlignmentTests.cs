@@ -4,7 +4,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>MUSICPAD_01 — the music meets the video on the frames the preview showed, with fade pads on.</summary>
 public class MusicPadAlignmentTests
 {
     [Fact]
@@ -42,5 +41,14 @@ public class MusicPadAlignmentTests
         Assert.Equal(5.8, a[0].Duration, 6);
 
         Assert.Equal(t, MusicPadAlignment.Align(t, 0, 0, 5.455, true, true));
+    }
+
+    [Fact]
+    public void AMemeAtTheVeryEndKeepsTheLastSongPlaying()
+    {
+        Assert.True(MusicPadAlignment.MemeInsideMusicWindow(30.0, 0.0, 30.0, lastTrack: true));
+        Assert.False(MusicPadAlignment.MemeInsideMusicWindow(30.0, 0.0, 30.0, lastTrack: false));
+        Assert.True(MusicPadAlignment.MemeInsideMusicWindow(12.0, 0.0, 30.0, lastTrack: false));
+        Assert.False(MusicPadAlignment.MemeInsideMusicWindow(31.0, 0.0, 30.0, lastTrack: true));
     }
 }

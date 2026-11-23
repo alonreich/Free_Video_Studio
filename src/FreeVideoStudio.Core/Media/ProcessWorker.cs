@@ -9,73 +9,13 @@ public class ProcessWorker : IDisposable
 {
     private readonly ApplicationPaths _paths;
 
-    /// <summary>
-    /// PROCGATE_01 — the currently running child process, and the ONLY field in this class that is
-    /// handed between the export thread and the cancelling thread while holding an OS resource.
-    ///
-    /// It used to be a bare, NON-volatile field — note that its two neighbours below were already
-    /// marked volatile, and this one, the only one that matters for correctness, was not. Cancel()
-    /// tested it for null and then called Kill() on it as two separate reads, so the export thread
-    /// could run `_currentProcess = null; proc.Dispose();` in between. Kill() on a disposed Process
-    /// throws ObjectDisposedException straight into CoreLogger.Swallowed, and the user's cancel was
-    /// silently lost — AFTER the log had already announced "Terminating FFmpeg process tree."
-    ///
-    /// Access is now exclusively through <see cref="SetCurrentProcess"/>, <see cref="TakeCurrentProcess"/>
-    /// and <see cref="PeekCurrentProcess"/>, all of which hold the shared FfmpegJobLifetime gate (PIPELIFE_01). The gate is
-    /// held for a reference copy only — never across a Kill, a Dispose or any I/O — so it cannot
-    /// deadlock against the export thread.
-    /// </summary>
-    /// <summary>
-    /// PIPELIFE_01 — process slot, cancel flag, single-flight finish and teardown ladder, shared
-    /// with <see cref="MergerWorker"/>. The members below keep their original names and delegate,
-    /// so none of this file's ~30 call sites change.
-    /// </summary>
     private readonly FfmpegJobLifetime _lifetime = new("Process", "FFmpeg");
 
-    /// <summary>
-    /// FFMPEGSTOP_01 — single-flight gate for the cooperative shutdown ladder.
-    ///
-    /// <para>WHAT WAS WRONG. Every termination site in this file called
-    /// <c>Kill(entireProcessTree: true)</c> as the FIRST and ONLY action, and no
-    /// <see cref="ProcessStartInfo"/> here redirected stdin — so FFmpeg's interactive quit
-    /// command ('q') had no channel and this pipeline was STRUCTURALLY INCAPABLE of asking the
-    /// encoder to stop cleanly. Killing an MP4 muxer mid-write means the <c>moov</c> atom is never
-    /// emitted: the output is <c>mdat</c> payload with no index — right size, right name, and
-    /// unplayable in every player. On the failure paths that reach
-    /// <see cref="TryRescueFinishedRender"/>, that corrupt file was then moved to
-    /// <c>FreeVideoStudio-RECOVERED-*.mp4</c> and presented to the user as preserved work.</para>
-    ///
-    /// <para>⚠️ THE PROJECT ALREADY BUILT THE FIX AND THIS FILE NEVER RECEIVED IT.
-    /// <see cref="GracefulProcessTerminator"/> states the failure verbatim and is used by
-    /// <c>CrashLogDigest</c>, <c>DeploymentLifecycle</c>, <c>AsyncProcessRunner</c>,
-    /// <c>HudAutoDetector</c> and <c>MergerWorker</c>. ProcessWorker — the PRIMARY user-facing
-    /// export path — was the only media worker that never referenced it. The two copies of
-    /// <see cref="ReadExitCodeSafely"/> are the proof: MergerWorker's routes through the ladder,
-    /// this one called Kill raw, from an identical signature. Duplicated logic is how that
-    /// divergence happened and went unnoticed.</para>
-    ///
-    /// <para>The gate guarantees exactly ONE ladder ('q' → grace → Kill(tree) → exit confirmation)
-    /// ever runs per FFmpeg process, because <see cref="Cancel"/>, the cancellation-token
-    /// registrations and <see cref="Dispose"/> can all race each other.</para>
-    /// </summary>
-    /// PIPEDEDUP_01 — these three fields and their three methods were written out here AND,
-    /// separately, in <c>MergerWorker</c>. Two copies of one mechanism is exactly how
-    /// <c>ReadExitCodeSafely</c> silently diverged between these two files (FFMPEGSTOP_01) and how
-    /// <c>TryRescueFinishedRender</c> shipped the same race twice (RESCUE_01). One copy now lives
-    /// in <see cref="CooperativeShutdownGate"/>; the members below are thin delegations kept at
-    /// their original signatures so no call site in this file changes.
-
-    /// <summary>
-    /// PIPELIFE_01 — kept as a private alias over the shared lifetime's flag so every existing
-    /// read and write in this file compiles unchanged. Writing `false` is deliberately a no-op:
-    /// a cancelled job is never un-cancelled, and nothing in either pipeline ever tried to.
-    /// </summary>
     private bool _isCanceled
     {
         get => _lifetime.WasCanceled;
         set { if (value) _lifetime.MarkCanceled(); }
     }
-    /// <summary>PIPELIFE_01 — alias over the shared lifetime's single-flight flag.</summary>
     private bool _finishEmitted => _lifetime.FinishEmitted;
     private string _ffmpegPath;
     private string _ffprobePath;
@@ -90,28 +30,14 @@ public class ProcessWorker : IDisposable
     private const double TwoPassGraphFraction = 0.60;
     private const double TwoPassAnalysisFraction = 0.75;
 
-    /// <summary>
-    /// T01 — SLOW-route split. Used only when the temp drive cannot hold the scratch master, in
-    /// which case the filter graph genuinely runs twice and the two halves cost about the same.
-    /// </summary>
     private const double TwoPassSlowPass1Fraction = 0.45;
 
-    /// <summary>
-    /// G09 — last `speed=` value FFmpeg reported (e.g. "3.4x"). Instance-scoped rather than a
-    /// local so the two-pass stages can report through the same field. "?" until the first
-    /// progress line arrives.
-    /// </summary>
     public string LastReportedSpeed { get; private set; } = "?";
     public string LastVideoPipeline { get; private set; } = "";
     public bool UsedGpuVideoProcessing { get; private set; }
 
     private int _lastEmittedPct = -1;
 
-    /// <summary>
-    /// Single monotonic progress emitter. The bar can NEVER move backwards (kills the
-    /// phase-seam reset-to-zero and the size-retry snap-back), so every consumer sees a
-    /// steady forward sweep. Reset per job by construction (a fresh worker per export).
-    /// </summary>
     private void EmitProgress(int phase, string title, int pct)
     {
         pct = Math.Clamp(pct, 0, 100);
@@ -133,25 +59,12 @@ public class ProcessWorker : IDisposable
     public bool EnableFades { get; set; } = true;
     public string? MemeFile { get; set; }
 
-    /// <summary>
-    /// MEME_03 — every meme in this export, each at its own moment. When this list is EMPTY the
-    /// legacy <see cref="MemeFile"/> + <see cref="MemeAtStart"/> pair is used instead, so payloads
-    /// written before multi-meme support still export identically. When it is non-empty it is
-    /// authoritative and the legacy fields are ignored.
-    /// </summary>
     public List<MemePlacement> MemePlacements { get; set; } = new();
     public string? PortraitText { get; set; }
     public JsonObject? MusicConfig { get; set; }
     public List<SpeedSegment>? SpeedSegments { get; set; }
-    /// <summary>
-    /// AICAPTION_EXPORT_01 — live commentary captions track burned into export via ASS subtitles filter.
-    /// </summary>
     public CaptionTrack? CaptionTrack { get; set; }
 
-    /// <summary>
-    /// CUT_01 — stretches of footage deleted from the middle of the clip, in ABSOLUTE source ms.
-    /// Null or empty is the historical behaviour: one unbroken clip.
-    /// </summary>
     public List<CutRange>? Cuts { get; set; }
     public string HardwareStrategy { get; set; } = "CPU";
     public List<MusicTrack>? MusicTracks { get; set; }
@@ -164,116 +77,40 @@ public class ProcessWorker : IDisposable
     public double ThumbnailPosMs { get; set; }
     public double IntroStillSec { get; set; }
 
-    /// <summary>TIMINGTAG_02 — the timing stamped into the delivered file; set before the first encode.</summary>
     private ExportTiming _exportTiming = new(60, 1, 0, null, null);
     public double? IntroAbsTimeMs { get; set; }
 
-    /// <summary>
-    /// MEME_02 — true when the meme should play BEFORE the gameplay instead of after it.
-    /// ⚠️ Even when true the frozen thumbnail frame stays FIRST — see the concat block that
-    /// consumes this. Default false keeps every existing caller on the historical behaviour.
-    /// </summary>
     public bool MemeAtStart { get; set; }
     public bool KeepMusicDuringMeme { get; set; }
 
-    /// <summary>
-    /// ISSUE_04 — false when the music-start note marker sits to the RIGHT of MARK START, i.e.
-    /// the music deliberately begins partway into the video. It then enters at full level with
-    /// no fade-up. Set by the UI, which is the only layer that knows where the markers are.
-    /// </summary>
     public bool MusicLeadFadeIn { get; set; } = true;
 
-    /// <summary>
-    /// ISSUE_04 — false when the music-end note marker sits to the RIGHT of MARK END, i.e. the
-    /// music is asking to outlast the video. There is no video left to fade over, so it is cut
-    /// dead at MARK END instead of fading out.
-    /// </summary>
     public bool MusicTailFadeOut { get; set; } = true;
 
     public string? VoiceOverWavPath { get; set; }
     public double VoiceOverStartSec { get; set; } 
     public List<VoiceOverTake>? VoiceOverTakes { get; set; }
-    /// <summary>
-    /// PEAKSAFE_01 — the user's "soften sudden loud moments" switch: the gameplay peak tamer
-    /// (<see cref="PeakSafety.TamerFilter"/>). The true-peak SAFETY limiter on the final mix is NOT
-    /// controlled by this; it is always on.
-    /// </summary>
     public bool AutoSpikeFlattening { get; set; } = true;
 
-    /// <summary>
-    /// The gameplay's integrated loudness (LUFS) from the upload-time peak probe, when the UI has
-    /// one. Only a FALLBACK: the export measures the exported range itself, and uses this when that
-    /// measurement fails. Consumers: the peak tamer's threshold and meme matching (MEMELEVEL_02).
-    /// Nothing ever normalises the gameplay (LOUDSTD_REMOVED_01).
-    /// </summary>
     public double? GameplayLoudnessLufs { get; set; }
+    public double? FreezeVideoLufs { get; set; }
 
-    /// <summary>
-    /// PREVIEWMIX_01 — when set, the worker builds the export graph exactly as usual and then renders
-    /// ONLY its final audio (AudioGraphPruner) to this WAV, for the live preview. No video is decoded
-    /// or encoded and nothing is written to the output folder. See <see cref="AudioPreviewMap"/>.
-    /// </summary>
     public string? AudioPreviewOutputPath { get; set; }
 
-    /// <summary>PREVIEWMIX_01 — set on a successful audio-preview render: how preview time maps into the WAV.</summary>
     public AudioPreviewMap? AudioPreviewMap { get; private set; }
 
     public bool VoiceOverDuckAudio { get; set; }
 
-    /// <summary>
-    /// VOPROT_01 — "Protect VoiceOver Recording from Music". Ducks and EQ-carves the MUSIC bed
-    /// across the voice-over takes. Independent of the Add Music wizard's own ducking, which
-    /// protects the GAME from the music and is triggered by the game, not by the voice.
-    /// No music on this export means this flag has nothing to act on and is silently inert.
-    /// </summary>
     public bool VoiceOverProtectFromMusic { get; set; }
 
-    /// <summary>
-    /// ISSUE_04 — destination folder for the finished file, resolved by the UI layer
-    /// (OutputFolderResolver) BEFORE the render starts. Null keeps the legacy behaviour of
-    /// resolving Downloads here, but the UI always sets it so a missing Downloads folder is
-    /// handled with a picker instead of a crash.
-    /// </summary>
     public string? OutputDirectory { get; set; }
 
-    /// <summary>
-    /// OUTNAME_01 — the user's automatic file-name base from Settings › Output Files. The finished
-    /// file is <c>&lt;base&gt;-&lt;N&gt;.mp4</c>. Sanitized here again (defence in depth); null or
-    /// unusable input falls back to <see cref="OutputFileNaming.MainDefaultBaseName"/>.
-    /// </summary>
     public string? OutputBaseName { get; set; }
 
-    /// <summary>
-    /// ISSUE_06 — the raw error text (FFmpeg stderr tail / exception detail) behind the last
-    /// failure. The UI feeds this to ErrorReporter, which mines the root-cause line out of it
-    /// for the failure dialog. Never shown raw to the user.
-    /// </summary>
     public string? FailureDetail { get; private set; }
 
-    /// <summary>
-    /// Strongly typed failure model providing structured category, stage, attempt history,
-    /// exit/error codes, and supporting diagnostics for ErrorReporter.
-    /// </summary>
     public ExportFailure? LastFailure { get; private set; }
 
-    /// <summary>
-    /// MEME_05 — ONE MEME, FULLY RESOLVED: probed, levelled, given an FFmpeg input slot, a pair of
-    /// filter-graph labels and the exact moment of the rendered stream it cuts into.
-    ///
-    /// <para>
-    /// ⚠️ <see cref="CutOutputSec"/> IS NOT <see cref="AtSourceSecRelative"/> CONVERTED NAIVELY. It
-    /// is a position in <c>[v_render_out]</c> — the stream that has ALREADY had speed changes,
-    /// freezes and the thumbnail intro applied but NOT the memes. Computed in any other clock, in
-    /// particular one that already counts earlier memes, every meme after the first drifts later by
-    /// the sum of the ones before it. See the block that fills this in.
-    /// </para>
-    ///
-    /// <para>
-    /// <see cref="SlotIndex"/> is the position in the final concat: 0 means "ahead of the first
-    /// piece of rendered video", <c>n</c> means "between piece n-1 and piece n", and the last slot
-    /// means "after everything".
-    /// </para>
-    /// </summary>
     private sealed class ResolvedMeme
     {
         public string Id = "meme";
@@ -282,19 +119,15 @@ public class ProcessWorker : IDisposable
         public double DurationSec;
         public bool IsImage;
         public bool HasAudio;
-        /// <summary>MEMELEVEL_02 — the meme's own measured loudness; null when unmeasured.</summary>
         public double? MeasuredLufs;
         public int InputIndex;
         public double CutOutputSec;
         public int SlotIndex;
-        /// <summary>MEMEMODE_01 — corner-overlay presentation (only meaningful for the corner list).</summary>
         public MemeOverlayCorner Corner = MemeOverlayCorner.BottomRight;
         public MemeOverlaySize Size = MemeOverlaySize.Medium;
         public bool PlaySound = true;
         public bool IsCorner;
-        /// <summary>MEMETRIM_01 — where in the meme file the used part starts.</summary>
         public double ClipInSec;
-        /// <summary>MEMEPOS_01 / MEMEANIM_01 / MEMETRANS_01 — presentation extras.</summary>
         public double PosX = -1;
         public double PosY = -1;
         public MemeOverlayAnimation Animation = MemeOverlayAnimation.None;
@@ -304,12 +137,6 @@ public class ProcessWorker : IDisposable
         public string ALabel => $"[{Id}_a]";
     }
 
-    /// <summary>
-    /// MEME_05 — an FFmpeg filter label may only contain letters, digits and underscores. Meme
-    /// placements carry generated ids, but a payload written by hand — or recovered from an older
-    /// crash file — could carry anything, and one stray bracket or comma silently corrupts the whole
-    /// graph. Anything unexpected falls back to the positional name.
-    /// </summary>
     private static string SanitizeMemeLabel(string? raw, int index)
     {
         if (string.IsNullOrWhiteSpace(raw)) return MemePlacement.NewId(index);
@@ -322,7 +149,6 @@ public class ProcessWorker : IDisposable
         return new string(chars.ToArray());
     }
 
-    /// <summary>MEME_05 — cut times are trim arguments; six decimals is well under a frame at 60fps.</summary>
     private static string CutSec(double seconds) =>
         Math.Max(0, seconds).ToString("F6", System.Globalization.CultureInfo.InvariantCulture);
 
@@ -333,91 +159,30 @@ public class ProcessWorker : IDisposable
         _ffprobePath = FreeVideoStudio.Core.Infrastructure.BinaryPathResolver.Resolve("ffprobe.exe", "backend", "binaries");
     }
 
-    /// <summary>
-    /// ISSUE_04 — the single message used for a user-initiated stop, so the UI can distinguish
-    /// "you cancelled" from "something broke" without string-guessing.
-    /// </summary>
     public const string CancelledMessage = "Export cancelled.";
 
-    /// <summary>True when this job ended because the user stopped it, not because it failed.</summary>
     public bool WasCanceled => _isCanceled;
 
-    /// <summary>
-    /// ISSUE_12 — non-fatal problems that happened AFTER the video itself was written (currently
-    /// only the thumbnail grab). The export still succeeded; the UI surfaces this as a warning so
-    /// the user is not left hunting for a file that was never created.
-    /// </summary>
     public string? CompletionWarning { get; private set; }
 
-    /// <summary>PROCGATE_01 — publish the live child process. Export thread only.</summary>
     private void SetCurrentProcess(Process? proc) => _lifetime.SetCurrentProcess(proc);
 
-    /// <summary>
-    /// PROCGATE_01 — claim the live child process AND clear the slot in one atomic step, so exactly
-    /// one caller can ever be responsible for disposing it. Every teardown site uses this instead of
-    /// the old `_currentProcess = null; proc.Dispose();` pair.
-    /// </summary>
     private Process? TakeCurrentProcess() => _lifetime.TakeCurrentProcess();
 
-    /// <summary>PROCGATE_01 — one consistent read for callers that only observe.</summary>
     private Process? PeekCurrentProcess() => _lifetime.PeekCurrentProcess();
 
-    /// <summary>
-    /// FFMPEGSTOP_01 — starts the bounded cooperative shutdown ladder for <paramref name="proc"/>
-    /// exactly once, off the calling thread.
-    ///
-    /// <para>Ported verbatim from <c>MergerWorker.BeginCooperativeShutdown</c>, which is the
-    /// already-proven shape. Fire-and-forget on purpose: the ladder is strictly bounded
-    /// (<c>CooperativeGraceMs</c> + <c>HardKillConfirmMs</c>) but it DOES wait, and this is called
-    /// from <see cref="Cancel"/> (UI thread) and from cancellation-token registrations (which run
-    /// synchronously on whichever thread cancels). Neither may block. Faults are observed so a
-    /// background stop can never surface as an unobserved task exception.</para>
-    ///
-    /// <para>Single-flight: <see cref="Cancel"/>, the token registrations and <see cref="Dispose"/>
-    /// may all race, but only one ladder ever runs per process.</para>
-    /// </summary>
     private void BeginCooperativeShutdown(Process? proc, string logTag, bool attemptQuitCommand)
         => _lifetime.BeginCooperativeShutdown(proc, attemptQuitCommand);
 
-    /// <summary>
-    /// FFMPEGSTOP_01 — awaits the in-flight shutdown ladder, if any. Bounded by the ladder itself.
-    /// Called before <see cref="ReadExitCodeSafely"/> so the exit code is read from a process that
-    /// has actually finished finalizing its output, not one still writing its moov atom.
-    /// </summary>
     private Task AwaitActiveShutdownAsync() => _lifetime.AwaitActiveShutdownAsync();
 
-    /// <summary>
-    /// PROCGATE_01 — best-effort cancellation. The authoritative mechanism is the CancellationToken
-    /// registrations taken around each child process; this remains the belt-and-braces path, but it
-    /// now acts on a SINGLE consistent read of the process reference instead of re-reading the field
-    /// between the null test and the Kill.
-    ///
-    /// FFMPEGSTOP_01 — the Kill is now the LAST rung of a ladder rather than the first action. The
-    /// call still returns immediately (the ladder runs off-thread), so a cancel can never hang the
-    /// UI, but FFmpeg now gets the chance to finalize its container instead of being shot mid-write.
-    /// </summary>
     public void Cancel() => _lifetime.Cancel(
         stoppingMessage: "Cancellation requested by user. Stopping the FFmpeg process tree (cooperative quit, then hard kill).",
         idleMessage: "Export worker released on shutdown (no encode was running).");
 
-    /// <summary>
-    /// ISSUE_04 — reads a child process's exit code without ever throwing.
-    ///
-    /// Callers reach here after a CANCELLABLE wait, so the process may not have finished dying
-    /// yet (Kill is asynchronous). Give it a short grace period, then fall back to a sentinel
-    /// rather than letting InvalidOperationException masquerade as a pipeline crash.
-    /// </summary>
-    /// FFMPEGSTOP_01 — was a bare WaitForExit -> Kill(tree) -> WaitForExit while the sibling copy
-    /// in MergerWorker had already been hardened to the bounded ladder. PIPEDEDUP_01 removed the
-    /// second copy so the two can never disagree again; the default stays true here because this
-    /// pipeline's cancellable wait can return with the ladder unfinished.
     private static int ReadExitCodeSafely(Process proc, string logTag, int graceMs = 5000, bool attemptQuitCommand = true)
         => CooperativeShutdownGate.ReadExitCodeSafely(proc, logTag, graceMs, attemptQuitCommand);
 
-    /// <summary>
-    /// Runs the complete rendering pipeline. Returns true on success.
-    /// Exact port of ProcessThread.run() logic flow.
-    /// </summary>
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
         UsedGpuVideoProcessing = false;
@@ -463,7 +228,7 @@ public class ProcessWorker : IDisposable
             CoreLogger.Info("Process", $"Is Mobile Format: {IsMobileFormat}, Portrait Text: {PortraitText ?? "None"}");
             CoreLogger.Info("Process", $"Target Quality: {QualityLevel}, MB Override: {TargetMbOverride?.ToString() ?? "None"}");
             CoreLogger.Info("Process", $"Thumbnail Pos: {ThumbnailPosMs} ms");
-            
+
             if (SpeedSegments != null && SpeedSegments.Count > 0)
             {
                 foreach (var seg in SpeedSegments)
@@ -656,7 +421,6 @@ public class ProcessWorker : IDisposable
                 var coreFilters = new List<string>();
                 string baseAudioLabel = "[0:a]";
 
-
                 string granularFilters = "";
                 string gV = "", gVHud = "", gA = "";
                 double gDur = (actualExtractEndMs - actualExtractStartMs) / 1000.0 / SpeedFactor;
@@ -676,7 +440,8 @@ public class ProcessWorker : IDisposable
                         sourceHasAudio ? baseAudioLabel : null,
                         targetFps,
                         needHudBranch: IsMobileFormat,
-                        cuts: exportCuts);
+                        cuts: exportCuts,
+                        freezeVideoLufs: FreezeVideoLufs);
                     granularFilters = filterGraph;
                     gV = vLabel;
                     gVHud = hudLabel;
@@ -755,14 +520,13 @@ public class ProcessWorker : IDisposable
                     }
                 }
 
-
                 bool mixMusicAfterMeme = KeepMusicDuringMeme && memeTotalDuration > 0 && musicTracks.Count > 0;
 
                 int? introInputIndex = introDurationSec > 0.001 ? 1 + musicTracks.Count : null;
                 string? textInputLabel = textPngPath != null
                     ? $"[{1 + musicTracks.Count + (introInputIndex.HasValue ? 1 : 0)}:v]"
                     : null;
-                
+
                 int memeInputBase = 1 + musicTracks.Count + (introInputIndex.HasValue ? 1 : 0) + (textPngPath != null ? 1 : 0);
                 for (int i = 0; i < memes.Count; i++) memes[i].InputIndex = memeInputBase + i;
                 for (int i = 0; i < cornerMemes.Count; i++) cornerMemes[i].InputIndex = memeInputBase + memes.Count + i;
@@ -834,15 +598,21 @@ public class ProcessWorker : IDisposable
 
                 if (mixMusicAfterMeme)
                 {
+                    double windowStart = introDurationSec + (musicTracks.Count > 0 ? musicTracks[0].TimelineStartDelay : 0);
                     for (int i = 0; i < musicTracks.Count; i++)
                     {
+                        double windowEnd = windowStart + musicTracks[i].Duration;
                         double shift = MemeTimeInsertedBefore(
                             introDurationSec + musicTracks[i].TimelineStartDelay, landsAfter: false);
+                        bool lastTrack = i == musicTracks.Count - 1;
+                        double inside = memes.Where(m => MusicPadAlignment.MemeInsideMusicWindow(m.CutOutputSec, windowStart, windowEnd, lastTrack))
+                                             .Sum(m => m.DurationSec);
                         musicTracks[i] = musicTracks[i] with
                         {
-                            Duration = musicTracks[i].Duration + memeTotalDuration,
-                            TimelineStartDelay = musicTracks[i].TimelineStartDelay + shift
+                            Duration = musicTracks[i].Duration + inside,
+                            TimelineStartDelay = introDurationSec + musicTracks[i].TimelineStartDelay + shift
                         };
+                        windowStart = windowEnd;
                     }
                 }
 
@@ -1029,7 +799,6 @@ public class ProcessWorker : IDisposable
                     int voBaseIndex = 1 + musicTracks.Count + (introDurationSec > 0.001 ? 1 : 0) + (textPngPath != null ? 1 : 0) + memes.Count + cornerMemes.Count;
                     var musicProtectionWindows = new List<(double Start, double End)>();
 
-
                     string? finalVoLabel = null;
                     if (effectiveTakes.Count > 0)
                     {
@@ -1047,7 +816,7 @@ public class ProcessWorker : IDisposable
                                 var pieces = VoiceOverSplice.Place(voStartOutSec, voiceDurations[take.Path], gDur, introDurationSec,
                                     memes.Select(m => (m.CutOutputSec - introDurationSec, m.DurationSec)));
                                 string postMemeLabel = $"[vo_delayed_{t}]";
-                                coreFilters.AddRange(VoiceOverSplice.Filters(inputIdx, postMemeLabel, $"vo_splice{t}", pieces));
+                                coreFilters.AddRange(VoiceOverSplice.Filters(inputIdx, postMemeLabel, $"vo_splice{t}", pieces, take.Gain));
                                 voMixedLabels.Add(postMemeLabel);
                                 musicProtectionWindows.AddRange(pieces.Select(p => (p.OutputStartSec, p.OutputStartSec + p.DurationSec)));
                                 continue;
@@ -1063,8 +832,8 @@ public class ProcessWorker : IDisposable
 
                             int delayMs = Math.Max(0, (int)Math.Round(voDelaySec * 1000.0));
                             string delayLabel = $"[vo_delayed_{t}]";
-                            
-                            coreFilters.Add($"[{inputIdx}:a]aresample=48000:async=1,{trimFilter}adelay={delayMs}|{delayMs}{delayLabel}");
+
+                            coreFilters.Add($"[{inputIdx}:a]{VoiceOverLevel.Filter(take.Gain)},aresample=48000:async=1,{trimFilter}adelay={delayMs}|{delayMs}{delayLabel}");
                             voMixedLabels.Add(delayLabel);
                         }
                         if (mixMusicAfterMeme && musicProtectionWindows.Count > 0)
@@ -1073,7 +842,7 @@ public class ProcessWorker : IDisposable
                             voiceMusicPulseExpr = "clip(" + string.Join("+", musicProtectionWindows.Select(w =>
                                 $"clip((t-({F(w.Start)}-0.3))/0.3,0,1)*clip((({F(w.End)}+0.3)-t)/0.3,0,1)")) + ",0,1)";
                         }
-                        
+
                         if (voMixedLabels.Count > 1)
                         {
                             string mixInputs = string.Join("", voMixedLabels);
@@ -1089,6 +858,25 @@ public class ProcessWorker : IDisposable
                 }
 
                 string? finalVoLabelScope = effectiveTakes.Count > 0 ? "[vo_mixed_all]" : null;
+
+                string? freezeDipBody = null, freezeDipFinal = null;
+                if (musicTracks.Count > 0 && SpeedSegments != null && SpeedSegments.Any(sg => sg.Speed < 0.01))
+                {
+                    var freezeWindows = OutputTimeline.Create(
+                        actualExtractEndMs - actualExtractStartMs,
+                        SpeedSegments,
+                        SpeedFactor,
+                        actualExtractStartMs,
+                        cuts: exportCuts).FreezeOutputRanges();
+                    freezeDipBody = FreezeSoundEffect.MusicDipPulse(freezeWindows);
+                    freezeDipFinal = FreezeSoundEffect.MusicDipPulse(freezeWindows.Select(w =>
+                    {
+                        double shift = introDurationSec + memes
+                            .Where(m => m.CutOutputSec - introDurationSec <= w.StartOutputSec + 1e-6)
+                            .Sum(m => m.DurationSec);
+                        return (w.StartOutputSec + shift, w.EndOutputSec + shift);
+                    }));
+                }
 
                 string currentALabel = aPreparedPad;
                 if (!mixMusicAfterMeme)
@@ -1109,7 +897,8 @@ public class ProcessWorker : IDisposable
                         musicLeadFadeIn: MusicLeadFadeIn,
                         musicTailFadeOut: MusicTailFadeOut,
                         voiceOverLabel: effectiveTakes.Count > 0 ? (effectiveTakes.Count > 1 ? "[vo_mixed_all]" : "[vo_delayed_0]") : null,
-                        voiceProtectMusicPulse: VoiceOverProtectFromMusic ? voicePulseExpr : null);
+                        voiceProtectMusicPulse: VoiceOverProtectFromMusic ? voicePulseExpr : null,
+                        freezeMusicDipPulse: freezeDipBody);
 
                     foreach (var part in built.chains)
                     {
@@ -1122,7 +911,7 @@ public class ProcessWorker : IDisposable
                 {
                     double fadeVideoLengthSec = gDur; 
                     double fadeOutStart = Math.Max(0, fadeVideoLengthSec - padEndHumanSec);
-                    
+
                     var vFades = new List<string>();
                     var aFades = new List<string>();
 
@@ -1417,19 +1206,20 @@ public class ProcessWorker : IDisposable
                         48000,
                         musicTracks,
                         1,
-                        gDur + memeTotalDuration,
+                        renderDurationSec + memeTotalDuration,
                         aOutputFinal,
                         musicLeadFadeIn: MusicLeadFadeIn,
                         musicTailFadeOut: MusicTailFadeOut,
                         voiceOverLabel: effectiveTakes.Count > 0 ? (effectiveTakes.Count > 1 ? "[vo_mixed_all]" : "[vo_delayed_0]") : null,
-                        voiceProtectMusicPulse: VoiceOverProtectFromMusic ? voiceMusicPulseExpr : null);
+                        voiceProtectMusicPulse: VoiceOverProtectFromMusic ? voiceMusicPulseExpr : null,
+                        freezeMusicDipPulse: freezeDipFinal);
 
                     foreach (var part in built.chains)
                     {
                         coreFilters.Add(part);
                     }
                     aOutputFinal = built.finalLabel;
-                    
+
                     double lastMemeDuration =
                         memes.Count > 0 && memes[^1].SlotIndex == memePieceCount ? memes[^1].DurationSec : 0;
                     if (EnableFades && lastMemeDuration >= 0.5)
@@ -1441,7 +1231,6 @@ public class ProcessWorker : IDisposable
                         aOutputFinal = "[a_final_music_faded]";
                     }
                 }
-
 
                 coreFilters.Add($"{aOutputFinal}{PeakSafety.SafetyLimiterFilter()}[a_flattened]");
                 aOutputFinal = "[a_flattened]";
@@ -1457,8 +1246,7 @@ public class ProcessWorker : IDisposable
                         cuts: exportCuts);
 
                     var (origW, origH) = CoordinateMath.GetResolutionInts(OriginalResolution);
-                    int canvasWidth = IsMobileFormat ? 1080 : origW;
-                    int canvasHeight = IsMobileFormat ? 1920 : origH;
+                    var (canvasWidth, canvasHeight) = CaptionAssWriter.ExportCanvas(false, IsMobileFormat, origW, origH);
 
                     var captionHud = IsMobileFormat
                         ? MobileFilterBuilder.HudCanvasRects(mobileCoords, ShowTeammates, ShowSpectating)
@@ -1568,7 +1356,6 @@ public class ProcessWorker : IDisposable
 
                 bool success = false;
                 string lastError = "Render failed.";
-
 
                 string? lastSuccessfulEncoder = null;
                 string? lastAttemptedEncoder = null;
@@ -1785,7 +1572,6 @@ public class ProcessWorker : IDisposable
                         bool disposedByGuard = false;
                         try
                         {
-
                         try { ChildProcessTracker.AddProcess(proc); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
 
                         using var reg = cancellationToken.Register(
@@ -2153,15 +1939,7 @@ public class ProcessWorker : IDisposable
 
                 try
                 {
-                    try
-                    {
-                        File.Move(corePath, finalOutput, overwrite: true);
-                    }
-                    catch (IOException)
-                    {
-                        File.Copy(corePath, finalOutput, true);
-                        try { File.Delete(corePath); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
-                    }
+                    await FinalOutputCommit.MoveAsync(corePath, finalOutput, overwrite: true).ConfigureAwait(false);
                 }
                 catch (Exception copyEx)
                 {
@@ -2369,13 +2147,6 @@ public class ProcessWorker : IDisposable
         }
     }
 
-    /// <summary>
-    /// ISSUE_04 — where the finished file goes.
-    /// <see cref="OutputDirectory"/> is set by the UI layer, which has already validated it and
-    /// (if needed) asked the user to pick one. The shell-resolved Downloads folder and the
-    /// %USERPROFILE% guess below exist only so a headless/gated code path still produces a file
-    /// rather than throwing.
-    /// </summary>
     private string ResolveOutputDirectory()
     {
         if (!string.IsNullOrWhiteSpace(OutputDirectory))
@@ -2394,29 +2165,6 @@ public class ProcessWorker : IDisposable
         return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     }
 
-    /// <summary>
-    /// ISSUE_03 — moves a COMPLETED render out of the per-job temp folder, which the pipeline's
-    /// <c>finally</c> block deletes wholesale, into the temp ROOT where it will survive.
-    ///
-    /// This is the safety net for the one moment where the expensive work is already done but the
-    /// file is not yet at its destination. Returns the preserved path, or null if even that could
-    /// not be managed (in which case there is genuinely nothing left to save).
-    /// </summary>
-    /// <summary>
-    /// RESCUE_01 — delegates to <see cref="RescuedOutputPath.TryRescue"/>.
-    ///
-    /// WHAT WAS WRONG: this method picked its destination with a <c>while (File.Exists(...))</c>
-    /// scan and then called the TWO-argument <c>File.Move</c>, which throws when the destination
-    /// exists. Two rescues inside the same one-second stamp — cancel-then-restart, or Main App and
-    /// Merger together — meant the second one threw, was swallowed, returned null, and the
-    /// finished render (the ONLY copy, which is why it is being rescued at all) was abandoned. The
-    /// index loop also had no ceiling, so an unwritable temp root spun forever inside a failure
-    /// handler. <see cref="RescuedOutputPath"/> carries the OUTPATH_01 reservation primitive this
-    /// path always should have used, in ONE copy shared with <c>MergerWorker</c>.
-    ///
-    /// ⚠️ The prefix and the log tag stay distinct from the Merger's — they are how the user and
-    /// the crash digest tell the two tools' rescued files apart.
-    /// </summary>
     private string? TryRescueFinishedRender(string corePath)
         => RescuedOutputPath.TryRescue(
             corePath,
@@ -2425,24 +2173,6 @@ public class ProcessWorker : IDisposable
             "Output",
             "Could not preserve the finished render");
 
-    /// <summary>
-    /// OUTPATH_01 — RESERVES the output name instead of merely testing it.
-    ///
-    /// This was a File.Exists scan: check, then return the name, then write to it much later. Two
-    /// pipelines running at once — which is exactly what a cancel-then-restart used to produce —
-    /// both saw the same index free and both returned it, so the second File.Move(..., overwrite:
-    /// true) silently destroyed the first render. The window is small but the loss is total and
-    /// silent, which is the worst combination.
-    ///
-    /// FileMode.CreateNew with FileShare.None is an ATOMIC create-or-fail at the filesystem level:
-    /// exactly one caller can win a given name, in this process or any other. The zero-byte
-    /// placeholder it leaves is overwritten by the pipeline's own File.Move/File.Copy, which
-    /// already pass overwrite: true.
-    ///
-    /// The iteration ceiling exists so a directory that cannot be written to (permissions, a full
-    /// disk, an offline network share) fails loudly after a bounded number of attempts instead of
-    /// spinning forever inside the export.
-    /// </summary>
     private static string ResolveOutputPath(string outputDir, string? baseName)
     {
         Directory.CreateDirectory(outputDir);
@@ -2468,31 +2198,11 @@ public class ProcessWorker : IDisposable
             "The folder may be full, read-only, or unavailable.");
     }
 
-    /// <summary>
-    /// ISSUE_15 — renders an argument list into a human-readable, copy-pasteable command for
-    /// the DEBUG log only. Never used to launch a process.
-    ///
-    /// PIPEDEDUP_01 — this was a PRIVATE COPY of <see cref="ProcessArgs.FormatForLog"/>, byte for
-    /// byte. Every other consumer in this assembly — AudioLoudnessProbe, MediaProber,
-    /// WaveformGenerator, HudAutoDetector — already called the shared one; this file alone kept
-    /// its own. The escaping rules it implements are a correctness contract (ISSUE_07: a path
-    /// containing a quote, or ending in a backslash, breaks a hand-assembled command line), and a
-    /// second copy is a second place for that contract to drift. Delegating keeps the private
-    /// name so none of the six call sites in this file change.
-    /// </summary>
     private static string FormatForLog(IEnumerable<string> args) => ProcessArgs.FormatForLog(args);
 
     private void EmitFinished(bool success, string message)
         => _lifetime.EmitFinished(Finished, success, message);
 
-
-    /// <summary>
-    /// T01 — runs the analysis pass and the real pass against the pre-rendered master.
-    ///
-    /// Audio is NOT re-encoded: it was finalised in the master and is stream-copied through, so it
-    /// is encoded exactly once across the whole export and suffers no double loss.
-    /// </summary>
-    /// <returns>True when <paramref name="finalPath"/> was produced successfully.</returns>
     private async Task<bool> RunTwoPassTailAsync(
         string masterPath,
         string finalPath,
@@ -2527,11 +2237,6 @@ public class ProcessWorker : IDisposable
         return File.Exists(finalPath) && new FileInfo(finalPath).Length > 0;
     }
 
-    /// <summary>
-    /// T01 — runs one of the two passes, mapping its `-progress` output onto a progress sub-band.
-    /// Deliberately small and self-contained: these invocations have no filter graph, no encoder
-    /// fallback chain and no size-retry, so none of RunFfmpegOnce's machinery applies.
-    /// </summary>
     private async Task<bool> RunPassAsync(
         List<string> args, string phaseTitle, double totalOutputDurationSec,
         double floor, double ceiling, CancellationToken cancellationToken)
@@ -2648,27 +2353,9 @@ public class ProcessWorker : IDisposable
         }
     }
 
-    /// <summary>T01 — see <see cref="TwoPassEncoding.Cleanup"/>.</summary>
     private static void CleanupTwoPassArtifacts(string masterPath, string passLogPrefix)
         => TwoPassEncoding.Cleanup(masterPath, passLogPrefix);
 
-    /// <summary>
-    /// PROBE_01 — measures the clip's NVENC encoding complexity with a 5-second
-    /// reference-quality sample, replacing blind bitrate guessing for size-locked
-    /// exports. See the PROBE_01 block in RunAsync for the calibration data and
-    /// the margin model that consumes the returned bits-per-second figure.
-    ///
-    /// The slice is taken from the MIDDLE of the extract range (`-ss mid -t 5`),
-    /// decoded in SOFTWARE (no `-hwaccel*` flags — the zero-copy guardrail) and
-    /// encoded through h264_nvenc at reference CQ 20 with no rate cap, writing to
-    /// the null muxer so nothing ever touches the disk. Speed segments collapse
-    /// naturally: the `fps` filter duplicates/drops frames exactly like the export
-    /// graph does, so duplicated frames cost ~nothing and the measurement already
-    /// reflects the rendered timeline's complexity.
-    ///
-    /// Returns null (non-fatally) when NVENC is unavailable, the output cannot be
-    /// parsed, or the export is cancelled — callers keep the budget-derived rate.
-    /// </summary>
     private async Task<double?> RunNvencComplexityProbeAsync(
         double extractStartMs, double extractEndMs, string outputResolution, string targetFps,
         CancellationToken cancellationToken)
@@ -2825,22 +2512,9 @@ public class ProcessWorker : IDisposable
         return [];
     }
 
-    /// <summary>
-    /// ISSUE_11 — disposing the worker now also STOPS the encoder.
-    ///
-    /// WHAT WAS WRONG: this released the bookkeeping object and never told FFmpeg anything. Every
-    /// caller is *expected* to call <see cref="Cancel"/> first, but nothing enforced it — so any
-    /// path that disposed a worker without cancelling (an early return, an exception, a UI teardown
-    /// that skipped a step) left a full-speed encode running on a file that would never be
-    /// delivered, with the progress overlay already gone. The user saw fans at full tilt and a
-    /// pegged CPU with nothing on screen to explain it.
-    ///
-    /// Killing the tree here makes teardown self-sufficient. Calling Cancel() first remains the
-    /// correct, orderly path — this is the backstop, not a replacement for it.
-    /// </summary>
     public void Dispose() => _lifetime.DisposeJob();
 }
 
 public record VoiceOverTake(string Path, double StartSec, double OutputOffsetSec = 0,
     double? DurationSec = null, double? RecordedEndSec = null, string? TimingSignature = null,
-    bool NeedsTimingReview = false);
+    bool NeedsTimingReview = false, double Gain = 1.0);

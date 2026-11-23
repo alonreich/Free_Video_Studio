@@ -5,7 +5,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>WAVEPIXEL_01 — 04 UI-MERGERQUEUE: 6000 cached peaks → pixel-resolution envelope → O(pixels) geometry.</summary>
 public class WaveformEnvelopeTests
 {
     private static float[] Peaks(int n, int seed = 7)

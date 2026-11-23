@@ -1,80 +1,76 @@
-<!-- AICOMMENTARY_UI_01 / COMMENTARYUI_02 — AI Live Commentary options. BASIC: style, placement, language, range.
-     ADVANCED (an expander, always closed when the window opens): tone sliders, text look and size, how often it
-     talks, swearing, caption animation, game type, extra notes. All state is bound to
-     AiCommentaryOptionsViewModel (MVVM_01); colours come only from theme tokens. -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:FreeVideoStudio.App.ViewModels"
         x:Class="FreeVideoStudio.App.Controls.AiCommentaryDialogWindow"
         x:DataType="vm:AiCommentaryOptionsViewModel" x:CompileBindings="True"
-        Title="🎙️ Live Commentary Captions — AI Generation"
-        Width="680" Height="680" MinWidth="600" MinHeight="560"
+        Title="AI Commentary Captions — AI Generation"
+        Width="680" Height="700" MinWidth="600" MinHeight="560"
         Background="{DynamicResource AppSurfaceBrush}"
         WindowStartupLocation="CenterOwner"
-        CanResize="False"
+        CanResize="True"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaTitleBarHeightHint="30">
 
     <Grid>
         <Border Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="3">
             <Grid RowDefinitions="30, Auto, *, Auto">
-                <!-- Title Bar -->
                 <Border Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
-                    <TextBlock Text="🎙️ LIVE COMMENTARY CAPTIONS — AI GENERATION" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
+                    <TextBlock Text="AI COMMENTARY CAPTIONS" Classes="WindowTitleText" Foreground="{DynamicResource TitleBarForeground}" />
                 </Border>
 
-                <!-- Header Instruction -->
-                <StackPanel Grid.Row="1" Margin="24,14,24,10" Spacing="4">
-                    <TextBlock Text="Generate AI Live Commentary" FontSize="{DynamicResource AppFontSize18}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                    <TextBlock Text="Pick a style and where the captions go. Everything else is under Advanced."
+                <StackPanel Grid.Row="1" Margin="24,14,24,10" Spacing="6">
+                    <TextBlock Text="Generate AI Commentary Captions" FontSize="{DynamicResource AppFontSize18}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                    <TextBlock Text="Adds written captions. Does not create a voice. Pick a style and placement; everything else is under Advanced."
                                Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap"/>
+                    <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,7">
+                        <TextBlock Name="ProviderCapabilityNoteText" Text="{Binding ProviderCapabilityNote}"
+                                   Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" TextWrapping="Wrap"/>
+                    </Border>
                 </StackPanel>
 
                 <ScrollViewer Grid.Row="2" Margin="24,0,24,10" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Spacing="14">
 
-                        <!-- BASIC 1 — one-click style (COMMENTARYMIX_01) -->
                         <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
                             <StackPanel Spacing="10">
-                                <TextBlock Text="STYLE" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                <TextBlock Text="STYLE" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
                                 <Grid RowDefinitions="Auto, Auto" ColumnDefinitions="*, *">
                                     <RadioButton Grid.Row="0" Grid.Column="0" GroupName="CommentaryStyle" Margin="0,0,8,6" IsChecked="{Binding IsHypeStreamer}"
                                                  AutomationProperties.Name="Hype Streamer style">
                                         <StackPanel Spacing="2">
-                                            <TextBlock Text="🔥 Hype Streamer" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="12"/>
-                                            <TextBlock Text="Loud, excited, celebrates every good play" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="10" TextWrapping="Wrap"/>
+                                            <TextBlock Text="🔥 Hype Streamer" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize12}"/>
+                                            <TextBlock Text="Loud, excited, celebrates every good play" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </RadioButton>
                                     <RadioButton Grid.Row="0" Grid.Column="1" GroupName="CommentaryStyle" Margin="8,0,0,6" IsChecked="{Binding IsChillFriend}"
                                                  AutomationProperties.Name="Chill Friend style">
                                         <StackPanel Spacing="2">
-                                            <TextBlock Text="☕ Chill Friend" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="12"/>
-                                            <TextBlock Text="Calm, relaxed, a little funny" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="10" TextWrapping="Wrap"/>
+                                            <TextBlock Text="☕ Chill Friend" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize12}"/>
+                                            <TextBlock Text="Calm, relaxed, a little funny" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </RadioButton>
                                     <RadioButton Grid.Row="1" Grid.Column="0" GroupName="CommentaryStyle" Margin="0,6,8,0" IsChecked="{Binding IsCoach}"
                                                  AutomationProperties.Name="Coach style">
                                         <StackPanel Spacing="2">
-                                            <TextBlock Text="🎯 Coach" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="12"/>
-                                            <TextBlock Text="Explains your moves from what is on screen" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="10" TextWrapping="Wrap"/>
+                                            <TextBlock Text="🎯 Coach" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize12}"/>
+                                            <TextBlock Text="Explains your moves from what is on screen" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </RadioButton>
                                     <RadioButton Grid.Row="1" Grid.Column="1" GroupName="CommentaryStyle" Margin="8,6,0,0" IsChecked="{Binding IsRoastMe}"
                                                  AutomationProperties.Name="Roast Me style">
                                         <StackPanel Spacing="2">
-                                            <TextBlock Text="😂 Roast Me" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="12"/>
-                                            <TextBlock Text="Sarcastic and funny, teases your mistakes" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="10" TextWrapping="Wrap"/>
+                                            <TextBlock Text="😂 Roast Me" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize12}"/>
+                                            <TextBlock Text="Sarcastic and funny, teases your mistakes" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </RadioButton>
                                 </Grid>
                             </StackPanel>
                         </Border>
 
-                        <!-- BASIC 2 — placement (CAPTIONPLACE_01) + language -->
                         <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
                             <Grid ColumnDefinitions="*, 16, *">
                                 <StackPanel Grid.Column="0" Spacing="8">
-                                    <TextBlock Text="PLACEMENT" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                    <TextBlock Text="PLACEMENT" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
                                     <StackPanel Orientation="Horizontal" Spacing="14">
                                         <RadioButton GroupName="CaptionPos" Content="Upper" IsChecked="{Binding IsUpper}"
                                                      ToolTip.Tip="Upper third of the screen. Moves down off your game's on-screen info."/>
@@ -85,17 +81,16 @@
                                     </StackPanel>
                                 </StackPanel>
                                 <StackPanel Grid.Column="2" Spacing="6">
-                                    <TextBlock Text="LANGUAGE" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                    <TextBlock Text="LANGUAGE" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
                                     <ComboBox HorizontalAlignment="Stretch" ItemsSource="{x:Static vm:AiCommentaryOptionsViewModel.Languages}"
                                               SelectedItem="{Binding Language}" AutomationProperties.Name="Caption language"/>
                                 </StackPanel>
                             </Grid>
                         </Border>
 
-                        <!-- BASIC 3 — range -->
                         <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
                             <StackPanel Spacing="8">
-                                <TextBlock Text="WHAT TO CAPTION" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                <TextBlock Text="WHAT TO CAPTION" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
                                 <StackPanel Orientation="Horizontal" Spacing="20">
                                     <RadioButton GroupName="CommentaryScope" Content="Whole video" IsChecked="{Binding IsEntireTimeline}"/>
                                     <RadioButton GroupName="CommentaryScope" Content="Selected block only" IsChecked="{Binding IsSelectedBlock}"
@@ -104,55 +99,52 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- ADVANCED — always closed when the window opens (COMMENTARYUI_02) -->
                         <Expander IsExpanded="{Binding IsAdvancedOpen}" HorizontalAlignment="Stretch">
                             <Expander.Header>
-                                <TextBlock Text="ADVANCED" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                <TextBlock Text="ADVANCED" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
                             </Expander.Header>
                             <StackPanel Spacing="14" Margin="0,8,0,0">
 
-                                <!-- Tone sliders (COMMENTARYMIX_01) -->
                                 <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
                                     <StackPanel Spacing="6">
-                                        <TextBlock Text="TONE MIX" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                        <TextBlock Text="TONE MIX" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
                                         <Grid ColumnDefinitions="110, *, 80" RowDefinitions="Auto, Auto, Auto, Auto">
-                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="😂 Funny" VerticalAlignment="Center" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="12"/>
+                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="😂 Funny" VerticalAlignment="Center" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize12}"/>
                                             <Slider Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="4" TickFrequency="1" IsSnapToTickEnabled="True" TickPlacement="BottomRight"
                                                     Value="{Binding Funny}" AutomationProperties.Name="Funny amount"/>
-                                            <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding FunnyText}" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="12"/>
+                                            <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding FunnyText}" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}"/>
 
-                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="😏 Sarcastic" VerticalAlignment="Center" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="12"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="😏 Sarcastic" VerticalAlignment="Center" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize12}"/>
                                             <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="4" TickFrequency="1" IsSnapToTickEnabled="True" TickPlacement="BottomRight"
                                                     Value="{Binding Sarcastic}" AutomationProperties.Name="Sarcastic amount"/>
-                                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding SarcasticText}" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="12"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding SarcasticText}" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}"/>
 
-                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="⚡ Energetic" VerticalAlignment="Center" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="12"
+                                            <TextBlock Grid.Row="2" Grid.Column="0" Text="⚡ Energetic" VerticalAlignment="Center" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize12}"
                                                        ToolTip.Tip="Low = calm and quiet. High = loud hype."/>
                                             <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="4" TickFrequency="1" IsSnapToTickEnabled="True" TickPlacement="BottomRight"
                                                     Value="{Binding Energy}" AutomationProperties.Name="Energy amount"/>
-                                            <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding EnergyText}" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="12"/>
+                                            <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding EnergyText}" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}"/>
 
-                                            <TextBlock Grid.Row="3" Grid.Column="0" Text="🎯 Tactical" VerticalAlignment="Center" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="12"/>
+                                            <TextBlock Grid.Row="3" Grid.Column="0" Text="🎯 Tactical" VerticalAlignment="Center" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize12}"/>
                                             <Slider Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="4" TickFrequency="1" IsSnapToTickEnabled="True" TickPlacement="BottomRight"
                                                     Value="{Binding Tactical}" AutomationProperties.Name="Tactical amount"/>
-                                            <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding TacticalText}" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="12"/>
+                                            <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding TacticalText}" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}"/>
                                         </Grid>
-                                        <TextBlock Text="{Binding TacticalHint}" TextWrapping="Wrap" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="10"/>
+                                        <TextBlock Text="{Binding TacticalHint}" TextWrapping="Wrap" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}"/>
                                     </StackPanel>
                                 </Border>
 
-                                <!-- Text look + size (CAPTIONLOOK_01 / CAPTIONSIZE_01) -->
                                 <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
                                     <Grid ColumnDefinitions="*, 16, *">
                                         <StackPanel Grid.Column="0" Spacing="8">
-                                            <TextBlock Text="TEXT LOOK" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                            <TextBlock Text="TEXT LOOK" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
                                             <RadioButton GroupName="CaptionLook" Content="Outline" IsChecked="{Binding IsOutlineLook}"
                                                          ToolTip.Tip="White text with a thick dark outline and shadow."/>
                                             <RadioButton GroupName="CaptionLook" Content="Dark box behind text" IsChecked="{Binding IsBoxLook}"
                                                          ToolTip.Tip="A see-through dark box behind each line. Easiest to read on bright scenes."/>
                                         </StackPanel>
                                         <StackPanel Grid.Column="2" Spacing="8">
-                                            <TextBlock Text="TEXT SIZE" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                            <TextBlock Text="TEXT SIZE" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
                                             <StackPanel Orientation="Horizontal" Spacing="14">
                                                 <RadioButton GroupName="CaptionSize" Content="Small" IsChecked="{Binding IsSmall}"/>
                                                 <RadioButton GroupName="CaptionSize" Content="Medium" IsChecked="{Binding IsMedium}"/>
@@ -162,11 +154,10 @@
                                     </Grid>
                                 </Border>
 
-                                <!-- How often + swearing + animation -->
                                 <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
                                     <Grid ColumnDefinitions="*, 16, *" RowDefinitions="Auto, 12, Auto">
                                         <StackPanel Grid.Row="0" Grid.Column="0" Spacing="8">
-                                            <TextBlock Text="HOW OFTEN IT TALKS" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                            <TextBlock Text="HOW OFTEN CAPTIONS APPEAR" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
                                             <StackPanel Orientation="Horizontal" Spacing="14">
                                                 <RadioButton GroupName="Chattiness" Content="Quiet" IsChecked="{Binding IsQuiet}" ToolTip.Tip="Only the biggest moments."/>
                                                 <RadioButton GroupName="Chattiness" Content="Normal" IsChecked="{Binding IsNormalChat}"/>
@@ -174,9 +165,9 @@
                                             </StackPanel>
                                         </StackPanel>
                                         <StackPanel Grid.Row="0" Grid.Column="2" Spacing="8">
-                                            <TextBlock Text="CAPTION ANIMATION" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                            <TextBlock Text="CAPTION ANIMATION" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
                                             <RadioButton GroupName="CaptionStyle" Content="Word by word" IsChecked="{Binding IsWordByWord}"
-                                                         ToolTip.Tip="Each word lights up in gold as it is said."/>
+                                                         ToolTip.Tip="Each word highlights in gold along the caption timing."/>
                                             <RadioButton GroupName="CaptionStyle" Content="Plain lines" IsChecked="{Binding IsPlainLines}"/>
                                         </StackPanel>
                                         <CheckBox Grid.Row="2" Grid.Column="0" Content="Allow swearing" IsChecked="{Binding AllowSwearing}"
@@ -184,13 +175,12 @@
                                     </Grid>
                                 </Border>
 
-                                <!-- Game type + notes -->
                                 <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
                                     <StackPanel Spacing="8">
-                                        <TextBlock Text="GAME TYPE" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
+                                        <TextBlock Text="GAME TYPE" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" LetterSpacing="1"/>
                                         <ComboBox HorizontalAlignment="Stretch" ItemsSource="{x:Static vm:AiCommentaryOptionsViewModel.GameTypes}"
                                                   SelectedIndex="{Binding GameTypeIndex}" AutomationProperties.Name="Game type"/>
-                                        <TextBlock Text="EXTRA NOTES FOR THE AI" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AppTextMutedBrush}" LetterSpacing="1" Margin="0,6,0,0"/>
+                                        <TextBlock Text="EXTRA NOTES FOR THE AI" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppTextMutedBrush}" LetterSpacing="1" Margin="0,6,0,0"/>
                                         <TextBox Text="{Binding Notes}" Watermark="e.g. 'Call me Coach', 'Celebrate goals loudly', 'Focus on sniper shots'..." Height="54" TextWrapping="Wrap" AcceptsReturn="True"/>
                                     </StackPanel>
                                 </Border>
@@ -199,12 +189,11 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <!-- Action Footer -->
                 <Grid Grid.Row="3" ColumnDefinitions="Auto, *, Auto" Margin="24,10,24,18">
                     <Button Grid.Column="0" Classes="Secondary" Content="CANCEL" MinWidth="110" MinHeight="42" Cursor="Hand" IsCancel="True"
                             Command="{Binding CancelCommand}" ToolTip.Tip="Close without generating commentary"/>
-                    <Button Grid.Column="2" Classes="Success" Content="🎙️ GENERATE COMMENTARY" MinWidth="220" MinHeight="42" Cursor="Hand" IsDefault="True"
-                            Command="{Binding GenerateCommand}" ToolTip.Tip="Start generating live commentary captions with the chosen settings"/>
+                    <Button Grid.Column="2" Classes="Success" Content="GENERATE CAPTIONS" MinWidth="220" MinHeight="42" Cursor="Hand" IsDefault="True"
+                            Command="{Binding GenerateCommand}" ToolTip.Tip="Generate written AI commentary captions (no voice is created)"/>
                 </Grid>
             </Grid>
         </Border>

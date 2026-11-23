@@ -1,15 +1,7 @@
-﻿
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>
-/// FASTINSTALL_01 — a second name for an existing file on the same NTFS volume. Instant, and it uses
-/// no extra disk space. Used ONLY between folders the elevated installer owns (the installed program
-/// and its own staging area under Program Files): a link shares the bytes, so it must never point at
-/// a file a normal user can still write. Anything that fails (other volume, FAT, non-Windows) returns
-/// false and the caller copies instead.
-/// </summary>
 public static partial class HardLink
 {
     [LibraryImport("kernel32.dll", EntryPoint = "CreateHardLinkW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]

@@ -8,9 +8,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// AI_AUTOFIT_01 — Unit tests for AI Music Auto-Fit recommendation models and settings.
-/// </summary>
 public sealed class AiMusicAutoFitTests
 {
     [Fact]
@@ -41,7 +38,7 @@ public sealed class AiMusicAutoFitTests
             Assert.Equal(AiVendor.Google, config.Vendor);
 
             var custom = new AiUsageConfig(AiVendor.Anthropic, "claude-3-7-sonnet-20250219");
-            SettingsManager.Instance.SetUsageConfig(AiUsage.MusicAutoFit, custom);
+            SettingsManager.ReplaceInstanceForTests(s => s.SetUsageConfig(AiUsage.MusicAutoFit, custom));
 
             var retrieved = SettingsManager.Instance.GetUsageConfig(AiUsage.MusicAutoFit);
             Assert.Equal(AiVendor.Anthropic, retrieved.Vendor);
@@ -49,7 +46,7 @@ public sealed class AiMusicAutoFitTests
         }
         finally
         {
-            SettingsManager.Instance.SetUsageConfig(AiUsage.MusicAutoFit, original);
+            SettingsManager.ReplaceInstanceForTests(s => s.SetUsageConfig(AiUsage.MusicAutoFit, original));
         }
     }
 

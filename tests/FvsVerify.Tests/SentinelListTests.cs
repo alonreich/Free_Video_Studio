@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -8,28 +7,25 @@ using Xunit;
 
 namespace FvsVerify.Tests;
 
-/// <summary>
-/// SYS-VERIFYTOOL — the tests that the batch version could not have.
-///
-/// <para>
-/// Every case below corresponds to a way the old <c>for %%P in (...)</c> list failed in the field.
-/// That is the point: the mechanism moved to C# so these could be written at all. A guard that
-/// cannot be tested is a guard that is trusted without evidence, and this one was wrong for
-/// months while being trusted.
-/// </para>
-/// </summary>
 public sealed class SentinelListTests
 {
+    [Fact]
+    public void DevVerificationPrecedesCleanupAndHasAStandaloneMode()
+    {
+        string script = File.ReadAllText(Path.Combine(RepoRoot, "dev.cmd"));
+        int verify = script.IndexOf("dotnet run --project", StringComparison.Ordinal);
+        int halt = script.IndexOf("if errorlevel 1 exit /b 1", StringComparison.Ordinal);
+        int standalone = script.IndexOf("if /I \"%~1\"==\"verify\" exit /b 0", StringComparison.Ordinal);
+        Assert.True(verify >= 0 && halt > verify && standalone > halt);
+        Assert.True(script.IndexOf("powershell -NoProfile", StringComparison.Ordinal) > standalone);
+        Assert.DoesNotContain("taskkill", script);
+        Assert.DoesNotContain("rd /s", script);
+    }
+
     private static string RepoRoot =>
         SentinelList.FindRepositoryRoot(AppContext.BaseDirectory)
         ?? throw new InvalidOperationException("Could not locate the repository root from the test binary.");
 
-
-    /// <summary>
-    /// VERIFYHALT_01 — the check the whole mechanism exists for, run against the real working tree.
-    /// This is the same assertion CI makes and the same one dev.cmd makes before a local build;
-    /// all three read <c>build/sentinels.txt</c>, so they cannot disagree.
-    /// </summary>
     [Fact]
     public void EveryFixSentinelStillResolves()
     {
@@ -40,11 +36,6 @@ public sealed class SentinelListTests
             SentinelList.FormatFailures(malformed, failures));
     }
 
-    /// <summary>
-    /// The list is not allowed to quietly empty itself. A parser change that made every line look
-    /// like a comment would turn this whole mechanism off while reporting a clean pass — which is
-    /// exactly what LISTCOMMENT_01 and VERIFYLOOP_01 each did, in their own way.
-    /// </summary>
     [Fact]
     public void TheListIsNotEmpty()
     {
@@ -54,7 +45,6 @@ public sealed class SentinelListTests
           + "when it moved out of dev.cmd. A sudden drop means the format changed and entries are "
           + "being skipped, not that the fixes were retired.");
     }
-
 
     [Fact]
     public void CommentsAndBlankLinesAreSkipped()
@@ -74,11 +64,6 @@ public sealed class SentinelListTests
         Assert.Equal("src/Thing.cs", only.RelativePath);
     }
 
-    /// <summary>
-    /// LISTCOMMENT_01, as a unit test. In the batch list a bare annotation became one list item per
-    /// WORD, each checked as a sentinel — ~400 bogus entries. Here, anything that is not a comment
-    /// and not TAG=path is reported, never silently dropped and never mistaken for a sentinel.
-    /// </summary>
     [Fact]
     public void AMalformedLineIsReportedRatherThanSkipped()
     {
@@ -94,10 +79,6 @@ public sealed class SentinelListTests
         Assert.Equal(3, malformed.Count);
     }
 
-    /// <summary>
-    /// A padded tag matches nothing and would report every file as reverted. The old list said so
-    /// in a comment and could not enforce it.
-    /// </summary>
     [Fact]
     public void ATagWithWhitespaceIsMalformed()
     {
@@ -105,10 +86,6 @@ public sealed class SentinelListTests
         Assert.Single(malformed);
     }
 
-    /// <summary>
-    /// A backslash path works on Windows and fails on a Linux CI runner as a mystery [no-file].
-    /// Rejecting it at parse time makes the failure say what is actually wrong.
-    /// </summary>
     [Fact]
     public void ABackslashPathIsMalformed()
     {
@@ -129,7 +106,6 @@ public sealed class SentinelListTests
 
         Assert.Equal(2, parsed.Count);
     }
-
 
     [Fact]
     public void AMissingFileAndAMissingTagAreDistinguished()
@@ -173,10 +149,6 @@ public sealed class SentinelListTests
         }
     }
 
-    /// <summary>
-    /// The failure text is what a developer acts on at 2am. It must name the tag, the file, the
-    /// reason and the line in the data file to edit — the batch version printed a bare list of tags.
-    /// </summary>
     [Fact]
     public void TheFailureMessageNamesTagFileReasonAndListLine()
     {
@@ -189,5 +161,55 @@ public sealed class SentinelListTests
         Assert.Contains("tag not found", text, StringComparison.Ordinal);
         Assert.Contains(":42", text, StringComparison.Ordinal);
         Assert.Contains("RETIRED", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheSymbolFormIsParsed()
+    {
+        IReadOnlyList<Sentinel> parsed = SentinelList.Parse(new[] { "TAG_01=src/A.cs#DescribeSourceRange" }, out IReadOnlyList<string> malformed);
+
+        Assert.Empty(malformed);
+        Sentinel s = Assert.Single(parsed);
+        Assert.Equal("TAG_01", s.Tag);
+        Assert.Equal("src/A.cs", s.RelativePath);
+        Assert.Equal("DescribeSourceRange", s.Symbol);
+    }
+
+    [Theory]
+    [InlineData("TAG_01=src/A.cs#")]
+    [InlineData("TAG_01=src/A.cs#Not An Identifier")]
+    [InlineData("TAG_01=src/A.cs#Name.Member")]
+    public void AnEmptyOrInvalidSymbolIsMalformed(string line)
+    {
+        IReadOnlyList<Sentinel> parsed = SentinelList.Parse(new[] { line }, out IReadOnlyList<string> malformed);
+
+        Assert.Empty(parsed);
+        Assert.Single(malformed);
+    }
+
+    [Fact]
+    public void ASymbolSentinelChecksTheSymbolNotTheTag()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "fvsverify_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(dir, "src"));
+        File.WriteAllText(Path.Combine(dir, "src", "A.cs"), "public static class A { public static int DescribeSourceRange() => 1; }");
+
+        try
+        {
+            IReadOnlyList<SentinelResult> failures = SentinelList.Check(dir, new[]
+            {
+                new Sentinel("TAG_01", "src/A.cs", 1, "DescribeSourceRange"),
+                new Sentinel("TAG_02", "src/A.cs", 2, "DescribeSource"),
+            });
+
+            SentinelResult f = Assert.Single(failures);
+            Assert.Equal("TAG_02", f.Sentinel.Tag);
+            Assert.Equal(SentinelFailure.SymbolMissing, f.Failure);
+            Assert.Contains("symbol DescribeSource not found", SentinelList.FormatFailures(Array.Empty<string>(), failures), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 }

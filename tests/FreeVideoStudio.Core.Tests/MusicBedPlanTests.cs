@@ -1,11 +1,9 @@
-﻿
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using FreeVideoStudio.Core.Media;
 using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>MUSICSYNC_01 — the one music-bed plan the export and the live preview both read.</summary>
 public class MusicBedPlanTests
 {
     [Fact]

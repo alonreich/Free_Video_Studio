@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -10,28 +9,10 @@ using Avalonia.Threading;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// The ONE place any user-visible failure is reported from.
-///
-/// Contract (do not weaken): whenever something fails in a way the user can perceive, call
-/// <see cref="ShowAsync"/>. The user always gets a modal dialog with
-///   (a) a plain-English sentence describing what failed,
-///   (b) the single most relevant root-cause line pulled out of the raw error / the log tail,
-///   (c) OKAY and SHOW LOGS buttons.
-/// A bare toast (ShowTacticalFeedback) is NEVER sufficient on its own for a failure — it may
-/// accompany the dialog, but must not replace it.
-///
-/// This class is UI-thread safe: it marshals itself onto the dispatcher and is re-entrancy
-/// guarded so a burst of failures cannot stack a tower of modals on top of each other.
-/// </summary>
 public static class ErrorReporter
 {
     private static bool _dialogOpen;
 
-    /// <summary>
-    /// Raw FFmpeg / native fragments that are noise, never a root cause. Filtered out before
-    /// ranking so the dialog does not show the user "frame= 1234 fps=60".
-    /// </summary>
     private static readonly string[] NoisePrefixes =
     {
         "frame=", "size=", "bitrate=", "speed=", "video:", "audio:", "Press [q]",
@@ -39,11 +20,6 @@ public static class ErrorReporter
         "Stream #", "Metadata:", "encoder ", "  ", "Duration:"
     };
 
-    /// <summary>
-    /// Ranked root-cause signatures, strongest first. The first match in the raw text wins,
-    /// and each carries a plain-English translation so the user is not handed FFmpeg jargon
-    /// with no explanation. Order matters — put the specific ones above the generic ones.
-    /// </summary>
     private static readonly (string Needle, string PlainEnglish)[] KnownCauses =
     {
         ("No space left on device",
@@ -96,19 +72,6 @@ public static class ErrorReporter
             "The Gemini API key is invalid or unauthorized. Please verify your API key in Settings > AI Tracking."),
     };
 
-    /// <summary>
-    /// Shows the standard failure dialog. Safe to call from any thread.
-    /// </summary>
-    /// <param name="owner">Owning window for modality. Null shows a non-owned dialog.</param>
-    /// <param name="title">Short title, e.g. "Export failed".</param>
-    /// <param name="message">
-    /// Plain-English description of the operation that failed. If a known root cause is
-    /// detected, its translation is appended so the user knows WHY, not just WHAT.
-    /// </param>
-    /// <param name="rawDetail">
-    /// The raw error text (exception message, FFmpeg stderr tail, etc.). When null or when no
-    /// cause can be found in it, the tail of the log file is scanned instead.
-    /// </param>
     public static async Task ShowAsync(Window? owner, string title, string message, string? rawDetail = null)
     {
         string rootCause = ExtractRootCause(rawDetail);
@@ -135,9 +98,6 @@ public static class ErrorReporter
         }
     }
 
-    /// <summary>
-    /// Shows the standard failure dialog for a strongly typed export failure.
-    /// </summary>
     public static async Task ShowAsync(Window? owner, FreeVideoStudio.Core.Media.ExportFailure failure)
     {
         ArgumentNullException.ThrowIfNull(failure);
@@ -174,13 +134,11 @@ public static class ErrorReporter
         }
     }
 
-    /// <summary>Fire-and-forget convenience for typed export failure.</summary>
     public static void Show(Window? owner, FreeVideoStudio.Core.Media.ExportFailure failure)
     {
         _ = ShowAsync(owner, failure);
     }
 
-    /// <summary>Fire-and-forget convenience for call sites that cannot await (event handlers).</summary>
     public static void Show(Window? owner, string title, string message, string? rawDetail = null)
     {
         _ = ShowAsync(owner, title, message, rawDetail);
@@ -222,10 +180,6 @@ public static class ErrorReporter
         }
     }
 
-    /// <summary>
-    /// Picks the ONE line most likely to be the actual root cause from supplied diagnostic text.
-    /// Does not search the shared application log so old unrelated failures are never attached.
-    /// </summary>
     public static string ExtractRootCause(string? rawDetail)
     {
         string? fromRaw = ScanForCause(rawDetail);
@@ -288,7 +242,6 @@ public static class ErrorReporter
         return false;
     }
 
-    /// <summary>Maps a detected root cause onto a sentence a non-technical user can act on.</summary>
     internal static string TranslateCause(string? rawDetail, string rootCause)
     {
         string haystack = (rawDetail ?? string.Empty) + "\n" + rootCause;

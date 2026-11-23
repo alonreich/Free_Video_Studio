@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -19,13 +18,8 @@ using CoreMeme = FreeVideoStudio.Core.Media.MemePlacement;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>One corner overlay on a host's GAMEPLAY clock (output seconds, full-screen memes not counted).</summary>
 public sealed record CornerMemeSpan(CoreMeme Meme, double GameStartSec, double GameEndSec);
 
-/// <summary>
-/// CACHEBOUND_05 (04 UI-MEMESELECT / 03 FFM-MEMECORNER) — a bounded window of decoded corner meme preview frames.
-/// <para>Frames are owned by <see cref="CornerMemeFrames.Store"/> and disposed only when the last lease closes.</para>
-/// </summary>
 public sealed class CornerMemeFrameWindow : IDisposable
 {
     private int _disposals;
@@ -77,23 +71,8 @@ public sealed class CornerMemeFrameWindow : IDisposable
     }
 }
 
-/// <summary>Compatibility record for existing callers.</summary>
 public sealed record CornerMemeFrameSet(IReadOnlyList<Bitmap> Frames, double Fps);
 
-/// <summary>
-/// MEMEMODE_01 / CACHEBOUND_05 — THE CORNER MEME, PREVIEWED AS IT EXPORTS (UI-MEMESELECT / FFM-MEMECORNER).
-///
-/// <para>A corner overlay is SIMULTANEOUS with the gameplay: this presenter never pauses, seeks or
-/// swaps the one mpv player (that is <see cref="MemePreviewDirector"/>'s job, and only for full-screen
-/// memes). It draws the meme's frames in an <see cref="Image"/> laid over the video host, positioned
-/// with <see cref="MemeOverlayLayout"/> — the same box the export's <c>overlay</c> filter uses —
-/// inside the letterboxed frame rectangle. The frame shown is a pure function of the host's gameplay
-/// clock, so scrubbing, pausing and playing all stay in step without any timer of its own.</para>
-///
-/// <para>Frames come from <see cref="CornerMemeFrames"/> (bounded window LRU cache, decoded off the UI thread).
-/// The presenter acquires and holds a lease on what is currently displayed, releasing it immediately
-/// when the window or span changes, or when the presenter is hidden, detached or disposed.</para>
-/// </summary>
 public sealed class CornerMemeOverlayPresenter : IDisposable
 {
     private readonly Canvas _layer = new() { IsHitTestVisible = false, ZIndex = 50, ClipToBounds = true };
@@ -104,7 +83,6 @@ public sealed class CornerMemeOverlayPresenter : IDisposable
     private (int W, int H) _frame = (1920, 1080);
     private int _disposed;
 
-    /// <summary>Lays the overlay over <paramref name="videoHost"/>.</summary>
     public void Attach(Control? videoHost)
     {
         if (videoHost == null) return;
@@ -122,13 +100,11 @@ public sealed class CornerMemeOverlayPresenter : IDisposable
         _videoHost = videoHost;
     }
 
-    /// <summary>The OUTPUT frame size the export overlays onto (portrait 1080x1920, else the source size).</summary>
     public void SetFrameSize(int width, int height)
     {
         if (width > 0 && height > 0) _frame = (width, height);
     }
 
-    /// <summary>Replaces the overlays. Prefetches initial window for each span.</summary>
     public void SetSpans(IReadOnlyList<CornerMemeSpan>? spans)
     {
         _spans = spans ?? Array.Empty<CornerMemeSpan>();
@@ -156,7 +132,6 @@ public sealed class CornerMemeOverlayPresenter : IDisposable
         }
     }
 
-    /// <summary>Detaches overlay from parent panel and releases all displayed frame leases.</summary>
     public void Detach()
     {
         if (!Dispatcher.UIThread.CheckAccess())
@@ -190,11 +165,6 @@ public sealed class CornerMemeOverlayPresenter : IDisposable
         _spans = Array.Empty<CornerMemeSpan>();
     }
 
-    /// <summary>
-    /// CORNERPARITY_01 — every overlay visible at <paramref name="gameplaySec"/>, in export z-order (list
-    /// order: the export overlays them one after another, so the LAST one is on top). Half-open
-    /// [start, end), exactly the export's <c>between(t,S,E)</c> window less its closing instant.
-    /// </summary>
     public static List<CornerMemeSpan> ActiveAt(IReadOnlyList<CornerMemeSpan> spans, double gameplaySec)
     {
         var active = new List<CornerMemeSpan>();
@@ -203,7 +173,6 @@ public sealed class CornerMemeOverlayPresenter : IDisposable
         return active;
     }
 
-    /// <summary>Shows the frames due at <paramref name="gameplaySec"/>, or nothing.</summary>
     public void Update(double gameplaySec)
     {
         if (!Dispatcher.UIThread.CheckAccess())
@@ -317,17 +286,6 @@ public sealed class CornerMemeOverlayPresenter : IDisposable
     }
 }
 
-/// <summary>
-/// MEMEMODE_01 / CACHEBOUND_05 — corner-preview frames, decoded in bounded time/frame windows off the UI thread:
-/// <list type="bullet">
-/// <item>Windows are <see cref="WindowDurationSeconds"/> seconds (at most <see cref="MaxFramesPerWindow"/> frames at <see cref="Fps"/> fps).</item>
-/// <item>Max dimensions are <see cref="Width"/> x <see cref="MaxHeight"/> with aspect ratio preserved, eliminating unbounded pixel growth.</item>
-/// <item>Offscreen window bytes are budgeted in <see cref="Store"/> (<see cref="DefaultMemoryBudgetBytes"/>), evicting LRU unleased windows.</item>
-/// <item>Concurrent decodes are throttled by a semaphore to at most <see cref="MaxConcurrentDecoders"/>.</item>
-/// <item>In-flight decodes for the same key are coalesced so requests never duplicate work.</item>
-/// <item>FFmpeg subprocesses are bounded by timeout, killed and reaped via child tracking on abort/timeout.</item>
-/// </list>
-/// </summary>
 public static class CornerMemeFrames
 {
     public const double Fps = 12.0;
@@ -335,7 +293,6 @@ public static class CornerMemeFrames
     public const int MaxHeight = 640;
     public const double MaxSeconds = 30.0;
     public const double WindowDurationSeconds = 2.5;
-    public const int MaxFramesPerWindow = 30;
 
     public const long MaxActiveWindowBytes = 32L * 1024 * 1024;
     public const long DefaultMemoryBudgetBytes = 64L * 1024 * 1024;
@@ -352,7 +309,6 @@ public static class CornerMemeFrames
 
     internal static OwnedLruCache<CornerMemeFrameWindow> Store = new(DefaultMemoryBudgetBytes, DefaultMaxEntries, StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Test seam to override decoder logic without launching FFmpeg.</summary>
     internal static Func<string, int, CancellationToken, Task<CornerMemeFrameWindow?>>? CustomDecoder { get; set; }
 
     public static void ResetStoreForTesting(long maxBytes = DefaultMemoryBudgetBytes, int maxEntries = DefaultMaxEntries)

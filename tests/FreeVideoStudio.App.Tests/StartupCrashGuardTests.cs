@@ -3,7 +3,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>CRASHLOOP_01 — repeated failed starts of the same version lead to the way back (05 SYS-UPGRADE).</summary>
 public sealed class StartupCrashGuardTests
 {
     [Fact]

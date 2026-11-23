@@ -6,74 +6,20 @@ using NAudio.Wave.SampleProviders;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>The six UI feedback cues. Routing lives in <see cref="UiSoundRouter"/>.</summary>
 public enum UiCue
 {
-    /// <summary>48 ms tick. Default for any ordinary button.</summary>
     Click,
-    /// <summary>79 ms blip. Trim in/out points.</summary>
     Mark,
-    /// <summary>1.36 s. A tool window or sub-application is opening.</summary>
     Open,
-    /// <summary>1.54 s. A destructive action was COMMITTED, or a window is closing.</summary>
     Close,
-    /// <summary>1.39 s. A real export finished. Never fired from a button click — see AUDIO_02.</summary>
     Process,
-    /// <summary>1.23 s. A failure surfaced to the user.</summary>
     Error
 }
 
-/// <summary>
-/// UI sound engine.
-///
-/// ======================================================================================
-/// AUDIT ROUND 5 — WHAT CHANGED AND WHY (do not regress any of these)
-/// ======================================================================================
-/// AUDIO_05  The old throttle was a single 50 ms window compared against ONE remembered
-///           buffer reference. Three of the six clips are 1.36-1.54 s long, so 50 ms was 3%
-///           of the sound: spam-clicking restarted the clip ~10x/second and you heard only
-///           chopped attack transients. Worse, because it remembered only the PREVIOUS
-///           buffer, alternating between two different buttons reset it every time and it
-///           never engaged at all. Now: a PER-CUE timestamp table, with each cue's window
-///           derived from that clip's REAL decoded duration (clamped 80-350 ms), plus a hard
-///           cap on simultaneous voices.
-/// AUDIO_06  There was no volume and no mute, in an app with a whole "Sound and Music"
-///           settings tab. Every play now passes through SettingsManager (UiSoundsEnabled /
-///           UiSoundVolume).
-/// AUDIO_12  Was System.Media.SoundPlayer -> winmm PlaySound, which is a SINGLE global
-///           channel: two UI sounds could not overlap, a new one truncated the one before
-///           it, and it offered no volume control at all (which is why AUDIO_05/06 had no
-///           clean fix inside the old engine). Now NAudio - already a shipped dependency,
-///           already used in production by Core\Media\VoiceRecorder.cs
-///           - with a real mixer, so cues layer instead of cutting each other off. The
-///           System.Windows.Extensions package reference was dropped from the csproj.
-/// AUDIO_13  The old cache was a ConditionalWeakTable keyed on static readonly byte[] fields.
-///           Static fields live for the whole process, so nothing could EVER be collected: it
-///           was a permanent six-entry dictionary wearing a weak-cache costume, and the six
-///           IDisposable SoundPlayers were never disposed. Now a plain fixed array plus a
-///           real <see cref="Shutdown"/> wired to the desktop lifetime Exit event.
-/// AUDIO_14  SoundPlayer.Play() parses the WAV synchronously if not already loaded, so the
-///           first press of each cue did that work on the UI thread - for three clips over
-///           119 KB - and Stop()/Play() ran while holding a lock on the UI thread. Decoding
-///           and device I/O now happen entirely on the thread pool; the UI thread only does
-///           an Interlocked timestamp compare.
-/// AUDIO_08  Clips moved from base64 string literals in this file to EmbeddedResource .wav
-///           assets (see the csproj). This file went from 650 KB to a readable one.
-/// AUDIO_01  <see cref="Suppress"/> exists so the Voice Over Studio can hard-mute the whole
-///           engine while the microphone is live.
-/// ======================================================================================
-///
-/// FAILURE POLICY: never throw and never let a sound break a user action. If there is no
-/// output device (VM, headless, RDP with audio redirection off - all real deployment targets
-/// for this app per the PATH B notes) the engine disables itself permanently after one logged
-/// warning and every Play call becomes a no-op.
-/// </summary>
 public static class UiSoundEffect
 {
     private const int CueCount = 6;
 
-    /// <summary>Resource LogicalNames, indexed by <see cref="UiCue"/>. Set explicitly in the
-    /// csproj so this lookup can never break from a RootNamespace or folder rename.</summary>
     private static readonly string[] ResourceNames =
     {
         "UiSound.click.wav",
@@ -84,18 +30,10 @@ public static class UiSoundEffect
         "UiSound.error.wav"
     };
 
-
-    /// <summary>Floor for the per-cue retrigger window. Below this a human cannot tell two
-    /// plays apart anyway, and the 48 ms click would machine-gun.</summary>
     private const double MinThrottleMs = 80;
 
-    /// <summary>Ceiling for the per-cue retrigger window. The old code let a 1.5 s clip restart
-    /// every 50 ms; blocking for the FULL 1.5 s would be the opposite mistake and would swallow
-    /// deliberate repeat presses. 350 ms kills mashing without feeling deaf.</summary>
     private const double MaxThrottleMs = 350;
 
-    /// <summary>Hard cap on simultaneous voices. The mixer will happily layer 50 clips if a user
-    /// leans on a button; this bounds CPU and heap under abuse.</summary>
     private const int MaxConcurrentVoices = 4;
 
     private static readonly long[] _lastPlayTicks = new long[CueCount];
@@ -104,7 +42,6 @@ public static class UiSoundEffect
 
     private static int _activeVoices;
 
-
     private static readonly object _engineLock = new();
     private static WaveOut? _output;
     private static MixingSampleProvider? _mixer;
@@ -112,21 +49,10 @@ public static class UiSoundEffect
     private static bool _engineFailed;
     private static bool _shutdown;
 
-    /// <summary>Mixer format. All six assets are 44.1 kHz mono 16-bit, which
-    /// <c>ToSampleProvider()</c> presents as IEEE-float 44.1 kHz mono.</summary>
     private static readonly WaveFormat MixFormat = WaveFormat.CreateIeeeFloatWaveFormat(44100, 1);
-
 
     private static int _suppressionDepth;
 
-    /// <summary>
-    /// AUDIO_01: hard-mutes the engine for the lifetime of the returned scope.
-    ///
-    /// The Voice Over Studio's record button is styled Danger-red, so the old dispatcher
-    /// classified it as a cancel/close action and played a 1.542 s clip out of the speakers at
-    /// the exact instant the microphone opened - bleeding the app's own UI sound into every
-    /// take. Recording now wraps itself in one of these. Re-entrant and thread-safe.
-    /// </summary>
     public static IDisposable Suppress()
     {
         Interlocked.Increment(ref _suppressionDepth);
@@ -146,29 +72,12 @@ public static class UiSoundEffect
         }
     }
 
-
     public static void PlayMark() => Play(UiCue.Mark);
 
-    /// <summary>
-    /// AUDIO_02: fired when an export actually FINISHES (FinishedDialogWindow), not when the
-    /// user presses PROCESS. The old dispatcher played this on any Success-classed button, so
-    /// the "your video is done" fanfare went off at the START of an export and on eight
-    /// unrelated buttons, while the real completion - the moment the user has walked away from
-    /// the machine - was silent.
-    /// </summary>
     public static void PlayProcess() => Play(UiCue.Process);
 
-    /// <summary>
-    /// AUDIO_03: was declared and never called from anywhere in src\, so a 108 KB clip shipped
-    /// in the binary that was structurally impossible to hear while every failure in the suite
-    /// happened in silence. Now invoked by ErrorDialogWindow, the single failure surface.
-    /// </summary>
     public static void PlayError() => Play(UiCue.Error);
 
-    /// <summary>
-    /// Fire-and-forget. Safe from any thread. Returns immediately; all decoding and device work
-    /// happens on the thread pool (AUDIO_14).
-    /// </summary>
     public static void Play(UiCue cue)
     {
         int i = (int)cue;
@@ -211,12 +120,6 @@ public static class UiSoundEffect
         public WorkItem(int cueIndex, float gain) { CueIndex = cueIndex; Gain = gain; }
     }
 
-    /// <summary>
-    /// AUDIO_06: single gate for the user's preference. Returns false when sounds are off.
-    /// Never throws - settings may not be loaded yet during very early startup, in which case
-    /// SettingsManager.Instance is a default-constructed AppSettings and sounds play at the
-    /// default level.
-    /// </summary>
     private static bool TryReadSettings(out float gain)
     {
         gain = 1f;
@@ -269,8 +172,6 @@ public static class UiSoundEffect
         }
     }
 
-    /// <summary>Decodes a cue's embedded .wav once. Thread-safe; a benign double-decode under a
-    /// race just costs one throwaway array.</summary>
     private static CachedSound? LoadCue(int cueIndex)
     {
         try
@@ -297,7 +198,6 @@ public static class UiSoundEffect
         }
     }
 
-    /// <summary>Lazily brings up the output device. Caller MUST hold <see cref="_engineLock"/>.</summary>
     private static bool EnsureEngineLocked()
     {
         if (_output != null) return true;
@@ -358,10 +258,6 @@ public static class UiSoundEffect
         if (Interlocked.Decrement(ref _activeVoices) < 0) Interlocked.Exchange(ref _activeVoices, 0);
     }
 
-    /// <summary>
-    /// AUDIO_13: deterministic teardown. The previous implementation never disposed anything.
-    /// Wired to IClassicDesktopStyleApplicationLifetime.Exit in AvaloniaApp. Idempotent.
-    /// </summary>
     public static void Shutdown()
     {
         lock (_engineLock)
@@ -375,9 +271,17 @@ public static class UiSoundEffect
 
     private static void TearDownLocked()
     {
-        try { _output?.Stop(); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
-        try { _output?.Dispose(); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+        var output = _output;
         _output = null;
+        if (output != null)
+        {
+            _ = System.Threading.Tasks.Task.Run(() =>
+            {
+                using var blocking = FreeVideoStudio.Core.Infrastructure.BlockingCallTracker.Enter("click sound output dispose");
+                try { output.Stop(); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+                try { output.Dispose(); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+            });
+        }
 
         if (_mixer != null)
         {
@@ -395,12 +299,6 @@ public static class UiSoundEffect
         try { RuntimeLog.Info("UiSound", message); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
-
-    /// <summary>
-    /// A fully decoded clip held as float samples. Decoded ONCE per cue; every play wraps it in
-    /// a throwaway <see cref="CachedSoundSampleProvider"/> cursor. This is what allows cues to
-    /// overlap - the old winmm path physically could not (AUDIO_12).
-    /// </summary>
     private sealed class CachedSound
     {
         public float[] AudioData { get; }
@@ -434,8 +332,6 @@ public static class UiSoundEffect
         }
     }
 
-    /// <summary>Read cursor over a <see cref="CachedSound"/>. Returning 0 makes the mixer drop
-    /// it and raise MixerInputEnded, which is how the voice counter is released.</summary>
     private sealed class CachedSoundSampleProvider : ISampleProvider
     {
         private readonly CachedSound _sound;

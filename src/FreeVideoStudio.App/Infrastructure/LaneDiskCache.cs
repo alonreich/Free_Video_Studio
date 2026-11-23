@@ -9,27 +9,9 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// LANECACHE_02 (Video-Merger-Migration.md P11) — the Merger's per-clip filmstrip frames (PNG) and
-/// waveform peaks (float32) on disk, so a clip is decoded ONCE, ever: reopening the Merger, reordering,
-/// resizing and restoring a session all paint from here. Files are named by a hash of the lane cache key
-/// (file path + size + write time + kept window), so an edited source file simply misses. Every call is
-/// best-effort: a cache failure is logged and treated as a miss, never as an error. Call only off the UI
-/// thread.
-/// <para>
-/// CACHEBOUND_01 — bounded CONTINUOUSLY, not once per process. The prune used to sit behind a
-/// once-per-process interlocked flag: the first write of a process pruned to 800 files and every
-/// later write in that process grew the folder without limit, with no byte budget at all. Now
-/// <see cref="LaneDiskStore"/> keeps a running tally and, whenever a write takes it over EITHER budget
-/// (<see cref="MaxFiles"/> files, <see cref="MaxBytes"/> bytes), runs one serialized background prune
-/// that deletes least-recently-used files down to 90 % of both.
-/// </para>
-/// </summary>
 internal static class LaneDiskCache
 {
-    /// <summary>CACHEBOUND_01 — entry budget (unchanged from LANECACHE_02).</summary>
     internal const int MaxFiles = 800;
-    /// <summary>CACHEBOUND_01 — byte budget (a 90-frame filmstrip PNG is a few hundred KB).</summary>
     internal const long MaxBytes = 512L * 1024 * 1024;
 
     private static readonly Lazy<LaneDiskStore> Store =
@@ -42,22 +24,6 @@ internal static class LaneDiskCache
     public static void Write(string key, string extension, byte[] data) => Store.Value.Write(key, extension, data);
 }
 
-/// <summary>
-/// CACHEBOUND_01 — one lane-cache folder under an entry AND a byte budget.
-/// <list type="bullet">
-/// <item><b>LRU:</b> recency is the file's last-write time; a hit touches it.</item>
-/// <item><b>Atomic writes:</b> <c>AtomicJsonFile.WriteBytes</c> (ATOMICBYTES_01, SYS-ATOMICWRITE's one
-/// shared implementation): GUID-named temp in the same folder → write-through + flush to disk →
-/// <c>File.Move(overwrite)</c>. A reader never sees a half-written file under the final name, and a power
-/// cut cannot leave a zero-filled one. No named mutex: the file is disposable cache.</item>
-/// <item><b>Safe concurrent access:</b> reads open with Read|Write|Delete sharing, so a concurrent replace or
-/// prune of the same file does not fail the reader or the writer; a file that vanishes mid-read is a miss.
-/// Concurrent writers of one key each publish a complete file; the last rename wins.</item>
-/// <item><b>Serialized background prune:</b> at most one prune runs; a request during a prune makes it
-/// run once more. The first write of a process always prunes (recount after an earlier session), and
-/// orphaned temp files older than <see cref="OrphanTempAge"/> are swept.</item>
-/// </list>
-/// </summary>
 internal sealed class LaneDiskStore
 {
     internal static readonly TimeSpan OrphanTempAge = TimeSpan.FromMinutes(10);
@@ -83,11 +49,9 @@ internal sealed class LaneDiskStore
 
     public int MaxFiles { get; }
     public long MaxBytes { get; }
-    /// <summary>Prune target: 90 % of each budget, so a full cache is not re-pruned on every write.</summary>
     public int LowWaterFiles => Math.Max(1, MaxFiles - MaxFiles / 10);
     public long LowWaterBytes => Math.Max(1, MaxBytes - MaxBytes / 10);
 
-    /// <summary>Completes when no prune is running or queued (tests, diagnostics).</summary>
     public Task WhenIdleAsync()
     {
         lock (_gate) return _pruneTask;
@@ -158,7 +122,6 @@ internal sealed class LaneDiskStore
         if (prune) RequestPrune();
     }
 
-    /// <summary>Starts the background prune, or asks the running one to go round once more.</summary>
     internal void RequestPrune()
     {
         lock (_gate)

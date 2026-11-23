@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -9,32 +8,14 @@ using CoreMeme = FreeVideoStudio.Core.Media.MemePlacement;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// MEMEAUDIT_01 — the main screen's side of the meme audit:
-/// <list type="bullet">
-/// <item>MEMEMAIN_02 — the panel's "Add MEME" (START / END) meme is a meme like any other: it plays
-/// TOGETHER with the Speed Editor's memes (it used to be dropped from the export without a word the
-/// moment the editor held one), is drawn on the timeline and is played by the preview.</item>
-/// <item>MEMEMARK_02 — the markers: a full-screen meme is one clown head at the gameplay moment it
-/// interrupts; a corner meme is a strip over the gameplay it plays across (it used to wear the
-/// full-screen head and the "gameplay pauses here" text). Clicking either opens the Speed Editor on it.</item>
-/// <item>MEMEMUSIC_02 — "keep the music under the meme?" is asked for the editor's memes too.</item>
-/// </list>
-/// </summary>
 public partial class MainWindow
 {
-    /// <summary>Id of the main-screen START/END meme when it travels with the editor's memes.</summary>
     public const string MainScreenMemeId = "mainmeme";
 
     private string? _legacyMemeDurationPath;
     private double _legacyMemeDurationSec;
     private bool _legacyMemeProbing;
 
-    /// <summary>
-    /// MEMEMAIN_02 — the panel's START/END meme as a placement (full screen, at the clip start or end),
-    /// or null. Its length is the picture's 4 s or the video's probed length (0 until probed; the
-    /// export probes it itself, the preview waits for it).
-    /// </summary>
     private CoreMeme? MainScreenMemePlacement()
     {
         string? file = SelectedLegacyMemeFile();
@@ -75,7 +56,6 @@ public partial class MainWindow
         });
     }
 
-    /// <summary>MEMEMAIN_02 — every meme the export will play: the editor's plus the panel's START/END meme.</summary>
     private List<CoreMeme> EffectiveMemePlacements()
     {
         var all = new List<CoreMeme>(_memePlacements);
@@ -83,7 +63,6 @@ public partial class MainWindow
         return all;
     }
 
-    /// <summary>MEMEMARK_02 — draws every meme on the main screen's SOURCE ruler.</summary>
     private void DrawMainMemeMarkers(Canvas canvas, double duration, double canvasWidth, double laneTop, double laneHeight)
     {
         var memes = EffectiveMemePlacements();
@@ -162,10 +141,8 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>MEMEMARK_02 — the meme the Speed Editor should open on (consumed by the GRANULAR SPEED handler).</summary>
     private string? _openEditorAtMemeId;
 
-    /// <summary>MEMEMARK_02 — opens the Speed Editor straight on a meme (no EDIT / REMOVE question).</summary>
     private void OpenSpeedEditorAtMeme(string memeId)
     {
         var btn = GranularButtonCtl;
@@ -175,12 +152,6 @@ public partial class MainWindow
         btn.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
     }
 
-    /// <summary>
-    /// MEMEMUSIC_02 — the "keep the music under the meme?" question, asked once a FULL SCREEN meme and
-    /// music are both present and it was never answered — for the editor's memes as well as the
-    /// panel's (it used to be asked for the panel's meme only, so the editor's silently paused the
-    /// music). Finishing the Music Wizard asks again, which is how the answer is changed.
-    /// </summary>
     private async Task AskKeepMusicIfNeededAsync(bool force = false)
     {
         bool hasMusic = _musicWizardResult != null && !string.IsNullOrEmpty(_musicWizardResult.MusicFilePath);

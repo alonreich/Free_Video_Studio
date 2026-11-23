@@ -111,22 +111,6 @@ public partial class MainWindow
 
         var kb = SettingsManager.Instance.KeyBinds;
 
-        if (e.Key == Key.Delete)
-        {
-            if (FocusManager?.GetFocusedElement() is ListBox listBox && listBox.SelectedItem is string filePath)
-            {
-                try
-                {
-                    System.IO.File.Delete(filePath);
-                }
-                catch (System.Exception __ex)
-                {
-                    RuntimeLog.Fail("UI", $"Could not delete '{System.IO.Path.GetFileName(filePath)}': {__ex.Message}");
-                    RuntimeLog.Swallowed(__ex);
-                    ShowTacticalError("Could not delete that file");
-                }
-            }
-        }
         var playPause = new Avalonia.Input.KeyGesture(kb.PlayPause);
         var markStart = new Avalonia.Input.KeyGesture(kb.MarkStart);
         var markEnd = new Avalonia.Input.KeyGesture(kb.MarkEnd);
@@ -230,23 +214,12 @@ public partial class MainWindow
         }
     }
 
-
     private FreeVideoStudio.App.ViewModels.RelayCommand? _playPauseCommand;
     private FreeVideoStudio.App.ViewModels.RelayCommand? _markStartCommand;
     private FreeVideoStudio.App.ViewModels.RelayCommand? _markEndCommand;
 
-    /// <summary>
-    /// Unified play/pause behaviour. Returns true when the key was consumed, mirroring
-    /// KeyBinding.TryHandle (Handled only when the command actually ran).
-    /// </summary>
-    /// <summary>DOUBLEFIRE_01 — when the transport toggle last actually ran.</summary>
     private DateTime _lastTransportToggleUtc = DateTime.MinValue;
 
-    /// <summary>
-    /// DOUBLEFIRE_01 — the shortest gap between two DELIBERATE play/pause presses. A person
-    /// cannot press a button twice in 60 ms; two activations that close together are one physical
-    /// press arriving down two wirings.
-    /// </summary>
     private const int TransportToggleCoalesceMs = 60;
 
     private bool TryExecutePlayPause()
@@ -287,6 +260,12 @@ public partial class MainWindow
         EnsureTrimPointsSet();
         RuntimeLog.Info("UI", $"User clicked MARK START at {TimeSpan.FromMilliseconds(_trimStartMs):hh\\:mm\\:ss\\.ff}.");
         double time = GetCurrentMpvTime();
+        if ((_trimEndSet || _trimEndMs > 0) && time * 1000.0 >= _trimEndMs)
+        {
+            ShowTacticalFeedback("⚠ START must be before END");
+            RuntimeLog.Info("UI", $"MARK START blocked: {TimeSpan.FromSeconds(time):hh\\:mm\\:ss\\.ff} is not before END {TimeSpan.FromMilliseconds(_trimEndMs):hh\\:mm\\:ss\\.ff}.");
+            return;
+        }
         SetTrimStart(time * 1000);
         _trimStartSet = true;
         var markStartButton = MarkStartButtonCtl;
@@ -295,6 +274,15 @@ public partial class MainWindow
         if (ActiveVideoHost?.IpcClient != null)
         {
             _ = ActiveVideoHost.IpcClient.SetPropertyAsync("pause", "no");
+            double durStart = ActiveVideoHost.IpcClient.Duration;
+            var sliderStart = TimelineSliderCtl;
+            if (sliderStart != null && durStart > 0)
+            {
+                _isTimerUpdatingSlider = true;
+                sliderStart.Value = Math.Clamp((time / durStart) * 100.0, 0.0, 100.0);
+                _isTimerUpdatingSlider = false;
+                ShowPlayheadBadge(time, sliderStart.Value);
+            }
         }
 
         PlayUiSound();
@@ -321,6 +309,7 @@ public partial class MainWindow
         }
         _trimEndMs = time * 1000;
         _trimEndSet = true;
+        _userExplicitMarkEnd = true;
         RebaseMemesAfterTrimChange();
         _prewarmArmed = true;
         SchedulePrewarm();
@@ -330,6 +319,15 @@ public partial class MainWindow
         if (ActiveVideoHost?.IpcClient != null)
         {
             _ = ActiveVideoHost.IpcClient.SetPropertyAsync("pause", "yes");
+            double durEnd = ActiveVideoHost.IpcClient.Duration;
+            var sliderEnd = TimelineSliderCtl;
+            if (sliderEnd != null && durEnd > 0)
+            {
+                _isTimerUpdatingSlider = true;
+                sliderEnd.Value = Math.Clamp((time / durEnd) * 100.0, 0.0, 100.0);
+                _isTimerUpdatingSlider = false;
+                ShowPlayheadBadge(time, sliderEnd.Value);
+            }
         }
 
         PlayUiSound();
@@ -343,7 +341,6 @@ public partial class MainWindow
             Controls.ParticleBurstCanvas.BurstPreset.MarkerDrop);
     }
 
-    /// <summary>Attaches the transport Commands and settings-bound KeyBindings to the transport buttons.</summary>
     private void RefreshTransportKeyBindings()
     {
         var kb = SettingsManager.Instance.KeyBinds;
@@ -368,5 +365,49 @@ public partial class MainWindow
         Attach("PlayPauseButton", kb.PlayPause, _playPauseCommand);
         Attach("MarkStartButton", kb.MarkStart, _markStartCommand);
         Attach("MarkEndButton", kb.MarkEnd, _markEndCommand);
+    }
+
+    internal void ExecuteMarkStartForTesting() => ExecuteMarkStart();
+    internal void ExecuteMarkEndForTesting() => ExecuteMarkEnd();
+    internal void TogglePlayPauseTransportForTesting() => TogglePlayPauseTransport();
+    internal void PlaybackTimerTickForTesting() => PlaybackTimerTickCore();
+    internal bool UserExplicitMarkEndForTesting => _userExplicitMarkEnd;
+    internal void SetUserExplicitMarkEndForTesting(bool value) => _userExplicitMarkEnd = value;
+    internal bool IsMarkerGestureActiveForTesting => IsMarkerGestureActive;
+    internal void SetDraggingStartMarkerForTesting(bool value) => _draggingStartMarker = value;
+    internal void SetDraggingEndMarkerForTesting(bool value) => _draggingEndMarker = value;
+    internal double TrimStartMsForTesting => _trimStartMs;
+    internal double TrimEndMsForTesting => _trimEndMs;
+    internal bool TrimStartSetForTesting => _trimStartSet;
+    internal bool TrimEndSetForTesting => _trimEndSet;
+    internal Slider? TimelineSliderCtlForTesting => TimelineSliderCtl;
+    internal void SetActiveVideoHostForTesting(MpvVideoView host) => _videoHost = host;
+    internal void SimulateStartMarkerCaptureLostForTesting(double canvasWidth, double duration)
+    {
+        if (_draggingStartMarker)
+        {
+            _draggingStartMarker = false;
+            SetTrimStart(_trimStartMs);
+            _trimStartSet = true;
+            UpdateDraggingVisuals(canvasWidth, duration);
+        }
+    }
+    internal void SimulateEndMarkerCaptureLostForTesting(double canvasWidth, double duration)
+    {
+        if (_draggingEndMarker)
+        {
+            _draggingEndMarker = false;
+            _trimEndSet = true;
+            _userExplicitMarkEnd = true;
+            RebaseMemesAfterTrimChange();
+            UpdateDraggingVisuals(canvasWidth, duration);
+        }
+    }
+    internal void SetTrimPointsForTesting(double startMs, double endMs)
+    {
+        _trimStartMs = startMs;
+        _trimStartSet = true;
+        _trimEndMs = endMs;
+        _trimEndSet = true;
     }
 }

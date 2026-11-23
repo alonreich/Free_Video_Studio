@@ -1,5 +1,4 @@
-﻿
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
@@ -9,11 +8,6 @@ using System.Diagnostics;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// Event-driven particle burst layer for satisfying visual feedback on key actions.
-/// Render-only (zero layout passes), fixed-timestep physics, self-halting when idle.
-/// Architecturally identical to AmbientBubblesBackground and the Tick-Based Fight Canvas.
-/// </summary>
 public sealed class ParticleBurstCanvas : Control
 {
     private const double PhysicsHz = 60.0;
@@ -45,18 +39,11 @@ public sealed class ParticleBurstCanvas : Control
 
     private enum ParticleKind { Spark, Confetti, Ring }
 
-    /// <summary>
-    /// Preset burst configurations for different action types.
-    /// </summary>
     public enum BurstPreset
     {
-        /// <summary>Expanding ripple + few sparks — for marker drops.</summary>
         MarkerDrop,
-        /// <summary>Radial burst from center — for zoom/speed apply.</summary>
         ZoomApply,
-        /// <summary>Full-screen confetti shower — for render complete.</summary>
         RenderComplete,
-        /// <summary>Small pop — for toggles and button presses.</summary>
         TogglePop
     }
 
@@ -85,9 +72,6 @@ public sealed class ParticleBurstCanvas : Control
         _clock.Stop();
     }
 
-    /// <summary>
-    /// Emit a burst at the given anchor point (in local control coordinates) with the specified preset.
-    /// </summary>
     public void Burst(Point anchor, BurstPreset preset)
     {
         switch (preset)
@@ -166,18 +150,15 @@ public sealed class ParticleBurstCanvas : Control
         }
     }
 
-    /// <summary>TONE_01 — a theme colour for the burst palette, with a safe fallback.</summary>
     private Color TokenColour(string key, Color fallback)
         => Infrastructure.ThemeResources.Colour(this, key, fallback);
 
-    /// <summary>TONE_01 — the same, pre-multiplied with a fixed alpha.</summary>
     private Color TokenColourA(string key, Color fallback, byte alpha)
     {
         var c = TokenColour(key, fallback);
         return Color.FromArgb(alpha, c.R, c.G, c.B);
     }
 
-    /// <summary>TONE_01 — a lighter tint of a token colour, so sparks track their ring.</summary>
     private static Color Lighten(Color c, byte alpha, int by)
         => Color.FromArgb(alpha,
                           (byte)Math.Min(255, c.R + by),

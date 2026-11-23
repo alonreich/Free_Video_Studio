@@ -1,15 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 
 namespace FreeVideoStudio.Core.Media;
 
-
-/// <summary>
-/// One stable <see cref="Guid"/> per queue row, kept in step with the queue's collection events.
-/// The queue holds plain paths and may hold the same file twice, so a path is not an identity.
-/// </summary>
 public sealed class ClipIdList
 {
     private readonly List<Guid> _ids = new();
@@ -37,36 +32,28 @@ public sealed class ClipIdList
         _ids.InsertRange(Math.Clamp(to, 0, _ids.Count), moved);
     }
 
-    /// <summary>A replaced row is a different clip: it gets new ids.</summary>
     public void Replace(int index, int count)
     {
         for (int i = index; i < index + count && i < _ids.Count; i++) if (i >= 0) _ids[i] = Guid.NewGuid();
     }
 
-    /// <summary>After a Reset the identities are unknown: <paramref name="count"/> fresh ids.</summary>
     public void Reset(int count)
     {
         _ids.Clear();
         Insert(0, count);
     }
 
-    /// <summary>Restore: the ids the saved edit list used, in queue order.</summary>
     public void Seed(IEnumerable<Guid> ids)
     {
         _ids.Clear();
         _ids.AddRange(ids);
     }
 
-    /// <summary>MERGEUNDO_01 — gives row <paramref name="index"/> a known id (a clip re-inserted by undo keeps its identity).</summary>
     public void SetAt(int index, Guid id)
     {
         if (index >= 0 && index < _ids.Count) _ids[index] = id;
     }
 
-    /// <summary>
-    /// Mirrors one queue collection event. <paramref name="count"/> is the queue's size AFTER the
-    /// event. Returns true when the list had to be re-synchronised (a missed event).
-    /// </summary>
     public bool Apply(NotifyCollectionChangedEventArgs e, int count)
     {
         switch (e.Action)
@@ -90,7 +77,6 @@ public sealed class ClipIdList
         return EnsureCount(count);
     }
 
-    /// <summary>Makes the list match <paramref name="count"/> rows if events were missed (defensive; logs nothing).</summary>
     public bool EnsureCount(int count)
     {
         if (_ids.Count == count) return false;
@@ -99,14 +85,12 @@ public sealed class ClipIdList
         return true;
     }
 
-    /// <summary>QUEUEOCCURRENCE_01 — Returns the index of <paramref name="id"/>, or -1 if not present.</summary>
     public int IndexOf(Guid id)
     {
         for (int i = 0; i < _ids.Count; i++) if (_ids[i] == id) return i;
         return -1;
     }
 
-    /// <summary>QUEUEOCCURRENCE_01 — Returns the ids at the given row indices in order.</summary>
     public List<Guid> IdsAt(IEnumerable<int> indices)
     {
         var result = new List<Guid>();
@@ -114,25 +98,8 @@ public sealed class ClipIdList
             if (i >= 0 && i < _ids.Count) result.Add(_ids[i]);
         return result;
     }
-
-    /// <summary>QUEUEOCCURRENCE_01 — Resolves <paramref name="ids"/> to their current row indices; returns null if any id is missing.</summary>
-    public List<int>? ResolveIndices(IEnumerable<Guid> ids)
-    {
-        var result = new List<int>();
-        foreach (var id in ids)
-        {
-            int idx = IndexOf(id);
-            if (idx < 0) return null;
-            result.Add(idx);
-        }
-        result.Sort();
-        return result;
-    }
 }
 
-/// <summary>
-/// QUEUEOCCURRENCE_01 — Pure helper for merger queue multi-selection movement and boundary checks (04 UI-MERGERQUEUE).
-/// </summary>
 public static class QueueRowOps
 {
     public static List<Guid> IdsAt(IReadOnlyList<Guid> allIds, IEnumerable<int> indices)
@@ -191,12 +158,6 @@ public static class QueueRowOps
     }
 }
 
-/// <summary>The music placement as the window holds it (merged seconds, pre base speed).</summary>
-/// <remarks>
-/// MUSICWIN_01 — <paramref name="StartsSec"/> / <paramref name="EndsSec"/> carry each song's chosen part
-/// (seconds inside its own file, index-aligned with <paramref name="Paths"/>). Null = the legacy layout:
-/// first song from <paramref name="OffsetSec"/>, the rest from 0, every song to its end.
-/// </remarks>
 public sealed record MergerMusicState(
     IReadOnlyList<string> Paths,
     IReadOnlyList<double> DurationsSec,
@@ -211,7 +172,6 @@ public sealed record MergerMusicState(
     IReadOnlyList<double>? StartsSec = null,
     IReadOnlyList<double>? EndsSec = null);
 
-/// <summary>Everything the window owns today, captured on the UI thread.</summary>
 public sealed record MergerUiState
 {
     public IReadOnlyList<string> Paths { get; init; } = Array.Empty<string>();
@@ -221,20 +181,14 @@ public sealed record MergerUiState
     public string? ThumbPath { get; init; }
     public double ThumbSourceSec { get; init; }
     public MergerMusicState? Music { get; init; }
+    public CaptionTrack? Captions { get; init; }
+    public bool ClearCaptions { get; init; } = false;
 }
 
-/// <summary>What the window has to do to restore a saved edit list.</summary>
 public sealed record MergerRestorePlan(MergeEdl Edl, IReadOnlyList<string> Missing, IReadOnlyList<string> Changed);
 
 public static class MergerSession
 {
-    /// <summary>
-    /// Builds the edit list for the window's current state.
-    /// </summary>
-    /// <param name="analysis">Finished analysis for a path, or null while it is still running.</param>
-    /// <param name="fileId">(size, last-write UTC ticks) of a path, or null when it cannot be read.</param>
-    /// <param name="timeline">The merged timeline when it describes THIS queue; null otherwise.</param>
-    /// <param name="previous">The last captured edit list: carries effects, in/out and pending analysis per ClipId.</param>
     public static MergeEdl Capture(
         MergerUiState s,
         Func<string, MergeClipInfo?> analysis,
@@ -325,14 +279,10 @@ public static class MergerSession
             BaseSpeed = s.BaseSpeed > 0 && double.IsFinite(s.BaseSpeed) ? s.BaseSpeed : 1.0,
             Thumbnail = thumb,
             Music = music,
+            Captions = s.ClearCaptions ? null : (s.Captions ?? previous?.Captions),
         };
     }
 
-    /// <summary>
-    /// What to restore from <paramref name="edl"/>. A clip whose file is gone is dropped (and listed);
-    /// a clip whose file changed is kept (and listed) with its cached analysis cleared. Thumbnail and
-    /// music anchors on dropped clips are repaired. Never throws.
-    /// </summary>
     public static MergerRestorePlan Plan(MergeEdl edl, Func<string, (long Size, long WriteTicks)?> fileId)
     {
         var kept = new List<EdlClip>(edl.Clips.Count);
@@ -368,10 +318,6 @@ public static class MergerSession
         return new MergerRestorePlan(edl with { Clips = kept, Thumbnail = thumb, Music = music }, missing, changed);
     }
 
-    /// <summary>
-    /// The window's music state for a restored edit list. <paramref name="timeline"/> must describe the
-    /// restored queue in the same order as <paramref name="ids"/>.
-    /// </summary>
     public static MergerMusicState? MusicFromEdl(EdlMusic? m, MergedTimeline timeline, IReadOnlyList<Guid> ids)
     {
         if (m is null || m.FilePaths.Count == 0) return null;
@@ -387,11 +333,6 @@ public static class MergerSession
             m.StartsSec.Count > 0 ? m.StartsSec : null, m.EndsSec.Count > 0 ? m.EndsSec : null);
     }
 
-    /// <summary>
-    /// RESTOREMISS_01 (user decision 2026-09-26) — the text of the restore approval dialog: every file
-    /// of the last session that is no longer on disk, by NAME and by FOLDER, plus files that changed
-    /// since. Long lists are capped so the dialog stays on screen.
-    /// </summary>
     public static string DescribeRestoreProblems(IReadOnlyList<string> missing, IReadOnlyList<string> changed, int keptCount, int maxListed = 12)
     {
         var sb = new System.Text.StringBuilder();
@@ -425,12 +366,6 @@ public static class MergerSession
         if (files.Count > maxListed) sb.Append($"\n  … and {files.Count - maxListed} more (all listed in the log).");
     }
 
-
-    /// <summary>
-    /// The part of an edit list the USER authored. Analysis results (length, timing tag, snapped
-    /// intro cut, file identity) are stripped, so a background analysis finishing is never an undo
-    /// step and undo never restores stale analysis.
-    /// </summary>
     public static MergeEdl UserEdit(MergeEdl edl)
     {
         var clips = new List<EdlClip>(edl.Clips.Count);
@@ -439,10 +374,6 @@ public static class MergerSession
         return edl with { Clips = clips };
     }
 
-    /// <summary>
-    /// Names the action that turned <paramref name="prev"/> into <paramref name="next"/> for the undo
-    /// history, plus a gesture key for continuous gestures (a slider sweep, a marker drag).
-    /// </summary>
     public static (string Label, string? GestureKey) DescribeChange(MergeEdl prev, MergeEdl next)
     {
         if (!SameIds(prev.Clips, next.Clips))
@@ -464,16 +395,16 @@ public static class MergerSession
             if (next.Music is null) return ("remove music", null);
             return ("change music", null);
         }
+        if (!Equals(prev.Captions, next.Captions))
+        {
+            if (prev.Captions is null) return ("add captions", null);
+            if (next.Captions is null) return ("remove captions", null);
+            return ("edit captions", null);
+        }
         if (prev.BaseSpeed != next.BaseSpeed) return ("change speed", "speed");
         return ("edit clip", null);
     }
 
-    /// <summary>
-    /// Turns the live <paramref name="queue"/> into <paramref name="target"/> with the fewest simple
-    /// operations (Move / Insert / RemoveAt — never Clear, so the clip being previewed is not torn
-    /// down). <paramref name="ids"/> must be tracking <paramref name="queue"/>'s events
-    /// (<see cref="ClipIdList.Apply"/>); re-inserted clips get their saved ids back.
-    /// </summary>
     public static void SyncQueue(ObservableCollection<string> queue, ClipIdList ids, IReadOnlyList<EdlClip> target)
     {
         for (int i = 0; i < target.Count; i++)

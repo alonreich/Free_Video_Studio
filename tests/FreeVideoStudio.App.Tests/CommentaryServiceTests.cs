@@ -169,7 +169,6 @@ public sealed class CommentaryServiceTests
     }
 }
 
-/// <summary>AICOMMENTARY_SPEED_01 / MERGE_01 / REPORT_01 — absolute times, speed-aware readability, segment merge, part retry.</summary>
 public sealed class CommentaryTimingTests
 {
     static CommentaryTimingTests()
@@ -277,7 +276,7 @@ public sealed class CommentaryTimingTests
         File.WriteAllBytes(video, new byte[] { 0 });
         try
         {
-            var req = new CommentaryRequest(video, 0, 15.0, AiVendor.Anthropic, "m", Provider: provider);
+            var req = new CommentaryRequest(video, 0, 15.0, AiVendor.Anthropic, "m", Provider: provider, Parallelism: 1);
             var result = await CommentaryService.GenerateCommentaryWithReportAsync(req, "k");
             Assert.Equal(2, result.TotalChunks);
             Assert.Equal(1, result.FailedChunks);

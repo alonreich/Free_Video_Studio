@@ -5,106 +5,33 @@
              x:Class="FreeVideoStudio.App.AvaloniaApp">
     <Application.Resources>
         <ResourceDictionary>
-        <!-- Title Bar Tokens moved to ThemeDictionaries to fix Issue 02 -->
 
-        <!-- Semantic / brand / state tokens (theme-agnostic) -->
-        <SolidColorBrush x:Key="AppAccentBrush" Color="#60a5fa" />
-        <SolidColorBrush x:Key="AppInfoBrush" Color="#38bdf8" />
-        <SolidColorBrush x:Key="AppSuccessBrush" Color="#3f9c6b" />
         <SolidColorBrush x:Key="AppDangerBrush" Color="#a83232" />
-        <!-- ISSUE_02: Granular timeline "slower-than-normal" segment swatch. Kept distinct from
-             AppDangerBrush (#dc2626) because it must equal the block colour drawn in code
-             (GetSegmentOverlayColor RGB 239,68,68) so the legend chip matches the timeline. -->
-        <SolidColorBrush x:Key="AppSpeedSlowBrush" Color="#ef4444" />
-        <SolidColorBrush x:Key="AppWarningBrush" Color="#facc15" />
-        <!-- MERGERPLAYHEAD_01: the Video Merger's playhead line (top of the time scale down through the waveform). -->
         <SolidColorBrush x:Key="AppPlayheadBrush" Color="#ef4444" />
 
-        <!-- ══════════════════════════════════════════════════════════════════════════════════
-             IDEA_6 — THE ZOOM COLOUR. ONE COLOUR, ONE MEANING, EVERYWHERE.
-             The zoom feature previously spoke in THREE unrelated colours and users could not
-             tell zoom apart from a speed segment:
-               fuchsia #d946ef  timeline zoom bar + lollipop markers (Main App AND Granular)
-               yellow  #fde047  the dashed box you draw on the video, and the onboarding banner
-               blue    #1e40af  the four corner resize handles on that same box
-             Yellow also collides with the SELECTED-block highlight and with AppWarningBrush, so
-             "yellow" meant zoom, selection and warning at once.
-             Everything zoom now uses AppZoomBrush and nothing else does. AppZoomColor exists
-             because several zoom visuals are built in code-behind and need a Color, not a Brush.
-             ⚠️ DO NOT reuse this colour for anything that is not zoom, and do not give zoom a
-             second colour "for contrast" — that is the exact problem this token removes.
-             ══════════════════════════════════════════════════════════════════════════════════ -->
         <Color x:Key="AppZoomColor">#2251c1</Color>
         <SolidColorBrush x:Key="AppZoomBrush" Color="{StaticResource AppZoomColor}" />
 
-        <!-- ══════════════════════════════════════════════════════════════════════════════════
-             ZOOMANTS_01 — THE MARCHING-ANTS YELLOW, AND WHY IT IS A DELIBERATE EXCEPTION.
-             ⚠️ READ IDEA_6 DIRECTLY ABOVE BEFORE TOUCHING THIS. IDEA_6 says everything zoom wears
-             AppZoomColor and zoom must not be given "a second colour for contrast" — and it names
-             yellow #fde047 as one of the three colours that were REMOVED from zoom precisely
-             because users could not tell a zoom from a speed segment.
-             This token reintroduces that yellow for ONE thing only: the animated 1px marching-ants
-             outline of the zoom rubber-band, on the owner's explicit instruction. The reasoning is
-             that an ANIMATED hairline is distinguished by its motion rather than by its hue, so it
-             no longer relies on colour to be told apart from a static speed block.
-             ⚠️ THE COLLISIONS IDEA_6 WARNED ABOUT ARE STILL REAL: this yellow is close to
-             AppWarningBrush (#facc15) and to the selected-block highlight. If zoom and "selected"
-             or zoom and "warning" ever start reading as the same thing again, THIS is the token to
-             revert — set it to {StaticResource AppZoomColor} and the ants go back to zoom blue.
-             ⚠️ Theme-invariant on purpose: the ants are drawn over VIDEO, not over app chrome, so
-             they must not follow the Light/Dark dictionaries. Same reasoning as AppZoomColor.
-             ══════════════════════════════════════════════════════════════════════════════════ -->
         <Color x:Key="AppZoomAntsColor">#fde047</Color>
 
-        <!-- ══════════════════════════════════════════════════════════════════════════════════
-             MEME_06 — THE MEME COLOUR, and it follows AppZoomColor's rule exactly.
-             Memes get their own token for the same reason zoom did: their timeline markers sit on
-             the SAME ruler as the freeze camera (danger red) and the zoom magnifier (AppZoomColor),
-             and three features sharing two colours is how a user ends up dragging the wrong thing.
-             Purple is chosen because it collides with nothing already on that ruler — not the red
-             freeze/cut markers, not the zoom blue, not the green take handles.
-             ⚠️ DO NOT reuse this for anything that is not a meme, and do not give memes a second
-             colour "for the end marker" — both ends are one object, which is the whole point. -->
         <Color x:Key="AppMemeColor">#7c3aed</Color>
         <SolidColorBrush x:Key="AppMemeBrush" Color="{StaticResource AppMemeColor}" />
 
-        <!-- WANDCOLOR_01 — the Crop Tool Magic Wand's candidate outlines. They used to be "#e91e63"
-             literals inside CropToolWindow.MagicWand.cs (Invariant #5). One hue, three strengths:
-             outline, a faint fill so the box reads on any frame, and the caption plate. They sit on
-             top of video, so like AppZoomColor they do not follow the Light/Dark dictionaries. -->
         <Color x:Key="AppWandCandidateColor">#e91e63</Color>
         <SolidColorBrush x:Key="AppWandCandidateBrush" Color="{StaticResource AppWandCandidateColor}" />
         <SolidColorBrush x:Key="AppWandCandidateFillBrush" Color="#18e91e63" />
         <SolidColorBrush x:Key="AppWandCaptionBrush" Color="#c8e91e63" />
         <SolidColorBrush x:Key="AppZoomDeepBorderBrush" Color="#15306b" />
         <SolidColorBrush x:Key="AppOverlayBrush" Color="#aa000000" />
+        <SolidColorBrush x:Key="AppOnOverlayTextBrush" Color="#f1f5f9" />
+        <SolidColorBrush x:Key="AppOnOverlayMutedTextBrush" Color="#cbd5e1" />
 
-        <!-- ══════════════════════════════════════════════════════════════════════════════════
-             SCRIM_01 — THE THREE DIM LAYERS, AS TOKENS.
-
-             Six windows each carried their own black-with-alpha literal for "dim what is behind
-             this": #E6000000 four times (MemeSwapOverlay in Main, Granular, Music Wizard and
-             Voice Over), #F0000000 once (MemeRebuildOverlay) and #90000000 once (the Merger's
-             FlyoutScrim). Nothing enforced that the four identical ones stayed identical, and
-             Invariant #5 forbids the literal outright.
-
-             Deliberately theme-INVARIANT, exactly like AppOverlayBrush above: a scrim's job is to
-             push the content behind it away from the eye, and on a light ground a light scrim does
-             not do that. Black at three strengths, in both ThemeVariants.
-
-             Pick by intent, not by number:
-               Soft   — a flyout is open; the page behind is still legible context.
-               (base) — a blocking operation owns the window; the page behind is unavailable.
-               Strong — a rebuild is discarding and re-laying-out what is behind it.
-             ══════════════════════════════════════════════════════════════════════════════════ -->
         <SolidColorBrush x:Key="AppScrimSoftBrush" Color="#90000000" />
         <SolidColorBrush x:Key="AppScrimBrush" Color="#E6000000" />
         <SolidColorBrush x:Key="AppScrimStrongBrush" Color="#F0000000" />
         <SolidColorBrush x:Key="AppVideoSurfaceBrush" Color="#000000" />
-        <!-- Always-white text/icons for saturated colored buttons (theme-agnostic) -->
         <SolidColorBrush x:Key="AppOnAccentTextBrush" Color="#e8eaef" />
 
-        <!-- Geometry Resources -->
         <StreamGeometry x:Key="AppPlayIconGeometry">M3,1 L14,8 L3,15 Z</StreamGeometry>
         <StreamGeometry x:Key="AppPauseIconGeometry">M2,1 h4 v14 h-4 Z M10,1 h4 v14 h-4 Z</StreamGeometry>
         <StreamGeometry x:Key="AppMusicNoteIconGeometry">M12,3v10.55c-0.59-0.34-1.27-0.55-2-0.55c-2.21,0-4,1.79-4,4s1.79,4,4,4s4-1.79,4-4V7h4V3H12z</StreamGeometry>
@@ -112,33 +39,14 @@
         <StreamGeometry x:Key="AppFastForwardIconGeometry">M2,2 L8,8 L2,14 Z M8,2 L14,8 L8,14 Z</StreamGeometry>
         <StreamGeometry x:Key="AppImageIconGeometry">M 2,6 L 4,6 L 5,4 L 11,4 L 12,6 L 14,6 Q 15,6 15,7 L 15,12 Q 15,13 14,13 L 2,13 Q 1,13 1,12 L 1,7 Q 1,6 2,6 Z M 8,7.5 A 2.5,2.5 0 1,0 8,12.5 A 2.5,2.5 0 1,0 8,7.5</StreamGeometry>
         <StreamGeometry x:Key="AppSpeakerIconGeometry">M3,7 L6,7 L10,3 L10,13 L6,9 L3,9 Z M13,5 A4,4 0 0,1 13,11 M16,2 A8,8 0 0,1 16,14</StreamGeometry>
-        <!-- CUT_02 — scissors, on a 24x24 grid to match AppVoiceOverIconGeometry / AppMusicNote.
-             Two finger rings, two blades crossing just above centre, and the pivot. -->
-        <!-- ══════════════════════════════════════════════════════════════════════════════════
-             SCISSORS_01 — THE HANDLES ARE SOLID DISCS, NOT RINGS. DO NOT "RESTORE" THE HOLES.
-             They used to be annuli: a 3.0 outer circle with a 1.4 inner circle punched out, i.e. a
-             1.6-unit wall on a 24-unit canvas. This icon renders at AppFontSize14, so that wall
-             came out under one physical pixel and the two handles simply vanished against the red
-             Danger fill — the blades read fine and the icon looked like a broken X.
-             Solid discs survive any size and any background. The blades are also thickened from
-             1.6 to 2.2 units for the same reason.
-             ══════════════════════════════════════════════════════════════════════════════════ -->
         <StreamGeometry x:Key="AppScissorsIconGeometry">M9.3,9.0 L19.2,19.9 L21.1,18.2 L11.9,7.2 Z M14.7,9.0 L4.8,19.9 L2.9,18.2 L12.1,7.2 Z M6,2 A3.2,3.2 0 1,0 6,8.4 A3.2,3.2 0 1,0 6,2 Z M18,2 A3.2,3.2 0 1,0 18,8.4 A3.2,3.2 0 1,0 18,2 Z M12,10.6 A1.3,1.3 0 1,0 12,13.2 A1.3,1.3 0 1,0 12,10.6 Z</StreamGeometry>
         <StreamGeometry x:Key="AppVoiceOverIconGeometry">M12,14c1.66,0,3-1.34,3-3V5c0-1.66-1.34-3-3-3S9,3.34,9,5v6C9,12.66,10.34,14,12,14z M17,11c0,2.76-2.24,5-5,5s-5-2.24-5-5H5c0,3.53,2.61,6.43,6,6.92V21h2v-3.08c3.39-0.49,6-3.39,6-6.92H17z</StreamGeometry>
 
-        <!-- Global font-size tokens (base defaults; scaled at runtime by ThemeManager.ApplyFontScale) -->
         <sys:Double x:Key="AppFontSizeSmall">10</sys:Double>
         <sys:Double x:Key="AppFontSizeBase">11</sys:Double>
         <sys:Double x:Key="AppFontSizeNormal">13</sys:Double>
 
-        <!-- Numbered font-size tokens: every FontSize in the app references one of these
-             so the Settings > Appearance > Font Size choice scales EVERY text and button.
-             Base value equals the token number; ThemeManager multiplies all of them. -->
-        <!-- ISSUE_30: font family with a real fallback chain, plus a line-height floor. -->
         <FontFamily x:Key="AppFontFamily">Inter, Segoe UI Variable, Segoe UI, Arial, sans-serif</FontFamily>
-        <!-- TEXTCLIP_01: opt-in only (TextBlock.FixedLineHeight). It is deliberately NOT applied
-             to bare TextBlock, and deliberately NOT in ThemeManager.s_scaledTokens — read the
-             comment on the FixedLineHeight style before touching either fact. -->
         <sys:Double x:Key="AppLineHeightNormal">18</sys:Double>
 
         <sys:Double x:Key="AppFontSize9">9</sys:Double>
@@ -156,181 +64,44 @@
         <sys:Double x:Key="AppFontSize48">48</sys:Double>
         <sys:Double x:Key="AppFontSize60">60</sys:Double>
 
-        <!-- Control sizing tokens scaled together with the font scale so buttons
-             physically grow/shrink with the chosen font size. -->
         <sys:Double x:Key="AppButtonMinHeight">44</sys:Double>
         <sys:Double x:Key="AppSpeedPresetMinWidth">44</sys:Double>
         <sys:Double x:Key="AppSpeedPresetMinHeight">44</sys:Double>
         <sys:Double x:Key="AppCloseBtnSize">44</sys:Double>
 
-        <!-- ISSUE_11 (Crop Tools audit round 6) — two more runtime-scaled geometry tokens, added
-             for the Crop Tool's wizard strip and zoom rail, where the type scaled with the font
-             scale and the boxes around it did not. Both are registered in
-             ThemeManager.s_scaledTokens alongside the AppFontSizeN family, so they move together.
-             ADDITIVE ONLY: no existing key changes value, and nothing outside CropToolWindow.axaml
-             references either of them today. -->
         <sys:Double x:Key="AppWizStepDotSize">24</sys:Double>
         <sys:Double x:Key="AppWizConnectorWidth">10</sys:Double>
         <sys:Double x:Key="AppZoomStripTextMaxWidth">46</sys:Double>
 
-        <!-- SpeedPreset hover/pressed tokens -->
         <SolidColorBrush x:Key="AppSpeedPresetHoverBackground" Color="#4a3714" />
         <SolidColorBrush x:Key="AppSpeedPresetHoverForeground" Color="#fef3c7" />
         <SolidColorBrush x:Key="AppSpeedPresetHoverBorder" Color="#a16207" />
 
-        <!-- BaseSpeedPreset tokens -->
         <SolidColorBrush x:Key="AppBaseSpeedPresetBackground" Color="#14532d" />
         <SolidColorBrush x:Key="AppBaseSpeedPresetForeground" Color="#86efac" />
         <SolidColorBrush x:Key="AppBaseSpeedPresetHoverBackground" Color="#166534" />
 
-        <!-- VoiceOverEntry tokens -->
         <SolidColorBrush x:Key="AppVoiceOverBorderBrush" Color="#0e7490" />
         <SolidColorBrush x:Key="AppVoiceOverDisabledBorderBrush" Color="#2a3340" />
         <SolidColorBrush x:Key="AppVoiceOverDisabledBackgroundBrush" Color="#3a4452" />
         <SolidColorBrush x:Key="AppVoiceOverDisabledForegroundBrush" Color="#88ffffff" />
 
-        <!-- Social media brand tokens -->
         <SolidColorBrush x:Key="AppWhatsAppBrush" Color="#25D366" />
         <SolidColorBrush x:Key="AppInstagramBrush" Color="#C13584" />
         <SolidColorBrush x:Key="AppYouTubeBrush" Color="#FF0000" />
         <SolidColorBrush x:Key="AppTikTokBrush" Color="#000000" />
         <SolidColorBrush x:Key="AppTikTokBorderBrush" Color="#00f2fe" />
-        <!-- ISSUE_10: brand button hover variants (brighter, matching Primary/Success/Danger
-             hover ramps) so the share buttons visibly react to the pointer. -->
         <SolidColorBrush x:Key="AppWhatsAppHoverBrush" Color="#45DF7E" />
         <SolidColorBrush x:Key="AppInstagramHoverBrush" Color="#D3529C" />
         <SolidColorBrush x:Key="AppYouTubeHoverBrush" Color="#FF3B3B" />
         <SolidColorBrush x:Key="AppTikTokHoverBrush" Color="#2A2A2A" />
 
-        <!-- Color struct resources for GradientStop.Color bindings -->
-        <Color x:Key="AppFocusOuterColor">#7dd3fc</Color>
-        <Color x:Key="AppInfoColor">#38bdf8</Color>
         <Color x:Key="AppSliderGlowEdgeColor">#0ea5e9</Color>
 
-        <!-- ISSUE_04: Centralized button gradient + border tokens (theme-agnostic saturated
-             ramps with guaranteed white AppOnAccentTextBrush text; previously raw hex inline). -->
         <SolidColorBrush x:Key="AppPrimaryDeepBorderBrush" Color="#053349" />
         <SolidColorBrush x:Key="AppSuccessDeepBorderBrush" Color="#052e16" />
         <SolidColorBrush x:Key="AppDangerDeepBorderBrush" Color="#450a0a" />
-        <!-- BTNHUE_01: the blue action button is now the requested #084C69 (deep teal-blue) at the
-             0.18 stop. The rim and base are tints of that ONE colour, so changing #084C69 alone
-             re-tunes the whole button; do not reintroduce an unrelated blue at either end. -->
-        <LinearGradientBrush x:Key="AppPrimaryButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#2ea4d2"/>
-            <GradientStop Offset="0.18" Color="#0c6b91"/>
-            <GradientStop Offset="1.0" Color="#084257"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppPrimaryButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#42b8e2"/>
-            <GradientStop Offset="0.18" Color="#0f7ea9"/>
-            <GradientStop Offset="1.0" Color="#0a536d"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppSuccessButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#5fae83"/>
-            <GradientStop Offset="0.18" Color="#2f7149"/>
-            <GradientStop Offset="1.0" Color="#17351f"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppSuccessButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#6fbc92"/>
-            <GradientStop Offset="0.18" Color="#3d8b5f"/>
-            <GradientStop Offset="1.0" Color="#1d4128"/>
-        </LinearGradientBrush>
-        <!-- BTNDEPTH_01 — SECONDARY AND ZOOM WERE THE ONLY FLAT BUTTONS IN THE APP.
-             Primary, Success, Danger and VoiceOver all had a 3-stop ramp (bright top rim, the
-             label's own stop at 0.18, deep base) plus a deep border, which is what makes them read
-             as physically raised. Secondary had `Background = AppPanelBrush` — literally the same
-             colour as the panel behind it — so SET THUMBNAIL, VIDEO MERGER, CROP SETTINGS, ADD
-             MUSIC and NEW FILE looked permanently disabled even when fully enabled. There was no
-             way to tell an enabled Secondary from a disabled one at a glance.
-             These ramps are a slate version of the same recipe, so Secondary now sits in the same
-             visual family without competing with Primary for attention. -->
-        <SolidColorBrush x:Key="AppSecondaryDeepBorderBrush" Color="#2d2649" />
-        <!-- BTNHUE_01: the secondary button leaves the slate/grey family entirely for the
-             requested #483D65 (muted violet). Slate still read as "disabled" no matter how much
-             depth it was given, because grey IS the disabled language everywhere else in the app.
-             A different HUE is what makes an enabled secondary unmistakable. -->
-        <LinearGradientBrush x:Key="AppSecondaryButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#8b7cb4"/>
-            <GradientStop Offset="0.18" Color="#61548a"/>
-            <GradientStop Offset="1.0" Color="#3b3159"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppSecondaryButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#9c8dc6"/>
-            <GradientStop Offset="0.18" Color="#71619d"/>
-            <GradientStop Offset="1.0" Color="#463a67"/>
-        </LinearGradientBrush>
 
-        <!-- BTNDEPTH_01 — the zoom ramp keeps IDEA_6's rule (everything zoom wears AppZoomColor)
-             while gaining the same depth as every other action button. -->
-        <LinearGradientBrush x:Key="AppZoomButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#5b86e8"/>
-            <GradientStop Offset="0.18" Color="#2251c1"/>
-            <GradientStop Offset="1.0" Color="#15306b"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppZoomButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#7ba0f0"/>
-            <GradientStop Offset="0.18" Color="#2f63d8"/>
-            <GradientStop Offset="1.0" Color="#1c3f85"/>
-        </LinearGradientBrush>
-
-        <LinearGradientBrush x:Key="AppDangerButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#c47070"/>
-            <GradientStop Offset="0.18" Color="#a83232"/>
-            <GradientStop Offset="1.0" Color="#521818"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppDangerButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#d08585"/>
-            <GradientStop Offset="0.18" Color="#b83b3b"/>
-            <GradientStop Offset="1.0" Color="#66201f"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppVoiceOverButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#38bdf8"/>
-            <GradientStop Offset="0.18" Color="#0a7288"/>
-            <GradientStop Offset="1.0" Color="#155e75"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppVoiceOverButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#67e8f9"/>
-            <GradientStop Offset="0.18" Color="#06b6d4"/>
-            <GradientStop Offset="1.0" Color="#0e7490"/>
-        </LinearGradientBrush>
-
-        <!-- ══════════════════════════════════════════════════════════════════════════════════
-             MERGERRETURN_01 — THE HELP HUE.
-             Every button class in this file is an ACTION class: Primary (do the main thing),
-             Success (finish), Danger (destroy), Secondary (do a lesser thing), ZoomAction and
-             VoiceOverEntry (one feature each, by IDEA_6's "one feature, one colour" rule).
-             A "SHOW ME AROUND" button is none of those — it does nothing to the user's work at
-             all — but it was wearing Secondary, so on every screen it sat in the same violet as
-             RETURN, CROP SETTINGS and SET THUMBNAIL and competed with them for the same glance.
-             This is the suite's INFORMATION hue (AppInfoBrush / AppInfoColor, already the colour
-             of every advisory readout in the app) given the standard 3-stop button ramp. It is
-             close to VoiceOverEntry's cyan on purpose — they are neighbours on the same wheel —
-             and the two never appear on the same screen.
-             Used by: VideoMergerWindow MergerHelpButton. Any other screen's walkthrough button
-             should move onto it too. ══════════════════════════════════════════════════════════ -->
-        <SolidColorBrush x:Key="AppHelpBorderBrush" Color="#075985" />
-        <LinearGradientBrush x:Key="AppHelpButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#7dd3fc"/>
-            <GradientStop Offset="0.18" Color="#0284c7"/>
-            <GradientStop Offset="1.0" Color="#0c4a6e"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AppHelpButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Offset="0.0" Color="#bae6fd"/>
-            <GradientStop Offset="0.18" Color="#0ea5e9"/>
-            <GradientStop Offset="1.0" Color="#075985"/>
-        </LinearGradientBrush>
-
-        <!-- ISSUE_04: hover/pressed overlay + CloseBtn state tokens (previously raw hex inline) -->
-        <SolidColorBrush x:Key="AppHoverOverlayBrush" Color="#22ffffff" />
-        <SolidColorBrush x:Key="AppCloseBtnHoverBackgroundBrush" Color="#227DD3FC" />
-        <SolidColorBrush x:Key="AppCloseBtnHoverForegroundBrush" Color="#bae6fd" />
-        <SolidColorBrush x:Key="AppCloseBtnPressedBackgroundBrush" Color="#447DD3FC" />
-
-        <!-- ISSUE_13: PhoneFrameMockup device-chrome colours. Deliberately theme-agnostic (a
-             phone bezel / status bar is black-and-white in BOTH ThemeVariants, exactly like the
-             AppOnAccentTextBrush case above) but now named tokens, so no raw hex or named colour
-             literal survives anywhere in the suite's XAML. Do not move these into
-             ThemeDictionaries — the mockup must NOT recolour with the app theme. -->
         <SolidColorBrush x:Key="AppPortraitMaskBrush" Color="#99000000" />
         <SolidColorBrush x:Key="AppPhoneBezelBrush" Color="#000000" />
         <SolidColorBrush x:Key="AppPhoneBezelRimBrush" Color="#1AFFFFFF" />
@@ -338,65 +109,127 @@
         <SolidColorBrush x:Key="AppPhoneChromeMutedBrush" Color="#99FFFFFF" />
         <SolidColorBrush x:Key="AppPhoneChromeDimBrush" Color="#66FFFFFF" />
 
-        <Color x:Key="AppAccentColor">#60a5fa</Color>
-        <!-- TONE_01: AppSuccessColor is muted from #22c55e; AppDangerColor is NEW. Code that
-             needs a Color rather than a Brush (alpha-ramped overlays) now has a token for BOTH
-             sides. Its absence was the direct cause of the hardcoded reds in the audit. -->
-        <Color x:Key="AppSuccessColor">#3f9c6b</Color>
-        <Color x:Key="AppDangerColor">#a83232</Color>
-        <!-- Interactive state overlay brushes (alpha-variant tokens) -->
-        <SolidColorBrush x:Key="AppAccentAlpha10Brush" Color="{DynamicResource AppAccentColor}" Opacity="0.10" />
-        <SolidColorBrush x:Key="AppAccentAlpha15Brush" Color="{DynamicResource AppAccentColor}" Opacity="0.15" />
-        <SolidColorBrush x:Key="AppAccentAlpha20Brush" Color="{DynamicResource AppAccentColor}" Opacity="0.20" />
-        <SolidColorBrush x:Key="AppSuccessAlpha10Brush" Color="{DynamicResource AppSuccessColor}" Opacity="0.10" />
         <SolidColorBrush x:Key="AppListBoxSelectedBrush" Color="{DynamicResource AppAccentColor}" Opacity="0.17" />
         <SolidColorBrush x:Key="AppListBoxSelectedHoverBrush" Color="{DynamicResource AppAccentColor}" Opacity="0.25" />
 
-        <!-- ISSUE_04: Merger queue item glow shadows tokenized (previously raw hex inline in Merger's Styles block) -->
         <BoxShadows x:Key="AppItemGlowHoverShadow">0 0 4 0 #3338bdf8</BoxShadows>
         <BoxShadows x:Key="AppItemGlowSelectedShadow">0 0 8 1 #5522c55e</BoxShadows>
-        <!-- ISSUE_05: inline glow shadows tokenized (Merger drop indicator + Phase overlay progress bar) -->
         <BoxShadows x:Key="AppDropIndicatorShadow">0 0 6 1 #6638bdf8</BoxShadows>
         <BoxShadows x:Key="AppPhaseGlowShadow">0 0 15 2 #4ade80</BoxShadows>
-        <!-- VOICE_02: live-microphone glow. Same red as AppDangerBrush (#dc2626). -->
         <BoxShadows x:Key="AppRecordingGlowShadow">0 0 14 3 #ccdc2626</BoxShadows>
 
-        <!-- ISSUE_04 (audit round 4): full-screen dimmer + drop-zone pulse tokens (previously
-             raw hex inline in MemeWallControl / AmbientDropzoneControl). -->
         <SolidColorBrush x:Key="AppDimmerHeavyBrush" Color="#C8000000" />
         <SolidColorBrush x:Key="AppDimmerSoftBrush" Color="#A0000000" />
         <BoxShadows x:Key="AppDropzonePulseShadow">0 0 50 10 #6000BFFF</BoxShadows>
 
-        <!-- Theme-dependent surface, text, focus & disabled tokens.
-             These now switch with the selected ThemeVariant (Settings > Appearance > Theme). -->
+        <ResourceDictionary.MergedDictionaries>
+            <ResourceDictionary>
+                <SolidColorBrush x:Key="AppAccentBrush" Color="#60a5fa" />
+                <SolidColorBrush x:Key="AppInfoBrush" Color="#38bdf8" />
+                <SolidColorBrush x:Key="AppSuccessBrush" Color="#3f9c6b" />
+                <SolidColorBrush x:Key="AppSpeedSlowBrush" Color="#ef4444" />
+                <SolidColorBrush x:Key="AppWarningBrush" Color="#facc15" />
+                <Color x:Key="AppFocusOuterColor">#7dd3fc</Color>
+                <Color x:Key="AppInfoColor">#38bdf8</Color>
+                <LinearGradientBrush x:Key="AppPrimaryButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#2ea4d2"/>
+                    <GradientStop Offset="0.18" Color="#0c6b91"/>
+                    <GradientStop Offset="1.0" Color="#084257"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppPrimaryButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#42b8e2"/>
+                    <GradientStop Offset="0.18" Color="#0f7ea9"/>
+                    <GradientStop Offset="1.0" Color="#0a536d"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppSuccessButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#5fae83"/>
+                    <GradientStop Offset="0.18" Color="#2f7149"/>
+                    <GradientStop Offset="1.0" Color="#17351f"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppSuccessButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#6fbc92"/>
+                    <GradientStop Offset="0.18" Color="#3d8b5f"/>
+                    <GradientStop Offset="1.0" Color="#1d4128"/>
+                </LinearGradientBrush>
+                <SolidColorBrush x:Key="AppSecondaryDeepBorderBrush" Color="#2d2649" />
+                <LinearGradientBrush x:Key="AppSecondaryButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#8b7cb4"/>
+                    <GradientStop Offset="0.18" Color="#61548a"/>
+                    <GradientStop Offset="1.0" Color="#3b3159"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppSecondaryButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#9c8dc6"/>
+                    <GradientStop Offset="0.18" Color="#71619d"/>
+                    <GradientStop Offset="1.0" Color="#463a67"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppZoomButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#5b86e8"/>
+                    <GradientStop Offset="0.18" Color="#2251c1"/>
+                    <GradientStop Offset="1.0" Color="#15306b"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppZoomButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#7ba0f0"/>
+                    <GradientStop Offset="0.18" Color="#2f63d8"/>
+                    <GradientStop Offset="1.0" Color="#1c3f85"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppDangerButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#c47070"/>
+                    <GradientStop Offset="0.18" Color="#a83232"/>
+                    <GradientStop Offset="1.0" Color="#521818"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppDangerButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#d08585"/>
+                    <GradientStop Offset="0.18" Color="#b83b3b"/>
+                    <GradientStop Offset="1.0" Color="#66201f"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppVoiceOverButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#38bdf8"/>
+                    <GradientStop Offset="0.18" Color="#0a7288"/>
+                    <GradientStop Offset="1.0" Color="#155e75"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppVoiceOverButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#67e8f9"/>
+                    <GradientStop Offset="0.18" Color="#06b6d4"/>
+                    <GradientStop Offset="1.0" Color="#0e7490"/>
+                </LinearGradientBrush>
+                <SolidColorBrush x:Key="AppHelpBorderBrush" Color="#075985" />
+                <LinearGradientBrush x:Key="AppHelpButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#7dd3fc"/>
+                    <GradientStop Offset="0.18" Color="#0284c7"/>
+                    <GradientStop Offset="1.0" Color="#0c4a6e"/>
+                </LinearGradientBrush>
+                <LinearGradientBrush x:Key="AppHelpButtonHoverGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+                    <GradientStop Offset="0.0" Color="#bae6fd"/>
+                    <GradientStop Offset="0.18" Color="#0ea5e9"/>
+                    <GradientStop Offset="1.0" Color="#075985"/>
+                </LinearGradientBrush>
+                <SolidColorBrush x:Key="AppHoverOverlayBrush" Color="#22ffffff" />
+                <SolidColorBrush x:Key="AppCloseBtnHoverBackgroundBrush" Color="#227DD3FC" />
+                <SolidColorBrush x:Key="AppCloseBtnHoverForegroundBrush" Color="#bae6fd" />
+                <SolidColorBrush x:Key="AppCloseBtnPressedBackgroundBrush" Color="#447DD3FC" />
+                <Color x:Key="AppAccentColor">#60a5fa</Color>
+                <Color x:Key="AppSuccessColor">#3f9c6b</Color>
+                <Color x:Key="AppDangerColor">#a83232</Color>
+                <SolidColorBrush x:Key="AppAccentAlpha10Brush" Color="{DynamicResource AppAccentColor}" Opacity="0.10" />
+                <SolidColorBrush x:Key="AppAccentAlpha15Brush" Color="{DynamicResource AppAccentColor}" Opacity="0.15" />
+                <SolidColorBrush x:Key="AppAccentAlpha20Brush" Color="{DynamicResource AppAccentColor}" Opacity="0.20" />
+                <SolidColorBrush x:Key="AppSuccessAlpha10Brush" Color="{DynamicResource AppSuccessColor}" Opacity="0.10" />
+            </ResourceDictionary>
+        </ResourceDictionary.MergedDictionaries>
+
         <ResourceDictionary.ThemeDictionaries>
             <ResourceDictionary x:Key="Dark">
                 <SolidColorBrush x:Key="AppSurfaceBrush" Color="#1e293b" />
-                <!-- ISSUE_09 (Crop Tools audit round 6) — the drop shadow behind a floating in-panel
-                     chooser. Avalonia's BoxShadows cannot take a per-stop DynamicResource, so the
-                     Crop Tool's RolePopup used to carry a raw `0 4 18 0 #66000000` literal in the
-                     AXAML: the one hardcoded colour left in that file, and a fixed 40%-black smear
-                     that stayed identical in Light mode. The shadow is now assembled in code from
-                     this token (CropToolWindow.ApplyRolePopupShadow) and rebuilt whenever the theme
-                     variant changes. Dark mode: a deep shadow, because the ground is already dark
-                     and the popup has to lift clear of it. -->
                 <Color x:Key="AppPopupShadowColor">#66000000</Color>
-                <!-- ISSUE_01: previously referenced but never defined (MemeWall cells,
-                     RadialMenu hub). 80%-alpha variant of AppSurfaceBrush per theme. -->
                 <SolidColorBrush x:Key="AppSurfaceAlpha80Brush" Color="#CC1e293b" />
                 <SolidColorBrush x:Key="AppPanelBrush" Color="#334155" />
                 <SolidColorBrush x:Key="AppBorderBrush" Color="#475569" />
-                <!-- LIST_05 — INTERNAL TABLE HAIRLINES. Deliberately far lighter than
-                     AppBorderBrush: the outer frame states where the table is, these only guide
-                     the eye across a row. Replaces the raw #1AFFFFFF / #14FFFFFF literals that
-                     were inlined in the music list's row template (North Star invariant 5). -->
                 <SolidColorBrush x:Key="AppTableHairlineBrush" Color="#FFFFFF" Opacity="0.10" />
                 <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#ffffff" />
                 <SolidColorBrush x:Key="AppTextMutedBrush" Color="#b6c2d0" />
+                <SolidColorBrush x:Key="AppSurfaceSubtleBrush" Color="#273548" />
+                <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="#b6c2d0" />
                 <SolidColorBrush x:Key="AppControlTrackBrush" Color="#222222" />
-                <!-- SPECTRUM_03 — Voice Over microphone spectrum meter (Dark). The face stays DARK in
-                     both themes (unlit space is "blank/dark", like a hardware meter); zone colours are
-                     green (below -18 dBFS), amber (-18..-6 dBFS) and red (above -6 dBFS). -->
                 <SolidColorBrush x:Key="AppMeterBackgroundBrush" Color="#0b1220" />
                 <SolidColorBrush x:Key="AppMeterUnlitBrush" Color="#162033" />
                 <SolidColorBrush x:Key="AppMeterNormalBrush" Color="#22c55e" />
@@ -404,11 +237,6 @@
                 <SolidColorBrush x:Key="AppMeterPeakBrush" Color="#ef4444" />
                 <SolidColorBrush x:Key="AppMeterLabelBrush" Color="#94a3b8" />
                 <SolidColorBrush x:Key="AppVideoRailBrush" Color="#15202b" />
-                <!-- Ambient bubble background. The layer used to hardcode pure white, which is
-                     effectively INVISIBLE on the light surface (#f8fafc) — the feature simply did
-                     not exist for Light-theme users. Colour and an opacity multiplier are now per
-                     ThemeVariant: Dark keeps the original white look at the original strength;
-                     Light uses a saturated blue lifted enough to actually read on near-white. -->
                 <Color x:Key="AppAmbientBubbleColor">#ffffff</Color>
                 <sys:Double x:Key="AppAmbientBubbleOpacityScale">1.0</sys:Double>
                 <SolidColorBrush x:Key="AppFocusOuterBrush" Color="#7dd3fc" />
@@ -417,31 +245,10 @@
                 <SolidColorBrush x:Key="AppDisabledBackgroundBrush" Color="#475569" />
                 <SolidColorBrush x:Key="AppDisabledBorderBrush" Color="#334155" />
 
-                <!-- ══════════════════════════════════════════════════════════════════════════
-                     ISSUE_08 — PRESS-RIPPLE COLOUR. The ripple used to be hardcoded white in
-                     Controls/Tactile.cs, which is invisible on a light Secondary button, i.e. on
-                     most of the suite in the Light theme. Dark keeps the original white exactly.
-                     ══════════════════════════════════════════════════════════════════════════ -->
                 <Color x:Key="AppRippleColor">#ffffff</Color>
 
-                <!-- ISSUE_15: a pressed speed preset paints AppAccentBrush / AppSuccessBrush
-                     behind its label. In Dark those fills are LIGHT (#60a5fa / #22c55e), so the
-                     label must be dark to be readable - white measured 2.55:1 and 2.32:1. -->
                 <SolidColorBrush x:Key="AppOnPresetPressedTextBrush" Color="#0f172a" />
 
-                <!-- ══════════════════════════════════════════════════════════════════════════
-                     ISSUE_10 — THE TWO CUSTOM-DRAWN CONTROLS' CHROME.
-                     The quality/speed dial (SpinningWheelSlider) and the volume tube
-                     (FluidVolumeSlider) are the most eye-catching controls in the app and every
-                     colour in both was a hardcoded near-black hex in code-behind — a direct
-                     violation of the "NO RAW HEX IN STYLES" mandate in section 4, and completely
-                     unable to respond to the Light theme the Settings window offers.
-                     ⚠️ EVERY DARK VALUE BELOW IS BYTE-IDENTICAL TO THE OLD HARDCODED ONE. The
-                     default theme must look exactly as it did; only Light is new. If you change a
-                     Dark value here you are changing the shipped look of the app.
-                     Deliberately NOT tokenised: the liquid gradient (#00D2FF→#8A2BE2) and the red
-                     centre pointer. Those are the product's identity and read correctly on both.
-                     ══════════════════════════════════════════════════════════════════════════ -->
                 <Color x:Key="AppDialBezelEdgeColor">#15202b</Color>
                 <Color x:Key="AppDialBezelMidColor">#3e5871</Color>
                 <Color x:Key="AppDialRimColor">#0d1217</Color>
@@ -458,27 +265,10 @@
                 <Color x:Key="AppTubeGlassEdgeColor">#000000</Color>
                 <Color x:Key="AppTubeInnerShadowColor">#a6000000</Color>
 
-                <!-- ISSUE_11: the Granular freeze-duration presets painted their SELECTED state with
-                     three raw hexes in code-behind (#14532d / #22c55e / #86efac) that happened to
-                     duplicate these very tokens. Same values, one name, and now theme-aware. -->
                 <SolidColorBrush x:Key="AppSelectedPresetBackground" Color="#14532d" />
                 <SolidColorBrush x:Key="AppSelectedPresetBorder" Color="#22c55e" />
                 <SolidColorBrush x:Key="AppSelectedPresetForeground" Color="#86efac" />
 
-                <!-- ══════════════════════════════════════════════════════════════════════
-                     ZOOMCARD_01 — the "How should the zoom arrive?" cards.
-
-                     These four were hardcoded in GranularSpeedEditorWindow.axaml: #222234 rest,
-                     #181824 bullet well, #2f2f45 hover, #3a2b48 checked. Dark-theme values, in a
-                     suite that ships a Light variant — so in Light mode the dialog rendered as a
-                     block of near-black cards with light text around it. That is precisely the
-                     failure Invariant #5 exists to prevent, and it was invisible to anyone who
-                     never switched theme.
-
-                     The checked state is a desaturated tint of AppZoomBrush on purpose: the card's
-                     BORDER already carries the full accent, and two saturated accents stacked read
-                     as a rendering fault rather than a selection.
-                     ══════════════════════════════════════════════════════════════════════ -->
                 <SolidColorBrush x:Key="AppZoomCardBrush" Color="#222234" />
                 <SolidColorBrush x:Key="AppZoomCardWellBrush" Color="#181824" />
                 <SolidColorBrush x:Key="AppZoomCardHoverBrush" Color="#2f2f45" />
@@ -497,31 +287,21 @@
             </ResourceDictionary>
             <ResourceDictionary x:Key="Light">
                 <SolidColorBrush x:Key="AppSurfaceBrush" Color="#f8fafc" />
-                <!-- ISSUE_09 — see the dark-theme note. A 40%-black shadow on a near-white ground
-                     reads as dirt rather than depth, so Light gets a far lighter, cooler one. -->
                 <Color x:Key="AppPopupShadowColor">#2A0F172A</Color>
-                <!-- ISSUE_01: previously referenced but never defined (MemeWall cells,
-                     RadialMenu hub). 80%-alpha variant of AppSurfaceBrush per theme. -->
                 <SolidColorBrush x:Key="AppSurfaceAlpha80Brush" Color="#CCf8fafc" />
                 <SolidColorBrush x:Key="AppPanelBrush" Color="#e2e8f0" />
                 <SolidColorBrush x:Key="AppBorderBrush" Color="#cbd5e1" />
 
-                <!-- ZOOMCARD_01 — Light counterparts. Same four roles, same ordering of weight
-                     (rest < hover < checked), inverted ground. The well is pure white so the
-                     filled bullet still reads at 8px. -->
                 <SolidColorBrush x:Key="AppZoomCardBrush" Color="#eef1f7" />
                 <SolidColorBrush x:Key="AppZoomCardWellBrush" Color="#ffffff" />
                 <SolidColorBrush x:Key="AppZoomCardHoverBrush" Color="#dfe5f2" />
                 <SolidColorBrush x:Key="AppZoomCardCheckedBrush" Color="#ddd3ee" />
-                <!-- LIST_05 — see the dark-theme note. Dark ink on a light ground here, so the
-                     hairline is a low-alpha BLACK rather than a low-alpha white. -->
                 <SolidColorBrush x:Key="AppTableHairlineBrush" Color="#0f172a" Opacity="0.12" />
                 <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#0f172a" />
                 <SolidColorBrush x:Key="AppTextMutedBrush" Color="#475569" />
+                <SolidColorBrush x:Key="AppSurfaceSubtleBrush" Color="#eef2f7" />
+                <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="#475569" />
                 <SolidColorBrush x:Key="AppControlTrackBrush" Color="#e2e8f0" />
-                <!-- SPECTRUM_03 — Voice Over microphone spectrum meter (Light). The face stays DARK in
-                     both themes (unlit space is "blank/dark", like a hardware meter); zone colours are
-                     green (below -18 dBFS), amber (-18..-6 dBFS) and red (above -6 dBFS). -->
                 <SolidColorBrush x:Key="AppMeterBackgroundBrush" Color="#111827" />
                 <SolidColorBrush x:Key="AppMeterUnlitBrush" Color="#1f2937" />
                 <SolidColorBrush x:Key="AppMeterNormalBrush" Color="#16a34a" />
@@ -537,16 +317,10 @@
                 <SolidColorBrush x:Key="AppDisabledBackgroundBrush" Color="#cbd5e1" />
                 <SolidColorBrush x:Key="AppDisabledBorderBrush" Color="#94a3b8" />
 
-                <!-- ISSUE_08: black ripple on light surfaces. White was invisible here. -->
                 <Color x:Key="AppRippleColor">#000000</Color>
 
-                <!-- ISSUE_15, inverted: in Light those same fills are DARK (#2563eb / #15803d),
-                     so the label must be white. 5.17:1 and 5.02:1. -->
                 <SolidColorBrush x:Key="AppOnPresetPressedTextBrush" Color="#ffffff" />
 
-                <!-- ISSUE_10: the same two controls in brushed-light metal instead of near-black,
-                     so they sit inside the page instead of punching a hole in it. The geometry,
-                     physics and liquid are untouched — only the chrome changes. -->
                 <Color x:Key="AppDialBezelEdgeColor">#b9c3cf</Color>
                 <Color x:Key="AppDialBezelMidColor">#eef2f7</Color>
                 <Color x:Key="AppDialRimColor">#8b95a1</Color>
@@ -558,14 +332,11 @@
                 <Color x:Key="AppDialTickIdleColor">#1f2d3d</Color>
                 <Color x:Key="AppDialTickActiveDisabledColor">#94a3b8</Color>
                 <Color x:Key="AppDialTickIdleDisabledColor">#94a3b8</Color>
-                <!-- The tick shadow is a 1px offset copy behind the label. On a light face a BLACK
-                     shadow reads as a smudge, so it becomes white — same trick, inverted. -->
                 <Color x:Key="AppDialTickShadowColor">#ffffff</Color>
                 <Color x:Key="AppTubeGlassBaseColor">#dbe2ea</Color>
                 <Color x:Key="AppTubeGlassEdgeColor">#aab4c0</Color>
                 <Color x:Key="AppTubeInnerShadowColor">#59000000</Color>
 
-                <!-- ISSUE_11 -->
                 <SolidColorBrush x:Key="AppSelectedPresetBackground" Color="#bbf7d0" />
                 <SolidColorBrush x:Key="AppSelectedPresetBorder" Color="#15803d" />
                 <SolidColorBrush x:Key="AppSelectedPresetForeground" Color="#14532d" />
@@ -591,22 +362,6 @@
                     <GradientStop Offset="1.00" Color="#b2b8c0" />
                 </LinearGradientBrush>
 
-                <!-- ══════════════════════════════════════════════════════════════════════════
-                     LIGHT-MODE CONTRAST PASS.
-                     Every brush below was previously defined ONCE, outside these theme
-                     dictionaries, with values chosen to sit on a near-black page. On the light
-                     page (#f8fafc) they became pale washes, and the white label on top of them
-                     failed WCAG badly. Measured white-on-fill before this block:
-                         Success hover  2.28:1   VoiceOver hover 2.43:1
-                         SpeedPreset    2.54:1   Success        3.30:1
-                         Primary hover  3.68:1   VoiceOver      3.68:1   Danger hover 3.76:1
-                     and against the page itself: Warning 1.46:1, Info 2.05:1, Success 2.18:1,
-                     Accent 2.43:1 - i.e. the status colours were barely visible at all.
-                     DARK IS UNTOUCHED. These are Light-only overrides; the root definitions
-                     remain the dark-tuned originals.
-                     ══════════════════════════════════════════════════════════════════════════ -->
-
-                <!-- Status / semantic colours, darkened so they read on a white page. -->
                 <SolidColorBrush x:Key="AppAccentBrush" Color="#2563eb" />
                 <SolidColorBrush x:Key="AppInfoBrush" Color="#0284c7" />
                 <SolidColorBrush x:Key="AppSuccessBrush" Color="#2c6b47" />
@@ -621,8 +376,6 @@
                 <SolidColorBrush x:Key="AppAccentAlpha20Brush" Color="#332563eb" />
                 <SolidColorBrush x:Key="AppSuccessAlpha10Brush" Color="#1A15803d" />
 
-                <!-- Button gradients: the top stop is the highlight, the 0.18 stop is what the
-                     label actually sits on, so that stop carries the contrast requirement. -->
                 <LinearGradientBrush x:Key="AppPrimaryButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
                     <GradientStop Offset="0.0" Color="#1c92bc"/>
                     <GradientStop Offset="0.18" Color="#0c6b91"/>
@@ -643,9 +396,6 @@
                     <GradientStop Offset="0.18" Color="#24593b"/>
                     <GradientStop Offset="1.0" Color="#052e16"/>
                 </LinearGradientBrush>
-                <!-- BTNDEPTH_01 — light-theme Secondary/Zoom ramps. Darker than the dark-theme
-                     pair on purpose: AppOnAccentTextBrush is white, so the 0.18 stop (what the
-                     label sits on) must stay dark enough to carry the contrast requirement. -->
                 <SolidColorBrush x:Key="AppSecondaryDeepBorderBrush" Color="#2d2649" />
                 <LinearGradientBrush x:Key="AppSecondaryButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
                     <GradientStop Offset="0.0" Color="#7a6ba4"/>
@@ -689,8 +439,6 @@
                     <GradientStop Offset="1.0" Color="#083344"/>
                 </LinearGradientBrush>
 
-                <!-- MERGERRETURN_01 — see the dark-theme note. Deepened so white label text keeps
-                     its contrast against a near-white panel. -->
                 <SolidColorBrush x:Key="AppHelpBorderBrush" Color="#0c4a6e" />
                 <LinearGradientBrush x:Key="AppHelpButtonGradient" StartPoint="0%,0%" EndPoint="0%,100%">
                     <GradientStop Offset="0.0" Color="#38bdf8"/>
@@ -703,22 +451,12 @@
                     <GradientStop Offset="1.0" Color="#0c4a6e"/>
                 </LinearGradientBrush>
 
-                <!-- ISSUE_13: the hover wash was a 13%-WHITE overlay defined outside the theme
-                     dictionaries. On a #f8fafc panel that is invisible, so hovering a checkbox
-                     or radio button gave no feedback at all in Light. Same inversion the ripple
-                     already uses (AppRippleColor above). -->
                 <SolidColorBrush x:Key="AppHoverOverlayBrush" Color="#1A000000" />
 
-                <!-- ISSUE_14: the dialog close X faded to near-white ON hover (1.27:1). It now
-                     DARKENS on hover instead, so the control gains weight when pointed at. -->
                 <SolidColorBrush x:Key="AppCloseBtnHoverForegroundBrush" Color="#075985" />
                 <SolidColorBrush x:Key="AppCloseBtnHoverBackgroundBrush" Color="#1A0369A1" />
                 <SolidColorBrush x:Key="AppCloseBtnPressedBackgroundBrush" Color="#330369A1" />
 
-                <!-- ISSUE_27: the timeline knob glow used this Color directly and it was pinned
-                     to the Dark focus colour, so the timeline knob and an ordinary slider knob
-                     glowed two different colours in Light - the timeline one nearly invisible
-                     (1.59:1). Now it tracks the theme like AppFocusOuterBrush already did. -->
                 <Color x:Key="AppFocusOuterColor">#0369a1</Color>
             </ResourceDictionary>
         </ResourceDictionary.ThemeDictionaries>
@@ -780,15 +518,6 @@
             <Setter Property="Focusable" Value="True"/>
         </Style>
 
-        <!-- ISSUE_08: these were untargeted `/template/ Border` selectors. The Fluent 11.0.10
-             ToggleSwitch template contains EXACTLY two Borders — OuterBorder (visible when
-             unchecked) and SwitchKnobBounds (visible when checked) — and both are fixed 40x20
-             pills. Forcing BorderThickness=2 on them ate 4px of the 20px track height and added
-             a stroke to SwitchKnobBounds, which ships with ToggleSwitchOnStrokeThickness=0,
-             deforming the switch on every focus. Now scoped by name and COLOUR-ONLY (no layout
-             change), plus a tint on SwitchAreaGrid — the template's own
-             TemplatedControl.IsTemplateFocusTarget element — so focus is unmistakable in BOTH
-             the checked and unchecked states. -->
         <Style Selector="ToggleSwitch:focus /template/ Border#OuterBorder">
             <Setter Property="BorderBrush" Value="{DynamicResource AppFocusOuterBrush}"/>
         </Style>
@@ -821,13 +550,6 @@
             <Setter Property="RenderTransform" Value="translateY(2px)"/>
         </Style>
 
-        <!-- MERGERBOTTOM_01 — the LAST wearer of this class was VideoMergerWindow's speed preset
-             StackPanel, which is now the Main App's Grid geometry (RowDefinitions="Auto,8,Auto",
-             ColumnDefinitions="Auto,8,Auto,8,Auto") so both screens' preset blocks are one design in
-             two places. The style is KEPT rather than deleted because a StackPanel-based preset
-             stack is a perfectly reasonable thing for a future screen to want, and a two-line
-             spacing rule is not worth a merge conflict; it is simply unworn today. If you are
-             adding a preset row, prefer the Grid geometry and leave this alone. -->
         <Style Selector="StackPanel.SpeedPresetRows">
             <Setter Property="Spacing" Value="3"/>
         </Style>
@@ -876,7 +598,6 @@
             <Setter Property="Background" Value="{DynamicResource AppSuccessBrush}"/>
         </Style>
 
-        <!-- Primary Buttons (VoiceOver-style depth gradient — bright top rim into a deep base) -->
         <Style Selector="Button.Primary">
             <Setter Property="BorderBrush" Value="{DynamicResource AppPrimaryDeepBorderBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource AppOnAccentTextBrush}"/>
@@ -887,11 +608,6 @@
             <Setter Property="Background" Value="{DynamicResource AppPrimaryButtonHoverGradient}"/>
         </Style>
 
-        <!-- IDEA_6: the ZOOM-IN button wears the zoom colour, so the button, the box you draw,
-             the handles, the timeline bar and the style picker are all visibly one feature. -->
-        <!-- BTNDEPTH_01: was a flat AppZoomBrush fill, the only action button in the Granular
-             editor with no depth. Now the same 3-stop ramp as Primary/Success/Danger, still in the
-             zoom colour so IDEA_6's "everything zoom is one colour" rule is untouched. -->
         <Style Selector="Button.ZoomAction">
             <Setter Property="BorderBrush" Value="{DynamicResource AppZoomDeepBorderBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource AppOnAccentTextBrush}"/>
@@ -909,7 +625,6 @@
             <Setter Property="Background" Value="{DynamicResource AppDisabledBackgroundBrush}"/>
         </Style>
 
-        <!-- Voiceover entry: distinct from general primary actions in the main editing controls. -->
         <Style Selector="Button.VoiceOverEntry">
             <Setter Property="BorderBrush" Value="{DynamicResource AppVoiceOverBorderBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource AppOnAccentTextBrush}"/>
@@ -927,9 +642,6 @@
             <Setter Property="Background" Value="{DynamicResource AppVoiceOverDisabledBackgroundBrush}"/>
         </Style>
 
-        <!-- MERGERRETURN_01 — the walkthrough / help affordance. Same recipe as every other class
-             above (deep border, on-accent text, 3-stop ramp, hand cursor, hover ramp, disabled
-             pair) so it inherits the whole shared Button style unchanged; only the hue differs. -->
         <Style Selector="Button.HelpHint">
             <Setter Property="BorderBrush" Value="{DynamicResource AppHelpBorderBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource AppOnAccentTextBrush}"/>
@@ -955,14 +667,6 @@
             <Setter Property="Background" Value="{DynamicResource AppDisabledBackgroundBrush}"/>
         </Style>
 
-        <!-- Secondary Buttons (Dynamic Resource Tokens) -->
-        <!-- BTNDEPTH_01 — THE FIX FOR "EVERYTHING LOOKS GREYED OUT".
-             Background was AppPanelBrush: the SAME colour as the panel these buttons sit on. With
-             no gradient, no deep border and a muted foreground, an ENABLED Secondary was visually
-             indistinguishable from a DISABLED one — which is exactly how SET THUMBNAIL, VIDEO
-             MERGER, CROP SETTINGS, ADD MUSIC and NEW FILE read. Foreground moves to
-             AppOnAccentTextBrush because the button now has a saturated fill under it.
-             Secondary is used app-wide, so this one style is the whole fix. -->
         <Style Selector="Button.Secondary">
             <Setter Property="BorderBrush" Value="{DynamicResource AppSecondaryDeepBorderBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource AppOnAccentTextBrush}"/>
@@ -988,7 +692,6 @@
             <Setter Property="Background" Value="{DynamicResource AppDisabledBackgroundBrush}"/>
         </Style>
 
-        <!-- Success Buttons (VoiceOver-style depth gradient — bright top rim into a deep base) -->
         <Style Selector="Button.Success">
             <Setter Property="BorderBrush" Value="{DynamicResource AppSuccessDeepBorderBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource AppOnAccentTextBrush}"/>
@@ -1007,7 +710,6 @@
             <Setter Property="Background" Value="{DynamicResource AppDisabledBackgroundBrush}"/>
         </Style>
 
-        <!-- Danger Buttons (VoiceOver-style depth gradient — bright top rim into a deep base) -->
         <Style Selector="Button.Danger">
             <Setter Property="BorderBrush" Value="{DynamicResource AppDangerDeepBorderBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource AppOnAccentTextBrush}"/>
@@ -1026,19 +728,6 @@
             <Setter Property="Background" Value="{DynamicResource AppDisabledBackgroundBrush}"/>
         </Style>
 
-        <!-- ZOOMLIVE_01 — the `zoomconfirmblink` animation and every `zoomconfirmbtn` style were
-             removed with the floating ✅ they dressed. The zoom now writes itself to the segment as
-             the box is dragged, so there is no unsaved state left to pulse about. -->
-
-        <!-- VOICE_02 — THE LIVE-MICROPHONE STATE. `MicRecordButton` and `RecordingLight` have
-             added and removed the class `recording` since the screen shipped, and NO selector
-             for it has ever existed: the mic button looked identical whether or not the
-             microphone was open. Both selectors below are that missing half. Do not delete one
-             without deleting its SetClass call in VoiceOverWindow.RecordingState.cs. -->
-        <!-- VOREC_01 — the pulse is a SHORT "capture just started" cue: code adds `pulse` beside
-             `recording` only for the first RecordingPulseLimit (10 s) of each live segment, and
-             removes both on pause, stop, fault and close. The glow and the solid red lamp stay
-             while capture is live; nothing animates after it ends. -->
         <Style Selector="Button.recording.pulse">
             <Style.Animations>
                 <Animation Duration="0:0:0.9" IterationCount="INFINITE">
@@ -1061,17 +750,11 @@
             </Style.Animations>
         </Style>
 
-        <!-- Social media buttons.
-             ISSUE_02: explicit always-white Foreground so labels stay readable on the
-             saturated brand backgrounds in BOTH Light and Dark ThemeVariants
-             (previously inherited near-black text in Light theme — black-on-black on TikTok). -->
         <Style Selector="Button.WhatsApp">
             <Setter Property="Background" Value="{DynamicResource AppWhatsAppBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource AppOnAccentTextBrush}"/>
             <Setter Property="Cursor" Value="Hand"/>
         </Style>
-        <!-- ISSUE_10: hover states now use dedicated brighter Hover brushes (previously the
-             resting brand brush was re-applied, producing zero visible hover feedback). -->
         <Style Selector="Button.WhatsApp:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource AppWhatsAppHoverBrush}"/>
         </Style>
@@ -1102,46 +785,13 @@
             <Setter Property="Background" Value="{DynamicResource AppTikTokHoverBrush}"/>
         </Style>
 
-        <!-- Universal slider thumb — enlarged resting dot (~1.5x) that grows SLOWLY to 2x when grabbed.
-             ISSUE_03: single authoritative thumb style (a second duplicate selector below was merged
-             into this block; ZIndex keeps the previously-winning max value). -->
         <Style Selector="Slider /template/ Thumb">
-            <!-- ⚠️ SLIDER_04 — WIDTH IS 52, NOT 44, AND THAT NUMBER IS DERIVED, NOT TASTE.
-                 The knob is a 26px Ellipse that grows to scale(2.0) while held = 52px rendered.
-                 `Track` centres the thumb in its reserved slot, so the dot's centre can never get
-                 closer to either end than HALF the thumb's width. At 44 that is 22px, and a 52px
-                 dot centred 22px in reaches 4px PAST the slider's own left edge — which is why the
-                 knob appeared sliced at 0% and 100%: it was painting outside its parent and being
-                 covered by whatever sat beside it.
-                 52 = the largest rendered dot, so at the extremes the dot lands exactly flush with
-                 the slider edge and never leaves its own bounds. If you ever change the press
-                 scale or the 26px Ellipse, RECOMPUTE THIS (and the rail inset below, which must
-                 stay at half this value). Height stays 44: the vertical overflow is handled by
-                 margins on the hosting rows, not by the thumb. -->
             <Setter Property="Width" Value="52" />
             <Setter Property="Height" Value="44" />
             <Setter Property="MinWidth" Value="52" />
             <Setter Property="MinHeight" Value="44" />
-            <!-- THE KNOB MUST BE A DOT — and this is the ONLY reliable way to guarantee it.
-                 Forcing the thumb to 44x44 above made it render as a SQUARE, because Fluent's stock
-                 Thumb template does not honour CornerRadius: setting CornerRadius on the Thumb had
-                 no effect at all (verified on a real run). Rather than keep guessing at the theme's
-                 internals, the template is replaced outright with a single Ellipse.
-                 The Ellipse has no Width/Height so it stretches to whatever size the Width/Height
-                 setters above give the thumb, which keeps the 44px hit target intact, and it is
-                 filled from the thumb's own Background so every hover/pressed Background override
-                 below still works untouched. Avalonia's default RenderTransformOrigin is the
-                 centre, so scale(1.3) on hover and scale(2.0) while held grow the dot from its
-                 middle and spring back through the existing 0.3s transform transition. -->
             <Setter Property="Template">
                 <ControlTemplate>
-                    <!-- The Panel keeps the FULL 44x44 hit target (Background must stay non-null or
-                         it stops hit-testing), while the visible dot is a fixed 21px centred inside
-                         it. Letting the Ellipse stretch made the knob 44px wide — correct as a
-                         touch target, far too fat as a knob. Hit area and visible size are two
-                         different things here and must stay separate.
-                         RenderTransform scale on the thumb scales this child with it, so the
-                         hover/press growth below still works off the 21px base. -->
                     <Panel Background="Transparent">
                         <Ellipse Width="26" Height="26"
                                  HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -1149,12 +799,6 @@
                     </Panel>
                 </ControlTemplate>
             </Setter>
-            <!-- Explicit resting fill. The template above draws the dot from the thumb's OWN
-                 Background, so it must not be left to whatever Fluent happened to set: if the stock
-                 theme painted its fill on an inner element rather than on Background, the dot would
-                 come out invisible — worse than the square it replaces. Pinning it here also gives
-                 the BrushTransition below a real value to animate FROM into the hover glow.
-                 This is the resting knob colour; change this one token to restyle it. -->
             <Setter Property="Background" Value="{DynamicResource AppInfoBrush}" />
             <Setter Property="ClipToBounds" Value="False" />
             <Setter Property="ZIndex" Value="2147483647" />
@@ -1175,38 +819,6 @@
             <Setter Property="ClipToBounds" Value="False" />
         </Style>
 
-        <!-- ════════════════════════════════════════════════════════════════════════════════
-             SLIDER_01 — THE BROKEN TRACK LINE.
-
-             `Track` lays out DecreaseButton | Thumb | IncreaseButton and reserves the thumb's
-             LAYOUT width for the middle slot. That width is 44px (the suite's grab target), while
-             the visible knob is a 26px Ellipse — and RenderTransform scaling does NOT change
-             layout width, so the reserved gap stays 44px at every size.
-
-             Measured result: 44px gap around a 26px dot leaves NINE PIXELS OF BARE TRACK ON EACH
-             SIDE at rest. The rail reads as two separate horizontal lines with the knob floating
-             between them, which is exactly what it looks like on screen. (At scale(2.0) the dot
-             grows to 52px and finally covers the gap — so the break appears to heal while
-             dragging and returns on release, which makes it read as a glitch rather than a style.)
-
-             FIX PART 1 — CLOSE THE GAP: pull each half of the rail 22px INTO the thumb's slot with
-             a negative margin, so the two halves meet underneath the knob and the line is
-             continuous at every size. 26 = half the 52px thumb (SLIDER_04). These two numbers MUST stay in step.
-
-             FIX PART 2 — THE RAIL MUST ALSO END WHERE THE DOT ENDS: because Track reserves the
-             thumb's 44px, the thumb CENTRE can only travel from 22px to (width - 22px). A rail
-             drawn the full width therefore has 22px at each end the dot can never reach — at 100%
-             you see bare rail to the RIGHT of the dot, at 0% to its LEFT. So each half ALSO gets a
-             POSITIVE margin on its OUTER edge, insetting the rail to exactly [22, width-22], which
-             is precisely the dot's travel range. Dot and rail now start and finish together.
-                 Decrease: left  +22 (inset)   right -22 (meet under the thumb)
-                 Increase: left  -22 (meet)    right +22 (inset)
-
-             ⚠️ NAME-TARGETED, SO IT FAILS SAFE. If a future Avalonia theme renames these template
-             parts the selectors simply match nothing and the rail goes back to being split — ugly,
-             never broken. Do NOT "fix" this by shrinking the Thumb to 26px: that would drop the
-             grab target from 44px to 26px and break the Font-Scale/hit-target rule in Section 4.
-             ════════════════════════════════════════════════════════════════════════════════ -->
         <Style Selector="Slider:horizontal /template/ RepeatButton#PART_DecreaseButton">
             <Setter Property="Margin" Value="26,0,-26,0" />
         </Style>
@@ -1219,8 +831,6 @@
         <Style Selector="Slider:vertical /template/ RepeatButton#PART_IncreaseButton">
             <Setter Property="Margin" Value="0,22,0,-22" />
         </Style>
-        <!-- Let the (growing) thumb paint outside every internal container so it is
-             never cut off by the slider's own groove/track frame. Handle-only change. -->
         <Style Selector="Slider /template/ Grid">
             <Setter Property="ClipToBounds" Value="False" />
         </Style>
@@ -1230,27 +840,6 @@
         <Style Selector="Slider /template/ Panel">
             <Setter Property="ClipToBounds" Value="False" />
         </Style>
-        <!-- ================================================================================
-             KNOB HOVER / PRESS — the selectors target the THUMB's own pseudo-classes, not the
-             slider's. This is deliberate and fixes two real faults:
-
-             STUTTER: `Slider:pointerover` fires for the whole 44px-tall track row. On every
-             timeline the seek Canvas (TimelineMarkersCanvas et al) sits ON TOP of the slider and
-             is hit-testable, so dragging the mouse across the timeline handed hover back and forth
-             between the two — the knob grew and shrank repeatedly, which read as a flicker.
-             `Thumb:pointerover` only fires over the knob itself, so crossing the track cannot
-             retrigger it. It also matches the intended behaviour: the glow belongs to the dot.
-
-             NO GROWTH WHILE DRAGGING: `Slider:pressed` is not raised while the THUMB is being
-             dragged — the thumb captures the pointer, so the slider never enters its pressed state
-             and the knob stayed small for the whole drag. `Thumb:pressed` is set by the thumb for
-             exactly as long as the button is held, which is the "grows and stays large until
-             released" behaviour. The slider-level selector is kept underneath as a harmless
-             fallback for clicks that land on the track rather than the knob.
-
-             ORDER MATTERS: :pressed must come after :pointerover, or the hover scale would win
-             while dragging (the pointer is also over the thumb).
-             ================================================================================ -->
         <Style Selector="Slider /template/ Thumb:pointerover">
             <Setter Property="RenderTransform" Value="scale(1.3)" />
             <Setter Property="Background" Value="{DynamicResource AppFocusOuterBrush}" />
@@ -1263,15 +852,6 @@
             <Setter Property="Background" Value="{DynamicResource AppFocusInnerBrush}" />
         </Style>
 
-        <!-- ================================================================================
-             TIMELINE KNOB — driven by CLASSES, not pseudo-classes. See Controls/TimelineKnob.cs.
-             On every timeline the seek Canvas covers the Slider and takes all pointer input, so
-             the Thumb never gets :pointerover or :pressed and the Slider only gets :pointerover
-             intermittently (in the thin band where it peeks past the canvas — that intermittency
-             WAS the flicker). TimelineKnob.Attach flips these two classes from the canvas instead,
-             which is the surface the user actually touches.
-             knobdrag comes last so a held drag always beats hover.
-             ================================================================================ -->
         <Style Selector="Slider.knobhover /template/ Thumb">
             <Setter Property="RenderTransform" Value="scale(1.3)" />
             <Setter Property="Background">
@@ -1292,37 +872,7 @@
                 </RadialGradientBrush>
             </Setter>
         </Style>
-        <!-- ════════════════════════════════════════════════════════════════════════════════
-             SLIDER_07 — WHY A VERTICAL SLIDER CANNOT BE NARROWED BY SETTING ITS WIDTH.
 
-             An earlier `MixFader` class trimmed the Thumb's Width to 30 and gave the Slider
-             Width="30". It rendered WRONG: the rail hugged the tray's right edge and the knob was
-             sliced clean in half down its middle.
-
-             THE REASON IS THE STOCK TEMPLATE'S COLUMN LAYOUT. Fluent's vertical Slider is a Grid
-             whose TRACK column is `Auto` and whose neighbouring tick-bar column is `*`. The star
-             column absorbs EVERY pixel of width beyond the track's natural size, so the track does
-             NOT centre — it is pushed hard against one edge, and the Thumb, which centres on the
-             TRACK, ends up centred on that edge with half its dot outside the Slider's own bounds.
-             Whatever sits beside it then covers that half.
-
-             So the width of a vertical slider is not a free parameter: it IS the thumb's width.
-             Giving the control any more buys dead space on one side and a clipped knob, not a
-             wider grab area — and giving it less clips the knob outright. The only honest lever is
-             the THUMB, and the suite already has one: `CompactSlider` below, whose own note names
-             "vertical volume" as its case.
-
-             ⚠️ DO NOT set Width or MinWidth on a vertical Slider to make it narrower, and do not
-             re-add a thumb-width override without first replacing the template's column layout so
-             the track actually centres.
-             ════════════════════════════════════════════════════════════════════════════════ -->
-
-        <!-- CompactSlider (timeline scrubber + vertical volume): resting dot 21px -->
-        <!-- ISSUE_21: the global Slider:horizontal rail inset is 26 = half the 52px BASE thumb.
-             This class overrides the thumb to 44 wide, so its rail must be inset 22 = half of 44,
-             exactly as the file's own SLIDER_04 note requires ("the rail inset below, which must
-             stay at half this value") and exactly as the vertical rules already do. Without these
-             two selectors the dot overhung both ends of its own rail by 4px at 0% and 100%. -->
         <Style Selector="Slider.CompactSlider:horizontal /template/ RepeatButton#PART_DecreaseButton">
             <Setter Property="Margin" Value="22,0,-22,0" />
         </Style>
@@ -1334,19 +884,11 @@
             <Setter Property="Height" Value="44" />
             <Setter Property="MinWidth" Value="44" />
             <Setter Property="MinHeight" Value="44" />
-            <!-- Shape comes from the Ellipse template on the base Slider thumb style above; this
-                 selector only needs to agree on the size. -->
         </Style>
-        <!-- CompactSlider inherits the knob shape, hover and press behaviour from the base Slider
-             thumb styles above. It previously repeated them via `Slider.CompactSlider:pointerover`,
-             which is the whole-track selector that caused the flicker — removed for that reason.
-             Keep this selector free of RenderTransform setters: anything here would land AFTER the
-             base :pressed rule and win, re-breaking grow-on-drag. -->
         <Style Selector="Slider.CompactSlider:pressed /template/ Thumb">
             <Setter Property="RenderTransform" Value="scale(2.0)" />
         </Style>
 
-        <!-- ComboBox cursor + focus consistency -->
         <Style Selector="ComboBox">
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Focusable" Value="True"/>
@@ -1360,13 +902,6 @@
             <Setter Property="BorderThickness" Value="2"/>
         </Style>
 
-        <!-- ISSUE_09 (audit round 5): this was `TextBox.error` — a manual STYLE CLASS that no XAML
-             element and no line of C# in the suite ever added, so the app's only red-border
-             invalid-input treatment was permanently unreachable. Switched to Avalonia's built-in
-             `:error` PSEUDO-CLASS, which DataValidationErrors raises automatically whenever a bound
-             TextBox's binding reports a validation error. It now fires suite-wide with zero
-             code — e.g. SettingsWindow's DefaultMusicFolderTextBox, which is already wrapped in a
-             DataValidationErrors host but previously had no border feedback at all. -->
         <Style Selector="TextBox:error /template/ Border#PART_BorderElement">
             <Setter Property="BorderBrush" Value="{DynamicResource AppDangerBrush}"/>
             <Setter Property="BorderThickness" Value="2"/>
@@ -1394,7 +929,6 @@
             </Setter>
         </Style>
 
-        <!-- CheckBox hover/focus feedback -->
         <Style Selector="CheckBox">
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="FontSize" Value="{DynamicResource AppFontSizeBase}" />
@@ -1416,13 +950,6 @@
             <Setter Property="BorderThickness" Value="2" />
         </Style>
 
-        <!-- ISSUE_09: RadioButton and TabItem were the only interactive control types with no
-             suite-wide Hand cursor (Button, Slider, ComboBox, CheckBox, ListBoxItem,
-             ToggleButton and MenuItem all have one), and RadioButton had none of the
-             hover/focus treatment its CheckBox sibling gets directly above. Template part is
-             Border#RootBorder in the Fluent 11.0.10 RadioButton theme.
-             NOTE: Expander needs no rule here — its header is a templated ToggleButton, which
-             already inherits Cursor=Hand from the global ToggleButton style below. -->
         <Style Selector="RadioButton">
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Transitions">
@@ -1466,7 +993,6 @@
             <Setter Property="Background" Value="{DynamicResource AppAccentAlpha20Brush}" />
         </Style>
 
-        <!-- ListBoxItem hover/focus feedback -->
         <Style Selector="ListBoxItem">
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Transitions">
@@ -1493,7 +1019,6 @@
             <Setter Property="Background" Value="{DynamicResource AppListBoxSelectedHoverBrush}" />
         </Style>
 
-        <!-- ToggleButton styling -->
         <Style Selector="ToggleButton">
             <Setter Property="MinHeight" Value="{DynamicResource AppButtonMinHeight}"/>
             <Setter Property="FontSize" Value="{DynamicResource AppFontSizeBase}"/>
@@ -1530,7 +1055,6 @@
             <Setter Property="Background" Value="{DynamicResource AppSuccessButtonHoverGradient}"/>
         </Style>
 
-        <!-- Close button style for FinishedDialog and other borderless windows -->
         <Style Selector="Button.CloseBtn">
             <Setter Property="Width" Value="{DynamicResource AppCloseBtnSize}" />
             <Setter Property="Height" Value="{DynamicResource AppCloseBtnSize}" />
@@ -1555,19 +1079,10 @@
         <Style Selector="MenuItem">
             <Setter Property="Cursor" Value="Hand"/>
         </Style>
-        <!-- ISSUE_06 (audit round 5): VideoMergerWindow's "Remove Selected" and "Clear All" menu
-             items both carry Classes="Danger", but the ONLY .Danger selectors in the suite were
-             Button.Danger / ToggleButton.Danger — so the class matched nothing and the two
-             destructive entries rendered identically to harmless ones. Their authors had to
-             hand-write "(WARNING: Cannot be undone)" into each header to compensate. This is
-             deliberately COLOUR-ONLY (no layout/padding change) so the Fluent MenuItem template
-             geometry is untouched; the red Foreground is inherited by the TextBlocks in each
-             custom MenuItem.Header. -->
         <Style Selector="MenuItem.Danger">
             <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}"/>
         </Style>
 
-        <!-- Global Wizard Indicator Styles (ISSUE_01 & ISSUE_10 resolution) -->
         <Style Selector="Border.WizDotPending">
             <Setter Property="Background" Value="{DynamicResource AppBorderBrush}"/>
         </Style>
@@ -1596,7 +1111,6 @@
             <Setter Property="FontWeight" Value="Normal"/>
         </Style>
 
-        <!-- High-Contrast & Assistive Mode Focus Overrides (ISSUE_10) -->
         <Style Selector="TemplatedControl:focus-visible">
             <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}"/>
         </Style>
@@ -1616,50 +1130,19 @@
             </Setter>
         </Style>
 
-        <!-- ══════════════════════════════════════════════════════════════════════════════════
-             UX AUDIT — ISSUE_10, ISSUE_16, ISSUE_23, ISSUE_30, ISSUE_02, ISSUE_03.
-             ══════════════════════════════════════════════════════════════════════════════════ -->
-
-        <!-- ISSUE_30: a single font family token with a real fallback chain, and a line-height
-             floor. Previously the whole 1200-line dictionary declared neither: the app loaded one
-             family with no backup, so any glyph it did not cover fell back to whatever the OS
-             picked, and vertical rhythm was left entirely to Fluent's defaults. -->
         <Style Selector="Window">
             <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
         </Style>
-        <!-- ⚠️ TEXTCLIP_01 — DO NOT PUT `LineHeight` BACK ON A BARE `TextBlock` SELECTOR. ⚠️
-             ISSUE_30 wanted a line-height FLOOR. Avalonia's LineHeight is NOT a floor: when it is
-             set, TextLineMetrics uses it as the line box height OUTRIGHT, and the baseline is
-             positioned from it rather than from the font. So a single hard 18px applied to EVERY
-             TextBlock in the app clipped text at BOTH ends of the size range:
-               - Anything above ~14px (every AppFontSize16/18/20/24/28/36/48/60 heading, icon and
-                 hero glyph) has a natural line box TALLER than 18px, so its descenders and the
-                 bottoms of round caps were cut off. That is why every Settings section title and
-                 the "Drag & drop your gameplay video here" hero line rendered clipped.
-               - The 18px box also never scaled: AppLineHeightNormal is NOT in ThemeManager's
-                 s_scaledTokens, so raising Settings > Appearance > Font Size grew every glyph
-                 while the line box stayed frozen at 18px, making the clipping worse at every step.
-             Removing the setter restores the font's own metrics, which are correct by construction
-             at every size and every font scale. The token below is kept as an OPT-IN class for the
-             few places that genuinely want a fixed rhythm — apply `Classes="FixedLineHeight"`
-             there, never app-wide. -->
         <Style Selector="TextBlock.FixedLineHeight">
             <Setter Property="LineHeight" Value="{DynamicResource AppLineHeightNormal}" />
         </Style>
 
-        <!-- ISSUE_02: the timeline scrub surfaces carried Background="Transparent" as a LOCAL
-             attribute, and in Avalonia a locally-set value outranks any style setter - so the
-             hover and focus tints defined for Canvas.TimelineSeekSurface / Grid.TimelineSeekSurface
-             could never paint. The resting transparent fill is set HERE instead (it must exist,
-             or the Canvas stops hit-testing and seeking breaks), and the local attributes are
-             removed from every consumer so the state styles finally win. -->
         <Style Selector="Canvas.TimelineSeekSurface">
             <Setter Property="Background" Value="Transparent" />
         </Style>
         <Style Selector="Grid.TimelineSeekSurface">
             <Setter Property="Background" Value="Transparent" />
         </Style>
-        <!-- Variant for the two VoiceOver lanes that need a visible panel fill at rest. -->
         <Style Selector="Canvas.TimelineSeekSurfacePanel">
             <Setter Property="Background" Value="{DynamicResource AppPanelBrush}" />
         </Style>
@@ -1679,16 +1162,10 @@
             <Setter Property="Background" Value="{DynamicResource AppAccentAlpha20Brush}" />
         </Style>
 
-        <!-- ISSUE_03: same local-value trap. Border.InteractiveFocus set BorderBrush="Transparent"
-             locally, so the focus ring below could never recolour it. The resting transparent
-             stroke moves here. -->
         <Style Selector="Border.InteractiveFocus">
             <Setter Property="BorderBrush" Value="Transparent" />
         </Style>
 
-        <!-- ISSUE_16: no Slider style anywhere matched :focus or :focus-visible, so tabbing to a
-             volume / speed / quality / scrub slider showed nothing at all and a keyboard user
-             could not tell which slider the arrow keys would move. -->
         <Style Selector="Slider:focus-visible /template/ Thumb">
             <Setter Property="Background" Value="{DynamicResource AppFocusInnerBrush}" />
         </Style>
@@ -1696,9 +1173,6 @@
             <Setter Property="Opacity" Value="1.0" />
         </Style>
 
-        <!-- ISSUE_23: hover / focus / disabled coverage was wildly uneven per control type.
-             Tabs and menu items had NO state feedback at all beyond a cursor; combo boxes and
-             toggle switches had focus but no hover; nothing had a disabled treatment. -->
         <Style Selector="TabItem:pointerover /template/ Border#PART_LayoutRoot">
             <Setter Property="Background" Value="{DynamicResource AppHoverOverlayBrush}" />
         </Style>
@@ -1739,11 +1213,6 @@
             <Setter Property="Foreground" Value="{DynamicResource AppDisabledForegroundBrush}" />
         </Style>
 
-        <!-- ISSUE_10: nine button families pinned their own Foreground/Background but never
-             defined a :disabled look, so a switched-off zoom, share, preset or close button
-             looked completely live and users kept clicking it. The six that DID have a disabled
-             pair (Primary, Secondary, Success, Danger, VoiceOverEntry, ToggleButton.Primary)
-             are untouched; these nine now match them. -->
         <Style Selector="Button.SpeedPreset:disabled, Button.BaseSpeedPreset:disabled,
                          Button.ZoomAction:disabled,
                          Button.WhatsApp:disabled, Button.Instagram:disabled,

@@ -1,45 +1,22 @@
-﻿
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>One material way the live preview differs from the export.</summary>
-/// <param name="Code">Stable id (logs, tests).</param>
-/// <param name="Message">One plain sentence for the user: what differs, and that the export is right.</param>
 public sealed record PreviewFidelityIssue(string Code, string Message);
 
-/// <summary>What the preview backend can and cannot reproduce for the current edit.</summary>
 public sealed record PreviewFidelityInputs
 {
-    /// <summary>The preview applies zoom/portrait crops (GPU path). False on the CPU fallback renderer.</summary>
     public bool GpuCropPreview { get; init; } = true;
     public bool HasZoom { get; init; }
     public bool Portrait { get; init; }
-    /// <summary>A box zoom pads black past the frame edge in the export (<see cref="ZoomPreviewSimulator.AnyEdgePadding"/>).</summary>
     public bool ZoomEdgePadding { get; init; }
     public VideoColorInfo? SourceColor { get; init; }
-    /// <summary>The edit needs the rendered mix and its render FAILED (not merely pending).</summary>
     public bool RenderedMixFailed { get; init; }
-    /// <summary>A corner meme runs longer than the preview decodes (<c>CornerMemeFrames.MaxSeconds</c>).</summary>
     public bool CornerMemeBeyondPreviewFrames { get; init; }
-    /// <summary>A corner meme with sound, in a preview that has no rendered mix to play it.</summary>
     public bool CornerMemeSoundNotPreviewed { get; init; }
-    /// <summary>MEMETRANS_01 — a full-screen meme fades or zooms in the export; the preview cuts.</summary>
     public bool MemeTransitionNotPreviewed { get; init; }
 }
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// PREVIEWFIDELITY_01 — THE PREVIEW SAYS WHEN IT IS NOT THE EXPORT.
-///
-/// The export is authoritative. Where the active preview backend cannot reproduce a MATERIAL export
-/// effect, the preview must not pretend: this evaluator lists each such difference and the window shows
-/// them (a small "PREVIEW ≈ EXPORT" marker with the reasons). Only material differences are listed —
-/// a black band, missing zoom/framing, a different tone map, missing sound. Sub-pixel rounding, the
-/// CAS sharpening of zoomed frames and the live fallback's few seconds before a rendered mix is ready
-/// are not, and are deliberately never shown.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public static class PreviewFidelity
 {
     public const string CpuNoCrop = "cpu-no-crop";
@@ -84,7 +61,6 @@ public static class PreviewFidelity
         return list;
     }
 
-    /// <summary>The tooltip text for a list of issues, or null when the preview matches the export.</summary>
     public static string? Describe(IReadOnlyList<PreviewFidelityIssue> issues)
     {
         if (issues.Count == 0) return null;

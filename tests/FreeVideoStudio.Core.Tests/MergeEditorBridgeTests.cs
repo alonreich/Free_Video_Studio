@@ -5,7 +5,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>MERGEEDIT_01 — Video-Merger-Migration.md P6.2 (whole-merge editor bridge, D16–D19).</summary>
 public class MergeEditorBridgeTests
 {
     private static readonly EdlClip A = new() { Path = @"C:\c\a.mp4", DurationUs = 10_000_000 };
@@ -148,5 +147,47 @@ public class MergeEditorBridgeTests
         var fx = new EdlEffects { Cuts = new[] { new EdlCut(2_000_000, 4_000_000) }, Speed = new[] { new EdlSpeedSegment(6_000_000, 8_000_000, 1.0) } };
         var edl = new MergeEdl { Clips = new[] { A with { Effects = fx } }, BaseSpeed = 2.0 };
         Assert.Equal(5.0, CompositeTimeline.Build(edl).TotalOutputSec, 6);
+    }
+
+    [Fact]
+    public void MergeMode_CommentaryTimestampMapping_RoundtripsCorrectly()
+    {
+        var (_, src) = Build();
+        var clipB = src.Clips[1];
+        double mergedSegStartMs = 12_000;
+        double localSourceSec = clipB.ToSourceUs(mergedSegStartMs) / 1_000_000.0;
+        Assert.Equal(2.1, localSourceSec, 6);
+
+        double generatedLineStartSec = 2.6;
+        double mergedTimelineStartSec = mergedSegStartMs / 1000.0;
+        double timeShiftSec = mergedTimelineStartSec - localSourceSec;
+        double remappedLineStartSec = generatedLineStartSec + timeShiftSec;
+        Assert.Equal(12.5, remappedLineStartSec, 6);
+    }
+
+    [Fact]
+    public void MergeEditorBridge_ToEditor_And_FromEditor_PreservesCaptions()
+    {
+        var (edl, src) = Build();
+        var track = new CaptionTrack(
+            CaptionStyle.Karaoke, CaptionPosition.BottomContent, CaptionTone.Hype, "en",
+            new[] { new CaptionLine(10, 1.0, 3.0, "Great shot!") });
+
+        var edlWithCaptions = edl with { Captions = track };
+        var state = src.ToEditor(edlWithCaptions);
+        Assert.NotNull(state.Captions);
+        Assert.Equal(track, state.Captions);
+
+        var restored = src.FromEditor(state, edlWithCaptions);
+        Assert.NotNull(restored.Captions);
+        Assert.Equal(track, restored.Captions);
+
+        var updatedTrack = track with { Tone = CaptionTone.Funny };
+        var stateUpdated = state with { Captions = updatedTrack };
+        var fromUpdated = src.FromEditor(stateUpdated, edlWithCaptions);
+        Assert.Equal(updatedTrack, fromUpdated.Captions);
+
+        var fromCleared = src.FromEditor(state with { Captions = null }, edlWithCaptions);
+        Assert.Null(fromCleared.Captions);
     }
 }

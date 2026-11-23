@@ -13,11 +13,6 @@ public partial class CropToolWindow
 {
     public double CropVolume { get; set; } = 100;
 
-    /// <summary>
-    /// VOLSHARED_01 — the shared master rack. The old copy here sent every change to mpv TWICE
-    /// (directly and again through its own event handler), juggled mpv's `mute` property, kept a
-    /// private pre-mute level and saved synchronously on the UI thread on mouse release only.
-    /// </summary>
     private void WireUpVolumeSlider()
     {
         Infrastructure.MasterVolumeUi.Bind(this, VolumeSliderCtl, VolumeBadgeTextCtl, VolumeSpeakerIconCtl, SpeakerHitBoxCtl,

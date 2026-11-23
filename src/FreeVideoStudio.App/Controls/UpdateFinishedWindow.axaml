@@ -1,6 +1,3 @@
-<!-- UPGRADEUX_05 — first launch after an install/update: "Finishing…" then "✓ Updated".
-     Transient and non-persisted (CenterOwner exemption, like the other transient dialogs); not in
-     WindowBoundsHelper. Non-modal and owned by the main window. -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
         xmlns:vm="clr-namespace:FreeVideoStudio.App.ViewModels"
@@ -34,7 +31,6 @@
                 <TextBlock Text="{Binding Message}" TextWrapping="Wrap"
                            FontSize="{DynamicResource AppFontSize13}"
                            Foreground="{DynamicResource AppTextMutedBrush}"/>
-                <!-- WHATSNEW_01 — what this version brings, after the update is confirmed. -->
                 <StackPanel Spacing="4" IsVisible="{Binding HasWhatsNew}">
                     <TextBlock Text="What's new" FontWeight="Bold"
                                FontSize="{DynamicResource AppFontSize13}"

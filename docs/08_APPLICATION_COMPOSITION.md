@@ -6,7 +6,11 @@
 
 | Source File Path | Key Classes, Records & Controls | Core Bound Methods, Properties & Symbols | Subsystem Domain Role |
 | :--- | :--- | :--- | :--- |
-| `src/FreeVideoStudio.App/Infrastructure/AppServices.cs` | `AppServices`, `AvaloniaWindowProvider` | `Initialize`, `Current`, `COMPOSITION_01`, `COMPOSITION_02` | The one place the object graph is built. |
+| `src/FreeVideoStudio.App/Infrastructure/AppServices.cs` | `AppServices`, `AvaloniaWindowProvider` | `Initialize`, `Current`, `SettingsWindow`, `COMPOSITION_01`, `COMPOSITION_02` | The one place the object graph is built. |
+| `src/FreeVideoStudio.App/Services/SettingsWindowServices.cs` | `SettingsWindowServices`, `ISettingsStore`, `IAiKeyValidator`, `IEncoderCatalog`, `ISettingsBackupStore`, `IUpdateChecker`, `ISessionStateSink` | `CreateDefault`, `SETTINGSDI_01`, `SETBACKUPIO_01` | The Settings window's seams. **⚠ CO-GOVERNED BY: 04** |
+| `src/FreeVideoStudio.App/AvaloniaApp.axaml.cs` | `AvaloniaApp` | `OnDispatcherUnhandledException`, `IsProcessCorrupting`, `ASYNCSAFE_01` | Last-line UI-thread fault hook. |
+| `src/FreeVideoStudio.App/Infrastructure/CtsSlot.cs` | `CtsSlot` | `Renew`, `Cancel`, `Dispose`, `CTSSLOT_01` | One disposing cancellation slot per operation. |
+| `src/FreeVideoStudio.App/Services/ShellLauncher.cs` | `ShellLauncher` | `Launch`, `TryOpen`, `SHELLLAUNCH_01` | Every shell launch; releases the process handle at once. |
 | `src/FreeVideoStudio.Core/Abstractions/Fault.cs` | `FaultTier`, `Fault` | `Recoverable`, `Degraded`, `Fatal`, `FAULTTIER_01` | Failure classification vocabulary. |
 | `src/FreeVideoStudio.Core/Abstractions/IFaultSink.cs` | `IFaultSink`, `FaultSinkExtensions`, `NullFaultSink` | `Report`, `Guard`, `GuardAsync`, `GuardValue` | The one destination for a caught exception. |
 | `src/FreeVideoStudio.App/Services/UserFacingFaultSink.cs` | `UserFacingFaultSink`, `AvaloniaUserNotifier` | `Report`, `ShouldSurface`, `FAULTSTORM_01`, `Notify` | Fault → log / pill / dialog routing table. |
@@ -16,15 +20,20 @@
 | `src/FreeVideoStudio.App/Abstractions/IFilePickerService.cs` | `IFilePickerService`, `FilePickerRequest` | `SaveFileAsync`, `OpenFileAsync`, `INJSEAM_04`, `FilePickerRequest` | OS file-dialog seam. |
 | `src/FreeVideoStudio.App/Services/StorageProviderFilePicker.cs` | `StorageProviderFilePicker` | `PICKERMEMORY_01`, `SaveFileAsync`, `OpenFileAsync`, `StorageProviderFilePicker` | Picker implementation + directory memory. **⚠ CO-GOVERNED BY: 05** |
 | `tests/FreeVideoStudio.App.Tests/ArchitectureRuleTests.cs` | `ArchitectureRuleTests` | `ARCHTEST_01`, `ASYNCUI_01`, `ASYNCUI_02`, `NoControlCarriesBothCommandAndClick` | The specs' rules, made executable. |
-| `build/FvsBuild/CodeSigning.cs` | `CodeSigning` | `SignIfNeeded`, `SIGNMANDATE_01` | Signing mandate. **⚠ CO-GOVERNED BY: 05** |
-| `dev.cmd` | Developer Harness | `VERIFY_PATCHES`, `VERIFYHALT_01` | Fix-sentinel enforcement. **⚠ CO-GOVERNED BY: 05** |
+| `tests/TestHarness.ps1`, `tests/TestHarness.Tests.ps1`, `tests/run-av-tests.ps1`, `tests/run-all-tests.cmd` | Test gate | `TESTGATE_01`, `TESTCLEAN_01`, `TESTOUT_01`, `Get-TestSuiteRoot`, `Enter-SuiteOutput`, `Reset-TestOutputs` | Fail-closed result validation; every suite writes only to `logs\<Suite>_Results\`, replaced per suite (README GOV-TESTOUT); 05 SYS-STORAGE-TABLE. |
+| `tests/TestArtifactDirectory.cs`, `tests/*/TestOutputSuite.cs` | Test output owner | `TESTOUT_01`, `TESTCLEAN_02`, `SuiteWork`, `Begin`, `PrepareSuite`, `Reset` | C#/xUnit and standalone checks write only to their `logs\<Suite>_Results\work`; `TestArtifactDirectoryTests.NoTestWritesOutsideTheLogsSuiteFolders`. |
+| `tests/DesktopPreviewSmoke/Program.cs`, `tests/DesktopPreviewSmoke/MergerSmokeApp.cs` | Desktop smoke applications | `TESTDESKTOP_01`, `MERGERBOUNDARY_01` | Actual GPU output and actual merger window playback across joins; 01 TL-COMPOSITE, 04 UI-MERGERQUEUE/UI-GPUPRESENT2. |
+| `src/FreeVideoStudio.App/ViewModels/VoiceOverGainViewModel.cs` | `VoiceOverGainViewModel` | `Percent`, `Gain`, `ResetCommand`, `CanEdit` | Voice gain bindings; co-governed by 02 AUD-VOICEOVER and 04 UI-THEME. |
+| `build/FvsBuild/CodeSigning.cs` | `CodeSigning` | `SignIfNeeded`, `SIGNMANDATE_01` | Signing mandate. **⚠ CO-GOVERNED BY: 09** |
+| `dev.cmd` | Developer Harness | `DEVVERIFY_01`, `SYS-VERIFYTOOL`, `VERIFYHALT_01` | Direct FvsVerify invocation and failure propagation before cleanup. **⚠ CO-GOVERNED BY: 05** |
 | `src/FreeVideoStudio.Core/Abstractions/Faults.cs` | `Faults` | `Install`, `Recoverable`, `Degraded`, `Fatal`, `FAULTTIER_02` | Ambient fault channel installed once from the composition root. |
 | `src/FreeVideoStudio.App/Services/FaultCounters.cs` | `FaultCounters` | `Record`, `Describe`, `LOGVIS_01` | Per-session fault totals by tier and area, printed in the diagnostic bundle. |
 | `tests/FreeVideoStudio.Core.Tests/WindowsOnlyFactAttribute.cs` | `WindowsOnlyFactAttribute` | `Skip`, `CITEST_01` | Windows-only tests skip, not fail, off Windows. |
 | `src/FreeVideoStudio.App/Services/ProjectSession.cs` | `ProjectSession` | `Capture`, `PushEdit`, `SaveAsync`, `OpenAsync`, `PROJSESSION_01` | The document being edited and its history. **⚠ CO-GOVERNED BY: 06, 07** |
 | `src/FreeVideoStudio.App/MainWindow.Project.cs` | `MainWindow` | `RefreshProjectTitle`, `OnProjectDocumentApplied`, `BeginProjectHistory`, `PushProjectEdit` | The main window's half of the document session. **⚠ CO-GOVERNED BY: 06, 07** |
 | `src/FreeVideoStudio.App/Services/ExportCoordinator.cs` | `ExportCoordinator`, `IExportCoordinator` | `StartAsync`, `Cancel`, `ShutdownAsync`, `EXPORTSESSION_02` | Export lifecycle owner, testable outside MainWindow; faults via `IFaultSink`. **⚠ CO-GOVERNED BY: 03** |
-| `src/FreeVideoStudio.App/Services/ToolNavigator.cs` | `ToolNavigator` | `OpenAsync`, `PublishMergeEdl`, `ReadMergeQueue`, `TOOLNAV_01` | Opens companion tools in-process and returns from them. **⚠ CO-GOVERNED BY: 05** |
+| `src/FreeVideoStudio.App/Services/ToolNavigator.cs` | `ToolNavigator` | `OpenAsync`, `PublishMergeEdl`, `ReadMergeQueue`, `TOOLNAV_01` | Opens companion tools in-process, returns to `MainWindow`, or exits cleanly when `Result.ExitApplication` is set (`MainWindow.MarkExportedCleanExitForTool`). **⚠ CO-GOVERNED BY: 05** |
+| `src/FreeVideoStudio.App/Services/ToolLaunchContracts.cs` | `ToolLaunchContext`, `CropToolLaunchContext`, `MergerLaunchContext`, `ToolNavigationResult`, `IToolNavigationResultSource` | `ExitApplication`, `Cancelled` | Typed launch inputs and completion results (`ReturnedToOwner`, `ExitApplication`) for in-process Crop Tool and Video Merger navigation. **⚠ CO-GOVERNED BY: 05** |
 | `src/FreeVideoStudio.App/MainWindow.ToolReturn.cs` | `MainWindow` | `RestoreVideoPipelineAfterTool`, `StartVideoHostAsync`, `TOOLRETURN_01` | Main App preview revival after a tool closes. **⚠ CO-GOVERNED BY: 05** |
 | `.github/workflows/ci.yml` | CI | `sentinels`, `build-and-test`, `aot-publish`, `CITEST_01` | Runs the sentinels, the tests and the ratchets. **⚠ CO-GOVERNED BY: 09** |
 
@@ -57,6 +66,21 @@
   | `INJSEAM_02` | `IClock` | wall time, so the 24h update throttle and the 14-day log trim are testable without sleeping |
   | `INJSEAM_03` | `IUserNotifier` / `IActiveWindowProvider` | a live Avalonia `Window`, so a view-model needs no dispatcher |
   | `INJSEAM_04` | `IFilePickerService` | native OS dialogs, so Save/Open Project can be regression-tested |
+  | `SETTINGSDI_01` | `SettingsWindowServices` (`ISettingsStore`, `IAiKeyValidator`, `IEncoderCatalog`, `ISettingsBackupStore`, `IUpdateChecker`, `ISessionStateSink`) | the settings file, the AI companies, the FFmpeg chip probe, backup files, the updater and the session-state store, so the Settings view-model (save, key tests, routing, backups) is testable without a window, the internet, a GPU or real files. Built once in `AppServices.Initialize` (`AppServices.SettingsWindow`); `CreateDefault()` exists only where no root is in reach |
+
+* **`ASYNCSAFE_01` — no UI-thread fault ends the process unless the runtime is unusable.** Avalonia
+  event handlers that do async work are `void` forwarders to a `Task` method whose whole body reports
+  through `Faults` (`OnVideoDrop`, `RdpFixButton_Click`, `InitializeMpv` were `async void` with no
+  catch). `AvaloniaApp` also installs `Dispatcher.UIThread.UnhandledException` as the last line of
+  defence: a fault is reported as `Degraded` and marked handled; only process-corrupting exceptions
+  (`IsProcessCorrupting`: out-of-memory, access violation, …) are let through.
+* **`CTSSLOT_01` / `SHELLLAUNCH_01` — native-resource hygiene.** A per-operation cancellation source is
+  held in a `CtsSlot` (renewing cancels AND disposes the previous source; the owner disposes the slot
+  on close). Every shell launch goes through `ShellLauncher`, which disposes the returned `Process`
+  wrapper at once (the launched program is unaffected), so no native process handle waits for a
+  finaliser.
+* **`VIRALVM_01` — the Finished screen's AI post** runs in `ViralPostViewModel` (generator injectable);
+  `FinishedDialogWindow` only draws its `ViralPostView`.
 
   ⚠️ `FileProjectStore` is a **forward**, not a second implementation. The atomic-write protocol, the `.bak` cascade and the amputation rule stay in `ProjectStore`/`ProjectSerializer` under spec 06. `05_SYSTEM_LIFECYCLE_STORAGE.md` §4c is explicit: *never reimplement this sequence at a call site*.
 
@@ -74,7 +98,7 @@
 
   | Tier | Bar for using it | What the user sees |
   | :--- | :--- | :--- |
-  | `Recoverable` | the user's **outcome is unchanged** — a retry worked, a documented default took over | nothing; DEBUG log only |
+  | `Recoverable` | the user's **outcome is unchanged** — a retry worked, a documented default took over | no UI; throttled `[RECOVERABLE]` INFO line (LOGVIS_01, COMP-LOGVIS) |
   | `Degraded` | something perceptible stopped; the session is intact | a `FloatingNotice` naming **what stopped AND what still works** |
   | `Fatal` | the thing they asked for cannot happen, or their work is at risk | a modal dialog with the message and the log path |
 
@@ -86,7 +110,7 @@
 
 * **`UserFacingFaultSink` must never throw.** A reporter that can fault is a reporter that call sites wrap in `try { } catch { }` — the exact shape being retired. Its outermost guard writes through `RuntimeLog.EmergencyWrite` and returns.
 
-* **Migration is a ratchet, not a sweep.** 59 unexplained empty catches could not be triaged correctly in one change; each needs a human decision about tier. `ArchitectureRuleTests.UnexplainedEmptyCatchBlocksDoNotIncrease` is green at its baseline (now **25**, §3) and can only get stricter. **A permanently red test gets deleted, so no rule here starts red.**
+* **Migration is a ratchet, not a sweep.** 59 unexplained empty catches could not be triaged correctly in one change; each needs a human decision about tier. `ArchitectureRuleTests.UnexplainedEmptyCatchBlocksDoNotIncrease` is green at its baseline (now **33**, §3) and can only get stricter — one user-approved exception: raised 25→33 by NOCOMMENTS_02, when 8 empty catches lost their explaining comment (text in `docs/CODE_NOTES_*.md`). **A permanently red test gets deleted, so no rule here starts red.**
 
 ---
 
@@ -142,30 +166,30 @@ plumbing change does not happen. The vocabulary was right and the route was miss
 
 * **Entry criterion for a rule here:** a machine can check it and a reviewer reliably cannot. Rules requiring judgement stay in prose.
 
-* **The rules run on source TEXT, deliberately** — every defect they catch is something the compiler is happy with. They strip comments and string literals first (`BlankCommentsAndStrings`), because this codebase documents its rules by quoting the offending pattern; without that, the docs trip the tests that enforce them.
+* **The rules run on source TEXT, deliberately** — every defect they catch is something the compiler is happy with. They blank comments and string literals first (`BlankCommentsAndStrings`), because string literals quote the banned patterns (comments are themselves banned, NOCOMMENTS_02); without that, the quotes trip the tests that enforce them.
 
 * **Current rules and their standing** (selected rules; current results come from the test runner):
 
   | Rule | Enforces | Standing |
   | :--- | :--- | :--- |
   | `ProductionNamespacesUseTheProductRoot` | production namespace declarations use `FreeVideoStudio.*` | **clean — 0** |
-  | `NoControlCarriesBothCommandAndClick` | `DOUBLEFIRE_01` (04 §4) | **clean — 0** |
-  | `NoRawHexColoursInSharedStyling` | Invariant #5 (04 §1) | **clean — 0** (10 fixed; see §4) |
+  | `NoControlCarriesBothCommandAndClick` | `DOUBLEFIRE_01` (04 UI-SAFEGUARDS) | **clean — 0** |
+  | `NoRawHexColoursInSharedStyling` | Invariant #5 (04 UI-THEME) | **clean — 0** (10 fixed; see COMP-ARCHTEST) |
   | `ZoompanFilterIsNeverEmitted` | Invariant #4 | **clean — 0** |
-  | `UnexplainedEmptyCatchBlocksDoNotIncrease` | `FAULTTIER_01` | ratchet, baseline **25** |
+  | `UnexplainedEmptyCatchBlocksDoNotIncrease` | `FAULTTIER_01` | ratchet, baseline **33** |
   | `EveryCatchBlockReportsSomewhere` | `FAULTTIER_02` | ratchet, baseline **7** (seven reporting-path files exempt by name; injected `IFaultSink` `.Recoverable/.Degraded/.Fatal(` calls count as reporting) |
-  | `EveryProductionSourceFileCarriesTheSpecContract` | `SPEC_GOVERNANCE.md` §4 | **clean — 0** (121 fixed; see §4) |
+  | Repeated source-header presence rule | `SPEC_GOVERNANCE.md` §4 | Retired by SPECROUTING_02; domain maps and fix sentinels remain required. |
   | `BlockingWaitsOnAsyncCodeDoNotIncrease` | `ASYNCUI_01` | ratchet, baseline **5** |
-  | `AsyncVoidMethodsDoNotIncrease` | `ASYNCUI_02` | ratchet, baseline **31** |
+  | `AsyncVoidMethodsDoNotIncrease` | `ASYNCUI_02` | ratchet, baseline **24** |
   | `ServiceLocatorUsageDoesNotIncrease` | `COMPOSITION_02` | ratchet, baseline **3** |
-  | `ImperativeControlLookupsDoNotIncrease` | `MVVM_01` (§3a) | ratchet, baseline **700** (lowered from 973 by `MVVM_03`) |
+  | `ImperativeControlLookupsDoNotIncrease` | `MVVM_01` (§3a) | ratchet, baseline **630** (lowered from 973) |
   | `WindowCodeBehindDoesNotGrow` | `MVVM_02` (§3a) | 8 grandfathered ceilings; **1,000** for new files |
   | `EveryFixSentinelStillResolves` | `SYS-DEVBUILD` / `SYS-VERIFYTOOL` | **clean** — every `build/sentinels.txt` entry |
   | `DevCmdDelegatesTheSentinelCheckRatherThanParsingIt` | `SYS-VERIFYTOOL` / `VERIFYHALT_01` | **clean** — `dev.cmd` runs `build/FvsVerify` and reads its exit code |
 
-* **Sentinel or test?** When a fix earns a `TAG=path` line in `build/sentinels.txt` (checked by `build/FvsVerify`), ask whether it could be a test instead. **A sentinel proves a fix has not been DELETED; a test proves it has not been BROKEN.** Prefer the test. Keep the sentinel when the fix is a configuration value or a comment-documented ordering that no assertion can see.
+* **Sentinel or test?** When a fix earns a `TAG=path` line in `build/sentinels.txt` (checked by `build/FvsVerify`), ask whether it could be a test instead. **A sentinel proves a fix has not been DELETED; a test proves it has not been BROKEN.** Prefer the test. Keep the sentinel when the fix is a configuration value or an ordering that no assertion can see.
 
-* **`ASYNCUI_01` / `ASYNCUI_02`.** 5 blocking waits (`.Result` / `.Wait()` / `GetAwaiter().GetResult()`) and 31 `async void` methods, against 106 `Dispatcher.UIThread` call sites. On the UI thread a blocking wait is a deadlock of exactly the shape `SEEKSTORM_01` describes: the UI thread waiting on work that needs the UI thread. An `async void` that throws bypasses every catch in the stack and lands in `AppDomain.UnhandledException` — the process goes down from a background continuation, with nothing on screen. An `async void` that survives review must be an event handler bound directly to an Avalonia event, **and its whole body must sit inside one try/catch reporting through `IFaultSink`**.
+* **`ASYNCUI_01` / `ASYNCUI_02`.** 5 blocking waits (`.Result` / `.Wait()` / `GetAwaiter().GetResult()`) and 24 `async void` methods, against 106 `Dispatcher.UIThread` call sites. On the UI thread a blocking wait is a deadlock of exactly the shape `SEEKSTORM_01` describes: the UI thread waiting on work that needs the UI thread. An `async void` that throws bypasses every catch in the stack and lands in `AppDomain.UnhandledException` — the process goes down from a background continuation, with nothing on screen. An `async void` that survives review must be an event handler bound directly to an Avalonia event, **and its whole body must sit inside one try/catch reporting through `IFaultSink`**.
 
 ---
 
@@ -203,7 +227,7 @@ plumbing change does not happen. The vocabulary was right and the route was miss
   represent.
 
 * **Both rules are RATCHETS, enforced by `ArchitectureRuleTests`.** Hundreds of call sites (baseline
-  **700**) cannot be converted without a compiler in the loop, and a sweep that cannot be built and run is a sweep
+  **630**) cannot be converted without a compiler in the loop, and a sweep that cannot be built and run is a sweep
   that ships a broken editor. The numbers may only fall; lower the baseline in the same change
   that lowers the count.
 
@@ -242,28 +266,14 @@ CI runs the sentinels on Linux first (~40s, fails fast), then builds and tests o
 then proves the NativeAOT publish links on `main` — AOT failures do not appear in `dotnet build`,
 only at publish, in the linker.
 
----
-
-## 4. Findings Closed By This Specification  {#COMP-FINDINGS}
-
-* **`SPEC_GOVERNANCE.md` §4 was unenforced: 121 of the 188 source files then present carried no `[SPEC CONTRACT]` sentinel** — 64% of the codebase was invisible to the routing protocol that governs it. Every file carries it now, mapped to its governing spec via `docs/README.md` §3, with co-governed files naming every binding spec and stating that reading one is not compliance. `EveryProductionSourceFileCarriesTheSpecContract` keeps it that way, so the count is enforced rather than recorded.
-
-* **`VERIFYHALT_01` — `VERIFY_PATCHES` was a no-op.** The subroutine built its `MISSING` list correctly and then returned. `MISSING` was **assigned in two places and read in none**, so all 133 fix sentinels were checked and the answer discarded. The mechanism `05` §4a calls "halts loudly if one is absent" could not halt, and could not be loud.
-  Two defects, both closed: the unread variable, and `exit /b 1` inside a `call`ed subroutine returning from the *subroutine* rather than the script — so the call site now tests `if errorlevel 1`.
-  ⚠️ `VERIFYLOOP_01` had already learned this exact lesson once, about two silently skipped entries, and its fix left the reporting half unwritten. **A guard that cannot fail is worse than no guard**, because it is trusted.
-
-* **`STRIPCOST_01` was stale and nothing could say so.** Its tag no longer existed in `GranularSpeedEditorWindow.axaml.cs`. Not a revert: commit `ad0b7bd` deleted the per-slot `Image` path entirely and replaced it with `Controls/TimelineFilmstrip`, which draws through `DrawingContext.DrawImage` with explicit source and destination rects — no layout box to oversize, no 32768px bitmap for Skia to rasterise. The defect is structurally unreachable, so the sentinel is **retired** with a note, following the `WIZPROGRESS_01` precedent.
-
-* **Invariant #5 had 10 live violations**, all raw hex in shared styling:
-  * Six scrims (`#E6000000` ×4, `#F0000000`, `#90000000`) across five windows, each window keeping its own copy of "dim what is behind this" with nothing enforcing that the four identical ones stayed identical. Now `AppScrimSoftBrush` / `AppScrimBrush` / `AppScrimStrongBrush`, deliberately **theme-invariant** like the existing `AppOverlayBrush`: a scrim's job is to push content away from the eye, and on a light ground a light scrim does not do that. Pick by intent — *soft* (flyout open, context still legible), *base* (blocking operation owns the window), *strong* (a rebuild is discarding what is behind it).
-  * Four `ZOOMCARD_01` states in the Granular editor's "How should the zoom arrive?" dialog (`#222234` rest, `#181824` bullet well, `#2f2f45` hover, `#3a2b48` checked) — **dark-theme values in a suite that ships a Light variant**, so in Light mode the dialog rendered as a block of near-black cards. Invisible to anyone who never switched theme. Now `AppZoomCard*Brush`, defined in both `ThemeDictionaries`. The Light `checked` state is a desaturated tint because the card border already carries the full accent, and two saturated accents stacked read as a rendering fault rather than a selection.
-
-* **`SIGNMANDATE_01` / `UPDATETRUST_02` — the signing gap.** See `05_SYSTEM_LIFECYCLE_STORAGE.md` §5 (SYS-SIGNING), amended by this change.
+`CODEEXPORT_01`: the sentinel job also runs the Python source-export regression suite
+(`python -B -m unittest discover -s tests/DeveloperTools.Tests -v`). It guards coverage,
+credential filtering, encoding failures, attachment limits and preservation of previous exports;
+the contract lives in 05 SYS-CODEEXPORT.
 
 ---
 
-### `LOGVIS_01` — RECOVERABLE MEANS "NO NOTICE", NOT "NO LOG"  {#COMP-LOGVIS}
+## 4. `LOGVIS_01` — Recoverable Means "No Notice", Not "No Log"  {#COMP-LOGVIS}
 * The `Recoverable` tier was `RuntimeLog.Debug`, which is a no-op unless `FVS_DEV_LOG_DIR` is set, so ~560 `Swallowed()` sites wrote NOTHING in shipped builds. Now each call site writes one `[RECOVERABLE]` INFO line per 30 s (with a held-back count) in every build. The stack trace stays dev-only. The user still sees nothing, which is the definition of the tier.
 * `CoreLogger.Warn` / `RuntimeLog.WarnThrottled`: handled FAILURE lines (e.g. "disk flush error", "StopRecording threw") are production-visible and throttled. `Debug` is for traces and full exception dumps only.
 * `FaultCounters` counts every fault by tier/area, and `DiagnosticBundle` prints it under `FAULTS`.
-* ⚠ This supersedes "DEBUG log only" in the tier table (§2): Recoverable = no UI + throttled INFO breadcrumb.

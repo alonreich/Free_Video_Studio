@@ -1,5 +1,4 @@
-﻿
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -11,17 +10,6 @@ namespace FreeVideoStudio.App;
 
 internal static class DeploymentLifecycle
 {
-    private const int DeleteRetries = 3;
-
-    private static int _pendingRebootDeletes;
-
-    [Flags]
-    private enum MoveFileFlags : uint
-    {
-        ReplaceExisting = 0x00000001,
-        DelayUntilReboot = 0x00000004
-    }
-
     public static bool ShouldHandle(string[] args)
     {
         if (args.Any(a => a.Equals("--install-worker", StringComparison.OrdinalIgnoreCase) ||
@@ -129,7 +117,7 @@ internal static class DeploymentLifecycle
             await PerformFullHostCleanupAsync("Uninstall", 10, 90, requireZeroFootprint: true, purgeUserArtifacts: true, includeUserData: true, invokingUserDesktop: ReadUserDesktopArgument(args)).ConfigureAwait(false);
 
             bool clean = await VerifyZeroFootprintAsync().ConfigureAwait(false);
-            string status = clean && _pendingRebootDeletes == 0 ? "All components removed successfully." : "Cleanup finished. Some locked files may require a reboot for final removal.";
+            string status = clean ? "All components removed successfully." : "Cleanup finished. Locked or unsafe items were preserved; the uninstall log lists them.";
             await DeploymentReporter.StepAsync("UNINSTALL COMPLETE", status, 100).ConfigureAwait(false);
 
             return 0;
@@ -153,59 +141,6 @@ internal static class DeploymentLifecycle
         }
     }
 
-    private static async Task<(bool IsUpgrade, string? ExistingVersion)> ReportExistingVersionAsync()
-    {
-        string? existingVersion = GetInstalledVersion();
-        bool hasFolder = Directory.Exists(DeploymentFootprint.InstallFolder);
-        bool hasExe = File.Exists(DeploymentFootprint.InstallPath);
-
-        if (hasFolder || hasExe || !string.IsNullOrWhiteSpace(existingVersion))
-        {
-            string direction = DescribeVersionTransition(existingVersion);
-            await DeploymentReporter.StepAsync(
-                "EXISTING INSTALL DETECTED",
-                $"Installed='{existingVersion ?? "unknown"}', installer='{GetCurrentVersion()}' ({direction}). " +
-                $"folderExists={hasFolder}, exeExists={hasExe}.",
-                3).ConfigureAwait(false);
-            return (true, existingVersion);
-        }
-
-        await DeploymentReporter.StepAsync("FRESH INSTALL", "No previous installation was detected.", 3).ConfigureAwait(false);
-        return (false, null);
-    }
-
-    /// <summary>ISSUE_02 — classifies installer version vs installed version.</summary>
-    private static string DescribeVersionTransition(string? existingVersion)
-    {
-        if (!TryParseVersion(existingVersion, out Version installed) ||
-            !TryParseVersion(GetCurrentVersion(), out Version current))
-        {
-            return "comparison unavailable";
-        }
-
-        int cmp = current.CompareTo(installed);
-        return cmp > 0 ? "UPGRADE" : cmp < 0 ? "DOWNGRADE" : "REINSTALL (same version)";
-    }
-
-    /// <summary>
-    /// ISSUE_02 — a DOWNGRADE is a deliberate choice, so confirm it. An upgrade and a same-version
-    /// reinstall both proceed without an extra prompt. Returns true to continue.
-    ///
-    /// <para>
-    /// ⚠️ INSTALL_02 — THE SAME-VERSION PROMPT WAS REMOVED ON PURPOSE. DO NOT PUT IT BACK.
-    /// It read "This exact version is already installed. … Continue and reinstall?" and it asked a
-    /// question whose answer was already given: the user double-clicked the installer, so YES is
-    /// the only thing they can have meant. Re-running the same version is also the normal way to
-    /// repair a damaged install, which the prompt made feel like a mistake. The one prompt that
-    /// genuinely still matters here is the PRESERVE SETTINGS question a few lines up — that one
-    /// has two real answers and is untouched.
-    /// </para>
-    /// <para>
-    /// The DOWNGRADE warning stays, and is a different thing entirely: it warns about a real,
-    /// irreversible consequence (settings written by a newer build can become unreadable), and the
-    /// user may well have launched an older installer without realising it was older.
-    /// </para>
-    /// </summary>
     internal static bool ConfirmVersionTransition(string? existingVersion)
     {
         string currentVer = GetCurrentVersion();
@@ -223,15 +158,6 @@ internal static class DeploymentLifecycle
             "Free Video Studio Setup");
     }
 
-    /// <summary>
-    /// <summary>
-    /// Represents a parsed version with full SemVer pre-release support.
-    /// Invariants:
-    /// - Normal versions have higher precedence than pre-release versions with the same core numbers:
-    ///   2026.10.14-beta.1 &lt; 2026.10.14
-    /// - Pre-release tags are compared identifier by identifier:
-    ///   2026.10.14-beta.1 &lt; 2026.10.14-beta.2
-    /// </summary>
     internal sealed record AppVersion(Version CoreVersion, string? Prerelease = null) : IComparable<AppVersion>
     {
         public int CompareTo(AppVersion? other)
@@ -323,11 +249,6 @@ internal static class DeploymentLifecycle
         return string.Compare(versionA, versionB, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Parses the numeric prefix out of a version-ish string ("v2026.09.06.0008" → 2026.9.6.8).
-    /// Internal so the in-app updater (<see cref="Services.UpdateService"/>) compares GitHub
-    /// release tags against the running build with the EXACT same rules the installer uses.
-    /// </summary>
     internal static bool TryParseVersion(string? value, out Version version)
     {
         if (TryParseSemanticVersion(value, out AppVersion semVer))
@@ -339,17 +260,6 @@ internal static class DeploymentLifecycle
         return false;
     }
 
-    /// <param name="includeUserData">
-    /// ISSUE_02 — false ONLY when the user asked to preserve their settings during an upgrade.
-    /// Gates every user-state root (see <see cref="DeploymentFootprint.GetDirectoryPurgeTargets"/>),
-    /// not just ProgramData. Uninstall always passes true.
-    /// </param>
-    /// <param name="invokingUserDesktop">
-    /// The real (possibly OneDrive/Group-Policy-redirected) desktop of the user who launched the
-    /// operation, resolved BEFORE elevation. Swept for our .lnk files in addition to the
-    /// shell-resolved and legacy locations, because an elevated worker's own per-user probe can
-    /// resolve to the administrator's profile instead. Null is fine.
-    /// </param>
     private static async Task PerformFullHostCleanupAsync(
         string operation,
         int start,
@@ -359,14 +269,14 @@ internal static class DeploymentLifecycle
         bool includeUserData,
         string? invokingUserDesktop = null)
     {
-        Interlocked.Exchange(ref _pendingRebootDeletes, 0);
         await DeploymentReporter.StepAsync("CLEANUP START", $"Performing thorough cleanup for {operation}.", start).ConfigureAwait(false);
 
         await DeploymentReporter.StepAsync("CLEANUP PROCESSES", "Terminating running app instances so files can be replaced safely.", start + 5).ConfigureAwait(false);
         await KillAllProcessesAsync().ConfigureAwait(false);
 
         await DeploymentReporter.StepAsync("CLEANUP TASKS", "Removing scheduled startup task if it exists.", start + 10).ConfigureAwait(false);
-        await RunHiddenProcessAsync("schtasks.exe", $"/Delete /TN \"{DeploymentFootprint.ScheduledTaskName}\" /F", 5000).ConfigureAwait(false);
+        if (Services.LegacyScheduledTask.Exists(DeploymentFootprint.ScheduledTaskName))
+            await RunHiddenProcessAsync("schtasks.exe", $"/Delete /TN \"{DeploymentFootprint.ScheduledTaskName}\" /F", 5000).ConfigureAwait(false);
 
         List<string> targets = DeploymentFootprint.GetDirectoryPurgeTargets(includeInstallFolder: true, includeUserData: includeUserData)
             .Concat(OperatingSystem.IsWindows() ? Services.ProtectedWorkerStage.ExistingFolders() : [])
@@ -403,100 +313,38 @@ internal static class DeploymentLifecycle
             bool clean = await VerifyZeroFootprintAsync().ConfigureAwait(false);
             if (!clean)
             {
-                await DeploymentReporter.StepAsync("CLEANUP VERIFY", "Residual locked items were detected. They may require a reboot.", end).ConfigureAwait(false);
+                await DeploymentReporter.StepAsync("CLEANUP VERIFY", "Locked or unsafe items were preserved. Close the application and retry removal; see the uninstall log.", end).ConfigureAwait(false);
             }
         }
     }
 
     private static async Task PurgeDirectoryRecursiveAsync(string directory)
     {
-        if (!Directory.Exists(directory))
-        {
-            await DeploymentReporter.StepAsync("CLEANUP SKIP", $"Directory does not exist: {directory}", null).ConfigureAwait(false);
-            return;
-        }
-
         try
         {
-            Directory.Delete(directory, recursive: true);
-            await DeploymentReporter.StepAsync("CLEANUP OK", $"Deleted directory: {directory}", null).ConfigureAwait(false);
-            return;
+            SafeDirectoryCleanup.DeleteTree(Path.GetFullPath(directory));
+            await DeploymentReporter.StepAsync("CLEANUP OK", $"Cleaned directory: {directory}", null).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            await DeploymentReporter.StepAsync("CLEANUP RETRY", $"Fast delete failed for {directory}: {ex.Message}. Deleting contents one by one.", null).ConfigureAwait(false);
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
+            await DeploymentReporter.FailAsync("CLEANUP PRESERVED", $"{directory}: {ex.Message}", null).ConfigureAwait(false);
+            RuntimeLog.Swallowed(ex);
         }
-
-        foreach (string file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories).ToArray())
-        {
-            await DeleteFileWithRetryAsync(file).ConfigureAwait(false);
-        }
-
-        foreach (string subDirectory in Directory.EnumerateDirectories(directory, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length).ToArray())
-        {
-            TryDeleteDirectory(subDirectory);
-        }
-
-        TryDeleteDirectory(directory);
     }
 
     private static async Task DeleteFileWithRetryAsync(string path)
     {
-        if (!File.Exists(path))
-        {
-            return;
-        }
-
-        for (int attempt = 1; attempt <= DeleteRetries; attempt++)
-        {
-            try
-            {
-                File.SetAttributes(path, FileAttributes.Normal);
-                File.Delete(path);
-                await DeploymentReporter.StepAsync("DELETE OK", path, null).ConfigureAwait(false);
-                return;
-            }
-            catch (Exception ex)
-            {
-                if (attempt == DeleteRetries)
-                {
-                    if (MoveFileEx(path, null, MoveFileFlags.DelayUntilReboot))
-                    {
-                        Interlocked.Increment(ref _pendingRebootDeletes);
-                        await DeploymentReporter.StepAsync("DELETE REBOOT", $"Queued locked file for deletion after reboot: {path}. Reason: {ex.Message}", null).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        await DeploymentReporter.FailAsync("DELETE FAILED", $"{path}: {ex.Message}", null).ConfigureAwait(false);
-                    }
-                }
-                else
-                {
-                await Task.Delay(250).ConfigureAwait(false);
-                }
-                global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
-            }
-        }
-    }
-
-    private static void TryDeleteDirectory(string directory)
-    {
         try
         {
-            if (Directory.Exists(directory))
-            {
-                Directory.Delete(directory, recursive: true);
-            }
+            SafeDirectoryCleanup.DeleteFile(Path.GetFullPath(path));
         }
-        catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+        catch (Exception ex)
+        {
+            await DeploymentReporter.FailAsync("DELETE PRESERVED", $"{path}: {ex.Message}", null).ConfigureAwait(false);
+            RuntimeLog.Swallowed(ex);
+        }
     }
 
-    /// <param name="invokingUserDesktop">
-    /// Extra folder to sweep — the launching user's real desktop, resolved before elevation. The
-    /// elevated worker cannot discover this itself (its own per-user probe may point at the
-    /// administrator's profile), and missing it leaves a dead icon behind after uninstall.
-    /// </param>
     private static async Task DeleteKnownShortcutsAsync(string? invokingUserDesktop = null)
     {
         var folders = new List<string>();
@@ -571,41 +419,6 @@ internal static class DeploymentLifecycle
         {
             await DeleteRegistrySubKeyTreeAsync(hive, view, appKey).ConfigureAwait(false);
         }
-
-        foreach (RegistryHive hive in new[] { RegistryHive.CurrentUser, RegistryHive.LocalMachine })
-        {
-            foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
-            {
-                using RegistryKey baseKey = RegistryKey.OpenBaseKey(hive, view);
-                foreach (string mui in new[]
-                         {
-                             @"Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache",
-                             @"Software\Microsoft\Windows\ShellNoRoam\MUICache",
-                             @"Software\Microsoft\Windows\Shell\MuiCache"
-                         })
-                {
-                    try
-                    {
-                        using RegistryKey? key = baseKey.OpenSubKey(mui, writable: true);
-                        if (key is null)
-                        {
-                            continue;
-                        }
-
-                        foreach (string valueName in key.GetValueNames())
-                        {
-                            if (valueName.Contains("FreeVideoStudio", StringComparison.OrdinalIgnoreCase) ||
-                                valueName.Contains("Free Video Studio", StringComparison.OrdinalIgnoreCase))
-                            {
-                                key.DeleteValue(valueName, throwOnMissingValue: false);
-                                await DeploymentReporter.StepAsync("REGISTRY MUI", $"{hive}\\{mui}\\{valueName}", null).ConfigureAwait(false);
-                            }
-                        }
-                    }
-                    catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
-                }
-            }
-        }
     }
 
     private static async Task DeleteRegistrySubKeyTreeAsync(RegistryHive hive, RegistryView view, string path)
@@ -636,34 +449,24 @@ internal static class DeploymentLifecycle
             {
                 foreach (Process process in Process.GetProcessesByName(name))
                 {
-                    if (process.Id == current.Id)
+                    using (process)
                     {
-                        continue;
-                    }
+                        if (process.Id == current.Id)
+                        {
+                            continue;
+                        }
 
-                    foundAny = true;
-                    await TerminateProcessAsync(process).ConfigureAwait(false);
-                }
-            }
+                        string? path = ProcessImage.TryGetPath(process.Id);
+                        if (string.IsNullOrWhiteSpace(path) ||
+                            !path.StartsWith(installRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
 
-            foreach (Process process in Process.GetProcesses())
-            {
-                if (process.Id == current.Id)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    string? path = process.MainModule?.FileName;
-                    if (!string.IsNullOrWhiteSpace(path) &&
-                        path.StartsWith(installRoot, StringComparison.OrdinalIgnoreCase))
-                    {
                         foundAny = true;
                         await TerminateProcessAsync(process).ConfigureAwait(false);
                     }
                 }
-                catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
             }
 
             if (!foundAny)
@@ -689,8 +492,7 @@ internal static class DeploymentLifecycle
         }
         catch (Exception ex)
         {
-            await DeploymentReporter.StepAsync("PROCESS TASKKILL", $"Falling back to taskkill for PID {process.Id}: {ex.Message}", null).ConfigureAwait(false);
-            await RunHiddenProcessAsync("taskkill.exe", $"/F /PID {process.Id} /T", 3000).ConfigureAwait(false);
+            await DeploymentReporter.StepAsync("PROCESS SKIP", $"PID {process.Id} could not be ended: {ex.Message}", null).ConfigureAwait(false);
             global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
         }
     }
@@ -730,35 +532,6 @@ internal static class DeploymentLifecycle
         }
 
         return clean;
-    }
-
-    private static string? GetInstalledVersion()
-    {
-        foreach ((RegistryHive hive, RegistryView view, string path) in DeploymentFootprint.GetUninstallRegistryPurgeTargets())
-        {
-            try
-            {
-                using RegistryKey baseKey = RegistryKey.OpenBaseKey(hive, view);
-                using RegistryKey? key = baseKey.OpenSubKey(path);
-                string? version = key?.GetValue("DisplayVersion")?.ToString();
-                if (!string.IsNullOrWhiteSpace(version))
-                {
-                    return version;
-                }
-            }
-            catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
-        }
-
-        if (File.Exists(DeploymentFootprint.InstallPath))
-        {
-            try
-            {
-                return FileVersionInfo.GetVersionInfo(DeploymentFootprint.InstallPath).ProductVersion;
-            }
-            catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
-        }
-
-        return null;
     }
 
     internal static string GetCurrentVersion()
@@ -840,27 +613,8 @@ internal static class DeploymentLifecycle
         }
     }
 
-    /// <summary>
-    /// Flag that carries the INVOKING user's real desktop folder across the UAC boundary.
-    /// See <see cref="ProbeInvokingUserDesktop"/> for why this cannot be resolved on the far side.
-    /// </summary>
     private const string DesktopShortcutArgument = "--user-desktop";
 
-    /// <summary>
-    /// Appends <c>--user-desktop "path"</c> to an elevated-worker command line.
-    ///
-    /// Appended LAST so <c>args.FirstOrDefault()</c> in Program.cs still sees the real command
-    /// ("--install" / "--uninstall"), and so ParseParentPid still finds the PID first.
-    ///
-    /// QUOTING NOTE: these command lines go to <c>ProcessStartInfo.Arguments</c> with
-    /// <c>UseShellExecute = true</c> and <c>Verb = "runas"</c>, so ArgumentList is NOT available —
-    /// a correctly quoted single string is mandatory. A plain pair of double quotes is sufficient
-    /// and safe here specifically because Windows forbids the <c>"</c> character in file and folder
-    /// names outright, so the path cannot contain a quote to break out with. The value is still
-    /// checked for one, and trailing separators are trimmed because a trailing <c>\</c> would
-    /// escape the closing quote and swallow the rest of the command line. The receiving side
-    /// re-validates via <see cref="ReadUserDesktopArgument"/>.
-    /// </summary>
     private static string AppendUserDesktopArgument(string args, string? userDesktop)
     {
         if (string.IsNullOrWhiteSpace(userDesktop))
@@ -877,26 +631,6 @@ internal static class DeploymentLifecycle
         return args + $" {DesktopShortcutArgument} \"{safe}\"";
     }
 
-    /// <summary>
-    /// Resolves the desktop folder of the user who actually launched the installer.
-    ///
-    /// ⚠️ THIS MUST ONLY BE CALLED BEFORE ELEVATION. ⚠️
-    ///
-    /// The installer relaunches itself with <c>Verb = "runas"</c>. When the person running it is a
-    /// standard user, Windows starts the elevated worker under a DIFFERENT (administrator) account.
-    /// From inside that worker, every per-user API — <c>SHGetKnownFolderPath</c>,
-    /// <c>Environment.GetFolderPath(SpecialFolder.DesktopDirectory)</c>, <c>%USERPROFILE%</c>,
-    /// HKCU — describes the ADMINISTRATOR, not the user. A desktop shortcut written from there
-    /// lands in a profile the user never opens, and to them the installer simply "didn't create
-    /// the icon".
-    ///
-    /// So the launcher (which still runs as the real user) probes the path here and passes it over
-    /// the command line. <c>KnownFolders.GetDesktop()</c> is used rather than
-    /// <c>Environment.GetFolderPath</c> because the latter reads a cached value that goes stale
-    /// exactly when it matters — OneDrive "Backup / Manage folders" moving Desktop into
-    /// <c>%USERPROFILE%\OneDrive\Desktop</c> (or a business variant like
-    /// <c>OneDrive - Contoso\Desktop</c>), and Group Policy redirection pointing it at a UNC share.
-    /// </summary>
     private static string? ProbeInvokingUserDesktop()
     {
         try
@@ -920,11 +654,6 @@ internal static class DeploymentLifecycle
         }
     }
 
-    /// <summary>
-    /// Reads the desktop path handed over by the pre-elevation launcher. Returns null when the
-    /// flag is absent (e.g. an already-elevated direct worker launch), in which case the install
-    /// falls back to the Public desktop.
-    /// </summary>
     private static string? ReadUserDesktopArgument(string[] args)
     {
         for (int i = 0; i < args.Length - 1; i++)
@@ -967,7 +696,7 @@ internal static class DeploymentLifecycle
     {
         try
         {
-            Process.Start(new ProcessStartInfo
+            Services.ShellLauncher.Launch(new ProcessStartInfo
             {
                 FileName = exe,
                 Arguments = args,
@@ -1066,72 +795,9 @@ internal static class DeploymentLifecycle
         }
     }
 
-    /// <summary>
-    /// NOSELFDELETE_01 — removes a folder the uninstaller may itself be running from (the program folder,
-    /// NOTEMPEXEC_01; older versions' scratch folders in %TEMP%) WITHOUT a "cmd /c ping … &amp; del"
-    /// chain. That chain (wait with ping, then delete the running program) is a ransomware signature
-    /// (Sigma "ping + del combined execution", MITRE T1070.004) and made antivirus flag new releases.
-    /// Everything that is not in use is deleted now. What is still locked — this running uninstaller,
-    /// its hard-linked twin FreeVideoStudio.exe and its two window libraries — is handed to Windows' own delete-on-restart list
-    /// (MoveFileEx MOVEFILE_DELAY_UNTIL_REBOOT; this worker is elevated, which that list requires).
-    /// Files are queued before their folders, so Windows removes them in a working order.
-    /// </summary>
     private static void QueueSelfCleanup(string directory)
     {
-        try
-        {
-            string tempRoot = DeploymentFootprint.TempRoot;
-            foreach (string pattern in new[] { "FVS_*", "fvs_*" })
-            {
-                if (!Directory.Exists(tempRoot)) break;
-                foreach (string file in Directory.EnumerateFiles(tempRoot, pattern, SearchOption.TopDirectoryOnly))
-                {
-                    try { File.Delete(file); }
-                    catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
-                }
-            }
-
-            if (!Directory.Exists(directory)) return;
-            try
-            {
-                Directory.Delete(directory, recursive: true);
-                return;
-            }
-            catch (System.Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                RuntimeLog.Swallowed(ex);
-            }
-
-            foreach (string file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
-            {
-                try
-                {
-                    File.SetAttributes(file, FileAttributes.Normal);
-                    File.Delete(file);
-                }
-                catch (System.Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    RuntimeLog.Swallowed(ex);
-                    if (!MoveFileEx(file, null, MoveFileFlags.DelayUntilReboot))
-                        RuntimeLog.Info("Uninstall", $"Could not schedule removal after restart: {file}");
-                }
-            }
-
-            foreach (string folder in Directory.EnumerateDirectories(directory, "*", SearchOption.AllDirectories)
-                         .OrderByDescending(path => path.Length)
-                         .Append(directory))
-            {
-                try { Directory.Delete(folder, recursive: false); }
-                catch (System.Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    RuntimeLog.Swallowed(ex);
-                    _ = MoveFileEx(folder, null, MoveFileFlags.DelayUntilReboot);
-                }
-            }
-        }
-        catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+        try { SafeDirectoryCleanup.DeleteTree(Path.GetFullPath(directory)); }
+        catch (Exception ex) { RuntimeLog.Fail("Uninstall", $"Cleanup preserved {directory}: {ex.Message}"); }
     }
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool MoveFileEx(string existingFileName, string? newFileName, MoveFileFlags flags);
 }

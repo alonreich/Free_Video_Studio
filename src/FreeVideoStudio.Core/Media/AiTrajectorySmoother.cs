@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -8,10 +8,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// AI Tracking raw waypoint received from the Gemini vision protocol.
-/// Coordinates are normalized to a 0-1000 scale relative to the frame.
-/// </summary>
 public record RawSubjectWaypoint
 {
     [JsonPropertyName("time")]
@@ -33,10 +29,6 @@ public record RawSubjectWaypoint
     public bool Visible { get; init; } = true;
 }
 
-/// <summary>
-/// A time-indexed keyframe along a smoothed AI camera zoom path.
-/// Coordinates are in source video pixels.
-/// </summary>
 public record AiTrackingKeyframe
 {
     [JsonPropertyName("t")]
@@ -61,9 +53,6 @@ public record AiTrackingKeyframe
     public bool Visible { get; init; }
 }
 
-/// <summary>
-/// JSON serializer context for AI tracking data structures to ensure Native AOT compliance.
-/// </summary>
 [JsonSerializable(typeof(RawSubjectWaypoint))]
 [JsonSerializable(typeof(List<RawSubjectWaypoint>))]
 [JsonSerializable(typeof(AiTrackingKeyframe))]
@@ -71,10 +60,6 @@ public record AiTrackingKeyframe
 [JsonSerializable(typeof(AiTrajectorySmoother.SmoothedTrajectory))]
 public partial class AiTrackingJsonContext : JsonSerializerContext { }
 
-/// <summary>
-/// Mathematical smoothing, velocity-adaptive breathing, and vanishing-target fallback
-/// engine for universal AI subject tracking.
-/// </summary>
 public static class AiTrajectorySmoother
 {
     public class SmoothedTrajectory
@@ -91,12 +76,13 @@ public static class AiTrajectorySmoother
         [JsonPropertyName("segmentDuration")]
         public double SegmentDurationSec { get; set; }
 
-        /// <summary>
-        /// AIRESMOOTH_01 — the raw waypoints Gemini returned (after sanitising, times relative to the
-        /// zoom start). Kept so "EDIT AI ZOOM" can re-frame with new settings WITHOUT another paid AI
-        /// call. Null for trajectories written before this field existed (they can only be re-tracked).
-        /// Omitted from the JSON when null so older documents round-trip byte-identically.
-        /// </summary>
+        [JsonPropertyName("isUncertain")]
+        public bool IsUncertain { get; set; }
+
+        [JsonPropertyName("uncertainTime")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public double? UncertainTimeSec { get; set; }
+
         [JsonPropertyName("raw")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<RawSubjectWaypoint>? RawWaypoints { get; set; }
@@ -164,7 +150,6 @@ public static class AiTrajectorySmoother
             }
         }
 
-        /// <summary>True when the keyframes change the zoom scale (the export then uses the scale+crop form).</summary>
         private bool IsScaleDynamic()
         {
             if (Keyframes.Count <= 1) return false;
@@ -174,17 +159,6 @@ public static class AiTrajectorySmoother
             return false;
         }
 
-        /// <summary>
-        /// AIPARITY_01 — the SOURCE-pixel region the EXPORT's crop expression (<see cref="ToFfmpegCropFilter"/>)
-        /// selects at <paramref name="relSec"/> seconds after the zoom's own start, on an input frame of
-        /// <paramref name="inW"/> x <paramref name="inH"/> (the zoom's resolution after the pre-scale).
-        ///
-        /// <para>This is the expression evaluated in C#, term for term: the same 2-decimal rounding of
-        /// every keyframe value and time, the same LINEAR piecewise interpolation (the export never used
-        /// <see cref="EvaluateAt"/>'s smoothstep), the same even truncation and the same
-        /// <c>min(in-out, max(0, v))</c> clamp. The live preview (<see cref="ZoomPreviewSimulator"/>) uses
-        /// THIS, so preview and export frame the same region by construction.</para>
-        /// </summary>
         public (double X, double Y, double W, double H) EvaluateExportCrop(double relSec, int inW, int inH)
         {
             if (Keyframes.Count == 0) return (0, 0, inW, inH);
@@ -225,7 +199,6 @@ public static class AiTrajectorySmoother
             }
         }
 
-        /// <summary>The value <see cref="BuildPiecewiseExpr"/>'s expression evaluates to at time <paramref name="t"/>.</summary>
         private static double Piecewise(List<AiTrackingKeyframe> kfs, Func<AiTrackingKeyframe, double> selector, double t)
         {
             for (int i = 0; i < kfs.Count - 1; i++)
@@ -241,19 +214,9 @@ public static class AiTrajectorySmoother
             return Round2(Math.Round(selector(kfs[^1]), 2));
         }
 
-        /// <summary>What a "0.00"-formatted number reads back as.</summary>
         private static double Round2(double v) =>
             double.Parse(v.ToString("0.00", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
 
-        /// <summary>
-        /// Formulates an FFmpeg piecewise-lerp crop filter expression across keyframes:
-        /// crop=w='W(t)':h='H(t)':x='X(t)':y='Y(t)':eval=frame
-        ///
-        /// <para>AIPARITY_01 — <paramref name="timeOffsetSec"/> is how far into the zoom the CHUNK this filter
-        /// runs in starts. Every export chunk restarts its own clock at 0 (<c>setpts=PTS-STARTPTS</c>), so a
-        /// zoom split into several chunks (a cut or a freeze inside it) used to restart the trajectory from
-        /// its first keyframe at every split. 0 (the default) emits exactly the previous expression.</para>
-        /// </summary>
         public string ToFfmpegCropFilter(double timeOffsetSec = 0)
         {
             if (Keyframes.Count == 0) return string.Empty;
@@ -338,9 +301,42 @@ public static class AiTrajectorySmoother
         }
     }
 
-    /// <summary>
-    /// Computes a smoothed camera tracking trajectory with dynamic breathing and vanishing fallback.
-    /// </summary>
+    public const string SmoothingRevision = "AICAMSMOOTH_01";
+    public const string FramingRevision = "AIHUDCAMERA_01";
+    public const double PortraitMaxScale = 1.95;
+    public const double SafeTargetTop = 0.08;
+    public const double SafeTargetBottom = 0.73;
+    public const double PreferredTargetY = 0.42;
+    public const double PositionSmoothSec = 0.45;
+    public const double PositionSettleSec = 0.25;
+    public const double MaxPanPerSec = 450.0;
+    public const double ZoomSizeWindowSec = 1.5;
+    public const double ZoomSizeTrimFraction = 0.2;
+    public const double ZoomSmoothSec = 0.55;
+    public const double MaxZoomPerSec = 1.6;
+    public const double SpikeSpeedPerSec = 600.0;
+    public const double MaxFramingDriftFraction = 0.12;
+    public const double HoldAfterLossSec = 1.0;
+    public const double EaseWideSec = 0.8;
+    public const double FastMoveSpeed = 235.0;
+    public const double FastMoveRange = 450.0;
+    public const double FastMoveLookaheadSec = 0.90;
+    public const double FastMoveHoldAfterSec = 0.80;
+    public const double FastMoveSustainFraction = 0.6;
+
+    internal static bool IsWobble(int i, int n, bool[] seen, double[] cx, double[] cy, double[] stepSpeed)
+    {
+        if (i + 2 >= n || !seen[i + 2]) return false;
+        if (i > 0 && stepSpeed[i - 1] > FastMoveSpeed * FastMoveSustainFraction) return false;
+        double ax = cx[i + 1] - cx[i], ay = cy[i + 1] - cy[i];
+        double bx = cx[i + 2] - cx[i + 1], by = cy[i + 2] - cy[i + 1];
+        double a = Math.Sqrt(ax * ax + ay * ay), b = Math.Sqrt(bx * bx + by * by);
+        if (a < 1e-6 || b < 1e-6) return false;
+        double cos = (ax * bx + ay * by) / (a * b);
+        return cos < -0.5 && b >= a * FastMoveSustainFraction;
+    }
+    public const string FastMoveHysteresisTag = "AIZOOMHYST_01";
+
     public static SmoothedTrajectory SmoothTrajectory(
         IReadOnlyList<RawSubjectWaypoint> rawWaypoints,
         double segmentDurationSec,
@@ -366,7 +362,8 @@ public static class AiTrajectorySmoother
         }
 
         baseScale = Math.Clamp(baseScale, 1.2, 5.0);
-        double effectiveBaseScale = portraitMode ? Math.Min(baseScale, 1.65) : baseScale;
+        double clarityCap = portraitMode ? PortraitMaxScale : Math.Clamp(Math.Min(sourceW / 560.0, sourceH / 315.0), 1.2, 4.0);
+        double effectiveBaseScale = Math.Min(baseScale * 1.4, clarityCap);
         double effectiveMinScale = Math.Clamp(minScale, 1.0, effectiveBaseScale);
         deadbandPercent = Math.Clamp(deadbandPercent, 0.0, 10.0);
 
@@ -424,212 +421,203 @@ public static class AiTrajectorySmoother
         }
 
         int n = sorted.Count;
-        double[] velocities = new double[n];
-        for (int i = 0; i < n - 1; i++)
-        {
-            var pA = sorted[i];
-            var pB = sorted[i + 1];
-            if (pA.Visible && pB.Visible && pA.Cx.HasValue && pA.Cy.HasValue && pB.Cx.HasValue && pB.Cy.HasValue)
-            {
-                double dt = Math.Max(0.04, pB.Time - pA.Time);
-                double dx = pB.Cx.Value - pA.Cx.Value;
-                double dy = pB.Cy.Value - pA.Cy.Value;
-                velocities[i] = Math.Sqrt(dx * dx + dy * dy) / dt;
-            }
-        }
-
-        double[] lookaheadBreathing = new double[n];
-        for (int i = 0; i < n; i++)
-        {
-            if (velocities[i] > 300.0)
-            {
-                double spikeIntensity = Math.Clamp((velocities[i] - 300.0) / 450.0, 0.0, 1.0);
-                double tSpike = sorted[i].Time;
-                for (int j = 0; j <= i; j++)
-                {
-                    double dt = tSpike - sorted[j].Time;
-                    if (dt >= 0 && dt <= 0.5)
-                    {
-                        double factor = (1.0 - (dt / 0.5)) * spikeIntensity;
-                        lookaheadBreathing[j] = Math.Max(lookaheadBreathing[j], factor);
-                    }
-                }
-            }
-        }
-
-        var processedPoints = new List<(double Time, double Cx, double Cy, double W, double H, double Scale, bool Visible)>();
-        double lastValidCx = 500.0;
-        double lastValidCy = 500.0;
-        double lastValidW = 120.0;
-        double lastValidH = 260.0;
-        double lastValidTime = 0.0;
-        double lastAppliedScale = effectiveBaseScale;
-        double lastVx = 0.0;
-        double lastVy = 0.0;
-        bool hasInitial = false;
-
-        double deadbandThreshold = (deadbandPercent / 100.0) * 1000.0;
-
+        var time = new double[n];
+        var seen = new bool[n];
+        var cx = new double[n];
+        var cy = new double[n];
+        var bw = new double[n];
+        var bh = new double[n];
         for (int i = 0; i < n; i++)
         {
             var wp = sorted[i];
-            if (!wp.Visible || !wp.Cx.HasValue || !wp.Cy.HasValue)
-            {
-                processedPoints.Add((wp.Time, lastValidCx, lastValidCy, lastValidW, lastValidH, lastAppliedScale, false));
-                continue;
-            }
-
-            double rawCx = Math.Clamp((double)wp.Cx.Value, 50.0, 950.0);
-            double rawCy = Math.Clamp((double)wp.Cy.Value, 50.0, 950.0);
-            double wVal = Math.Clamp((double)wp.W.GetValueOrDefault(120), 40.0, 900.0);
-            double hVal = Math.Clamp((double)wp.H.GetValueOrDefault(260), 60.0, 950.0);
-
-            if (hVal > 1.15 * wVal)
-            {
-                rawCy = Math.Max(50.0, rawCy - (0.12 * hVal));
-            }
-
-            double bodyFitScale = 1000.0 / Math.Max(120.0, hVal * 1.50);
-            double idealScale = Math.Clamp(bodyFitScale, effectiveMinScale, effectiveBaseScale);
-
-            double expansion = lookaheadBreathing[i];
-            double motionTargetScale = idealScale - (idealScale - effectiveMinScale) * expansion;
-
-            if (!hasInitial)
-            {
-                lastValidCx = rawCx;
-                lastValidCy = rawCy;
-                lastValidW = wVal;
-                lastValidH = hVal;
-                lastValidTime = wp.Time;
-                lastAppliedScale = motionTargetScale;
-                hasInitial = true;
-                processedPoints.Add((wp.Time, rawCx, rawCy, wVal, hVal, motionTargetScale, true));
-                continue;
-            }
-
-            double dx = rawCx - lastValidCx;
-            double dy = rawCy - lastValidCy;
-            double dist = Math.Sqrt(dx * dx + dy * dy);
-
-            double effectiveCx = dist < deadbandThreshold ? lastValidCx : rawCx;
-            double effectiveCy = dist < deadbandThreshold ? lastValidCy : rawCy;
-
-            double dt = Math.Max(0.04, wp.Time - lastValidTime);
-            lastVx = (effectiveCx - lastValidCx) / dt;
-            lastVy = (effectiveCy - lastValidCy) / dt;
-
-            double smoothedScale = lastAppliedScale + (motionTargetScale - lastAppliedScale) * 0.55;
-
-            lastValidCx = effectiveCx;
-            lastValidCy = effectiveCy;
-            lastValidW = wVal;
-            lastValidH = hVal;
-            lastValidTime = wp.Time;
-            lastAppliedScale = smoothedScale;
-
-            processedPoints.Add((wp.Time, effectiveCx, effectiveCy, wVal, hVal, smoothedScale, true));
+            time[i] = wp.Time;
+            seen[i] = wp.Visible && wp.Cx.HasValue && wp.Cy.HasValue;
+            if (!seen[i]) continue;
+            cx[i] = Math.Clamp((double)wp.Cx!.Value, 50.0, 950.0);
+            cy[i] = Math.Clamp((double)wp.Cy!.Value, 50.0, 950.0);
+            bw[i] = Math.Clamp((double)wp.W.GetValueOrDefault(120), 40.0, 900.0);
+            bh[i] = Math.Clamp((double)wp.H.GetValueOrDefault(260), 60.0, 950.0);
         }
 
-        var finalTimeline = new List<(double Time, double Cx, double Cy, double W, double H, double Scale, bool Visible)>();
-        double lastConfirmedVisibleTime = -1.0;
-        double vanishStartCx = 500.0, vanishStartCy = 500.0, vanishStartScale = 1.0;
-        double vanishW = 120.0, vanishH = 260.0;
-        double persistVx = 0.0, persistVy = 0.0;
+        RejectSpikes(time, seen, cx, cy, bw, bh);
 
-        for (int i = 0; i < processedPoints.Count; i++)
+        var fastMove = new double[n];
+        var stepSpeed = new double[n];
+        for (int i = 0; i < n - 1; i++)
         {
-            var pt = processedPoints[i];
-            if (pt.Visible)
+            if (!seen[i] || !seen[i + 1]) continue;
+            double dt = Math.Max(0.04, time[i + 1] - time[i]);
+            stepSpeed[i] = Distance(cx[i + 1] - cx[i], cy[i + 1] - cy[i]) / dt;
+        }
+        for (int i = 0; i < n - 1; i++)
+        {
+            if (!seen[i] || !seen[i + 1]) continue;
+            double speed = stepSpeed[i];
+            if (speed <= FastMoveSpeed) continue;
+            if (IsWobble(i, n, seen, cx, cy, stepSpeed)) continue;
+            double intensity = Math.Clamp((speed - FastMoveSpeed) / FastMoveRange, 0.0, 1.0);
+            for (int j = 0; j < n; j++)
             {
-                lastConfirmedVisibleTime = pt.Time;
-                vanishStartCx = pt.Cx;
-                vanishStartCy = pt.Cy;
-                vanishStartScale = pt.Scale;
-                vanishW = pt.W;
-                vanishH = pt.H;
-                persistVx = lastVx;
-                persistVy = lastVy;
-                finalTimeline.Add(pt);
-            }
-            else
-            {
-                if (lastConfirmedVisibleTime >= 0)
+                double before = time[i] - time[j];
+                if (before >= 0 && before <= FastMoveLookaheadSec)
                 {
-                    double timeSinceLoss = pt.Time - lastConfirmedVisibleTime;
-                    if (timeSinceLoss <= 1.0)
-                    {
-                        double drag = 1.0 - (timeSinceLoss / 1.0) * 0.4;
-                        double predCx = Math.Clamp(vanishStartCx + persistVx * timeSinceLoss * drag, 80.0, 920.0);
-                        double predCy = Math.Clamp(vanishStartCy + persistVy * timeSinceLoss * drag, 80.0, 920.0);
-                        finalTimeline.Add((pt.Time, predCx, predCy, vanishW, vanishH, vanishStartScale, false));
-                    }
-                    else if (timeSinceLoss <= 1.8)
-                    {
-                        double p = (timeSinceLoss - 1.0) / 0.8;
-                        double smoothP = p * p * (3.0 - 2.0 * p);
-                        double easeScale = vanishStartScale + (1.0 - vanishStartScale) * smoothP;
-                        double easeCx = vanishStartCx + (500.0 - vanishStartCx) * smoothP;
-                        double easeCy = vanishStartCy + (500.0 - vanishStartCy) * smoothP;
-                        finalTimeline.Add((pt.Time, easeCx, easeCy, vanishW, vanishH, easeScale, false));
-                    }
-                    else
-                    {
-                        finalTimeline.Add((pt.Time, 500.0, 500.0, vanishW, vanishH, 1.0, false));
-                    }
+                    double tLead = 1.0 - before / FastMoveLookaheadSec;
+                    double easedLead = tLead * tLead * (3.0 - 2.0 * tLead);
+                    fastMove[j] = Math.Max(fastMove[j], easedLead * intensity);
                 }
-                else
+                double after = time[j] - time[i];
+                if (after > 0 && after <= FastMoveHoldAfterSec)
                 {
-                    finalTimeline.Add((pt.Time, 500.0, 500.0, 120.0, 260.0, 1.0, false));
+                    double tDecay = 1.0 - after / FastMoveHoldAfterSec;
+                    fastMove[j] = Math.Max(fastMove[j], tDecay * intensity * 0.85);
                 }
             }
         }
 
-        if (finalTimeline.Count > 0)
+        var aimX = new double[n];
+        var aimY = new double[n];
+        var sizeW = new double[n];
+        var sizeH = new double[n];
+        var wantScale = new double[n];
+        var window = new List<double>();
+        for (int i = 0; i < n; i++)
         {
-            if (finalTimeline[0].Time > 0.001)
+            if (!seen[i]) continue;
+            sizeW[i] = TypicalSizeAround(time, seen, bw, i, ZoomSizeWindowSec, window);
+            sizeH[i] = TypicalSizeAround(time, seen, bh, i, ZoomSizeWindowSec, window);
+            aimX[i] = cx[i];
+            aimY[i] = cy[i];
+            double tightSpan = Math.Max(110.0, Math.Max(sizeH[i] / (SafeTargetBottom - SafeTargetTop), sizeW[i] * (portraitMode ? 3.0 : 1.25)));
+            double bodyFitScale = 1000.0 / tightSpan;
+            double idealScale = Math.Clamp(bodyFitScale, 1.0, effectiveBaseScale);
+            double wideTarget = Math.Max(1.10, effectiveMinScale - 0.15 * fastMove[i]);
+            wantScale[i] = idealScale - (idealScale - Math.Min(idealScale, wideTarget)) * fastMove[i];
+        }
+
+        var nextSeen = new int[n];
+        int upcoming = -1;
+        for (int i = n - 1; i >= 0; i--)
+        {
+            nextSeen[i] = upcoming;
+            if (seen[i]) upcoming = i;
+        }
+
+        var points = new List<(double Time, double X, double Y, double W, double H, double Scale, bool Visible)>(n + 2);
+        int last = -1;
+        double vx = 0.0, vy = 0.0;
+        for (int i = 0; i < n; i++)
+        {
+            if (seen[i])
             {
-                var first = finalTimeline[0];
-                finalTimeline.Insert(0, (0.0, first.Cx, first.Cy, first.W, first.H, first.Scale, first.Visible));
+                vx = 0.0;
+                vy = 0.0;
+                if (last >= 0 && time[i] - time[last] <= HoldAfterLossSec)
+                {
+                    double dt = Math.Max(0.04, time[i] - time[last]);
+                    vx = (aimX[i] - aimX[last]) / dt;
+                    vy = (aimY[i] - aimY[last]) / dt;
+                    double speed = Distance(vx, vy);
+                    if (speed > MaxPanPerSec)
+                    {
+                        vx *= MaxPanPerSec / speed;
+                        vy *= MaxPanPerSec / speed;
+                    }
+                }
+                last = i;
+                points.Add((time[i], aimX[i], aimY[i], sizeW[i], sizeH[i], wantScale[i], true));
+                continue;
+            }
+
+            int next = nextSeen[i];
+            double nextX = next >= 0 ? aimX[next] : 500.0;
+            double nextY = next >= 0 ? aimY[next] : 500.0;
+            if (last < 0)
+            {
+                points.Add((time[i], nextX, nextY, next >= 0 ? sizeW[next] : 120.0, next >= 0 ? sizeH[next] : 260.0, 1.0, false));
+                continue;
+            }
+
+            double since = time[i] - time[last];
+            if (since <= HoldAfterLossSec)
+            {
+                double drag = 1.0 - (since / HoldAfterLossSec) * 0.4;
+                points.Add((time[i],
+                    Math.Clamp(aimX[last] + vx * since * drag, 80.0, 920.0),
+                    Math.Clamp(aimY[last] + vy * since * drag, 80.0, 920.0),
+                    sizeW[last], sizeH[last], wantScale[last], false));
+            }
+            else if (since <= HoldAfterLossSec + EaseWideSec)
+            {
+                double holdX = Math.Clamp(aimX[last] + vx * HoldAfterLossSec * 0.6, 80.0, 920.0);
+                double holdY = Math.Clamp(aimY[last] + vy * HoldAfterLossSec * 0.6, 80.0, 920.0);
+                double progress = (since - HoldAfterLossSec) / EaseWideSec;
+                double eased = progress * progress * (3.0 - 2.0 * progress);
+                points.Add((time[i],
+                    holdX + (nextX - holdX) * eased,
+                    holdY + (nextY - holdY) * eased,
+                    sizeW[last], sizeH[last], wantScale[last] + (1.0 - wantScale[last]) * eased, false));
             }
             else
             {
-                var first = finalTimeline[0];
-                finalTimeline[0] = (0.0, first.Cx, first.Cy, first.W, first.H, first.Scale, first.Visible);
+                points.Add((time[i], nextX, nextY, sizeW[last], sizeH[last], 1.0, false));
             }
         }
 
-        if (finalTimeline.Count > 0)
+        if (points[0].Time > 0.001)
         {
-            if (finalTimeline[^1].Time < segmentDurationSec - 0.001)
-            {
-                var last = finalTimeline[^1];
-                finalTimeline.Add((segmentDurationSec, last.Cx, last.Cy, last.W, last.H, last.Scale, last.Visible));
-            }
-            else
-            {
-                var last = finalTimeline[^1];
-                finalTimeline[^1] = (segmentDurationSec, last.Cx, last.Cy, last.W, last.H, last.Scale, last.Visible);
-            }
+            var first = points[0];
+            points.Insert(0, (0.0, first.X, first.Y, first.W, first.H, first.Scale, first.Visible));
+        }
+        else
+        {
+            var first = points[0];
+            points[0] = (0.0, first.X, first.Y, first.W, first.H, first.Scale, first.Visible);
         }
 
-        foreach (var pt in finalTimeline)
+        if (points[^1].Time < segmentDurationSec - 0.001)
         {
-            double scale = Math.Clamp(pt.Scale, 1.0, effectiveBaseScale);
-            double cropW = sourceW / scale;
-            double cropH = sourceH / scale;
+            var end = points[^1];
+            points.Add((segmentDurationSec, end.X, end.Y, end.W, end.H, end.Scale, end.Visible));
+        }
+        else
+        {
+            var end = points[^1];
+            points[^1] = (segmentDurationSec, end.X, end.Y, end.W, end.H, end.Scale, end.Visible);
+        }
 
-            double targetCenterX = (pt.Cx / 1000.0) * sourceW;
-            double targetCenterY = (pt.Cy / 1000.0) * sourceH;
+        int m = points.Count;
+        var at = new double[m];
+        var scale = new double[m];
+        for (int k = 0; k < m; k++)
+        {
+            at[k] = points[k].Time;
+            scale[k] = points[k].Scale;
+        }
+        LimitRate(at, scale, MaxZoomPerSec);
+        SmoothBothWays(at, scale, ZoomSmoothSec);
+        for (int k = 0; k < m; k++) scale[k] = Math.Clamp(scale[k], 1.0, effectiveBaseScale);
+        for (int k = 0; k < m; k++)
+            if (!points[k].Visible && points[k].Scale <= 1.001) scale[k] = 1.0;
+        for (int k = 1; k < m; k++)
+            scale[k] = Math.Min(scale[k], scale[k - 1] + MaxZoomPerSec * (at[k] - at[k - 1]));
+        for (int k = m - 2; k >= 0; k--)
+            scale[k] = Math.Min(scale[k], scale[k + 1] + MaxZoomPerSec * (at[k + 1] - at[k]));
 
+        double bottomMarginFrac = SafeTargetBottom;
+        double topMarginFrac = SafeTargetTop;
+        var wantX = new double[m];
+        var wantY = new double[m];
+        for (int k = 0; k < m; k++)
+        {
+            var pt = points[k];
+            double cropW = sourceW / scale[k];
+            double cropH = sourceH / scale[k];
+            double targetCenterX = (pt.X / 1000.0) * sourceW;
+            double targetCenterY = (pt.Y / 1000.0) * sourceH;
             double cropX = targetCenterX - (cropW / 2.0);
-            double cropY = targetCenterY - (cropH / 2.0);
-
-            double feetY = ((pt.Cy + pt.H / 2.0) / 1000.0) * sourceH;
-            double headY = ((pt.Cy - pt.H / 2.0) / 1000.0) * sourceH;
-
-            double bottomMarginFrac = portraitMode ? 0.72 : 0.88;
-            double topMarginFrac = portraitMode ? 0.20 : 0.10;
+            double cropY = targetCenterY - cropH * PreferredTargetY;
+            double feetY = ((pt.Y + pt.H / 2.0) / 1000.0) * sourceH;
+            double headY = ((pt.Y - pt.H / 2.0) / 1000.0) * sourceH;
 
             if (feetY > cropY + cropH * bottomMarginFrac)
             {
@@ -644,48 +632,187 @@ public static class AiTrajectorySmoother
             if (zones.Count > 0)
             {
                 double halfW = (pt.W / 1000.0) * sourceW / 2.0;
-                double halfH = (pt.H / 1000.0) * sourceH / 2.0;
                 (cropX, cropY) = AvoidHudZones(cropX, cropY, cropW, cropH, sourceW, sourceH,
                     targetCenterX - halfW, headY, targetCenterX + halfW, Math.Max(feetY, headY + 1), zones);
             }
 
-            if (portraitMode && sourceW > 0 && sourceH > 0)
+            cropY = SafeVerticalCrop(cropY, targetCenterY, headY, feetY, cropH, sourceH);
+            wantX[k] = (cropX + cropW / 2.0) * 1000.0 / sourceW;
+            wantY[k] = (cropY + cropH / 2.0) * 1000.0 / sourceH;
+        }
+
+        var camX = (double[])wantX.Clone();
+        var camY = (double[])wantY.Clone();
+        SmoothBothWays(at, camX, PositionSmoothSec);
+        SmoothBothWays(at, camY, PositionSmoothSec);
+        HoldInsideDeadZone(camX, camY, (deadbandPercent / 100.0) * 1000.0);
+        LimitRate(at, camX, camY, MaxPanPerSec);
+        SmoothBothWays(at, camX, PositionSettleSec);
+        SmoothBothWays(at, camY, PositionSettleSec);
+
+        for (int k = 0; k < m; k++)
+        {
+            double drift = MaxFramingDriftFraction * 1000.0 / scale[k];
+            double centerX = Math.Clamp(camX[k], wantX[k] - drift, wantX[k] + drift);
+            double centerY = Math.Clamp(camY[k], wantY[k] - drift, wantY[k] + drift);
+
+            double cropW = sourceW / scale[k];
+            double cropH = sourceH / scale[k];
+            double cropX = Math.Clamp((centerX / 1000.0) * sourceW - cropW / 2.0, 0.0, Math.Max(0.0, sourceW - cropW));
+            double cropY = Math.Clamp((centerY / 1000.0) * sourceH - cropH / 2.0, 0.0, Math.Max(0.0, sourceH - cropH));
+
+            var target = points[k];
+            if (target.Visible)
             {
-                double scalePortrait = Math.Max((double)CoordinateConstants.InternalW / sourceW, (double)CoordinateConstants.InternalH / sourceH);
-                double survW = CoordinateConstants.InternalW / scalePortrait;
-                double minSliceX = (sourceW - survW) / 2.0;
-                double maxSliceX = minSliceX + survW;
-                if (cropW <= survW)
-                {
-                    cropX = Math.Clamp(cropX, minSliceX, maxSliceX - cropW);
-                }
+                double targetY = target.Y * sourceH / 1000.0;
+                double halfHeight = target.H * sourceH / 2000.0;
+                cropY = SafeVerticalCrop(cropY, targetY, targetY - halfHeight, targetY + halfHeight, cropH, sourceH);
             }
-
-            cropX = Math.Clamp(cropX, 0.0, Math.Max(0.0, sourceW - cropW));
-            cropY = Math.Clamp(cropY, 0.0, Math.Max(0.0, sourceH - cropH));
-
             result.Keyframes.Add(new AiTrackingKeyframe
             {
-                TimeSec = Math.Round(pt.Time, 3),
+                TimeSec = Math.Round(at[k], 3),
                 CropX = Math.Round(cropX, 1),
                 CropY = Math.Round(cropY, 1),
                 CropW = Math.Round(cropW, 1),
                 CropH = Math.Round(cropH, 1),
-                Scale = Math.Round(scale, 2),
-                Visible = pt.Visible
+                Scale = Math.Round(scale[k], 2),
+                Visible = points[k].Visible
             });
         }
 
         return result;
     }
 
-    /// <summary>
-    /// AIHUDZONE_01 — moves one crop window out of every HUD zone it overlaps, by the SMALLEST single
-    /// horizontal or vertical shift that (a) clears the zone, (b) keeps the window inside the frame and
-    /// (c) keeps the whole target box inside the window. When no shift satisfies all three the window
-    /// is left where it is: the target always wins over the HUD. Two passes, so clearing one zone
-    /// cannot silently push the window into another without a second look.
-    /// </summary>
+    private static double SafeVerticalCrop(double cropY, double center, double head, double feet, double cropH, int sourceH)
+    {
+        double low = Math.Max(0, Math.Max(feet - cropH * SafeTargetBottom, center - cropH * 0.48));
+        double high = Math.Min(sourceH - cropH, head - cropH * SafeTargetTop);
+        return low <= high ? Math.Clamp(cropY, low, high) : Math.Clamp(cropY, 0, Math.Max(0, sourceH - cropH));
+    }
+    private static double Distance(double dx, double dy) => Math.Sqrt(dx * dx + dy * dy);
+
+    internal static void RejectSpikes(double[] time, bool[] seen, double[] cx, double[] cy, double[] bw, double[] bh)
+    {
+        int n = time.Length;
+        if (n < 3) return;
+        var ox = (double[])cx.Clone();
+        var oy = (double[])cy.Clone();
+        var ow = (double[])bw.Clone();
+        var oh = (double[])bh.Clone();
+        for (int i = 1; i < n - 1; i++)
+        {
+            if (!seen[i - 1] || !seen[i] || !seen[i + 1]) continue;
+            double jumpIn = Distance(ox[i] - ox[i - 1], oy[i] - oy[i - 1]);
+            double jumpOut = Distance(ox[i + 1] - ox[i], oy[i + 1] - oy[i]);
+            double across = Distance(ox[i + 1] - ox[i - 1], oy[i + 1] - oy[i - 1]);
+            double speedIn = jumpIn / Math.Max(0.04, time[i] - time[i - 1]);
+            double speedOut = jumpOut / Math.Max(0.04, time[i + 1] - time[i]);
+            if (speedIn <= SpikeSpeedPerSec || speedOut <= SpikeSpeedPerSec) continue;
+            if (across >= 0.5 * Math.Min(jumpIn, jumpOut)) continue;
+            cx[i] = (ox[i - 1] + ox[i + 1]) / 2.0;
+            cy[i] = (oy[i - 1] + oy[i + 1]) / 2.0;
+            bw[i] = (ow[i - 1] + ow[i + 1]) / 2.0;
+            bh[i] = (oh[i - 1] + oh[i + 1]) / 2.0;
+        }
+    }
+
+    private static double TypicalSizeAround(double[] time, bool[] seen, double[] values, int index, double windowSec, List<double> scratch)
+    {
+        scratch.Clear();
+        for (int j = 0; j < time.Length; j++)
+            if (seen[j] && Math.Abs(time[j] - time[index]) <= windowSec + 1e-9) scratch.Add(values[j]);
+        scratch.Sort();
+        int count = scratch.Count;
+        if (count == 0) return values[index];
+        int trim = (int)Math.Floor(count * ZoomSizeTrimFraction);
+        double sum = 0.0;
+        for (int j = trim; j < count - trim; j++) sum += scratch[j];
+        return sum / (count - 2 * trim);
+    }
+
+    internal static void SmoothBothWays(double[] time, double[] values, double timeConstantSec)
+    {
+        int n = values.Length;
+        if (n < 2 || timeConstantSec <= 0) return;
+        for (int i = 1; i < n; i++)
+        {
+            double alpha = 1.0 - Math.Exp(-Math.Max(0.0, time[i] - time[i - 1]) / timeConstantSec);
+            values[i] = values[i - 1] + (values[i] - values[i - 1]) * alpha;
+        }
+        for (int i = n - 2; i >= 0; i--)
+        {
+            double alpha = 1.0 - Math.Exp(-Math.Max(0.0, time[i + 1] - time[i]) / timeConstantSec);
+            values[i] = values[i + 1] + (values[i] - values[i + 1]) * alpha;
+        }
+    }
+
+    internal static void LimitRate(double[] time, double[] values, double maxPerSec)
+    {
+        int n = values.Length;
+        for (int i = 1; i < n; i++)
+        {
+            double step = maxPerSec * Math.Max(0.0, time[i] - time[i - 1]);
+            values[i] = Math.Clamp(values[i], values[i - 1] - step, values[i - 1] + step);
+        }
+        for (int i = n - 2; i >= 0; i--)
+        {
+            double step = maxPerSec * Math.Max(0.0, time[i + 1] - time[i]);
+            values[i] = Math.Clamp(values[i], values[i + 1] - step, values[i + 1] + step);
+        }
+    }
+
+    internal static void LimitRate(double[] time, double[] x, double[] y, double maxPerSec)
+    {
+        int n = x.Length;
+        for (int i = 1; i < n; i++) Pull(x, y, i, i - 1, maxPerSec * Math.Max(0.0, time[i] - time[i - 1]));
+        for (int i = n - 2; i >= 0; i--) Pull(x, y, i, i + 1, maxPerSec * Math.Max(0.0, time[i + 1] - time[i]));
+
+        static void Pull(double[] x, double[] y, int index, int anchor, double step)
+        {
+            double dx = x[index] - x[anchor], dy = y[index] - y[anchor];
+            double far = Math.Sqrt(dx * dx + dy * dy);
+            if (far <= step || far <= 0) return;
+            x[index] = x[anchor] + dx * step / far;
+            y[index] = y[anchor] + dy * step / far;
+        }
+    }
+
+    internal static void HoldInsideDeadZone(double[] x, double[] y, double radius)
+    {
+        int n = x.Length;
+        if (n < 2 || radius <= 0) return;
+        var fx = new double[n];
+        var fy = new double[n];
+        var rx = new double[n];
+        var ry = new double[n];
+        fx[0] = x[0];
+        fy[0] = y[0];
+        for (int i = 1; i < n; i++) Follow(x, y, fx, fy, i, i - 1, radius);
+        rx[n - 1] = x[n - 1];
+        ry[n - 1] = y[n - 1];
+        for (int i = n - 2; i >= 0; i--) Follow(x, y, rx, ry, i, i + 1, radius);
+        for (int i = 0; i < n; i++)
+        {
+            x[i] = (fx[i] + rx[i]) / 2.0;
+            y[i] = (fy[i] + ry[i]) / 2.0;
+        }
+
+        static void Follow(double[] x, double[] y, double[] ox, double[] oy, int index, int anchor, double radius)
+        {
+            double dx = x[index] - ox[anchor], dy = y[index] - oy[anchor];
+            double far = Math.Sqrt(dx * dx + dy * dy);
+            if (far <= radius)
+            {
+                ox[index] = ox[anchor];
+                oy[index] = oy[anchor];
+                return;
+            }
+            double keep = (far - radius) / far;
+            ox[index] = ox[anchor] + dx * keep;
+            oy[index] = oy[anchor] + dy * keep;
+        }
+    }
+
     internal static (double X, double Y) AvoidHudZones(
         double cropX, double cropY, double cropW, double cropH, int sourceW, int sourceH,
         double targetL, double targetT, double targetR, double targetB,

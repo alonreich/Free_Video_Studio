@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using FreeVideoStudio.App.Controls;
 using FreeVideoStudio.App.Infrastructure;
 using FreeVideoStudio.App.Services;
 using FreeVideoStudio.Core.Infrastructure;
@@ -15,16 +16,30 @@ namespace FreeVideoStudio.App;
 
 public partial class MusicWizardWindow
 {
+    internal const string AutoFitDeadlineTag = "AIMUSICDEADLINE_01";
+
     private CancellationTokenSource? _aiAutoFitCts;
 
-    /// <summary>The status line under the toolbar — the AI button's sibling in the same grid (found once, no name lookup).</summary>
     private TextBlock? _aiAutoFitStatusText;
+
+    public void CancelAiAutoFit()
+    {
+        try
+        {
+            _aiAutoFitCts?.Cancel();
+            SetAiAutoFitStatus("Stopping…");
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Swallowed(ex);
+        }
+    }
 
     private void OnAiAutoFitClicked(object? sender, RoutedEventArgs e)
     {
         if (_aiAutoFitCts != null)
         {
-            _aiAutoFitCts.Cancel();
+            CancelAiAutoFit();
             return;
         }
         if (sender is Button button)
@@ -35,7 +50,6 @@ public partial class MusicWizardWindow
         }
     }
 
-    /// <summary>AIMUSIC_PROGRESS_01 — the persistent line under the toolbar (a toast vanishes; this stays).</summary>
     private void SetAiAutoFitStatus(string? text, string brushKey = "AppTextMutedBrush")
     {
         if (_aiAutoFitStatusText is not { } status) return;
@@ -44,18 +58,6 @@ public partial class MusicWizardWindow
         status.Foreground = ThemeResources.Brush(this, brushKey, status.Foreground ?? Avalonia.Media.Brushes.Gray);
     }
 
-    /// <summary>
-    /// AI_AUTOFIT_01 / AIMUSIC_PROGRESS_01 / AIMUSIC_HONEST_01 — Auto-Fit with a visible, honest run:
-    /// <list type="bullet">
-    /// <item>A status line names each step (pictures → AI → song analysis) with a live seconds counter, so the
-    /// user always sees that something is happening; the button reads "✖ Cancel AI (12 s)" and cancels.</item>
-    /// <item>Hard limits: 45 s per AI request, one retry, 120 s for the whole run. It used to wait up to four
-    /// 180-second attempts (~12 minutes) behind a frozen "✨ Analyzing..." label.</item>
-    /// <item>Every ending is reported in that line: the pick and why, "cancelled", "took too long", or the
-    /// AI's own error. Nothing is changed unless a real song from the list was chosen.</item>
-    /// </list>
-    /// Invariant: zero local AI models (cloud vision + local FFmpeg maths only).
-    /// </summary>
     private async Task ApplyAiAutoFitAsync(Button button)
     {
         if (string.IsNullOrWhiteSpace(_videoPath) || !File.Exists(_videoPath))
@@ -74,28 +76,47 @@ public partial class MusicWizardWindow
         var usageConfig = settings.GetUsageConfig(AiUsage.MusicAutoFit);
         var vendor = usageConfig.Vendor;
 
-        if (!await Controls.AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, vendor))
+        if (!await Controls.AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, vendor, AiUsage.MusicAutoFit))
         {
-            SetAiAutoFitStatus("AI Auto-Fit needs an AI key. Add one in Settings › AI Features.", "AppWarningBrush");
+            SetAiAutoFitStatus("AI Auto-Fit needs an AI connected. Press AI Auto-Fit again: a short window shows where to get a key.", "AppWarningBrush");
             return;
         }
 
+        settings = SettingsManager.Instance;
+        usageConfig = settings.GetUsageConfig(AiUsage.MusicAutoFit);
+        vendor = usageConfig.Vendor;
         string apiKey = settings.GetApiKey(vendor);
         if (string.IsNullOrWhiteSpace(apiKey)) return;
 
         string model = settings.GetEffectiveModel(AiUsage.MusicAutoFit);
         string vendorName = AiVisionProviders.DisplayName(vendor);
 
-        string originalContent = button.Content?.ToString() ?? "✨ AI Auto-Fit";
-        using var cts = new CancellationTokenSource(AiMusicAutoFitService.OverallDeadline);
+        string originalContent = button.Content?.ToString() ?? "✨ AI AUTO-FIT";
+        using var usage = AiUsageMeter.BeginTask("AI Music Auto-Fit", vendor);
+        using var cts = new CancellationTokenSource();
+        using var aiDeadline = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+        aiDeadline.CancelAfter(AiMusicAutoFitService.OverallDeadline);
         _aiAutoFitCts = cts;
         var started = DateTime.UtcNow;
-        string step = "Starting…";
+        AiEstimatedUsage? est = null;
+        bool suggestionApplied = false;
+        string estBanner = string.Empty;
+        string step = "Getting ready…";
         void Refresh()
         {
             int secs = (int)(DateTime.UtcNow - started).TotalSeconds;
-            button.Content = $"✖ Cancel AI ({secs} s)";
-            SetAiAutoFitStatus($"🤖 {step}  ·  {secs} s");
+            button.Content = $"✖ CANCEL AI ({secs} s)";
+            SetAiAutoFitStatus(string.IsNullOrEmpty(estBanner)
+                ? $"🤖 {step}  ·  {secs} s"
+                : $"🤖 {step}  ·  {secs} s  ·  {estBanner}");
+        }
+        string ReportUsageNotice()
+        {
+            if (usage.Tally.TotalTokens <= 0) return string.Empty;
+            RuntimeLog.Info("MUSIC_WIZARD", "AI Auto-Fit usage: " + usage.SummaryWithEstimate(est));
+            string line = usage.PlainSummary();
+            FloatingNotice.Info(this, line);
+            return line;
         }
         var ticker = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         ticker.Tick += (_, _) => Refresh();
@@ -103,12 +124,17 @@ public partial class MusicWizardWindow
         Refresh();
         RuntimeLog.Info("MUSIC_WIZARD", $"AI Auto-Fit started ({vendorName}, model {model}, {AvailableTracks.Count} songs).");
 
+        bool retryAfterFix = false;
         try
         {
             string ffmpegPath = ResolveFfmpegPath();
-            step = "Step 1 of 3 — taking pictures of your video…";
+            step = "Step 1 of 3 — finding scenes across your finished video timeline…";
             Refresh();
-            var (scenes, outputDurationSec) = await BuildAiMusicScenesAsync(ffmpegPath);
+            var (scenes, outputDurationSec) = await BuildAiMusicScenesAsync(ffmpegPath, aiDeadline.Token);
+            est = AiCostEstimator.EstimateMusicAutoFit(vendor, model, Math.Max(1, scenes.Count), Math.Min(AvailableTracks.Count, AiMusicAutoFitService.MaxSongsInPrompt));
+            estBanner = AiCostEstimator.PlainCostShort(est, vendor, model);
+            step = $"Step 1 of 3 — taking {scenes.Count} pictures of your video for {vendorName}…";
+            Refresh();
             var recommendation = await Task.Run(() => AiMusicAutoFitService.AutoFitMusicAsync(
                 ffmpegPath,
                 scenes,
@@ -122,10 +148,13 @@ public partial class MusicWizardWindow
                     RuntimeLog.Info("MUSIC_WIZARD", "AI Auto-Fit: " + status);
                     Dispatcher.UIThread.Post(() => { step = status; Refresh(); });
                 },
-                cts.Token), cts.Token);
+                aiDeadline.Token), aiDeadline.Token);
+            aiDeadline.Token.ThrowIfCancellationRequested();
+            aiDeadline.CancelAfter(Timeout.InfiniteTimeSpan);
 
             if (recommendation == null)
             {
+                ReportUsageNotice();
                 SetAiAutoFitStatus($"⚠ {vendorName} could not recommend a song for this video. Nothing was changed.", "AppWarningBrush");
                 return;
             }
@@ -133,6 +162,7 @@ public partial class MusicWizardWindow
             var track = AvailableTracks.FirstOrDefault(t => string.Equals(t.FilePath, recommendation.TrackFilePath, StringComparison.OrdinalIgnoreCase));
             if (track == null)
             {
+                ReportUsageNotice();
                 SetAiAutoFitStatus("⚠ The chosen song is no longer in the list. Nothing was changed.", "AppWarningBrush");
                 return;
             }
@@ -145,16 +175,23 @@ public partial class MusicWizardWindow
                 listbox.ScrollIntoView(track);
             }
 
+            bool useSong = await ConfirmDialogWindow.AskAsync(this,
+                $"Use '{Path.GetFileNameWithoutExtension(track.FilePath)}'?\n\n{recommendation.Reason}",
+                "Suggested song", "Use song", "Keep my songs");
+            cts.Token.ThrowIfCancellationRequested();
+            if (!useSong) { SetAiAutoFitStatus("Your songs were kept."); return; }
             _playlist.Clear();
             double full = track.DurationSec > 0 ? track.DurationSec : recommendation.OutSec;
             var entry = new MusicPlaylistEntry(track.FilePath, full, recommendation.InSec, recommendation.OutSec, UserTrimmed: true);
             _playlist.Add(entry);
             _selectedSongIndex = 0;
             _songStartSeconds = recommendation.InSec;
+            suggestionApplied = true;
 
             StopPreview();
 
             await EnsurePlaylistDurationsAsync();
+            cts.Token.ThrowIfCancellationRequested();
             if (_playlist[0].FullSec > 0) _trackDuration = _playlist[0].FullSec;
             _lastConfiguredTrackPath = _playlist[0].Path;
             QueueSilenceAnalysis();
@@ -165,65 +202,80 @@ public partial class MusicWizardWindow
             _previewCurrentOffset = _songStartSeconds;
             _currentStep = StepFit;
             _visitedFit = true;
+            _editIndex = 0;
+            _pendingNewIndex = -1;
+            _replaceIndex = -1;
+            _addingSong = false;
+            _playlistExplicit = true;
+            Vm.View = ViewModels.MusicWizardView.Part;
             OnPlaylistChanged();
             UpdateStepVisibility();
             UpdateNextButtonState();
 
+            _phase3LoadCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            int loadVersion = ++_phase3LoadVersion;
+            await LoadPhase3DataAsync(_phase3LoadCts.Token, loadVersion);
+            cts.Token.ThrowIfCancellationRequested();
+            if (loadVersion == _phase3LoadVersion && _currentStep == StepFit) AfterFitLoaded();
+
             string songName = Path.GetFileNameWithoutExtension(recommendation.TrackFilePath);
-            string done = $"✨ {vendorName} picked '{songName}'. {recommendation.Reason} (Ctrl+Z puts your previous songs back.)";
+            string usageSummary = ReportUsageNotice();
+            string done = $"✨ {vendorName} ({model}) picked '{songName}'. {recommendation.Reason}"
+                + (string.IsNullOrEmpty(usageSummary) ? "" : $" [{usageSummary}]")
+                + " (Ctrl+Z puts your previous songs back.)";
             SetSmartFitStatus(done);
             SetAiAutoFitStatus(done, "AppSuccessBrush");
             RuntimeLog.Info("MUSIC_WIZARD", $"AI Auto-Fit picked '{songName}' at {recommendation.InSec:0.0}s.");
-
-            _phase3LoadCts = new CancellationTokenSource();
-            int loadVersion = ++_phase3LoadVersion;
-            await LoadPhase3DataAsync(_phase3LoadCts.Token, loadVersion);
-
             ShowToastSuccess($"✨ AI picked '{songName}'");
         }
-        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        catch (OperationCanceledException) when (cts.IsCancellationRequested || aiDeadline.IsCancellationRequested)
         {
-            bool timedOut = DateTime.UtcNow - started >= AiMusicAutoFitService.OverallDeadline - TimeSpan.FromSeconds(1);
+            ReportUsageNotice();
+            bool timedOut = !cts.IsCancellationRequested;
             string text = timedOut
                 ? $"⚠ {vendorName} took longer than {(int)AiMusicAutoFitService.OverallDeadline.TotalSeconds} seconds, so AI Auto-Fit stopped. Nothing was changed — try again in a moment."
                 : "AI Auto-Fit cancelled. Nothing was changed.";
+            if (suggestionApplied) text = "Preview loading stopped. The song you approved is kept; Ctrl+Z restores your previous songs.";
             SetAiAutoFitStatus(text, timedOut ? "AppWarningBrush" : "AppTextMutedBrush");
             RuntimeLog.Info("MUSIC_WIZARD", timedOut ? "AI Auto-Fit timed out." : "AI Auto-Fit cancelled by the user.");
         }
         catch (AiMusicAutoFitException ex)
         {
+            ReportUsageNotice();
             SetAiAutoFitStatus("⚠ " + ex.Message, "AppWarningBrush");
             RuntimeLog.Info("MUSIC_WIZARD", "AI Auto-Fit: " + ex.Message);
         }
         catch (AiProviderException ex)
         {
-            SetAiAutoFitStatus($"⚠ AI Auto-Fit failed: {ex.Message}", "AppDangerBrush");
+            ReportUsageNotice();
+            SetAiAutoFitStatus($"⚠ AI Auto-Fit failed: {ex.Message} (Reference: {usage.Id})", "AppDangerBrush");
             RuntimeLog.Fail("MUSIC_WIZARD", GeminiClient.Redact($"AI Auto-Fit failed: {ex.Kind} {ex.Message} {ex.Detail}", apiKey));
+            if (AiAccountFix.KindFor(ex.Kind) != AiFixKind.None)
+                retryAfterFix = await AiAccountFix.OfferAsync(this, ex, AiUsage.MusicAutoFit);
         }
         catch (Exception ex)
         {
+            ReportUsageNotice();
             RuntimeLog.Fail("MUSIC_WIZARD", GeminiClient.Redact($"AI Auto-Fit failed: {ex.Message}", apiKey));
-            SetAiAutoFitStatus($"⚠ AI Auto-Fit failed: {ex.Message}", "AppDangerBrush");
+            SetAiAutoFitStatus($"⚠ AI Auto-Fit failed. {FreeVideoStudio.App.Infrastructure.UserFacingError.Describe(ex)} Nothing was changed.", "AppDangerBrush");
         }
         finally
         {
             ticker.Stop();
-            _aiAutoFitCts = null;
+            if (ReferenceEquals(_aiAutoFitCts, cts)) _aiAutoFitCts = null;
             button.Content = originalContent;
             button.IsEnabled = true;
         }
+        if (retryAfterFix)
+        {
+            SetAiAutoFitStatus("AI connected. Starting AI Auto-Fit again…", "AppTextMutedBrush");
+            Dispatcher.UIThread.Post(() => _ = ApplyAiAutoFitAsync(button));
+        }
     }
 
-    /// <summary>
-    /// AIMUSIC_SCENES_01 — the frames Auto-Fit sends and the finished-video length.
-    /// <list type="bullet">
-    /// <item>Main App: 4 moments of the FINISHED video (12 / 35 / 60 / 85 %), each mapped back to the source
-    /// second that shows then (speed changes, freezes and cuts honoured).</item>
-    /// <item>Merger: frames spread over EVERY clip's kept window in proportion to its length (4–8 frames,
-    /// at least one per clip while there are 8 or fewer clips), not only the first clip.</item>
-    /// </list>
-    /// </summary>
-    private async Task<(System.Collections.Generic.List<AiMusicScene> Scenes, double OutputSec)> BuildAiMusicScenesAsync(string ffmpegPath)
+    private async Task<(System.Collections.Generic.List<AiMusicScene> Scenes, double OutputSec)> BuildAiMusicScenesAsync(
+        string ffmpegPath,
+        CancellationToken ct = default)
     {
         var scenes = new System.Collections.Generic.List<AiMusicScene>();
         double outputSec = GetPhase3VideoDurationSeconds();
@@ -232,6 +284,7 @@ public partial class MusicWizardWindow
         {
             foreach (double f in new[] { 0.12, 0.35, 0.60, 0.85 })
             {
+                ct.ThrowIfCancellationRequested();
                 double outT = outputSec * f;
                 double src = _trimStartMs / 1000.0 + MapPhase3OutputToSourceRelativeSeconds(outT);
                 scenes.Add(new AiMusicScene(_videoPath, src, outT));
@@ -239,16 +292,47 @@ public partial class MusicWizardWindow
             return (scenes, outputSec);
         }
 
+        if (MergerComposite is { Clips.Count: > 0 } comp)
+        {
+            var active = comp.Clips.Where(c => c.OutputLengthSec > 0.05 && File.Exists(c.Path)).ToList();
+            if (active.Count > 0)
+            {
+                double totalCompOut = active.Sum(c => c.OutputLengthSec);
+                int frames = Math.Clamp(active.Count, 4, 8);
+                var chosen = active.Count <= frames
+                    ? Enumerable.Range(0, active.Count).ToList()
+                    : Enumerable.Range(0, frames).Select(k => (int)Math.Round(k * (active.Count - 1) / (double)(frames - 1))).Distinct().ToList();
+
+                for (int i = 0; i < active.Count; i++)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (!chosen.Contains(i)) continue;
+                    var cc = active[i];
+                    int k = active.Count <= frames ? Math.Max(1, (int)Math.Round(frames * cc.OutputLengthSec / Math.Max(0.1, totalCompOut))) : 1;
+                    double startSrcSec = cc.KeepInUs / 1_000_000.0;
+                    for (int j = 0; j < k; j++)
+                    {
+                        double relOut = cc.OutputLengthSec * (j + 0.5) / k;
+                        double relSrc = cc.Output.OutputToSourceRelative(relOut);
+                        scenes.Add(new AiMusicScene(cc.Path, startSrcSec + relSrc, cc.OutputStartSec + relOut));
+                    }
+                }
+                return (scenes, comp.TotalOutputSec > 0.1 ? comp.TotalOutputSec : outputSec);
+            }
+        }
+
         double speed = Math.Max(0.001, _phase3BaseSpeed);
         var clips = new System.Collections.Generic.List<(string Path, double Start, double Len)>();
         string ffprobe = ffmpegPath.Replace("ffmpeg.exe", "ffprobe.exe");
         for (int i = 0; i < _mergerVideos.Count; i++)
         {
+            ct.ThrowIfCancellationRequested();
             double start = MergerWindowStart(i);
             double len = MergerWindowDuration(i) ?? 0;
             if (len <= 0)
             {
-                try { len = await new FreeVideoStudio.Core.Media.MediaProber(ffprobe, _mergerVideos[i]).GetDurationAsync(); }
+                try { len = await new FreeVideoStudio.Core.Media.MediaProber(ffprobe, _mergerVideos[i]).GetDurationAsync(ct); }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                 catch (Exception ex) { RuntimeLog.Swallowed(ex); len = 0; }
             }
             if (len > 0.05) clips.Add((_mergerVideos[i], start, len));
@@ -256,10 +340,10 @@ public partial class MusicWizardWindow
         if (clips.Count == 0) return (scenes, outputSec);
 
         double total = clips.Sum(c => c.Len);
-        int frames = Math.Clamp(clips.Count, 4, 8);
-        var pick = clips.Count <= frames
+        int flatFrames = Math.Clamp(clips.Count, 4, 8);
+        var pick = clips.Count <= flatFrames
             ? Enumerable.Range(0, clips.Count).ToList()
-            : Enumerable.Range(0, frames).Select(k => (int)Math.Round(k * (clips.Count - 1) / (double)(frames - 1))).Distinct().ToList();
+            : Enumerable.Range(0, flatFrames).Select(k => (int)Math.Round(k * (clips.Count - 1) / (double)(flatFrames - 1))).Distinct().ToList();
 
         double outCursor = 0;
         for (int i = 0; i < clips.Count; i++)
@@ -267,7 +351,7 @@ public partial class MusicWizardWindow
             var c = clips[i];
             if (pick.Contains(i))
             {
-                int k = clips.Count <= frames ? Math.Max(1, (int)Math.Round(frames * c.Len / total)) : 1;
+                int k = clips.Count <= flatFrames ? Math.Max(1, (int)Math.Round(flatFrames * c.Len / total)) : 1;
                 for (int j = 0; j < k; j++)
                 {
                     double pos = c.Len * (j + 0.5) / k;

@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using Avalonia.Controls;
@@ -11,25 +10,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// INJSEAM_04 — the shipping <see cref="IFilePickerService"/>, over Avalonia's
-/// <see cref="IStorageProvider"/>.
-///
-/// <para>
-/// <b>PICKERMEMORY_01 — the remembered folder is written on SELECTION, not on completion.</b>
-/// <c>05_SYSTEM_LIFECYCLE_STORAGE.md</c> §3 (SYS-WINSTATE) requires that a user-chosen directory is
-/// persisted "immediately upon selection, even if the file picker dialog is subsequently
-/// cancelled". That rule is owned HERE rather than at each call site, because a call site that
-/// forgets it produces a picker that opens in the wrong folder every single time — a defect that
-/// is individually trivial, collectively infuriating, and invisible in review.
-/// </para>
-///
-/// <para>
-/// The existing pickers in <c>MainWindow</c>, <c>VideoMergerWindow</c>, <c>CropToolWindow</c> and
-/// <c>MusicWizardWindow</c> each re-implement this dance with their own try/catch. They are not
-/// touched by this change — converting them belongs with each window's view-model extraction.
-/// </para>
-/// </summary>
 public sealed class StorageProviderFilePicker : IFilePickerService
 {
     private readonly IActiveWindowProvider _windows;

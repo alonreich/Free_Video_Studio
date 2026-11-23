@@ -3,7 +3,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>FRAMESNAP_01 — Video-Merger-Migration.md P2.2 (unit part; T2.2a–c run in the merge harness).</summary>
 public class FramePtsProbeTests
 {
     [Fact]

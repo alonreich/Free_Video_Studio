@@ -8,9 +8,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// Unit tests for AiEliminationTrackerService: marker models, JSON parsing, settings roundtripping, and validation.
-/// </summary>
 public sealed class AiEliminationTrackerTests
 {
     [Fact]
@@ -128,7 +125,7 @@ public sealed class AiEliminationTrackerTests
             Assert.Equal(AiVendor.Google, config.Vendor);
 
             var custom = new AiUsageConfig(AiVendor.Anthropic, "claude-3-5-sonnet-20241022");
-            SettingsManager.Instance.SetUsageConfig(AiUsage.EliminationTracker, custom);
+            SettingsManager.ReplaceInstanceForTests(s => s.SetUsageConfig(AiUsage.EliminationTracker, custom));
 
             var retrieved = SettingsManager.Instance.GetUsageConfig(AiUsage.EliminationTracker);
             Assert.Equal(AiVendor.Anthropic, retrieved.Vendor);
@@ -136,7 +133,7 @@ public sealed class AiEliminationTrackerTests
         }
         finally
         {
-            SettingsManager.Instance.SetUsageConfig(AiUsage.EliminationTracker, original);
+            SettingsManager.ReplaceInstanceForTests(s => s.SetUsageConfig(AiUsage.EliminationTracker, original));
         }
     }
 }

@@ -1,4 +1,4 @@
-# SPECIFICATION 06: PROJECT DOCUMENT MODEL & SAVEABLE WORK
+﻿# SPECIFICATION 06: PROJECT DOCUMENT MODEL & SAVEABLE WORK
 
 ## Code Mini-Map: Bound Source Files & Symbols
 | Source File Path | Key Classes, Records & Controls | Core Bound Methods, Properties & Symbols | Subsystem Domain Role |
@@ -54,9 +54,15 @@ decide how those chunks render. Nothing derived is ever written to the file.
 ---
 
 ## 3. Schema Versioning & The Amputation Rule  {#PROJ-SCHEMA}
+* **PROJMUSIC_01 — schema 9 (2026-11-20):** `ProjectAudio.MusicSongs` is the ordered list of music occurrences (`ProjectMusicSong(Path, FullSec, InSec, OutSec, UserTrimmed)`, JSON `audio.music_songs[]`), so the same song may appear several times, each with its own part; plus `MusicTimelineStartSec` / `MusicTimelineEndSec` / `MusicLoop` / `MusicCarving`. `ProjectSession` writes them from the music result and, when the list is not empty, rebuilds the whole `MusicWizardResult` on open (`MusicResultFromProject`). Missing keys read as before (empty list, carving = the old `sidechain_ducking`). Bumped because the keys live inside `audio`, where a v8 reader keeps no unknown keys and would silently drop every song but the first on save. Equality is elementwise so an unchanged list is a no-op in undo.
+* **PROJFREEZE_01 (2026-11-22, no schema bump):** the main-screen freeze frame and the portrait overlay text are part of the edit, so they are stored as root keys `freeze` (`time_ms`, -1 = none; `duration_s`) and `overlay_text`. Older readers keep unknown ROOT keys (PROJ_03), so no bump is needed; missing keys read as no freeze and no text. `ProjectSession.Capture` / `Apply` carry them and `ProjectDocument.Equals` compares them (with `Captions`, CAPTIONUNDO_01), so they are undoable and mark the project unsaved. **LEGACYMUSIC_01 / UNDOMUSIC_01:** `Apply` sets the music result from the document every time: the song list (schema 9), else the single legacy `music_path` (`LegacyMusicResult`, start point, volumes, ducking), else no music, so undoing "add music" also removes it from the export and an older project never keeps the previous session's song.
+* **VOLEVEL_01 — schema 8:** each voice take stores optional `gain` (linear 0–1.5; missing/null = 1). `VoiceOverTakeJson` is shared by project and main-session recovery serialization. Gain participates in take equality, project dirty state and undo/redo. Old projects retain 100%; older writers cannot read schema 8 and silently discard nested gain. WAV samples are unchanged; gain is applied once on playback/export.
 * **MEMEAUDIT_01 — schema 7:** each meme object may carry `clipIn` (seconds into the file), `posX` / `posY` (dragged corner position, −1 = in its corner), `animation` (`none` | `fade` | `slide`) and `transition` (`cut` | `fade` | `zoom`), via `MemePresentationJson`. Missing keys read as the old behaviour. Bumped for the same reason as schema 4: the keys live inside a meme object, so a v6 reader would play a trimmed meme in full and drop them on save.
 * **CAPTIONS_01 — schema 6:** added `Captions` (`CaptionTrack?`), storing AI Live Commentary Captions lines, words, styling, tone, and placement. Serialized reflection-free via `CaptionTrackJson`. Legacy schema 1-5 documents roundtrip with `Captions = null`. Unrecognized future fields are preserved via the Amputation Rule.
 * **VOTIMING_01 — schema 5:** narration is now an ordered set of takes, with source anchor, output offset, actual duration, recorded source end, timing signature and review flag. `ProjectAudio` also stores both protection choices. The legacy single-file fields remain readable. The bump prevents schema 4 readers from silently reducing multiple takes to the legacy first file and dropping nested timing metadata on save. Collection equality is elementwise so unchanged captures remain no-ops in undo.
+* **MEMEMODE_01 — schema 4:** every meme object carries `mode` (`inline` | `corner`), `corner` (`top_left` | `top_right` | `bottom_left` | `bottom_right`), `size` (`small` | `medium` | `large`) and `sound` (bool) via `MemePresentationJson`; all optional on read, so schema 1–3 memes read as full screen, bottom right, medium, with sound. Bumped because the keys live INSIDE a meme object, where a v3 reader keeps no unknown keys (it would show a corner overlay full screen and drop the keys on save). Recovery (RECOVERYDOC_01), the editor session JSON and the Merger `EdlMeme` (EDLNULL_01) use the same mapping; equality (UNDOEQ_01) covers them.
+* **PROJ_12 — schema 3:** `ProjectMerge.Edl` is the `MergeEdl` (MERGEEDL_01: windows in source µs, per-clip speed/zoom, freezes, memes, thumbnail, music, scraper, base speed) under `merge.edl` in the EDL's own source-generated JSON; `merge.clips` is still written. A valid `edl` wins; a missing or corrupt one leaves `Edl` null and `ToEdl()` migrates `clips` (no effects, deterministic clip ids). Bumped because a v2 reader keeps unknown keys only at the ROOT and would silently drop `merge.edl`; refusing the file is safer than losing effects.
+* **PROJ_11 — schema 2: the HUD mask and the merge queue are in the document.** `ProjectMask` stores the profile name, the resolved config AND a content fingerprint (a profile is editable in place, so the name is not enough). Reopening with a different or edited mask raises a **Degraded** fault naming what changed; it never silently switches the machine's profile back (that trades a silent wrong render for a silent wrong setting). `ProjectMerge` records the ordered clips (`ToolNavigator` holds them between windows); it is the document's route out of being single-source.
 * **PROJ_02 — Two numbers.** `SchemaVersion` is what this build WRITES. `MinimumReadableSchemaVersion`
   is the oldest it can still READ. Bump `SchemaVersion` only when the MEANING of an existing field
   changes; adding a new optional field needs no bump, because the reader tolerates missing keys.
@@ -129,14 +135,20 @@ fixed by muting it again — the rule is fix, or annotate one statement with a r
 * **AUTOSAVEBG_01 - Autosave disk I/O is non-blocking.** `ProjectSession.AutosaveTick` captures an
   immutable snapshot on the UI thread and performs the atomic write (WriteThrough + hardware flush)
   and the history sidecar on the thread pool. Dirty clears only if no edit landed mid-write; a
-  failure is still Fatal. Explicit saves remain synchronous and share one ordered write gate with
-  autosave, so an older autosave can never overwrite a newer save. See `05` §4d.
+  failure is still Fatal. **PROJECTIO_01:** explicit saves, close-time naming, loads, source checks
+  and sidecars await the same ordered background task chain. Capture and history copies stay on
+  the UI thread; source metadata probes stay on the worker. Fast mask snapshots are captured with
+  the edit, rather than rereading a newer mask when queued work starts. One explicit command and
+  one autosave may be pending; repeated shortcuts are rejected with a notice. Session/edit/sequence
+  guards prevent stale completions from replacing current work. Close waits asynchronously for
+  outstanding writes. A load failure is reported without escaping the UI command. See `05` SYS-IPCLIFETIME.
 * **One generation of backup.** The previous file becomes `<name>.fvsproj.bak` BEFORE the new bytes
   are written — taken afterwards it would back up the save that just happened. The crop config keeps
   a five-tier cascade because it is machine state the user never sees; a project is different, and a
   folder holding five numbered copies of every montage is its own kind of damage. A zero-length live
   file is never promoted over a good backup. A failed backup never blocks a save.
 * **Damaged live file falls back to the backup, and SAYS SO.** `Load` reports `loadedFromBackup`.
+* **NEWERREFUSE_01 — a newer-version file never falls back.** When the live file is refused because its `schema_version` is above `SchemaVersion`, `Load` returns that refusal and does NOT open the `.bak` (which may be an older format): opening it would label a healthy file "damaged" and the next saves would overwrite the newer work.
   A user shown yesterday's version without being told will keep editing and re-save over the good
   copy.
 * **Failure is returned, never thrown.** A save that throws out of a close handler is how an app
@@ -148,7 +160,8 @@ fixed by muting it again — the rule is fix, or annotate one statement with a r
 * ⚠ **THREADING.** All of `ProjectStore` and `RecentProjects` performs synchronous disk I/O and MUST
   NOT run on the Avalonia dispatcher (North Star #6). Call via `Task.Run`; marshal only the result
   back.
-
+* **Session commands (PROJSESSION_04 / PROJSESSION_05):** Ctrl+S / Ctrl+Shift+S / Ctrl+O / Ctrl+Z / Ctrl+Y work with the dirty flag and the unsaved-changes prompt; `MainWindow.RefreshProjectTitle` appends " •" while `ProjectSession.IsDirty`.
+* **Recovery holds one document (RECOVERYDOC_01..12, `05` SYS-RECOVERY):** the crash-recovery file holds exactly ONE `ProjectDocument`; legacy `schemaVersion:1` payloads never carried the mask or the merger queue.
 ---
 
 ## 6. Source Integrity  {#PROJ-INTEGRITY}
@@ -162,7 +175,9 @@ fixed by muting it again — the rule is fix, or annotate one statement with a r
   to dismiss the real one.
 * **An absent fingerprint is `Unknown`, not `Changed`.** Older projects have no fingerprint, and
   nagging about every one of them trains the warning away.
+* **PROJ_10 — every numeric read tries every numeric backing.** `SizeBytes` and `ModifiedUtcSeconds` are `long`; `JsonValue.TryGetValue<double>` is exact-type and returns false on a long, so a double-only reader loaded 0 and `CheckSource` answered `Changed` for every reopened project. `ReadLong` exists because `(long)ReadDouble(...)` rounds past 2^53. A warning that is always on is a warning that is off.
 * **`Missing` never blocks opening.** The project loads so the user can relink.
+* **RELINK_01:** on `Missing`, `ProjectSession.OpenAsync` asks where the video is now (`LocateMovedVideoAsync`, file picker filtered to the original extension). A chosen file is probed into `Source` and the project is marked unsaved; cancelling still opens the edits with a warning. Never a Fatal.
 
 ---
 
@@ -177,88 +192,22 @@ fixed by muting it again — the rule is fix, or annotate one statement with a r
   explain. A project on an unplugged external drive is not a project the user deleted, and quietly
   removing the row is how a user concludes the app lost their montage. `Prune` runs only when the
   user asks.
+* **One unreadable entry is skipped, not fatal (PROJ_09B).** An entry whose `path` is not text is left
+  out and a non-text `title` falls back to the file name; the entries after it are still read. The read
+  used to stop at the first such entry, and the next `Touch` wrote the shortened list back.
 * **A damaged recent list is cosmetic.** It must never stop the app starting, and never surface as an
+* **RECENTMENU_01 (2026-11-22):** `ProjectSession` touches the list after every successful save and open (`TouchRecent`, on the I/O queue); File › Open Recent (`MainWindow.OnMenuOpenRecentOpened`) lists it, greys missing entries and opens a row through `ProjectSession.OpenAsync(path)`. File also has Open Project / Save Project / Save Project As (same commands as Ctrl+O / Ctrl+S / Ctrl+Shift+S).
   error to dismiss on every launch.
 
 ---
 
-## 8. Open Work Bound To This Spec  {#PROJ-TODO}
+## 8. Open Work  {#PROJ-TODO}
 The model and its persistence exist and are unit-tested
 (`tests/FreeVideoStudio.Core.Tests/ProjectDocumentTests.cs`).
 
-**Closed since this list was written:**
-
-1. ~~`MainWindow` command wiring~~ — done (`PROJSESSION_04`: Ctrl+S / Ctrl+Shift+S / Ctrl+O /
-   Ctrl+Z / Ctrl+Y, with the dirty flag and the unsaved-changes prompt).
-2. **`PROJ_10` — the reader was losing the source fingerprint on every load.** `SizeBytes` and
-   `ModifiedUtcSeconds` are `long`; the writer stored long-backed `JsonValue`s and the reader asked
-   for `double`. `JsonValue.TryGetValue<double>` is an EXACT-TYPE accessor — it returns false on a
-   long — so the fallback won and both fields came back **0 on every load**.
-
-   ⚠️ The damage was not the two fields, it was §6: those two fields ARE the integrity fingerprint.
-   `CheckSource` compared a real file's size against a stored zero and answered `Changed` for every
-   project anyone ever reopened. The warning that exists to say "your source clip was re-encoded"
-   fired constantly and therefore meant nothing. **A warning that is always on is a warning that is
-   off.** Every numeric read now tries every numeric backing, and `ReadLong` exists because
-   `(long)ReadDouble(...)` rounds past 2^53.
-3. **`PROJ_11` — the document now carries the HUD mask and the merge queue (schema 2).**
-   * The mask was `SettingsManager.ActiveMaskOverlay` plus one machine-wide `crop_coordinates.json`
-     and was in the project **nowhere**. A montage saved in March and reopened in May exported
-     through whatever mask was active then — different rectangles, a visibly different video — and
-     nothing said so. `ProjectMask` stores the profile name, the resolved config AND a content
-     fingerprint; the name alone is not enough, because a profile is editable in place.
-     Reopening with a different or edited mask raises a **Degraded** fault naming what changed. It
-     does **not** silently switch the machine's profile back: that would trade a silent wrong render
-     for a silent wrong setting, and reach outside the document to do it.
-   * The merge queue lived only in `VideoMergerWindow`'s `ObservableCollection<string>`. Queue eight
-     clips, close the Merger, save — and the `.fvsproj` described a single-clip edit. `ProjectMerge`
-     records the ordered clips; `ToolNavigator` holds them between windows.
-
-   ⚠️ `ProjectMerge` is also the document's route out of being single-source. `Source` is one clip
-   because the main editor edits one clip, and a montage of several was an unrelated feature sharing
-   an application. Storing the list here is the precondition for ever treating a multi-clip edit as
-   one document.
-4. **`PROJ_12` — the merge queue carries the Video Merger's full edit list (schema 3).**
-   `ProjectMerge.Edl` is the `MergeEdl` (MERGEEDL_01: windows in source µs, per-clip speed/zoom,
-   freezes, memes, thumbnail, music, scraper, base speed), written under `merge.edl` in the EDL's own
-   source-generated JSON. `merge.clips` is still written. Read: a valid `edl` wins; a missing or
-   corrupt one leaves `Edl` null and `ToEdl()` migrates `clips` (no effects, deterministic clip ids so
-   two migrations are equal). The bump to 3 is deliberate: a v2 reader keeps unknown keys only at the
-   ROOT, so it would silently drop `merge.edl`; refusing the file is safer than losing effects.
-5. **`MERGEUNDO_01` — Video Merger undo/redo over the edit list.** `VideoMergerWindow.History.cs` keeps one
-   `UndoStack<MergeEdl>` (U1–U4). It stores `MergerSession.UserEdit(edl)` (analysis fields stripped, so a
-   finished background probe is never a step). `MergerSession.DescribeChange` labels each step and gives
-   gesture keys (`speed`, `thumb`) so a wheel sweep or a marker drag is ONE step. Ctrl+Z / Ctrl+Y /
-   Ctrl+Shift+Z (not while a TextBox has focus or a MERGE runs). Undo/redo and session restore share
-   `ApplyEdlStateAsync`, which reorders the queue in place (`MergerSession.SyncQueue`, never Clear) and
-   re-derives music from its clip anchors. `UndoStack.ReplaceCurrent` absorbs the re-capture right after
-   an undo so normalisation can never burn the redo branch.
-6. **`MEMEMODE_01` — dual-mode memes (schema 4).** Every meme object carries `mode` (`inline` | `corner`),
-   `corner` (`top_left` | `top_right` | `bottom_left` | `bottom_right`), `size` (`small` | `medium` | `large`) and
-   `sound` (bool), via `MemePresentationJson`. All optional on read: a file at schema 1–3 (no keys) reads every meme
-   as full screen, bottom right, medium, with sound — exactly what it always was. The bump to 4 is deliberate: the
-   keys live INSIDE a meme object, where a v3 reader keeps no unknown keys, so it would read a corner overlay as a
-   longer, full-screen video and drop the keys on save. The recovery document (RECOVERYDOC_01) and the editor's
-   session JSON use the same mapping; the Merger EDL carries the same four fields on `EdlMeme` (`FromJson` fills
-   them on older files, EDLNULL_01). Equality (UNDOEQ_01) covers them, so each change is an undo step.
-7. ~~Title-bar dirty indicator~~ — done (`PROJSESSION_05`: `MainWindow.RefreshProjectTitle` appends
-   " •" to the project name while `ProjectSession.IsDirty`).
-
 **Still not done:**
 
-1. ~~`RecoveryManager` demoted to autosave OF THIS DOCUMENT rather than a parallel state format.~~
-   **Done (RECOVERYDOC_01..12).** The crash-recovery file now holds exactly ONE `ProjectDocument`
-   — captured by `ProjectSession.Capture(forExplicitSave: false)`, serialised by the canonical
-   `ProjectSerializer` inside `Core/Project/RecoveryEnvelope.cs` (`fvsrecovery` envelope: one
-   `project` + crash-only `transient` metadata) — and is applied back through
-   `ProjectSession.OpenDocument`, the same document-application path Open Project uses. The old
-   hand-rolled 60-field recovery payload (`SerializeState`) and the field-by-field restore in
-   `MainWindow.Restore.cs` are gone; legacy `schemaVersion:1` payloads are migrated one-way by
-   `App/Services/LegacyRecoveryMigrator.cs` (limitation: the legacy schema never carried the mask
-   or the merger queue). Atomic writes, the WRITEORDER_01 ordering, the granular-session
-   preservation merge and the 750 ms write-behind debounce are unchanged.
-2. `.fvsproj` shell association and icon (`ShellFileAssociation.cs`), plus open-with launch.
-3. Publishing and applying the app-only update (`09` §3 DIST-SPLIT). ~~`Staging.CreatePayloadZip` now produces `obj/ReleaseAssets/FreeVideoStudio.App.update.zip` and embeds the runtime manifest in the full payload.~~ Superseded by NODROPPER_01 (`09` DIST-INSTALLER): no compact package, no embedded payload; `Staging.WriteManifests` writes the manifests into the staged release. Uploading the sidecars, applying the app-only archive and excluding the app from the runtime fingerprint remain unfinished.
+1. `.fvsproj` shell association and icon (`ShellFileAssociation.cs`), plus open-with launch.
 
 ---
 
@@ -276,20 +225,28 @@ The model and its persistence exist and are unit-tested
   * ⚠️ Ignoring it reintroduced, one layer up, the exact wrong-state defect the
     `_exportedCleanSinceLastEdit` flag was added to fix.
 
-* **`PROJSESSION_09` — THE GUARD MUST NEVER TRAP THE USER IN THEIR OWN APPLICATION.**
-  It runs from `OnClosing`, which has already set `e.Cancel = true`, and `OnClosing` is `async void`.
-  If the guard returns false or throws, `_isSafeToClose` is never set, `Close()` is never re-posted,
-  and the next click on X repeats the whole thing. **The application cannot be closed.**
-  Two ways that happened, both now closed:
-  1. **An interactive Save As on the close path.** A never-saved project fell through to the file
-     picker, and a picker cannot open on a window that is mid-close: it returns null, the guard
-     reported "not saved" and refused the close. The user pressed **Save** and the app would not shut
-     down. `SaveForExitAsync` never shows a dialog — it writes beside the source clip under a
-     non-colliding name derived from it, and says where it went.
-  2. **An unguarded throw.** The whole body is now wrapped, and the failure direction is deliberate:
-     a broken dialog lets the close **proceed**. Losing an unsaved `.fvsproj` is bad; an application
-     that needs Task Manager to quit is worse, and the crash-recovery snapshot (`05` §4 SYS-RECOVERY)
-     still holds the session either way.
+* **`PROJSESSION_09` / `PROJECTIO_01` — close must honor the user's save decision.**
+  A never-saved project is written beside its source under a name reserved with `CreateNew` on the
+  worker; no file picker is opened during close. Failed saves or edits made while saving keep the
+  editor open and dirty. The user can retry or explicitly choose Discard changes. Exceptions are
+  reported as Fatal and never interpreted as permission to lose work. Outstanding project I/O is
+  awaited asynchronously before the close decision, leaving the dispatcher responsive.
+
+* **`UNSAVEDPROJ_01` — the unsaved-project question has a safe way out.** `ConfirmDiscardAsync` asks
+  `IUserNotifier.AskSaveChangesAsync` (the same three-way `Save changes` / `Back to editing` /
+  `Discard changes` dialog as CROPUNSAVED_01, `ConfirmDialogWindow.AskSaveChangesWithMessageAsync`).
+  Only an explicit `Discard changes` proceeds without saving; Escape, Enter, the window's X and a
+  dialog that cannot be shown all mean `Back to editing` (returns false, editor stays open and dirty).
+  The old two-way prompt mapped Escape/X to "discard". Without an owner window the fallback is a
+  native Yes/No where No keeps editing. Tests: `AutosaveBackgroundTests.UnsavedClosePrompt_BackToEditingKeepsWork`,
+  `CropWorkflowTests.ProjectUnsavedPromptTooltipsMatchTheirButtons`.
+* **`NEWVIDEOGUARD_01` — loading another video never silently wipes edits.** Upload, drag-and-drop and an Explorer hand-off all go through `LoadVideoIntoEditorAsync`, which first calls `MainWindow.ConfirmReplaceLoadedVideoAsync`: no prompt when nothing is loaded, when no edit was made yet (`HasUnsavedWork` false: no mark start/end, cut, speed, music, voice, meme, thumbnail…) or right after a successful PROCESS (DONECLEAN_01); otherwise the UNSAVEDPROJ_01 three-way question ("…before you open another video?"), where only Save changes or Discard changes loads the new video. A second request while the question is open is ignored.
+* **`DONECLEAN_01` — a finished export closes without questions.** See 05 SYS-RECOVERY: after a successful PROCESS (or MERGE in the Merger) with no edit since, closing skips the save question and leaves an empty state for the next start.
+* **`PROJECTLABEL_01`** — the Save/Open project picker's file type is named "Free Video Studio project".
+* **`VMVIDEO_01` — the editor's loaded video lives in the view model.** `MainWindow._loadedVideoPath` is a proxy of `MainViewModel.LoadedVideoPath`. It used to be a separate field, so the view model never knew a video was loaded: `HasUnsavedWork` was always false (no save question on close, new video or tool switch; crash recovery cleared instead of saved), Save As refused with "Load a video before saving a project." and autosave never ran.
+* **`NEWVIDEOPATH_01`:** `ProjectSession.BeginHistory` (a new video loaded) starts an untitled, clean document (`CurrentPath = null`), so Ctrl+S and autosave never write a new video's edits into the previous project file.
+* **`PROJVIDEO_01`:** opening a project binds the editor to the project's video (`LoadedVideoPath`, duration) before applying its edits and raises `ProjectVideoChanged`; `MainWindow.ShowProjectVideoAsync` loads it in the player WITHOUT resetting the just-applied edits or the history. Saving afterwards keeps the project linked to its own footage.
+* **Tests:** `tests/FreeVideoStudio.App.Tests/ProjectSafetyQaTests.cs` (QAREG_01).
 
 ---
 

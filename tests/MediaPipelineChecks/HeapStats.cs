@@ -1,11 +1,5 @@
 using System.Runtime.InteropServices;
 
-/// <summary>
-/// LIBAVFRAME_01 soak diagnostics (test-only, Windows). Sums HeapSummary over every process heap:
-/// <c>Allocated</c> = bytes currently IN USE by heap blocks (a native leak grows this), <c>Committed</c>
-/// = bytes the heaps hold from the OS (fragmentation and caching grow this, and it can be given back).
-/// libav's av_malloc is _aligned_malloc → the UCRT heap → the process heap, so it is counted here.
-/// </summary>
 internal static class HeapStats
 {
     [StructLayout(LayoutKind.Sequential)]

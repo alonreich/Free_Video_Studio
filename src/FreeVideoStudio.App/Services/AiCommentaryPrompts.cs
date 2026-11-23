@@ -5,24 +5,14 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AICOMMENTARY_SERVICE_01 — system instructions and structured schemas for AI live commentary generation.
-/// </summary>
 public static class AiCommentaryPrompts
 {
     public const string CommentaryJsonSchema = "{\"type\":\"ARRAY\",\"items\":{\"type\":\"OBJECT\",\"properties\":{\"start\":{\"type\":\"NUMBER\"},\"end\":{\"type\":\"NUMBER\"},\"text\":{\"type\":\"STRING\"},\"emphasis\":{\"type\":\"ARRAY\",\"items\":{\"type\":\"STRING\"}},\"confidence\":{\"type\":\"NUMBER\"}},\"required\":[\"start\",\"end\",\"text\"]}}";
 
-    /// <summary>Older single-tone entry point: the tone is turned into its one-click style (COMMENTARYMIX_01).</summary>
     public static string BuildPrompt(CaptionTone tone, AiGameProfile profile, string language, string? customNotes = null, string? playbackNotes = null, bool canHearAudio = true)
         => BuildPrompt(CommentaryPersonality.FromPreset(CommentaryPersonality.PresetForTone(tone)), profile, language,
             customNotes, playbackNotes, canHearAudio);
 
-    /// <summary>
-    /// COMMENTARYMIX_01 — the commentary prompt for one part of the video.
-    /// <paramref name="killTimesInPart"/> (TACTICAL_03): confirmed eliminations from the kill tracker, in seconds
-    /// from the part's start; null = the tracker did not run (nothing is said about kills).
-    /// <paramref name="rewriteOf"/> (REWRITELINE_01): write exactly ONE new line that replaces this text.
-    /// </summary>
     public static string BuildPrompt(
         CommentaryPersonality personality,
         AiGameProfile profile,
@@ -31,7 +21,8 @@ public static class AiCommentaryPrompts
         string? playbackNotes = null,
         bool canHearAudio = true,
         IReadOnlyList<double>? killTimesInPart = null,
-        string? rewriteOf = null)
+        string? rewriteOf = null,
+        string? storyNotes = null)
     {
         ArgumentNullException.ThrowIfNull(personality);
         var mix = personality.Normalized();
@@ -39,7 +30,7 @@ public static class AiCommentaryPrompts
 
         string senses = canHearAudio
             ? "You receive this clip as video WITH its game sound."
-            : "You receive this clip as still pictures, 2 per second, each labelled with its time. There is NO sound: judge only what is visible.";
+            : "You receive this clip as still pictures, 2 per second, each labelled with its time. There is NO sound: judge ONLY what is visually shown and NEVER claim you heard speech, voices, footsteps, gunfire sounds, or audio cues.";
         string onlyWhat = canHearAudio ? "visible or audible" : "visible";
 
         string perspective = profile switch
@@ -98,7 +89,7 @@ You are the gamer playing this video game. Narrate what you are doing in real ti
 {perspective}
 {mix.DescribeForPrompt()}
 {languageLine}
-{notes}{playback}{kills}{tactical}Rules:
+{notes}{storyNotes}{playback}{kills}{tactical}Rules:
 1. Speak as the player experiencing the moment, not as a passive observer or esports caster.
 2. Keep each commentary line SHORT: at most {mix.MaxWordsPerLine} words per line.
 3. Keep each line at least {mix.MinReadableSec.ToString("0.0", ci)} seconds long so it can be easily read on screen.

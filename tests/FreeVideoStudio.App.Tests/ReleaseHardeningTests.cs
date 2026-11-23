@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using FreeVideoStudio.App.Services;
 using FreeVideoStudio.App.ViewModels;
@@ -7,11 +7,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// WORKERSTAGE_01, UNSIGNEDDEV_01, BUILDKILL_01, UPDATESPACE_01, ASSETHASH_01, BETA_01, RECHECK_01,
-/// RELNOTES_03 — the update and release hardening from the 2026-10-17 release audit
-/// (05 SYS-UPGRADE-TRUST, SYS-AUTOUPDATE; 09 DIST-SMART, DIST-RELEASEGATE).
-/// </summary>
 public sealed class ReleaseHardeningTests
 {
     private static string Source(params string[] relative) => File.ReadAllText(RepoRoot.SourcePath(relative));
@@ -118,18 +113,11 @@ public sealed class ReleaseHardeningTests
     }
 
     [Fact]
-    public void Beta01_TheBetaChannelTakesTheHighestVersion_NotTheFirstListed()
+    public void NoBetaChannel_TheUpdaterReadsTheLatestReleaseOnly()
     {
-        var releases = JsonNode.Parse("""
-            [
-              {"tag_name":"v2026.10.15.0900","draft":false,"prerelease":false},
-              {"tag_name":"v2026.10.17.0900","draft":true,"prerelease":true},
-              {"tag_name":"v2026.10.16.0900","draft":false,"prerelease":true},
-              {"tag_name":"latest-docs","draft":false,"prerelease":false}
-            ]
-            """)!.AsArray();
-        Assert.Equal("v2026.10.16.0900", UpdateService.PickBetaRelease(releases)?["tag_name"]?.GetValue<string>());
-        Assert.Null(UpdateService.PickBetaRelease(new JsonArray()));
+        string src = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "Services", "UpdateService.cs"));
+        Assert.DoesNotContain("PickBetaRelease", src);
+        Assert.Contains("string targetUrl = LatestReleaseApiUrl;", src);
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-﻿using Avalonia.Controls;
+using Avalonia.Controls;
 
 using Avalonia.Interactivity;
 
@@ -36,7 +36,7 @@ public class MusicTrackItem : System.ComponentModel.INotifyPropertyChanged
     public string SizeText { get; set; } = "";
     public double DurationSec { get; set; } = 0.0;
     public long LastModifiedTicks { get; set; } = 0;
-    
+
     private bool _isRecent;
     public bool IsRecent 
     { 
@@ -82,7 +82,7 @@ public class MusicTrackItem : System.ComponentModel.INotifyPropertyChanged
     }
     public string AddGlyph => IsInPlaylist ? "✓" : "+";
     public string AddTip => IsInPlaylist ? "This song is in your songs. Click to take it out." : "Add this song to your songs";
-    public string RowTip => "Click to select. ▶ plays a preview, + adds it to your songs.";
+    public string RowTip => "Click to listen from the middle. Double-click or press Use song to continue.";
 
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 }
@@ -115,21 +115,10 @@ public partial class MusicWizardWindow : Window
 
     public MusicWizardResult? Result { get; private set; }
 
-    /// <summary>
-    /// EDIT3_01 — an existing music placement to REOPEN rather than start from nothing.
-    ///
-    /// Set by the Main App when the user chose EDIT on the ADD MUSIC button. When present the
-    /// wizard restores the track, the song start point, the queue, the two volume sliders and the
-    /// three phase-3 checkboxes, then jumps straight to phase 3 — the screen where the placement
-    /// actually lives. Phases 1 and 2 remain reachable with BACK, so changing the song itself is
-    /// still possible; this only decides where the user LANDS.
-    ///
-    /// Must be assigned before the window is shown. Null is the ordinary first-run path.
-    /// </summary>
     public MusicWizardResult? InitialState { get; set; }
-    
+
     private readonly FreeVideoStudio.App.Controls.VoiceOverPreviewPlayer _voiceOverPlayer = new();
-    
+
     public static readonly Avalonia.StyledProperty<string> MusicSearchTextProperty =
         Avalonia.AvaloniaProperty.Register<MusicWizardWindow, string>(nameof(MusicSearchText), string.Empty);
     public string MusicSearchText
@@ -138,7 +127,15 @@ public partial class MusicWizardWindow : Window
         set => SetValue(MusicSearchTextProperty, value);
     }
 
+    internal const double DefaultWidthDip = 1000;
+    public const string ChooseBoundsKey = "MusicWizardBounds";
+    public const string PartBoundsKey = "MusicWizardPartBounds";
+    public const string ReviewBoundsKey = "MusicWizardReviewBounds";
+    private readonly WindowBoundsHelper.BoundsTracker _bounds;
 
+    public string CurrentBoundsKey => _bounds.Key;
+
+    private string BoundsKeyForView() => _currentStep != StepFit ? ChooseBoundsKey : Vm.IsReviewView ? ReviewBoundsKey : PartBoundsKey;
     private int _currentStep = 1;
 
     private readonly ApplicationPaths _paths = ApplicationPaths.CreateDefault();
@@ -214,20 +211,28 @@ public partial class MusicWizardWindow : Window
         InitializeComponent();
         WireViewModel();
         Controls.WindowResizeGrip.Attach(this, "Drag to resize the Add Music wizard");
-        FreeVideoStudio.App.WindowBoundsHelper.Track(this, "MusicWizardBounds", fitDisplayOnFirstRun: true);
+        _bounds = FreeVideoStudio.App.WindowBoundsHelper.Track(this, ChooseBoundsKey, fitDisplayOnFirstRun: true, firstRunMaxWidthDip: DefaultWidthDip);
         _playheadTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
         _playheadTimer.Tick += PlayheadTimer_Tick;
         WirePreviewDetach();
 
         this.Loaded += (_, _) => Controls.CoachOverlay.Register(this, Controls.CoachTours.MusicWizardKey, Controls.CoachTours.MusicWizard);
+        this.Loaded += (_, _) =>
+        {
+            if (this.FindControl<Button>("AiAutoFitBtn") is { } fit)
+                Controls.AiModeWindow.ApplyCloudOnlyLook(fit, ToolTip.GetTip(fit) as string ?? string.Empty);
+        };
         WireHelpButton();
     }
 
-    /// <summary>ISSUE_04 — the permanent replay route for this screen's walkthrough.</summary>
     private void WireHelpButton()
     {
         var help = this.FindControl<Avalonia.Controls.Button>("WizardHelpButton");
-        if (help != null) help.Click += (_, _) => Controls.CoachOverlay.Replay(this);
+        if (help != null) help.Click += (_, _) =>
+        {
+            if (PartLanesActive) ShowPartDemo();
+            else Controls.CoachOverlay.Replay(this);
+        };
     }
 
     private PreviewDetachController? _previewDetach;
@@ -256,12 +261,12 @@ public partial class MusicWizardWindow : Window
         _previewDetach.SyncButton(btn);
     }
 
-    /// <summary>UXQA_01: re-enable the detach button once phase 3's player actually exists.</summary>
     private void RefreshDetachButtonState()
         => _previewDetach?.SyncButton(this.FindControl<Button>("WizardDetachPreviewBtn"));
 
     private void PlayheadTimer_Tick(object? sender, EventArgs e)
     {
+        OnStepsTick();
         if (_currentStep == 3 && _phase3Memes.Count > 0 && WizardVideoHost?.IpcClient != null)
             EnsureMemePreviewDirector();
         if (_memePreview != null)
@@ -269,9 +274,18 @@ public partial class MusicWizardWindow : Window
             _memePreview.Suspended = _currentStep != 3;
             _memePreview.SetMemes(_phase3Memes);
             _memePreview.Tick();
-            if (_memePreview.IsActive) return;
+            if (_memePreview.IsActive)
+            {
+                _voiceOverPlayer.UpdatePlayback(true, false, 0, static t => t, false);
+                return;
+            }
         }
 
+        if (_currentStep == StepChoose && _songPreviewReady && _isPreviewPlaying && _audioIpcClient?.IsEof == true)
+        {
+            StopPreview();
+            _previewCurrentOffset = _rowPreviewTrack?.DurationSec ?? 0;
+        }
         if (_previewFadeStartUtc.HasValue) ApplyPreviewMusicVolume();
         else ApplyCrossfadeGainIfChanged();
 
@@ -284,28 +298,39 @@ public partial class MusicWizardWindow : Window
         }
 
         UpdatePhase3LiveZoomCrop();
-        
+
         if (WizardVideoHost?.IpcClient != null)
         {
             double t = WizardVideoHost.IpcClient.CurrentTime;
-            var timeMapper = FreeVideoStudio.Core.Media.GranularSpeedBuilder.CreateTimeMapper(_trimEndMs - _trimStartMs, _phase3SpeedSegments, _phase3BaseSpeed, _trimStartMs);
+            var timeMapper = Phase3VoiceTimeMapper();
             double editedTimeSec = timeMapper(t);
-            bool isVoicePaused = WizardVideoHost.IpcClient.IsPaused;
+            bool isVoicePaused = WizardVideoHost.IpcClient.IsPaused || RenderedMixLive;
             bool ended = _trimEndMs > 0 && t >= _trimEndMs / 1000.0;
             _voiceOverPlayer.UpdatePlayback(isVoicePaused, ended, editedTimeSec, timeMapper, false);
         }
     }
 
-    /// <summary>Last crop pushed to mpv, so an unchanged value is never re-sent every tick.</summary>
+    private Func<double, double>? _phase3VoiceMapper;
+    private string? _phase3VoiceMapperKey;
+
+    private Func<double, double> Phase3VoiceTimeMapper()
+    {
+        string key = string.Join(",", _phase3SpeedSegments) + "|" + string.Join(",", _phase3Cuts) + "|" + _phase3BaseSpeed + "|" + _trimStartMs + "|" + _trimEndMs;
+        if (_phase3VoiceMapper == null || key != _phase3VoiceMapperKey)
+        {
+            _phase3VoiceMapper = WizardVoiceTimeMapper(_trimStartMs, _trimEndMs, _phase3SpeedSegments, _phase3BaseSpeed, _phase3Cuts);
+            _phase3VoiceMapperKey = key;
+        }
+        return _phase3VoiceMapper;
+    }
+
+    internal static Func<double, double> WizardVoiceTimeMapper(double trimStartMs, double trimEndMs,
+        System.Collections.Generic.IReadOnlyList<FreeVideoStudio.Core.Media.SpeedSegment> segmentsWithFreeze, double baseSpeed,
+        System.Collections.Generic.IReadOnlyList<FreeVideoStudio.Core.Media.CutRange> absoluteCuts) =>
+        FreeVideoStudio.Core.Media.PreviewTimeMap.Create(trimStartMs, trimEndMs, segmentsWithFreeze, baseSpeed, absoluteCuts).SourceToOutput;
+
     private string _lastLiveCrop = "";
 
-    /// <summary>
-    /// PORTRAIT_01 — set by the Main App when Portrait mode is on.
-    ///
-    /// Phase 3 had no idea whether the export would be portrait, so its preview showed the full
-    /// 16:9 frame while the export produced a 2:3 clip. That made the A/B screen — the one whose
-    /// entire job is judging the finished result — the least truthful preview in the suite.
-    /// </summary>
     public bool IsPortraitPreview { get; set; }
 
     private void UpdatePhase3LiveZoomCrop()
@@ -332,7 +357,6 @@ public partial class MusicWizardWindow : Window
         _ = ipc.SetPropertyAsync("video-crop", result.Crop);
     }
 
-    /// <summary>Drops any simulated crop. Called when leaving phase 3 and on teardown.</summary>
     private void ClearPhase3LiveZoomCrop()
     {
         if (_lastLiveCrop.Length == 0) return;
@@ -387,21 +411,14 @@ public partial class MusicWizardWindow : Window
 
         this.Loaded += async (_, _) => { await ResumeFromInitialStateAsync(); ResetWizardHistory(); };
     }
-    /// <summary>
-    /// EDIT3_01 / RESUME_01 / MERGERMUSIC_01 — REOPENS AN EXISTING MUSIC PLACEMENT ON FIT &amp; MIX.
-    ///
-    /// Restores every song with the part of it that plays, the volumes, the switches and the loop,
-    /// then opens Fit &amp; Mix — the screen where the placement lives. The song list stays reachable
-    /// with BACK. Songs the folder scan has not found are synthesised (RESUME_01): resuming never
-    /// depends on a background scan, and a song already used never becomes unreachable because its
-    /// folder changed. Used by the Main App (EDIT MUSIC) and, since MERGERMUSIC_01, the merger.
-    /// </summary>
     private async Task ResumeFromInitialStateAsync()
     {
         var state = InitialState;
         InitialState = null;
-        if (state == null) return;
-        if (string.IsNullOrWhiteSpace(state.MusicFilePath) && state.OrderedPaths().Count == 0) return;
+        if (state == null || (string.IsNullOrWhiteSpace(state.MusicFilePath) && state.OrderedPaths().Count == 0))
+        {
+            return;
+        }
 
         try
         {
@@ -440,19 +457,9 @@ public partial class MusicWizardWindow : Window
             if (loopCheck != null) loopCheck.IsChecked = state.LoopMusic;
 
             StopPreview();
-            CancelPhase3Load();
-            _phase3Ready = false;
-            _currentStep = StepFit;
-            _visitedFit = true;
-            OnPlaylistChanged();
-            UpdateStepVisibility();
-            UpdateNextButtonState();
-
-            _phase3LoadCts = new CancellationTokenSource();
-            int loadVersion = ++_phase3LoadVersion;
             RuntimeLog.Info("MUSIC_WIZARD",
-                $"Reopened on Fit & Mix for editing: {_playlist.Count} song(s), first '{Path.GetFileName(_playlist[0].Path)}', song start {_songStartSeconds:F2}s.");
-            await LoadPhase3DataAsync(_phase3LoadCts.Token, loadVersion);
+                $"Reopened on Check & finish for editing: {_playlist.Count} song(s), first '{Path.GetFileName(_playlist[0].Path)}', song start {_songStartSeconds:F2}s.");
+            await EnterFitAsync(ViewModels.MusicWizardView.Review, -1);
         }
         catch (Exception ex)
         {
@@ -464,52 +471,12 @@ public partial class MusicWizardWindow : Window
         }
     }
 
-
-    /// <summary>
-    /// ══════════════════════════════════════════════════════════════════════════════
-    /// CUTS_02 — SECTIONS THE SPEED EDITOR DELETED, in absolute source milliseconds.
-    ///
-    /// This wizard lays music against the length of the FINISHED video. Every duration it works
-    /// from — the coverage check, Smart Fit's search window, Fit By End Of Video, the phase-3
-    /// timeline, the result's TimelineEndSeconds — comes out of
-    /// CalculatePhase3EffectiveDurationSeconds, and that was building its OutputTimeline without
-    /// the cuts. So a project with two minutes deleted told the wizard the video was two minutes
-    /// longer than it will be: the music was stretched to cover footage that no longer exists, and
-    /// every beat aligned by Smart Fit landed two minutes off the mark.
-    ///
-    /// This is the identical class of bug as TIME_01 (freezes making the video longer than this
-    /// method believed) and is fixed the same way: hand the real edit list to the one type that
-    /// owns source-to-output time, and let it do the arithmetic.
-    ///
-    /// Nothing is DRAWN for these. Phase 3's timeline is output time, where a cut is zero seconds
-    /// wide by definition — there is no gap to mark, because in the finished video there is none.
-    /// ══════════════════════════════════════════════════════════════════════════════
-    /// </summary>
     private readonly System.Collections.Generic.List<FreeVideoStudio.Core.Media.CutRange> _phase3Cuts = new();
 
-    /// <summary>
-    /// MEME_06 — memes spliced into the video, in clip-relative source seconds.
-    ///
-    /// Same class of bug as CUTS_03 and TIME_01, from the opposite direction: a cut makes the
-    /// finished video SHORTER than this wizard believed, a meme makes it LONGER. Without these the
-    /// coverage check, Smart Fit, Fit By End Of Video and the phase-3 preview would all lay music
-    /// against a video shorter than the one that gets exported, so the music would stop early by
-    /// the total length of every meme.
-    ///
-    /// Nothing is drawn for them here: phase 3's ruler is output time, where a meme is a stretch of
-    /// foreign footage the music simply plays over (or not — see KeepMusicDuringMeme).
-    /// </summary>
     private readonly System.Collections.Generic.List<FreeVideoStudio.Core.Media.MemePlacement> _phase3Memes = new();
 
-    /// <summary>
-    /// MEME_07 — plays each meme in the phase-3 A/B preview at the moment it interrupts the
-    /// gameplay. This screen's whole job is judging the finished result, so it is the one preview
-    /// that must not quietly skip a cutaway the export will make. See
-    /// <see cref="Infrastructure.MemePreviewDirector"/> for the approach and the host-tick rule.
-    /// </summary>
     private Infrastructure.MemePreviewDirector? _memePreview;
 
-    /// <summary>MEME_07 — built lazily, because phase 3's video host is created on demand.</summary>
     private void EnsureMemePreviewDirector()
     {
         if (_memePreview != null) return;
@@ -532,7 +499,6 @@ public partial class MusicWizardWindow : Window
         };
     }
 
-    /// <summary>MEME_07 — the black-screen notice shown across the two file swaps.</summary>
     private void SetMemeSwapOverlay(bool visible, string message)
     {
         var overlay = this.FindControl<Avalonia.Controls.Border>("MemeSwapOverlay");
@@ -557,10 +523,10 @@ public partial class MusicWizardWindow : Window
             _ = WizardVideoHost.IpcClient.ApplyPreviewGainAsync(GetPreviewVideoBalance());
         if (_audioIpcClient != null)
             _ = _audioIpcClient.ApplyPreviewGainAsync(GetPreviewMusicBalance());
+        _freezeSound.SetGameBalance(GetPreviewVideoBalance());
     }
     private void SharedInit()
     {
-        if (FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.Defaults.RememberMusicVolumes)
         {
             try
             {
@@ -578,7 +544,7 @@ public partial class MusicWizardWindow : Window
         FreeVideoStudio.Core.Media.MpvIpcClient.GlobalMasterVolumeChanged += OnGlobalMasterVolumeChanged;
 
         this.Closing += (s, e) => {
-            WindowBoundsHelper.SaveBoundsOnClose(this, "MusicWizardBounds");
+            WindowBoundsHelper.SaveBoundsOnClose(this, _bounds.Key);
         };
 
         LoadRecentMusicPins();
@@ -591,16 +557,8 @@ public partial class MusicWizardWindow : Window
             listbox.DoubleTapped += (s, e) =>
             {
                 if (listbox.SelectedItem is not MusicTrackItem picked || _currentStep != StepChoose) return;
-                if (_isMergerMode || _playlistExplicit)
-                {
-                    RuntimeLog.Info("UI", "User double-clicked a track to add it in Music Wizard.");
-                    if (IndexOfPath(picked.FilePath) < 0) AddToPlaylist(picked, explicitAdd: true);
-                }
-                else
-                {
-                    RuntimeLog.Info("UI", "User double-clicked a track to proceed in Music Wizard.");
-                    OnNextClicked(listbox, new RoutedEventArgs());
-                }
+                ProceedWithSong(picked);
+                e.Handled = true;
             };
             listbox.AddHandler(InputElement.KeyDownEvent, OnMusicListKeyDown, RoutingStrategies.Tunnel);
             LoadMusicDirectory();
@@ -665,6 +623,7 @@ public partial class MusicWizardWindow : Window
                 UpdateDuckingCompareButton();
                 ApplyPreviewMusicVolume();
                 UpdateProblemFlags();
+                OnSoundSettingChanged();
             };
         }
 
@@ -675,6 +634,7 @@ public partial class MusicWizardWindow : Window
             {
                 ApplyPreviewMusicFilters();
                 UpdateProblemFlags();
+                OnSoundSettingChanged();
             };
         }
 
@@ -777,6 +737,11 @@ public partial class MusicWizardWindow : Window
             phase3Lanes.LaneBSeekable = false;
             phase3Lanes.SeekRequested += videoRelativeSec =>
             {
+                if (Vm.IsPartView)
+                {
+                    SeekPartVideo(videoRelativeSec);
+                    return;
+                }
                 bool wasPlaying = _isPreviewPlaying;
                 if (wasPlaying) StopPreview();
                 _previewCurrentOffset = _songStartSeconds + videoRelativeSec;
@@ -799,15 +764,16 @@ public partial class MusicWizardWindow : Window
             {
                 if (e.Property == Slider.ValueProperty)
                 {
-                    var lbl = this.FindControl<TextBlock>("VideoVolLabel");
-                    if (lbl != null) lbl.Text = $"{videoVolSlider.Value:0}%";
+                    RefreshVolumeLabels();
                     if (_currentStep == StepFit)
                     {
                         var wizardVideoHost = WizardVideoHost;
                         if (wizardVideoHost?.IpcClient != null)
                             _ = wizardVideoHost.IpcClient.ApplyPreviewGainAsync(GetPreviewVideoBalance());
+                        _freezeSound.SetGameBalance(GetPreviewVideoBalance());
                         SaveWizardVolumes();
                         UpdateProblemFlags();
+                        OnSoundSettingChanged();
                     }
                 }
             };
@@ -820,17 +786,20 @@ public partial class MusicWizardWindow : Window
             {
                 if (e.Property == Slider.ValueProperty)
                 {
-                    var lbl = this.FindControl<TextBlock>("MusicVolLabel");
-                    if (lbl != null) lbl.Text = $"{musicVolSlider.Value:0}%";
+                    RefreshVolumeLabels();
                     if (_audioIpcClient != null)
                     {
                         ApplyPreviewMusicVolume();
                         SaveWizardVolumes();
                         UpdateProblemFlags();
                     }
+                    OnSoundSettingChanged();
                 }
             };
         }
+
+        RefreshVolumeLabels();
+        if (videoVolSlider != null) videoVolSlider.AttachedToVisualTree += (_, _) => RefreshVolumeLabels();
 
         var playBtn = PlayBtnCtl;
         if (playBtn != null)
@@ -839,10 +808,10 @@ public partial class MusicWizardWindow : Window
         }
 
         var skipBackBtn = this.FindControl<Button>("SkipBackBtn");
-        if (skipBackBtn != null) skipBackBtn.Click += (s, e) => SkipPreview(-30);
+        if (skipBackBtn != null) skipBackBtn.Click += (s, e) => SkipPreview(-20);
 
         var skipForwardBtn = this.FindControl<Button>("SkipForwardBtn");
-        if (skipForwardBtn != null) skipForwardBtn.Click += (s, e) => SkipPreview(30);
+        if (skipForwardBtn != null) skipForwardBtn.Click += (s, e) => SkipPreview(20);
 
         var nextBtn = NextBtnCtl;
         if (nextBtn != null) nextBtn.Click += (s, e) =>
@@ -852,20 +821,11 @@ public partial class MusicWizardWindow : Window
         };
 
         var backBtn = this.FindControl<Button>("BackBtn");
+        _backBtn = backBtn;
         if (backBtn != null) backBtn.Click += async (s, e) =>
         {
             RuntimeLog.Info("UI", "User clicked Back in Music Wizard.");
             await OnBackClickedAsync(s, e);
-        };
-
-        var confirmCancelBtn = this.FindControl<Button>("ConfirmCancelBtn");
-        if (confirmCancelBtn != null) confirmCancelBtn.Click += (s, e) =>
-        {
-            var btn = this.FindControl<Button>("CancelBtn");
-            btn?.Flyout?.Hide();
-            RuntimeLog.Info("UI", "User confirmed Cancel in Music Wizard.");
-            StopPreview();
-            Close();
         };
 
         RefreshPlaylistViews();
@@ -881,18 +841,17 @@ public partial class MusicWizardWindow : Window
     private void InitializeComponent()
 
     {
-
         AvaloniaXamlLoader.Load(this);
     }
-    /// <summary>WIZ2STEP_01 — two dots: "Choose music" and "Fit &amp; mix".</summary>
     private void UpdateStepProgress()
     {
         var dots = new[]
         {
             (this.FindControl<Avalonia.Controls.Border>("Step1Dot"), this.FindControl<TextBlock>("Step1Icon"), this.FindControl<TextBlock>("Step1Label")),
             (this.FindControl<Avalonia.Controls.Border>("Step2Dot"), this.FindControl<TextBlock>("Step2Icon"), this.FindControl<TextBlock>("Step2Label")),
+            (this.FindControl<Avalonia.Controls.Border>("Step3Dot"), this.FindControl<TextBlock>("Step3Icon"), this.FindControl<TextBlock>("Step3Label")),
         };
-        int current = _currentStep == StepFit ? 1 : 0;
+        int current = _currentStep != StepFit ? 0 : Vm.IsReviewView ? 2 : 1;
         StepDotBrushes brushes = new(this);
         for (int i = 0; i < dots.Length; i++)
         {
@@ -925,7 +884,6 @@ public partial class MusicWizardWindow : Window
         }
     }
 
-    /// <summary>The step-dot colours, from theme tokens (North Star #5) with the old values as fallbacks.</summary>
     private readonly struct StepDotBrushes
     {
         public readonly Avalonia.Media.IBrush Done, Active, Pending, Muted, OnAccent;
@@ -939,50 +897,33 @@ public partial class MusicWizardWindow : Window
         }
     }
 
-    /// <summary>
-    /// RESUME_01 — raised while ApplyTrackFilterAndSort is churning the bound collection, so the
-    /// ListBox's own SelectionChanged cannot be mistaken for the user choosing a song.
-    /// </summary>
     private bool _suppressTrackSelectionSideEffects;
 
-    /// <summary>
-    /// The Main App's one-song flow: the selected row becomes THE song (replacing the previous one).
-    /// RESUME_01 rule 2 still holds — re-selecting the same song is not a change. Selecting never
-    /// plays anything any more (PREVIEW1_03).
-    /// </summary>
-    private void OnTrackSelected(MusicTrackItem? track)
-    {
-        if (_suppressTrackSelectionSideEffects || track == null) return;
-        if (_playlist.Count > 0 && string.Equals(_playlist[0].Path, track.FilePath, StringComparison.OrdinalIgnoreCase))
-        {
-            _selectedTrack = track;
-            return;
-        }
+    private Panel? _transportFooter;
 
-        var entry = NewEntry(track);
-        if (_playlist.Count == 0) _playlist.Add(entry);
-        else _playlist[0] = entry;
-        _selectedSongIndex = 0;
-        System.Threading.Interlocked.Increment(ref _waveformRenderVersion);
-        SetSmartFitStatus("");
-        OnPlaylistChanged();
-        QueueSilenceAnalysis();
-        RecordWizardEdit();
+    private void PlaceTransportBar()
+    {
+        var bar = this.FindControl<StackPanel>("TransportBar");
+        var partHost = this.FindControl<Panel>("PartTransportHost");
+        if (bar == null || partHost == null) return;
+        if (_transportFooter == null && bar.Parent is Panel footer && !ReferenceEquals(footer, partHost)) _transportFooter = footer;
+        var target = _currentStep == StepFit && Vm.IsPartView ? partHost : _transportFooter;
+        if (target == null || ReferenceEquals(bar.Parent, target)) return;
+        if (bar.Parent is Panel current) current.Children.Remove(bar);
+        target.Children.Add(bar);
     }
+
     private void UpdateStepVisibility()
     {
         this.FindControl<Grid>("Step1Panel")!.IsVisible = _currentStep == StepChoose;
         this.FindControl<Grid>("Step3Panel")!.IsVisible = _currentStep == StepFit;
-        Vm.TransportVisible = _currentStep == StepFit;
+        Vm.TransportVisible = true;
+        Vm.ChoosingSong = _currentStep == StepChoose;
 
-        var backBtn = this.FindControl<Button>("BackBtn");
-        if (backBtn != null) backBtn.IsEnabled = _currentStep > StepChoose;
-
-        var nextBtn = NextBtnCtl;
-        if (nextBtn != null)
-        {
-            nextBtn.Content = _currentStep == StepFit ? "APPLY" : "NEXT";
-        }
+        if (_currentStep == StepChoose) Vm.View = ViewModels.MusicWizardView.Choose;
+        PlaceTransportBar();
+        _bounds.SwitchTo(BoundsKeyForView());
+        ApplyStepButtons();
 
         UpdateFinalPlacementSummary();
         UpdateProblemFlags();
@@ -1007,7 +948,6 @@ public partial class MusicWizardWindow : Window
             }
         }, Avalonia.Threading.DispatcherPriority.Loaded);
     }
-
 
     private void OnMusicSearchKeyDown(object? sender, KeyEventArgs e)
     {
@@ -1203,7 +1143,6 @@ public partial class MusicWizardWindow : Window
         UpdateMusicResultCount();
     }
 
-
     private System.Collections.Generic.IEnumerable<MusicTrackItem> SortTracks(System.Collections.Generic.IEnumerable<MusicTrackItem> tracks)
     {
         return _musicSortMode switch
@@ -1245,14 +1184,12 @@ public partial class MusicWizardWindow : Window
             countText.Text = $"{AvailableTracks.Count} of {_allTracks.Count} songs";
         }
     }
-    /// <summary>PLAYLIST_01 — "Fill the rest" takes songs from the list exactly as the user sees it (search + sort).</summary>
     private System.Collections.Generic.List<MusicTrackItem> GetAutoFillSourceTracks()
     {
         return AvailableTracks
             .Where(t => !string.IsNullOrWhiteSpace(t.FilePath) && File.Exists(t.FilePath))
             .ToList();
     }
-
 
     private void SetSmartFitStatus(string message, bool isWarning = false)
     {
@@ -1280,11 +1217,6 @@ public partial class MusicWizardWindow : Window
         _musicScanCts = null;
     }
 
-    /// <summary>
-    /// PCMSTREAM_03 — ffmpeg's 1 kHz PCM is analysed WHILE it streams (64 KiB buffer, 50-sample running
-    /// sums) by <see cref="FreeVideoStudio.Core.Media.MusicEnergyAnalysis"/>; the decoded song is never held
-    /// in memory. stderr is drained concurrently and cancellation kills and reaps ffmpeg before throwing.
-    /// </summary>
     private async Task<AudioEnergyAnalysis?> AnalyzeAudioEnergyAsync(string audioPath, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(audioPath) || !File.Exists(audioPath))
@@ -1331,12 +1263,6 @@ public partial class MusicWizardWindow : Window
 
         return best;
     }
-    /// <summary>
-    /// "Best part": the start of the strongest <paramref name="usableWindowSeconds"/>-long stretch of a
-    /// <paramref name="trackDuration"/>-long song (energy, with a bonus for a strong first quarter),
-    /// nudged onto a beat. Unchanged maths; the song length is now a parameter because any song in
-    /// the list can be the one being fitted, not only the first.
-    /// </summary>
     private double FindSmartFitStart(AudioEnergyAnalysis analysis, double usableWindowSeconds, double trackDuration)
     {
         if (trackDuration <= 0) trackDuration = analysis.DurationSeconds;
@@ -1382,7 +1308,6 @@ public partial class MusicWizardWindow : Window
         return Math.Clamp(snapped ?? startSeconds, 0.0, maxStartSeconds);
     }
 
-    /// <summary>How long the picked song is actually heard in the video (its window, cut short by the video's end).</summary>
     private double HeardLengthOf(int index)
     {
         var seg = FirstSegmentOf(index);
@@ -1390,10 +1315,6 @@ public partial class MusicWizardWindow : Window
         return index >= 0 && index < _playlist.Count ? _playlist[index].WindowSec : 0;
     }
 
-    /// <summary>
-    /// Moves the START of the picked song (the first song when nothing is picked) and keeps its end.
-    /// Every "set the song start" path ends here.
-    /// </summary>
     private void ApplySongStartSeconds(double startSeconds, string statusMessage)
     {
         if (_playlist.Count == 0) return;
@@ -1404,14 +1325,10 @@ public partial class MusicWizardWindow : Window
         RecordWizardEdit();
     }
 
-    /// <summary>
-    /// "★ Best part" for the picked song: the strongest stretch as long as the song is heard. The
-    /// song that ends the video keeps playing to its own end (only its start moves); any other song
-    /// keeps its length and slides to the strongest part.
-    /// </summary>
     private async Task ApplySmartFitAsync(Button button)
     {
         var entry = SelectedEntry;
+        int smartFitIndex = _selectedSongIndex;
         if (entry == null || !File.Exists(entry.Path))
         {
             ShowToast("Pick a song first.");
@@ -1428,7 +1345,7 @@ public partial class MusicWizardWindow : Window
         try
         {
             var analysis = await GetTrackEnergyAsync(entry.Path, cts.Token);
-            int i = IndexOfPath(entry.Path);
+            int i = OccurrenceIndex(smartFitIndex, entry.Path);
             if (analysis == null || i < 0)
             {
                 SetSmartFitStatus("Could not read this song.", isWarning: true);
@@ -1466,7 +1383,6 @@ public partial class MusicWizardWindow : Window
         }
     }
 
-
     private readonly System.Collections.Generic.Dictionary<string, AudioEnergyAnalysis> _energyCache =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -1480,7 +1396,6 @@ public partial class MusicWizardWindow : Window
         return analysis;
     }
 
-    /// <summary>PREVIEW1_02 — where a never-heard song starts: past the intro, inside the body.</summary>
     private const double AutoPreviewBlindFraction = 0.40;
     private const double PreviewFadeInSeconds = 1.0;
 
@@ -1488,31 +1403,14 @@ public partial class MusicWizardWindow : Window
     private readonly System.Collections.Generic.Dictionary<string, double> _autoPreviewStartCache =
         new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>PREVIEW1_01 — when the current playback's 1-second ease-in began. Null = no fade.</summary>
     private DateTime? _previewFadeStartUtc;
-
 
     private void StartAutoPreview(MusicTrackItem track)
     {
-        double startAt;
-        bool knownExactly = _autoPreviewStartCache.TryGetValue(track.FilePath, out startAt);
-        if (!knownExactly)
-        {
-            double length = track.DurationSec;
-            startAt = length > 1.0 ? length * AutoPreviewBlindFraction : 0.0;
-        }
-
-        _previewCurrentOffset = startAt;
-        StartPreviewInternal(startAt, fadeIn: true);
-
-        if (!knownExactly) _ = LearnAutoPreviewStartAsync(track);
+        _previewCurrentOffset = track.DurationSec > 0 ? track.DurationSec / 2 : double.NaN;
+        StartPreviewInternal(_previewCurrentOffset);
     }
 
-    /// <summary>
-    /// PREVIEW1_02 — decodes the song in the background and remembers its best passage, so the
-    /// NEXT time this track is highlighted it starts exactly there. Never touches playback: the
-    /// preview the user is already listening to is left where it is.
-    /// </summary>
     private async Task LearnAutoPreviewStartAsync(MusicTrackItem track)
     {
         try { _autoPreviewCts?.Cancel(); } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
@@ -1542,14 +1440,6 @@ public partial class MusicWizardWindow : Window
         }
     }
 
-    /// <summary>
-    /// PREVIEW1_01 — the "play me the good bit" point.
-    ///
-    /// Not the exact middle: the middle of a song is often a breakdown or a quiet bridge, and the
-    /// front of one is usually an intro that tells you nothing. This takes the loudest sustained
-    /// 12-second stretch within the middle 70% of the track, then nudges it onto the nearest beat
-    /// so it starts on a hit rather than halfway through one.
-    /// </summary>
     private double FindAutoPreviewStart(AudioEnergyAnalysis analysis, double trackDurationSeconds)
     {
         double length = trackDurationSeconds > 0 ? trackDurationSeconds : analysis.DurationSeconds;
@@ -1588,10 +1478,6 @@ public partial class MusicWizardWindow : Window
         return Math.Clamp(onBeat ?? seconds, 0.0, Math.Max(0.0, length - 5.0));
     }
 
-    /// <summary>
-    /// PREVIEW1_01 — the ease-in multiplier, 0 to 1. Applied inside GetPreviewMusicVolume so every
-    /// path that sets the preview volume respects it without knowing it exists.
-    /// </summary>
     private double CurrentPreviewFadeFactor()
     {
         if (_previewFadeStartUtc is not DateTime started) return 1.0;
@@ -1606,11 +1492,6 @@ public partial class MusicWizardWindow : Window
     }
 
     private const double FitByEndTailCushionSeconds = 0.35;
-    /// <summary>
-    /// FITEND_01 — the song-start that makes the song's last musical moment land on the video's
-    /// last frame, given that the song is heard for <paramref name="neededSeconds"/>; null when the
-    /// song is too short to reach back that far.
-    /// </summary>
     private double? FindFitByEndStart(AudioEnergyAnalysis analysis, double neededSeconds, double trackDuration, out double musicEndSeconds)
     {
         musicEndSeconds = 0.0;
@@ -1656,15 +1537,12 @@ public partial class MusicWizardWindow : Window
         return Math.Clamp(onBeat ?? start, 0.0, Math.Max(0.0, trackDuration - 0.01));
     }
 
-    /// <summary>
-    /// "End with the video" (FITEND_01) for the LAST song: it is heard from where it comes in until
-    /// the video ends, so its start is worked back from its real ending by exactly that long.
-    /// </summary>
     private async Task ApplyFitByEndAsync(Button button)
     {
         if (_playlist.Count == 0) return;
         int last = _playlist.Count - 1;
         var entry = _playlist[last];
+        int fitEndIndex = last;
         if (!File.Exists(entry.Path))
         {
             ShowToast("That song file is missing.");
@@ -1699,7 +1577,7 @@ public partial class MusicWizardWindow : Window
                 return;
             }
 
-            int at = IndexOfPath(entry.Path);
+            int at = OccurrenceIndex(fitEndIndex, entry.Path);
             if (at < 0) return;
             _playlist[at] = _playlist[at] with { InSec = start.Value, OutSec = Math.Max(start.Value + MusicPlaylistMath.MinWindowSec, musicEnd), UserTrimmed = true };
             _selectedSongIndex = at;
@@ -1727,6 +1605,21 @@ public partial class MusicWizardWindow : Window
     {
         var focused = Avalonia.Controls.TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
         if (focused is TextBox || focused is Avalonia.Controls.NumericUpDown) return;
+        if (WizardOverlayOpen) return;
+
+        if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None && focused is not ListBox && focused is not ListBoxItem)
+        {
+            e.Handled = true;
+            if (NextBtnCtl is { IsEnabled: true, IsVisible: true }) OnNextClicked(this, new RoutedEventArgs());
+            return;
+        }
+
+        if (e.Key == Key.Escape && e.KeyModifiers == KeyModifiers.None)
+        {
+            e.Handled = true;
+            if (_backBtn is { IsEnabled: true }) _ = OnBackClickedAsync(this, new RoutedEventArgs());
+            return;
+        }
 
         if (e.Key == Key.Space)
         {
@@ -1736,14 +1629,13 @@ public partial class MusicWizardWindow : Window
         }
 
         if (e.Key != Key.Left && e.Key != Key.Right) return;
-        if (_currentStep != StepFit || !_phase3Ready) return;
+        if (_currentStep == StepFit && !_phase3Ready) return;
         if (focused is Canvas c && c.Name == "WaveformCanvas") return;
 
         double direction = e.Key == Key.Right ? 1.0 : -1.0;
-        SkipPreview(direction * (e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? 30.0 : 5.0));
+        SkipPreview(direction * (_currentStep == StepChoose ? 20.0 : e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? 30.0 : 5.0));
         e.Handled = true;
     }
-
 
     private MusicTrackItem? FindTrackByPath(string path)
     {
@@ -1796,24 +1688,17 @@ public partial class MusicWizardWindow : Window
         }
         catch (System.Exception __ex) { RuntimeLog.Swallowed(__ex); }
     }
-    /// <summary>Arrow keys on the song card: nudge the picked song's start (Shift = 5 s), Home = its beginning.</summary>
     private void HandleSongOffsetKeyDown(KeyEventArgs e)
     {
-        var entry = SelectedEntry;
-        if (entry == null) return;
+        if (!Vm.IsPartView || SelectedEntry == null) return;
         double step = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? 5.0 : 1.0;
-        double target;
-        if (e.Key == Key.Left) target = entry.InSec - step;
-        else if (e.Key == Key.Right) target = entry.InSec + step;
-        else if (e.Key == Key.Home) target = 0;
+        double here = CurrentPartListeningSec();
+        if (e.Key == Key.Left) SeekPart(here - step);
+        else if (e.Key == Key.Right) SeekPart(here + step);
+        else if (e.Key == Key.Home) SeekPart(0);
         else return;
-
-        SetSongIn(Math.Clamp(_selectedSongIndex, 0, _playlist.Count - 1), Math.Max(0, target));
-        OnPlaylistChanged();
-        RecordWizardEdit();
         e.Handled = true;
     }
-
 
     private bool _isSeekingPhase3Video = false;
     private double? _nextPhase3SeekTarget = null;
@@ -1882,6 +1767,7 @@ public partial class MusicWizardWindow : Window
 
         _isSeekingPhase3Video = true;
         _lastPhase3SeekTimestamp = Environment.TickCount64;
+        StopPhase3FreezeSound();
 
         double sourceRelativeSec = MapPhase3OutputToSourceRelativeSeconds(outputRelativeSec);
         double sourceAbsSec = (_trimStartMs / 1000.0) + sourceRelativeSec;
@@ -1913,6 +1799,7 @@ public partial class MusicWizardWindow : Window
         double sourceAbsSec = (_trimStartMs / 1000.0) + sourceRelativeSec;
         double speed = GetPhase3PreviewSpeedAtSourceRelativeSeconds(sourceRelativeSec);
 
+        UpdatePhase3FreezeSound(outputRelativeSec);
         if (speed <= 0.001)
         {
             _ = wizardVideoHost.IpcClient.SetPropertyAsync("time-pos", sourceAbsSec.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -1932,61 +1819,47 @@ public partial class MusicWizardWindow : Window
 
         if (_currentStep == StepChoose)
         {
-            bool ready = _playlist.Count > 0 || _highlightedTrack != null;
+            bool ready = _highlightedTrack != null;
             nextBtn.IsEnabled = ready;
             nextBtn.Opacity = ready ? 1.0 : 0.5;
             ToolTip.SetTip(nextBtn, !ready
-                ? (_isMergerMode ? "Press + on a song to add it first" : "Select a song first")
-                : _playlist.Count > 1
-                    ? $"Continue with your {_playlist.Count} songs"
-                    : "Continue to see and hear the music with your video");
+                ? (_isMergerMode ? "Choose a song first" : "Select a song first")
+                : "Use the highlighted song and choose which part of it plays");
         }
         else
         {
             nextBtn.IsEnabled = _phase3Ready && _playlist.Count > 0;
             nextBtn.Opacity = nextBtn.IsEnabled ? 1.0 : 0.5;
-            ToolTip.SetTip(nextBtn, _phase3Ready ? "Put this music on your video" : "Wait for the preview to finish loading");
+            ToolTip.SetTip(nextBtn, !_phase3Ready ? "Wait for the preview to finish loading"
+                : Vm.IsPartView ? "Keep this part of the song" : "Put this music on your video");
         }
+        ApplyStepButtons();
     }
 
     private async void OnNextClicked(object? sender, RoutedEventArgs e)
     {
+        if (_choosingSongToProceed) return;
+        _choosingSongToProceed = true;
         try
         {
             if (_currentStep == StepChoose)
             {
                 StopPreview();
-
-                if (_playlist.Count == 0)
+                await _songPreviewGate.WaitAsync();
+                _songPreviewGate.Release();
+                if (_highlightedTrack == null)
                 {
-                    if (_highlightedTrack == null)
-                    {
-                        ShowToast(_isMergerMode ? "⚠ Press + on a song to add it first!" : "⚠ Please select a song first!");
-                        return;
-                    }
-                    AddToPlaylist(_highlightedTrack, explicitAdd: false);
-                    if (_playlist.Count == 0) return;
+                    ShowToast(_isMergerMode ? "⚠ Choose a song first!" : "⚠ Please select a song first!");
+                    return;
                 }
+                if (!PlaceChosenOccurrence(_highlightedTrack)) return;
+                await EnterFitAsync(ViewModels.MusicWizardView.Part, _editIndex);
+                return;
+            }
 
-                await EnsurePlaylistDurationsAsync();
-                if (_playlist[0].FullSec > 0) _trackDuration = _playlist[0].FullSec;
-                _lastConfiguredTrackPath = _playlist[0].Path;
-                _selectedSongIndex = Math.Clamp(_selectedSongIndex, 0, _playlist.Count - 1);
-                QueueSilenceAnalysis();
-                SyncWizardHistoryBaseline();
-
-                CancelPhase3Load();
-                _phase3Ready = false;
-                _previewCurrentOffset = _songStartSeconds;
-                _currentStep = StepFit;
-                _visitedFit = true;
-                OnPlaylistChanged();
-                UpdateStepVisibility();
-                UpdateNextButtonState();
-
-                _phase3LoadCts = new CancellationTokenSource();
-                int loadVersion = ++_phase3LoadVersion;
-                await LoadPhase3DataAsync(_phase3LoadCts.Token, loadVersion);
+            if (Vm.IsPartView)
+            {
+                await OnStepNextAsync();
                 return;
             }
 
@@ -2009,13 +1882,14 @@ public partial class MusicWizardWindow : Window
             RuntimeLog.Fail("MUSIC_WIZARD", $"Next/Apply failed: {ex.Message}");
             ShowToast("Something went wrong — please try again.");
         }
+        finally { _choosingSongToProceed = false; }
     }
 
     private double GetKnownTrackDurationSeconds(string filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return 0.0;
-        int at = IndexOfPath(filePath);
-        if (at >= 0 && _playlist[at].FullSec > 0) return _playlist[at].FullSec;
+        foreach (var e in _playlist)
+            if (e.FullSec > 0 && string.Equals(e.Path, filePath, StringComparison.OrdinalIgnoreCase)) return e.FullSec;
         var item = AvailableTracks.FirstOrDefault(track =>
             string.Equals(track.FilePath, filePath, StringComparison.OrdinalIgnoreCase));
         item ??= _allTracks.FirstOrDefault(track =>
@@ -2023,13 +1897,6 @@ public partial class MusicWizardWindow : Window
         return item?.DurationSec > 0 ? item.DurationSec : 0.0;
     }
 
-
-    /// <summary>
-    /// LANES_01: delegates to the shared <see cref="ThumbnailStripGenerator"/>. The ~70 lines of
-    /// FFmpeg tiling that used to live here were lifted out when the Granular Speed Editor needed
-    /// the identical strip — two copies would have been free to drift on frame count, scaling and
-    /// temp-file cleanup. Signature unchanged so every phase-3 call site is untouched.
-    /// </summary>
     private async Task<string?> GenerateThumbnailsStripAsync(string ffmpegPath, string videoPath, double startSec, double durationSec, CancellationToken cancellationToken, int frames = ThumbnailStripGenerator.DefaultFrames)
         => await ThumbnailStripGenerator.GenerateAsync(
             ffmpegPath, videoPath, _paths.TempDirectory, startSec, durationSec, cancellationToken, frames, "MusicWizard");
@@ -2155,7 +2022,6 @@ public partial class MusicWizardWindow : Window
         var current = new DirectoryInfo(basePath);
         while (current != null)
         {
-
             string fPath = Path.Combine(current.FullName, "frontend", name);
             if (File.Exists(fPath)) return Path.GetFullPath(fPath);
 
@@ -2243,6 +2109,7 @@ public partial class MusicWizardWindow : Window
                 (waveLane.Source as IDisposable)?.Dispose();
                 waveLane.Source = null;
             }
+            _phase3WaveSpanSec = 0;
             _phase3ClipDurationsSec.Clear();
 
             _previewDetach?.Attach();
@@ -2342,11 +2209,6 @@ public partial class MusicWizardWindow : Window
     private Task _phase3ThumbTask = Task.CompletedTask;
     private Task _phase3WaveTask = Task.CompletedTask;
 
-    /// <summary>
-    /// P3ASYNC_01 — fills the film lane in the background. The body is unchanged from when it ran
-    /// inline; what changed is that nothing waits for it, so the timeline is scrubbable while it
-    /// runs and each strip appears as its own decode finishes.
-    /// </summary>
     private async Task RunPhase3ThumbnailLaneAsync(
         Avalonia.Controls.Grid? thumbLaneGrid, CancellationToken cancellationToken, int loadVersion)
     {
@@ -2358,7 +2220,7 @@ public partial class MusicWizardWindow : Window
                 var ffmpeg = ResolveFfmpegPath();
                 var videosToThumb = (_isMergerMode && _mergerVideos != null && _mergerVideos.Count > 0) 
                     ? _mergerVideos : new System.Collections.Generic.List<string> { _videoPath };
-                
+
                 foreach (var f in _lastPhase3ThumbFiles) { try { if (File.Exists(f)) File.Delete(f); } catch (System.Exception __ex) { RuntimeLog.Swallowed(__ex); } }
                 _lastPhase3ThumbFiles.Clear();
 
@@ -2382,6 +2244,7 @@ public partial class MusicWizardWindow : Window
                 }
 
                 if (totalDur <= 0) totalDur = 1.0;
+                _phase3ThumbSlots.Clear();
                 _phase3ClipDurationsSec.Clear();
                 _phase3ClipDurationsSec.AddRange(videoDurs.Select(d => Math.Max(0.1, d / Math.Max(0.001, _phase3BaseSpeed))));
 
@@ -2410,12 +2273,15 @@ public partial class MusicWizardWindow : Window
                     double startOffset = (_isMergerMode || i > 0) ? MergerWindowStart(i) : (_trimStartMs / 1000.0);
                     string videoForStrip = videosToThumb[i];
                     var target = laneImages[i];
+                    _phase3ThumbSlots.Add(new Phase3ThumbSlot(target, videoForStrip, startOffset, vDur, framesCount));
 
                     stripTasks.Add(Task.Run(async () =>
                     {
                         await stripGate.WaitAsync(cancellationToken);
                         try
                         {
+                            bool warmed = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => MountWarmFilmstrip(target, videoForStrip, startOffset, vDur, framesCount, loadVersion));
+                            if (warmed) return;
                             bool streamed = await ThumbnailStripGenerator.StreamAsync(
                                 ffmpeg, videoForStrip, startOffset, vDur, cancellationToken,
                                 onReady: wb =>
@@ -2478,10 +2344,6 @@ public partial class MusicWizardWindow : Window
         }
     }
 
-    /// <summary>
-    /// P3ASYNC_01 — renders the music waveform lane in the background. Same body as before, just
-    /// no longer standing between the user and the play button.
-    /// </summary>
     private async Task RunPhase3WaveformLaneAsync(
         Avalonia.Controls.Image? waveLane, CancellationToken cancellationToken, int loadVersion)
     {
@@ -2494,6 +2356,19 @@ public partial class MusicWizardWindow : Window
                 double audibleMusicDuration = previewSegments.Count > 0
                     ? Math.Min(GetPhase3VideoDurationSeconds(), previewSegments[^1].TimelineEndSec)
                     : 0.0;
+                double tailSec = PartLanesActive ? WaveTailSec(previewSegments) : 0.0;
+                if (tailSec > 0)
+                {
+                    var last = previewSegments[^1];
+                    previewSegments[^1] = new Phase3MusicPreviewSegment
+                    {
+                        Path = last.Path,
+                        TimelineStartSec = last.TimelineStartSec,
+                        TimelineEndSec = last.TimelineEndSec + tailSec,
+                        FileStartSec = last.FileStartSec,
+                    };
+                    audibleMusicDuration = last.TimelineEndSec + tailSec;
+                }
                 waveLane.Width = double.NaN;
                 waveLane.Margin = new Avalonia.Thickness(0, 0, 0, 0);
 
@@ -2516,6 +2391,7 @@ public partial class MusicWizardWindow : Window
                             waveLane.Source = new Avalonia.Media.Imaging.Bitmap(fs);
                             DeleteTempFile(ref _lastPhase3WaveFile);
                             _lastPhase3WaveFile = wavePath;
+                            _phase3WaveSpanSec = audibleMusicDuration;
                             UpdatePhase3WaveformLaneWidth();
                         }
                         catch (System.Exception __ex) { RuntimeLog.Swallowed(__ex); }
@@ -2549,7 +2425,6 @@ public partial class MusicWizardWindow : Window
         _phase3Ready = false;
     }
 
-    /// <summary>MPVSHUTDOWN_01 — two-phase awaitable phase-3 preview teardown; each resource freed once.</summary>
     private async Task DisposePhase3VideoHostAsync()
     {
         var border = VideoHostBorderCtl;
@@ -2580,25 +2455,6 @@ public partial class MusicWizardWindow : Window
         return Math.Max(0.1, duration);
     }
 
-    /// <summary>
-    /// TIME_01 - how long phase 3's video actually runs for once speed changes and freezes have
-    /// stretched it.
-    ///
-    /// <para>
-    /// THIS METHOD USED TO BE WRONG. Its hand-written loop advanced its cursor past a freeze
-    /// (`cursor = Math.Max(cursor, segEnd)`), i.e. it believed a held frame REPLACED the footage
-    /// underneath it. The exported graph does the opposite - `GranularSpeedBuilder` holds the frame
-    /// and then carries on playing from the same spot, so a 1.5 second freeze makes the finished
-    /// video 1.5 seconds LONGER and skips nothing. Measured against the export as ground truth this
-    /// method under-reported by the whole freeze duration every time: 63.000s reported as 60.000s
-    /// for a single 3 second freeze, 33.000s as 31.500s at base speed 2x. Music was therefore
-    /// positioned against a length the finished video never had.
-    /// </para>
-    /// <para>
-    /// It now delegates to <see cref="FreeVideoStudio.Core.Media.OutputTimeline"/>, the single
-    /// shared model, so it cannot disagree with the export again.
-    /// </para>
-    /// </summary>
     private double CalculatePhase3EffectiveDurationSeconds(double sourceDurationSec)
     {
         var timeline = FreeVideoStudio.Core.Media.OutputTimeline.Create(
@@ -2611,34 +2467,6 @@ public partial class MusicWizardWindow : Window
         return Math.Max(0.001, timeline.TotalOutputSeconds);
     }
 
-    /// <summary>
-    /// TIME_01 - a moment in the FINISHED video to the source moment showing at that instant,
-    /// measured from the trim-in point.
-    ///
-    /// <para>
-    /// Carried the same freeze error as <see cref="CalculatePhase3EffectiveDurationSeconds"/> and is
-    /// fixed the same way, by delegating to the shared
-    /// <see cref="FreeVideoStudio.Core.Media.OutputTimeline"/>. Inside a held frame the answer
-    /// is deliberately lossy - every moment of the freeze shows the same source instant, so that
-    /// instant is what comes back.
-    /// </para>
-    /// </summary>
-    /// <summary>
-    /// ══════════════════════════════════════════════════════════════════════════════
-    /// CUTS_03 — WHY PHASE 3 NEEDS NO SKIP LOOP OF ITS OWN.
-    ///
-    /// This preview is driven from an OUTPUT clock: the wizard counts finished-video seconds and
-    /// asks this method where in the source footage that moment lives, then seeks mpv there. A cut
-    /// occupies zero output time, so once the timeline knows about it, no output second can ever
-    /// map into deleted footage — the deleted span is simply never a possible answer, and the
-    /// preview steps over it on its own.
-    ///
-    /// Which is exactly why the missing argument here was so quiet: the timeline was built WITHOUT
-    /// the cuts, so it still believed every deleted second was playable, mapped output seconds
-    /// into them, and told mpv to go and show the user footage that will not be in their video.
-    /// The fix is the cut list, not a watchdog.
-    /// ══════════════════════════════════════════════════════════════════════════════
-    /// </summary>
     private double MapPhase3OutputToSourceRelativeSeconds(double outputRelativeSec)
     {
         double sourceDurationSec = GetPhase3SourceDurationSeconds();
@@ -2692,6 +2520,11 @@ public partial class MusicWizardWindow : Window
             _ = wizardVideoHost.IpcClient.SetPropertyAsync("time-pos", endTime.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
         StopPreview();
+        if (PartLanesActive && _editIndex >= 0 && _editIndex < _playlist.Count && EntryOverflowSec(_editIndex) > 0)
+        {
+            _partCursorSec = PartSongSecAt(videoDuration);
+            _ = StartPartAuditionAsync(_playlist[_editIndex].Path, _partCursorSec);
+        }
         UpdatePlayhead();
     }
 
@@ -2699,7 +2532,6 @@ public partial class MusicWizardWindow : Window
 
     private void SaveWizardVolumes()
     {
-        if (!FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.Defaults.RememberMusicVolumes) return;
         try
         {
             var updates = new System.Text.Json.Nodes.JsonObject();
@@ -2719,10 +2551,13 @@ public partial class MusicWizardWindow : Window
         double videoDuration = GetPhase3VideoDurationSeconds();
         if (videoDuration <= 0) return;
 
-        double ratio = GetQueuedMusicCoverageSeconds() / videoDuration;
+        double ratio = PartLanesActive && _phase3WaveSpanSec > 0
+            ? Math.Clamp(_phase3WaveSpanSec / Math.Max(videoDuration, LaneAxisSec()), 0, 1)
+            : Math.Min(GetQueuedMusicCoverageSeconds(), videoDuration) / Math.Max(videoDuration, LaneAxisSec());
         waveImg.Width = clip.Bounds.Width * ratio;
         waveImg.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
-        waveImg.Height = 60;
+        waveImg.Height = clip.Bounds.Height > 1 ? clip.Bounds.Height : 60;
+        waveImg.Opacity = _partCut != null ? 0 : 1;
     }
     private void UpdateFinalPlacementSummary()
     {
@@ -2736,17 +2571,11 @@ public partial class MusicWizardWindow : Window
         ToolTip.SetTip(label, tip);
     }
 
-
     private bool IsPhase3LoopMusicEnabled()
     {
         return LoopMusicCheckBoxCtl?.IsChecked ?? false;
     }
 
-    /// <summary>
-    /// MUSICWIN_01 / XFADEPLAN_01 — the phase-3 music preview plays the SAME plan the export renders:
-    /// each song's chosen part, joined with the export's crossfade leads. A segment's file position at
-    /// its boundary includes its lead, exactly like <see cref="MusicBedPlan.Locate"/>.
-    /// </summary>
     private System.Collections.Generic.List<Phase3MusicPreviewSegment> BuildPhase3MusicPreviewSegments()
     {
         var segments = new System.Collections.Generic.List<Phase3MusicPreviewSegment>();
@@ -2763,7 +2592,6 @@ public partial class MusicWizardWindow : Window
         }
         return segments;
     }
-
 
     private Phase3MusicPreviewSegment? FindPhase3MusicPreviewSegment(double outputRelativeSec)
     {
@@ -2821,6 +2649,7 @@ public partial class MusicWizardWindow : Window
             return;
 
         double outputRelativeSec = GetCurrentPhase3VideoRelativeSeconds();
+        if (await SyncRenderedMixAsync(outputRelativeSec)) return;
         var segment = FindPhase3MusicPreviewSegment(outputRelativeSec);
         if (segment == null)
         {
@@ -2858,31 +2687,28 @@ public partial class MusicWizardWindow : Window
 
         await _audioIpcClient.ApplyPreviewGainAsync(GetPreviewMusicBalance());
         ApplyPreviewMusicFilters();
+        if (!PreviewStillWantsMusic()) { await _audioIpcClient.SetPropertyAsync("pause", "yes"); return; }
         await _audioIpcClient.SetPropertyAsync("pause", "no");
     }
 
-    /// <summary>
-    /// DUCKMB_01 — the wizard's music player carries NO filter any more. The carve used to be a
-    /// static 2 kHz EQ that this window could copy; it is now DYNAMIC (a sidechain on the music's
-    /// speech band, triggered by the gameplay), like the ducking. Both need the gameplay as a live
-    /// sidechain input, which two separate players cannot provide, so a static stand-in here would
-    /// misrepresent the export. They are heard exactly in the Main App preview once the wizard
-    /// closes: it plays the export's own rendered mix (PREVIEWMIX_01).
-    /// </summary>
+    private void RefreshVolumeLabels()
+    {
+        if (this.FindControl<TextBlock>("VideoVolLabel") is { } v && VideoVolSliderCtl is { } vs) v.Text = $"{vs.Value:0}%";
+        if (this.FindControl<TextBlock>("MusicVolLabel") is { } m && MusicVolSliderCtl is { } ms) m.Text = $"{ms.Value:0}%";
+    }
+
+    private bool PreviewStillWantsMusic() => _currentStep == StepFit && _isPreviewPlaying && !_partAuditionActive;
+
     private void ApplyPreviewMusicFilters()
     {
         if (_audioIpcClient == null) return;
         _ = _audioIpcClient.SetPropertyAsync("af", "");
     }
 
-    /// <summary>
-    /// DUCKSTRENGTH_01 — a helper switched OFF in Settings is shown unticked and greyed out here,
-    /// with a tooltip that says where to turn it back on (a silently ignored tick reads as a bug).
-    /// </summary>
     private void ApplyMixSwitchesFromSettings()
     {
         var d = Infrastructure.SettingsManager.Instance.Defaults;
-        void Apply(CheckBox? cb, bool enabled)
+        void Apply(Avalonia.Controls.Primitives.ToggleButton? cb, bool enabled)
         {
             if (cb == null || enabled) return;
             cb.IsChecked = false;
@@ -2894,7 +2720,7 @@ public partial class MusicWizardWindow : Window
     }
     private void UpdatePreviewControlsState()
     {
-        bool enabled = _playlist.Count > 0 && _currentStep == StepFit && _phase3Ready;
+        bool enabled = _currentStep == StepChoose ? _highlightedTrack != null : _playlist.Count > 0 && _phase3Ready;
         foreach (string name in new[] { "PlayBtn", "SkipBackBtn", "SkipForwardBtn" })
         {
             var btn = this.FindControl<Button>(name);
@@ -2904,42 +2730,21 @@ public partial class MusicWizardWindow : Window
         }
     }
 
-
-    /// <summary>
-    /// AUDIO_09 — kept as a no-op rather than deleted, because it had FOUR call sites scattered
-    /// through the wizard's state-refresh paths (502, 900, 1030, 1542). Removing the method would
-    /// have meant touching all four in a change that is otherwise about layout, and each is on a
-    /// different refresh trigger. The button it used to drive now lives in Settings as
-    /// `AudioProtection`, so there is nothing left to update here.
-    /// ⚠️ If you are cleaning up: delete this AND its four call sites together, or not at all.
-    /// </summary>
     private void UpdateDuckingCompareButton()
     {
     }
 
-    /// <summary>
-    /// VOLCURVE_01 — the VIDEO fader as a LINEAR gain (what the export's `main_vol` applies). The
-    /// suite master (level, mute, perceptual curve) is applied on top by
-    /// <see cref="FreeVideoStudio.Core.Media.MpvIpcClient.ApplyPreviewGainAsync"/>.
-    /// </summary>
     private double GetPreviewVideoBalance() =>
-        Math.Clamp((VideoVolSliderCtl?.Value ?? 100.0) / 100.0, 0.0, 1.0);
+        RenderedMixLive ? 0.0 : Math.Clamp((VideoVolSliderCtl?.Value ?? 100.0) / 100.0, 0.0, 1.0);
 
-
-    /// <summary>VOLCURVE_01 — the MUSIC fader as a LINEAR gain, times the PREVIEW1_01 ease-in.</summary>
     private double GetPreviewMusicBalance() =>
-        Math.Clamp((MusicVolSliderCtl?.Value ?? 100.0) / 100.0 * CurrentPreviewFadeFactor() * CurrentCrossfadeGain(), 0.0, 1.0);
-
+        RenderedMixLive ? 1.0 : Math.Clamp((MusicVolSliderCtl?.Value ?? 100.0) / 100.0 * CurrentPreviewFadeFactor() * CurrentCrossfadeGain(), 0.0, 1.0);
 
     private void ApplyPreviewMusicVolume()
     {
         if (_audioIpcClient == null) return;
         _ = _audioIpcClient.ApplyPreviewGainAsync(GetPreviewMusicBalance());
     }
-    /// <summary>
-    /// Warnings worth a second look before APPLY. Coverage is NOT here any more: it has its own line
-    /// (COVERSTRIP_01) with the fixes beside it, and saying it twice only adds noise.
-    /// </summary>
     private void UpdateProblemFlags()
     {
         var panel = this.FindControl<Border>("ProblemFlagsPanel");
@@ -2981,14 +2786,6 @@ public partial class MusicWizardWindow : Window
         text.Text = string.Join(Environment.NewLine, flags.Select(flag => $"⚠ {flag}"));
     }
 
-
-    /// <summary>
-    /// LAYOUT_01 — the status line now COLLAPSES when it has nothing to say.
-    ///
-    /// It used to be a permanent row in the header stack, holding a full line of height open on a
-    /// screen whose only elastic row is the video. It is empty the overwhelming majority of the
-    /// time, so it was paying rent for a message that rarely arrives.
-    /// </summary>
     private void SetPhase3Status(string message)
     {
         var status = this.FindControl<TextBlock>("Phase3StatusLabel");
@@ -3002,7 +2799,18 @@ public partial class MusicWizardWindow : Window
         {
             var row = _highlightedTrack ?? _rowPreviewTrack;
             if (_isPreviewPlaying) StopPreview();
-            else if (row != null) ToggleRowPreview(row);
+            else if (row != null)
+            {
+                _rowPreviewTrack = row;
+                row.IsPreviewing = true;
+                StartPreviewInternal(_previewCurrentOffset >= row.DurationSec ? 0 : _previewCurrentOffset);
+            }
+            return;
+        }
+
+        if (Vm.IsPartView)
+        {
+            TogglePartPreview();
             return;
         }
 
@@ -3029,7 +2837,21 @@ public partial class MusicWizardWindow : Window
 
     private void SkipPreview(double offsetSeconds)
     {
+        if (_currentStep == StepChoose)
+        {
+            if (_rowPreviewTrack == null || _rowPreviewTrack.DurationSec <= 0) return;
+            bool playing = _isPreviewPlaying;
+            StopPreview();
+            _previewCurrentOffset = Math.Clamp(_previewCurrentOffset + offsetSeconds, 0, _rowPreviewTrack.DurationSec);
+            if (playing) StartPreviewInternal(_previewCurrentOffset);
+            return;
+        }
         if (_currentStep != StepFit || !_phase3Ready || _playlist.Count == 0) return;
+        if (Vm.IsPartView)
+        {
+            SeekPart(CurrentPartListeningSec() + offsetSeconds);
+            return;
+        }
         bool wasPlaying = _isPreviewPlaying;
         StopPreview();
         double videoRelative = Math.Clamp(GetCurrentPhase3VideoRelativeSeconds() + offsetSeconds, 0, GetPhase3VideoDurationSeconds());
@@ -3045,30 +2867,12 @@ public partial class MusicWizardWindow : Window
         }
     }
 
-
     private async void StartPreviewInternal(double startOffset, bool fadeIn = false)
 
     {
         _previewFadeStartUtc = fadeIn ? DateTime.UtcNow : null;
 
-        var playBtn = PlayBtnCtl;
-
-        if (playBtn != null)
-
-        {
-
-            playBtn.Classes.Remove("Success");
-
-            playBtn.Classes.Add("Danger");
-
-            var playIcon = this.FindControl<Avalonia.Controls.Shapes.Path>("PlayIcon");
-
-            var pauseIcon = this.FindControl<Avalonia.Controls.Shapes.Path>("PauseIcon");
-
-            if (playIcon != null) playIcon.IsVisible = false;
-
-            if (pauseIcon != null) pauseIcon.IsVisible = true;
-        }
+        SetPlayButtonPlaying(true);
 
         _isPreviewPlaying = true;
 
@@ -3089,7 +2893,11 @@ public partial class MusicWizardWindow : Window
         try
 
         {
-
+            if (_currentStep == StepChoose)
+            {
+                await PlayChosenSongAsync(_rowPreviewTrack, startOffset);
+                return;
+            }
             await EnsureAudioPreviewClientAsync();
             var audioClient = _audioIpcClient;
             if (audioClient == null)
@@ -3130,6 +2938,9 @@ public partial class MusicWizardWindow : Window
 
     private void StopPreview()
     {
+        ++_songPreviewVersion;
+        ++_partAuditionVersion;
+        _partAuditionActive = false;
         if (_previewStartTime.HasValue)
         {
             if (_currentStep == 3)
@@ -3139,7 +2950,8 @@ public partial class MusicWizardWindow : Window
             }
             else
             {
-                _previewCurrentOffset += (DateTime.UtcNow - _previewStartTime.Value).TotalSeconds;
+                if (_songPreviewReady)
+                    _previewCurrentOffset += (DateTime.UtcNow - _previewStartTime.Value).TotalSeconds;
             }
 
             if (_rowPreviewTrack != null && _currentStep != StepFit && _rowPreviewTrack.DurationSec > 0 && _previewCurrentOffset > _rowPreviewTrack.DurationSec)
@@ -3148,6 +2960,8 @@ public partial class MusicWizardWindow : Window
         }
         if (_rowPreviewTrack != null) _rowPreviewTrack.IsPreviewing = false;
         _isPreviewPlaying = false;
+        _songPreviewReady = false;
+        StopPhase3FreezeSound();
         _lastAppliedCrossfadeGain = 1.0;
         _previewFadeStartUtc = null;
         _phase3PreviewMusicPath = null;
@@ -3156,14 +2970,12 @@ public partial class MusicWizardWindow : Window
         if (_audioIpcClient != null)
 
         {
-
             _ = _audioIpcClient.SetPropertyAsync("pause", "yes");
         }
 
         if (_currentStep == 3)
 
         {
-
             var wizardVideoHost = WizardVideoHost;
 
             if (wizardVideoHost?.IpcClient != null)
@@ -3171,44 +2983,19 @@ public partial class MusicWizardWindow : Window
                 _ = wizardVideoHost.IpcClient.SetPropertyAsync("pause", "yes");
         }
 
-        var playBtn = PlayBtnCtl;
-
-        if (playBtn != null)
-
-        {
-
-            playBtn.Classes.Remove("Danger");
-
-            playBtn.Classes.Add("Success");
-
-            var playIcon = this.FindControl<Avalonia.Controls.Shapes.Path>("PlayIcon");
-
-            var pauseIcon = this.FindControl<Avalonia.Controls.Shapes.Path>("PauseIcon");
-
-            if (playIcon != null) playIcon.IsVisible = true;
-
-            if (pauseIcon != null) pauseIcon.IsVisible = false;
-        }
+        SetPlayButtonPlaying(false);
     }
 
-    /// <summary>RESUME_01 — true while a step-2 waveform render is in flight.</summary>
     private bool _waveformRenderInFlight;
 
     private async Task RenderWaveformAsync(string? filePath)
 
     {
-
         if (string.IsNullOrEmpty(filePath)) return;
         _waveformRenderInFlight = true;
         try { await RenderWaveformCoreAsync(filePath); }
         finally { _waveformRenderInFlight = false; }
     }
-    /// <summary>
-    /// SONGCARD_01 — draws the picked song's whole waveform behind the bright box. Each song is
-    /// rendered once and cached for the life of the window, so clicking between songs is instant.
-    /// RESUME_01's staleness rule is kept: a render that finishes after the user picked another
-    /// song is dropped (but its file stays cached for when that song is picked again).
-    /// </summary>
     private async Task RenderWaveformCoreAsync(string filePath)
     {
         int renderVersion = System.Threading.Interlocked.Increment(ref _waveformRenderVersion);
@@ -3265,12 +3052,6 @@ public partial class MusicWizardWindow : Window
         DrawSongLane();
     }
 
-    /// <summary>
-    /// SONGLANE_02 — merged clips are NAMED on the film lane ("2 · clip name") at each boundary, so
-    /// the song blocks underneath can be read against them. The old "CLIP n" labels were written
-    /// onto a canvas variable that was always null and never appeared; the song boundaries that
-    /// used to be bare green lines on the music lane are now the song blocks themselves.
-    /// </summary>
     private void DrawPhase3MergerOverlays(double canvasWidth)
     {
         var thumbCanvas = this.FindControl<Canvas>("ThumbnailOverlayCanvas");
@@ -3313,10 +3094,6 @@ public partial class MusicWizardWindow : Window
         }
     }
 
-    /// <summary>
-    /// The red playhead on the song card follows the music only while the picked song is the one
-    /// playing; the lanes' caret follows the video.
-    /// </summary>
     private void UpdatePlayhead()
     {
         var canvas = this.FindControl<Canvas>("WaveformCanvas");
@@ -3324,12 +3101,8 @@ public partial class MusicWizardWindow : Window
         {
             double x = -10;
             var entry = SelectedEntry;
-            if (entry != null && entry.FullSec > 0 && _currentStep == StepFit)
-            {
-                var at = MusicBedPlan.Locate(CurrentPlan(), GetCurrentPhase3VideoRelativeSeconds());
-                if (at is { } hit && string.Equals(hit.Path, entry.Path, StringComparison.OrdinalIgnoreCase))
-                    x = Math.Clamp(hit.PositionSec / entry.FullSec, 0, 1) * canvas.Bounds.Width;
-            }
+            if (entry != null && entry.FullSec > 0 && _currentStep == StepFit && Vm.IsPartView)
+                x = Math.Clamp(CurrentPartListeningSec() / entry.FullSec, 0, 1) * canvas.Bounds.Width;
             EnsurePlayheadLine(
                 canvas,
                 ref _waveformPlayheadLine,
@@ -3344,11 +3117,16 @@ public partial class MusicWizardWindow : Window
             var p3Lanes = Phase3LanesCtl;
             if (p3Lanes != null)
             {
-                double videoDuration = GetPhase3VideoDurationSeconds();
-                if (Math.Abs(p3Lanes.DurationSeconds - videoDuration) > 0.001)
-                    p3Lanes.DurationSeconds = videoDuration;
-                p3Lanes.PositionSeconds = GetCurrentPhase3VideoRelativeSeconds();
+                double axis = LaneAxisSec();
+                if (Math.Abs(p3Lanes.DurationSeconds - axis) > 0.001)
+                    p3Lanes.DurationSeconds = axis;
+                p3Lanes.PositionSeconds = PartLanesActive ? PartTimelineSec() : GetCurrentPhase3VideoRelativeSeconds();
             }
+            Vm.PastVideoEnd = PartLanesActive && _editIndex >= 0 && PartTimelineSec() > GetPhase3VideoDurationSeconds() + 0.02;
+        }
+        else
+        {
+            Vm.PastVideoEnd = false;
         }
     }
 
@@ -3356,27 +3134,10 @@ public partial class MusicWizardWindow : Window
     {
         try
         {
-            if (_currentStep > StepChoose)
-            {
-                StopPreview();
-                CancelPhase3Load();
-                await DisposePhase3VideoHostAsync();
-                SetPhase3Status("");
-                _previewCurrentOffset = _songStartSeconds;
-                _lastLoadedTrackPath = null;
-                _currentStep = StepChoose;
-                UpdateStepVisibility();
-                UpdateNextButtonState();
-                UpdatePlayhead();
-            }
+            await OnStepBackAsync();
         }
         catch (Exception ex) { RuntimeLog.Fail("MUSIC_WIZARD", $"Back navigation failed: {ex.Message}"); }
     }
-    /// <summary>
-    /// Dropping audio files onto the wizard adds them to the list (no longer replacing the whole
-    /// folder listing with the one dropped file) and selects the first; in the merger, or once the
-    /// user has started a song list, they are also added to "Your songs".
-    /// </summary>
     private void OnFileDrop(object? sender, DragEventArgs e)
     {
         var files = e.DataTransfer.TryGetFiles();
@@ -3412,8 +3173,6 @@ public partial class MusicWizardWindow : Window
                 _ = ProbeTrackInfoAsync(track);
             }
             first ??= track;
-            if ((_isMergerMode || _playlistExplicit) && _currentStep == StepChoose && IndexOfPath(path) < 0)
-                AddToPlaylist(track, explicitAdd: true);
             RuntimeLog.Debug("MUSIC_WIZARD", $"Dropped music path: {path}");
         }
 
@@ -3427,9 +3186,34 @@ public partial class MusicWizardWindow : Window
         UpdateMusicEmptyState();
     }
 
+    private Button? _backBtn;
+    private bool _discardConfirmed;
+    private bool _askingDiscard;
 
     protected override async void OnClosing(Avalonia.Controls.WindowClosingEventArgs e)
     {
+        if (!_isSafeToClose && !_discardConfirmed && Result == null && _playlist.Count > 0
+            && e.CloseReason == WindowCloseReason.WindowClosing && !e.IsProgrammatic)
+        {
+            e.Cancel = true;
+            if (_askingDiscard) return;
+            _askingDiscard = true;
+            try
+            {
+                StopPreview();
+                bool discard = await Controls.ConfirmDialogWindow.AskAsync(this,
+                    "The music you picked will not be added to your video.", "Discard changes?", "DISCARD", "KEEP EDITING", destructive: true);
+                RuntimeLog.Info("UI", discard ? "User discarded the Music Wizard changes." : "User kept editing in the Music Wizard.");
+                if (discard)
+                {
+                    _discardConfirmed = true;
+                    Close();
+                }
+            }
+            finally { _askingDiscard = false; }
+            return;
+        }
+        CancelAiAutoFit();
         CancelAudioAnalysis();
         CancelMusicScan();
         CancelPhase3Load();
@@ -3438,7 +3222,7 @@ public partial class MusicWizardWindow : Window
         await DisposePhase3VideoHostAsync();
 
         if (_playheadTimer != null) { _playheadTimer.Stop(); _playheadTimer.Tick -= PlayheadTimer_Tick; _playheadTimer = null; }
-        
+
         if (_isSafeToClose)
         {
             base.OnClosing(e);
@@ -3447,14 +3231,16 @@ public partial class MusicWizardWindow : Window
 
         e.Cancel = true;
         this.Hide();
-        
-        FreeVideoStudio.App.WindowBoundsHelper.SaveBoundsOnClose(this, "MusicWizardBounds");
+
+        FreeVideoStudio.App.WindowBoundsHelper.SaveBoundsOnClose(this, _bounds.Key);
         _isSafeToClose = true;
         Avalonia.Threading.Dispatcher.UIThread.Post(Close);
     }
 
     protected override void OnClosed(EventArgs e)
     {
+        _freezeSound.Dispose();
+        CancelAiAutoFit();
         CancelSilenceAnalysis();
         DeleteSongWaveCache();
 
@@ -3476,21 +3262,16 @@ public partial class MusicWizardWindow : Window
         if (_audioIpcClient != null)
 
         {
-
             try { _audioIpcClient.Dispose(); } catch (System.Exception __ex) { RuntimeLog.Swallowed(__ex); }
 
             _audioIpcClient = null;
         }
 
         _voiceOverPlayer.Dispose();
+        DisposeSoundPreview();
         base.OnClosed(e);
     }
 
-    /// <summary>
-    /// ISSUE_10 + ISSUE_11 — downloads the shared song library into the folder the wizard is
-    /// currently browsing, with live progress and a working CANCEL, then rescans so the new
-    /// tracks appear immediately.
-    /// </summary>
     private async Task RunSongDownloadAsync()
     {
         string targetDir = ResolveCurrentMusicDirectory();
@@ -3522,28 +3303,9 @@ public partial class MusicWizardWindow : Window
         RuntimeLog.Info("Songs", $"Song download finished: {count} new track(s).");
     }
 
-    /// <summary>
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// ISSUE_09 — THIS WAS 95 LINES OF HAND-ROLLED TOAST. IT IS NOW ONE LINE.
-    ///
-    /// The old body built a Border by hand, hunted for `Step1Panel`'s parent to host it, computed a
-    /// ZIndex from its siblings, then hand-animated opacity in a `for` loop with `await Task.Delay(16)`
-    /// — twice. It slid in from the TOP of the wizard while every other screen in the suite put its
-    /// feedback somewhere else entirely, and it had TWO early `return`s (one if `Step1Panel` was not
-    /// found, one if its parent was not a Panel) that made the message vanish silently rather than
-    /// show up somewhere imperfect. A user who pressed a button and saw nothing had no way to tell a
-    /// no-op from a lost message.
-    ///
-    /// Every one of the 13 call sites is unchanged — they still call ShowToast(text). What changed is
-    /// that they now produce the SAME float-up-and-fade notice as the Main App, the Speed Editor, the
-    /// Merger, the Crop Tools and the Voice Over recorder.
-    /// ⚠️ Do not reintroduce a bespoke toast here. See Controls/FloatingNotice.cs.
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
     private void ShowToast(string message)
         => Controls.FloatingNotice.Show(this, message);
 
-    /// <summary>ISSUE_09 — the same notice in the "that worked" colour.</summary>
     private void ShowToastSuccess(string message)
         => Controls.FloatingNotice.Success(this, message);
 
@@ -3570,4 +3332,3 @@ public partial class MusicWizardWindow : Window
         }
     }
 }
-

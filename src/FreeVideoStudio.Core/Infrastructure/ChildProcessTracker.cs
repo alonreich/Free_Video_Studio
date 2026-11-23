@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -117,7 +116,6 @@ public static class ChildProcessTracker
 {
     private static readonly IProcessJobTracker _tracker = CreateTracker();
 
-    /// <summary>True when the real Windows Job Object tracker is active.</summary>
     public static bool IsJobObjectActive { get; private set; }
 
     private static IProcessJobTracker CreateTracker()

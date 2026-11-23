@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -8,21 +8,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// CLIPACTIONS_01 — THE SAME CLIP ACTIONS FROM THE LIST AND FROM THE TIMELINE (P5.4, D20).
-///
-/// • Delete key (list or timeline focus, not while typing, not while merging) and "Remove from list"
-///   in the clip menu remove the SELECTED rows — by index, so a file queued twice loses only the
-///   copy that was selected. Confirmation follows the existing ConfirmVideoMergerRemove setting;
-///   Ctrl+Z brings a removed clip back with its id and effects.
-/// • Right-click on a timeline chip or clip block opens the same menu the list's flyout offers.
-/// • Any queue change rebuilds the merged timeline SYNCHRONOUSLY from the analysis cache when every
-///   clip is already analysed — pure arithmetic, no I/O — and repaints timeline and lanes from their
-///   caches at once. New clips still go through the background analysis, as before. The UI thread
-///   never waits on ffprobe/ffmpeg.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class VideoMergerWindow
 {
     private bool _clipActionsHooked;
@@ -44,13 +29,8 @@ public partial class VideoMergerWindow
         _ = RequestRemoveSelectedAsync();
     }
 
-    /// <summary>Removes the selected rows, asking first only when the user's setting says so.</summary>
     private Task RequestRemoveSelectedAsync() => RequestRemoveClipsAsync(SelectedQueueClipIds());
 
-    /// <summary>
-    /// QUEUEID_01 — removes the clips named by <paramref name="ids"/> (captured BEFORE any dialog), asking
-    /// first only when the user's setting says so. The rows are resolved again after the dialog.
-    /// </summary>
     private async Task RequestRemoveClipsAsync(IReadOnlyList<Guid> ids)
     {
         if (_removeDialogOpen) return;
@@ -73,7 +53,6 @@ public partial class VideoMergerWindow
         RemoveQueueClips(ids);
     }
 
-    /// <summary>Test seam: answers the remove confirmation instead of the modal dialog (null = the real dialog).</summary>
     internal Func<Task<bool>>? RemoveConfirmOverride { get; set; }
 
     private async Task<bool> ConfirmRemoveAsync(int count)
@@ -89,11 +68,6 @@ public partial class VideoMergerWindow
         return dlg.Result;
     }
 
-    /// <summary>
-    /// QUEUEID_01 — removes exactly the clips named by <paramref name="ids"/>. When any of them is no
-    /// longer in the queue (removed, or undone, while a dialog or menu was open) NOTHING is removed:
-    /// another copy of the same file is never taken in its place.
-    /// </summary>
     private bool RemoveQueueClips(IReadOnlyList<Guid> ids)
     {
         if (ids.Count == 0) return false;
@@ -113,7 +87,6 @@ public partial class VideoMergerWindow
         return true;
     }
 
-    /// <summary>QUEUEID_01 — the ClipIds of the selected rows, in queue order (never resolved by path).</summary>
     private List<Guid> SelectedQueueClipIds() => QueueRowOps.IdsAt(CurrentClipIds(), SelectedQueueIndices());
 
     private IReadOnlyList<Guid> CurrentClipIds()
@@ -122,15 +95,8 @@ public partial class VideoMergerWindow
         return _clipIds.Ids;
     }
 
-    /// <summary>QUEUEID_01 — today's rows of <paramref name="ids"/>, ascending; null when any of them left the queue.</summary>
     private List<int>? ResolveQueueRows(IReadOnlyList<Guid> ids) => QueueRowOps.Resolve(CurrentClipIds(), ids);
 
-    /// <summary>
-    /// QUEUEID_01 — moves the clips named by <paramref name="ids"/> one row up (-1) or down (+1) as a group,
-    /// keeping their relative order, then selects the SAME occurrences again. A group touching the
-    /// boundary in that direction does not move (its button is disabled, <see cref="QueueRowOps.CanMove"/>).
-    /// All moves happen in one dispatcher turn, so the coalesced capture records ONE undo step.
-    /// </summary>
     private bool MoveQueueClips(IReadOnlyList<Guid> ids, int direction)
     {
         if (ids.Count == 0 || direction == 0) return false;
@@ -144,10 +110,10 @@ public partial class VideoMergerWindow
         foreach (var (from, to) in QueueRowOps.MoveSteps(rows, direction))
             VideoQueue.Move(from, to);
         if (ResolveQueueRows(ids) is { } moved) SelectQueueRows(moved);
+        RedrawTimelineSelection();
         return true;
     }
 
-    /// <summary>Selects exactly <paramref name="rows"/> by INDEX (duplicates of one path stay distinct). No preview by default.</summary>
     private void SelectQueueRows(IReadOnlyList<int> rows, bool preview = false, bool scrollIntoView = true)
     {
         var list = VideoListCtl;
@@ -181,13 +147,10 @@ public partial class VideoMergerWindow
         UpdateQueueState();
     }
 
-    /// <summary>The list's right-click menu: the clips it acts on, captured when it opened (null = not captured).</summary>
     private List<Guid>? _contextMenuIds;
 
-    /// <summary>QUEUEOCCURRENCE_01 — the list's right-click menu opened: remember WHICH clips it is about.</summary>
     internal void OnQueueContextMenuOpened() => _contextMenuIds = SelectedQueueClipIds();
 
-    /// <summary>The clips a list-menu action acts on: those captured when the menu opened, else today's selection.</summary>
     private List<Guid> TakeContextMenuIds()
     {
         var ids = _contextMenuIds ?? SelectedQueueClipIds();
@@ -195,10 +158,8 @@ public partial class VideoMergerWindow
         return ids;
     }
 
-    /// <summary>The toolbar REMOVE confirm flyout: the clips it acts on, captured when it opened (null = not captured).</summary>
     private List<Guid>? _toolbarRemoveIds;
 
-    /// <summary>QUEUEOCCURRENCE_01 — the toolbar remove confirmation opened: remember WHICH clips it is about.</summary>
     internal void OnToolbarRemoveFlyoutOpened() => _toolbarRemoveIds = SelectedQueueClipIds();
 
     private List<Guid> TakeToolbarRemoveIds()
@@ -208,7 +169,6 @@ public partial class VideoMergerWindow
         return ids;
     }
 
-    /// <summary>Removes rows by index (highest first), then selects the row that took the first one's place.</summary>
     private void RemoveQueueRows(IReadOnlyList<int> rows)
     {
         if (rows.Count == 0) return;
@@ -220,7 +180,6 @@ public partial class VideoMergerWindow
         RedrawTimelineSelection();
     }
 
-    /// <summary>The clip menu for the timeline (the list's own flyout offers the same three actions).</summary>
     private void ShowClipContextMenu(Control target)
     {
         var ids = SelectedQueueClipIds();
@@ -235,25 +194,42 @@ public partial class VideoMergerWindow
         menu.Open(target);
     }
 
-    /// <summary>
-    /// A queue change with every clip already analysed: rebuild the merged timeline NOW from the
-    /// cache (no I/O) and repaint, so the timeline follows a drag in the list without a gap.
-    /// </summary>
     private void RebuildTimelineFromCacheNow()
     {
         var queue = VideoQueue.ToList();
         if (queue.Count == 0) return;
-        var infos = new List<MergeClipInfo>(queue.Count);
+        var sources = new List<MergeClipSource>(queue.Count);
+        var introTags = new List<double>(queue.Count);
         foreach (var p in queue)
         {
-            if (!MergeClipAnalyzer.TryGetCompleted(p, out var info)) return;
-            infos.Add(info);
+            if (MergeClipAnalyzer.TryGetCompleted(p, out var info) && info.DurationSec > 0)
+            {
+                sources.Add(new MergeClipSource(info.Path, info.DurationSec, info.IntroSec));
+                introTags.Add(info.IntroSec);
+            }
+            else if (_knownClipTiming.TryGetValue(p, out var timing) && timing.DurationSec > 0)
+            {
+                sources.Add(new MergeClipSource(p, timing.DurationSec, timing.IntroSec));
+                introTags.Add(timing.IntroSec);
+            }
+            else
+            {
+                var existing = _timeline.Clips.FirstOrDefault(c => SameVideoPath(c.Path, p));
+                if (existing.Path != null && existing.ContentEndSec > 0)
+                {
+                    int oldIdx = _timeline.Clips.ToList().FindIndex(c => SameVideoPath(c.Path, p));
+                    double intro = oldIdx >= 0 && oldIdx < _timelineIntroTags.Count ? _timelineIntroTags[oldIdx] : existing.RemovedIntroSec;
+                    sources.Add(new MergeClipSource(existing.Path, existing.ContentEndSec, intro));
+                    introTags.Add(intro);
+                }
+                else return;
+            }
         }
         if (_thumbPath != null && !queue.Any(p => SameVideoPath(p, _thumbPath))) _thumbPath = null;
 
         _timelineVersion++;
-        var sources = infos.Select(i => new MergeClipSource(i.Path, i.DurationSec, i.IntroSec)).ToList();
-        ApplyTimeline(MergedTimeline.Build(sources, _scraperEnabled, _thumbPath != null), infos.Select(i => i.IntroSec).ToList());
+
+        ApplyTimeline(MergedTimeline.Build(sources, _scraperEnabled, _thumbPath != null), introTags);
         RefreshLanes();
         RedrawTimelineSelection();
     }
@@ -267,6 +243,27 @@ public partial class VideoMergerWindow
     internal void TriggerDropForTesting(Avalonia.Input.DragEventArgs e) => VideoList_Drop(VideoListCtl, e);
     internal static Avalonia.Input.DataFormat<string> VideoItemFormatForTesting => VideoItemFormat;
     internal void TriggerClipActionsKeyDownForTesting(KeyEventArgs e) => ClipActionsKeyDown(this, e);
-    internal bool MoveQueueClipsForTesting(IReadOnlyList<Guid> ids, int direction) => MoveQueueClips(ids, direction);
     internal bool RemoveQueueClipsForTesting(IReadOnlyList<Guid> ids) => RemoveQueueClips(ids);
+    internal Canvas? BlocksLaneCtlForTesting => BlocksLaneCtl;
+    internal bool TickMergedPlaybackForTesting() => TickMergedPlayback();
+    internal void SetTimelineForTesting(MergedTimeline timeline)
+    {
+        _timeline = timeline;
+        _timelineReady = timeline.Clips.Count > 0;
+        foreach (var c in timeline.Clips) _knownClipTiming[c.Path] = (c.ContentEndSec, c.RemovedIntroSec);
+    }
+    internal MergedTimeline TimelineForTesting => _timeline;
+    internal void SetVideoHostForTesting(MpvVideoView host) => _videoHost = host;
+    internal void TriggerEndClipChipForTesting(int from, double commitX)
+    {
+        _chipFrom = from;
+        _draggingClipChip = true;
+        _chipPressed = true;
+        var markers = MarkersCanvasCtl ?? BlocksLaneCtl ?? new Canvas();
+        EndClipChip(markers, commitX);
+    }
+    internal void RedrawTimelineSelectionForTesting() => RedrawTimelineSelection();
+    internal bool MergedEndReachedForTesting => _mergedEndReached;
+    internal void SetMergedEndReachedForTesting(bool reached) => _mergedEndReached = reached;
+    internal void SetLoadedEdlForTesting(string edlUrl, int graceTicks = 0) { _edlUrl = edlUrl; _clipLoadGraceTicks = graceTicks; }
 }

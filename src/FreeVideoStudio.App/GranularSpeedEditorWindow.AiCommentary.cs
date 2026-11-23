@@ -13,32 +13,30 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// AICOMMENTARY_UI_01 — AI Live Commentary Captions UI workflow for <see cref="GranularSpeedEditorWindow"/>:
-/// toolbar trigger, consent prompt, options modal, progress overlay, live libmpv ASS preview, and
-/// ACCEPT / DISCARD strictly conforming to AIUNDO_01 ordering.
-/// </summary>
 public partial class GranularSpeedEditorWindow
 {
-    private CancellationTokenSource? _aiCommentaryCts;
+    private readonly Infrastructure.CtsSlot _aiCommentaryCts = new();
     private bool _isAiCommentaryPreviewing;
     private CaptionTrack? _aiCommentaryCandidateTrack;
     private CaptionTrack? _aiCommentaryOriginalTrack;
     private string? _aiCommentaryTempAssPath;
     private string? _liveCaptionsAssPath;
 
-    /// <summary>AICOMMENTARY_CLOSE_01 — true while the AI is still writing the commentary.</summary>
     private bool _aiCommentaryRunning;
 
-    /// <summary>AICOMMENTARY_CLOSE_01 — set once the user agreed to close and lose a running commentary.</summary>
     private bool _closeDuringCommentaryConfirmed;
 
-    /// <summary>AICOMMENTARY_CLOSE_01 — the editor's APPLY button, cached where it is wired (no extra lookup).</summary>
     private Button? _applyGranularBtn;
 
     private void WireAiCommentaryControls()
     {
-        if (AiCommentaryBtnCtl is { } btn) btn.Click += async (_, _) => await OnAiCommentaryClickedAsync();
+        if (AiCommentaryBtnCtl is { } btn)
+        {
+            btn.Click += async (_, _) => await OnAiCommentaryClickedAsync();
+            string normalTip = ToolTip.GetTip(btn) as string ?? string.Empty;
+            Controls.AiModeWindow.ApplyCloudOnlyLook(btn, normalTip);
+            this.Activated += (_, _) => Controls.AiModeWindow.ApplyCloudOnlyLook(btn, normalTip);
+        }
         if (AiCommentaryCancelBtnCtl is { } cancelBtn) cancelBtn.Click += (_, _) => CancelAiCommentary();
         if (AiCommentaryAcceptBtnCtl is { } acceptBtn) acceptBtn.Click += (_, _) => EndAiCommentaryPreview(accept: true);
         if (AiCommentaryDiscardBtnCtl is { } discardBtn) discardBtn.Click += (_, _) => EndAiCommentaryPreview(accept: false);
@@ -51,7 +49,7 @@ public partial class GranularSpeedEditorWindow
                 _ = ConfirmCloseDuringCommentaryAsync();
                 return;
             }
-            _aiCommentaryCts?.Cancel();
+            _aiCommentaryCts.Cancel();
             if (_isAiCommentaryPreviewing)
                 RuntimeLog.Info("AiCommentary", "Speed Editor closed without APPLY — the unapplied commentary preview was discarded.");
             EndAiCommentaryPreview(accept: false);
@@ -61,11 +59,6 @@ public partial class GranularSpeedEditorWindow
         UpdateAiCommentaryBtnVisualState();
     }
 
-    /// <summary>
-    /// AICOMMENTARY_CLOSE_01 — called by the editor's APPLY before it closes. A commentary preview that was
-    /// never ACCEPTED is kept (APPLY means "keep everything I see"; it used to be thrown away silently). While
-    /// the AI is still writing, the user chooses: keep waiting (returns false) or apply without it.
-    /// </summary>
     internal async Task<bool> PrepareApplyWithCommentaryAsync()
     {
         if (_aiCommentaryRunning)
@@ -85,7 +78,7 @@ public partial class GranularSpeedEditorWindow
             }
             RuntimeLog.Info("AiCommentary", "APPLY pressed while commentary was running — user chose to apply without it (run cancelled).");
             _closeDuringCommentaryConfirmed = true;
-            _aiCommentaryCts?.Cancel();
+            _aiCommentaryCts.Cancel();
         }
 
         if (_isAiCommentaryPreviewing && _aiCommentaryCandidateTrack != null)
@@ -97,7 +90,6 @@ public partial class GranularSpeedEditorWindow
         return true;
     }
 
-    /// <summary>AICOMMENTARY_CLOSE_01 — CANCEL / ✕ while the AI is still writing.</summary>
     private async Task ConfirmCloseDuringCommentaryAsync()
     {
         bool closeAnyway = await ConfirmDialogWindow.AskAsync(
@@ -114,14 +106,10 @@ public partial class GranularSpeedEditorWindow
         }
         RuntimeLog.Info("AiCommentary", "Close requested while commentary was running — user chose to close (run cancelled).");
         _closeDuringCommentaryConfirmed = true;
-        _aiCommentaryCts?.Cancel();
+        _aiCommentaryCts.Cancel();
         Close();
     }
 
-    /// <summary>
-    /// AICOMMENTARY_CLOSE_01 — while a commentary preview waits for ACCEPT &amp; APPLY, the editor's APPLY says
-    /// it will keep it, so the two buttons can no longer be mistaken for each other.
-    /// </summary>
     private void UpdateApplyButtonForCommentary()
     {
         if (_applyGranularBtn == null) return;
@@ -141,16 +129,18 @@ public partial class GranularSpeedEditorWindow
 
         if (hasCaptions)
         {
-            btn.Content = "EDIT COMMENTARY";
+            btn.Content = "EDIT CAPTIONS";
             btn.Classes.Remove("Primary");
             if (!btn.Classes.Contains("Success")) btn.Classes.Add("Success");
         }
         else
         {
-            btn.Content = "🎙️ AI COMMENTARY";
+            btn.Content = "AI CAPTIONS";
             btn.Classes.Remove("Success");
             if (!btn.Classes.Contains("Primary")) btn.Classes.Add("Primary");
         }
+        if (_edit.IsMergeMode)
+            ToolTip.SetTip(btn, "Generate written AI commentary captions (requires online AI; does not create a voice). In Video Merger mode, select a speed block inside a single clip first.");
     }
 
     private static string FormatDurationPlain(double seconds)
@@ -161,60 +151,64 @@ public partial class GranularSpeedEditorWindow
 
     private void CancelAiCommentary()
     {
-        _aiCommentaryCts?.Cancel();
-        if (AiCommentaryProgressOverlayCtl is { } overlay) overlay.IsVisible = false;
-        if (AiCommentaryBtnCtl is { } btn) btn.IsEnabled = true;
-        Notify("AI Commentary generation cancelled.");
+        _aiCommentaryCts.Cancel();
+        if (AiCommentaryStatusLabelCtl is { } status) status.Text = "Stopping…";
     }
 
-    /// <summary>
-    /// AICOMMENTARY_CONSENT_01 (docs/04 UI-AICOMMENTARY) — asks consent before uploading video clips
-    /// and gameplay audio to the configured AI provider.
-    /// </summary>
-    private async Task<bool> EnsureAiCommentaryConsentAsync()
+    private string LastCommentaryKey(string videoPath, double startSec, double durationSec, AiVendor vendor, string model,
+        Controls.AiCommentaryDialogResult options, IReadOnlyList<double>? killTimes)
     {
+        string Num(double v) => v.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture);
+        string identity = File.Exists(videoPath) ? AiResultCache.FileIdentity(videoPath) : videoPath;
+        string timeline = string.Join(";", _edit.Segments.Select(s => $"{Num(s.StartMs)}-{Num(s.EndMs)}x{Num(s.Speed)}"))
+            + "|" + string.Join(";", _edit.Cuts.Select(c => $"{Num(c.StartMs)}-{Num(c.EndMs)}"))
+            + $"|{Num(_edit.BaseSpeed)}|{Num(_edit.TrimStartMs)}";
+        return AiResultCache.Key("commentary-last-run-v1", identity, Num(startSec), Num(durationSec), vendor.ToString(), model,
+            options.EffectivePersonality.ToString(), options.Tone.ToString(), options.Profile.ToString(), options.Language,
+            options.CustomNotes ?? "", killTimes == null ? "" : string.Join(",", killTimes.Select(Num)), timeline);
+    }
+
+    private Task<bool> EnsureAiCommentaryConsentAsync()
+    {
+        if (!AiSetup.UsesOnline(AiSetup.Current()))
+            return Task.FromResult(false);
         var settings = SettingsManager.Instance;
         var vendor = settings.GetUsageConfig(AiUsage.Commentary).Vendor;
-        if (AppSettings.ConsentCovers(settings.AiCommentaryCloudConsent, settings.AiCommentaryCloudConsentVendor, vendor)) return true;
+        if (string.IsNullOrWhiteSpace(settings.GetApiKey(vendor)))
+            return Task.FromResult(false);
 
-        string vendorName = AiVisionProviders.DisplayName(vendor);
-        string whatIsSent = AiVisionProviders.WatchesVideoWithAudio(vendor)
-            ? "• short, low-resolution (640 px wide) video clips of the chosen range, at most 8 seconds each,\n" +
-              "  WITH the game sound, so the AI can hear shots, hits and eliminations.\n\n"
-            : "• still pictures of the chosen range, 2 per second, 640 px wide.\n" +
-              $"  No sound is sent — {vendorName} cannot hear the game, so lines are based on what is visible only.\n\n";
-
-        bool yes = await ConfirmDialogWindow.AskAsync(
-            this,
-            $"To write live commentary captions, AI COMMENTARY sends {vendorName}:\n\n" +
-            whatIsSent +
-            $"Nothing else from your video or your computer is sent. {vendorName}'s API terms apply.\n\n" +
-            "You can change this at any time in Settings › AI Features.",
-            $"AI Commentary: send to {vendorName}?",
-            "Send and continue",
-            "Cancel");
-
-        if (yes)
+        if (!AppSettings.ConsentCovers(settings.AiCommentaryCloudConsent, settings.AiCommentaryCloudConsentVendor, vendor))
         {
-            SettingsManager.Update(s => { s.AiCommentaryCloudConsent = true; s.AiCommentaryCloudConsentVendor = vendor.ToString(); });
-            RuntimeLog.Info("AiCommentary", $"User consented to sending commentary material to {vendorName}.");
+            SettingsManager.Update(s => { s.AiCommentaryCloudConsent = true; s.AiCommentaryCloudConsentVendor = vendor; });
         }
-
-        return yes;
+        return Task.FromResult(true);
     }
 
-    /// <summary>
-    /// Main trigger handler for AI COMMENTARY button.
-    /// </summary>
     private async Task OnAiCommentaryClickedAsync()
     {
+        if (_aiCommentaryRunning) return;
+        if (AiSetup.Current() == AiMode.LocalOnly)
+        {
+            RuntimeLog.Info("AiCommentary", "AI Commentary Captions blocked in LocalOnly mode — online AI is required; existing captions preserved.");
+            bool change = await ConfirmDialogWindow.AskAsync(
+                this,
+                "AI Commentary Captions requires online AI because captions are generated by your cloud AI provider. There is no offline caption generator on this PC.\n\n" +
+                "Nothing was sent online, and any existing captions on your timeline remain untouched.\n\n" +
+                "Switch AI mode to allow online AI, or cancel?",
+                "AI Commentary Captions Needs Online AI",
+                "Change AI mode",
+                "Cancel");
+            if (!change) return;
+            await AiModeWindow.RunAsync(this);
+            if (AiSetup.Current() == AiMode.LocalOnly) return;
+        }
         if (_isAiCommentaryPreviewing)
         {
             bool discard = await ConfirmDialogWindow.AskAsync(
                 this,
-                "A live commentary preview is currently active.\n\n" +
-                "Do you want to discard the active preview and configure a new commentary pass?",
-                "Active Commentary Preview",
+                "An unapplied AI caption preview is currently active.\n\n" +
+                "Discard the active preview and configure a new caption pass?",
+                "Active Caption Preview",
                 "Discard and continue",
                 "Keep preview");
 
@@ -222,25 +216,51 @@ public partial class GranularSpeedEditorWindow
             EndAiCommentaryPreview(accept: false);
         }
 
-        if (!await EnsureAiCommentaryConsentAsync()) return;
-
         var settings = SettingsManager.Instance;
         var commentaryConfig = settings.GetUsageConfig(AiUsage.Commentary);
-        if (!await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, commentaryConfig.Vendor)) return;
+        if (!await AiSetupWizardWindow.EnsureApiKeyConfiguredAsync(this, commentaryConfig.Vendor, AiUsage.Commentary)) return;
+        settings = SettingsManager.Instance;
+        commentaryConfig = settings.GetUsageConfig(AiUsage.Commentary);
+        if (!await EnsureAiCommentaryConsentAsync()) return;
 
+        string effectiveVideoPath = _edit.VideoPath;
+        MergeEditorClip? mergeClip = null;
         if (_edit.IsMergeMode)
         {
-            await ErrorReporter.ShowAsync(this, "Merged Timeline",
-                "AI Commentary generation is currently supported for single video clips in the Granular Speed Editor.\n" +
-                "Open the individual clip to generate commentary.");
-            return;
+            if (!_edit.HasSelectedSegment && _edit.FindSegmentAt((int)Math.Round(GetCurrentTime() * 1000.0)) is int underPlayhead)
+            {
+                SelectSegment(underPlayhead, jumpPlayhead: false);
+                SetStatus($"AI Commentary uses block #{underPlayhead + 1}, the one under the playhead.");
+            }
+            if (_edit.SelectedSegment is { } mSeg && _mergeSource != null)
+            {
+                MergeEditorClip? FindClip(SpeedSegment s) => _mergeSource.Clips.FirstOrDefault(c => s.StartMs >= c.StartMs && s.EndMs <= c.EndMs + MergeEditorSource.FrameMs);
+                var clip = FindClip(mSeg);
+                if (clip == null && await OfferSplitAtClipEdgesAsync(_edit.SelectedSegmentIndex, "AI COMMENTARY") && _edit.SelectedSegment is { } splitSeg)
+                    clip = FindClip(splitSeg);
+                if (clip == null)
+                {
+                    if (ClipEdgesInside(mSeg.StartMs, mSeg.EndMs, _mergeSource.Clips.Select(c => c.EndMs), MergeEditorSource.FrameMs).Count == 0)
+                        await ErrorReporter.ShowAsync(this, "Block Outside the Clips",
+                            "This speed block is not inside one merged clip, so AI Commentary cannot tell which video to send. Move or shorten the block, then try again.");
+                    return;
+                }
+                effectiveVideoPath = clip.Path;
+                mergeClip = clip;
+            }
+            else if (!_edit.HasSelectedSegment)
+            {
+                await ErrorReporter.ShowAsync(this, "Pick a Speed Block",
+                    "In the Video Merger, AI Commentary writes captions for one block at a time. Click a speed block on the timeline (or put the playhead inside one), then press AI COMMENTARY again.");
+                return;
+            }
         }
 
         var dialogResult = await AiCommentaryDialogWindow.ShowDialogAsync(
             this,
             _edit.HasSelectedSegment,
             initialTone: _edit.CaptionTrack?.Tone ?? CaptionTone.Hype,
-            initialProfile: AiGameProfiles.Parse(settings.AiTrackingGameProfile));
+            initialProfile: settings.AiTrackingGameProfile);
 
         if (dialogResult == null) return;
 
@@ -248,8 +268,9 @@ public partial class GranularSpeedEditorWindow
 
         double startSec;
         double durationSec;
+        bool segmentOnly = _edit.IsMergeMode || (!dialogResult.EntireTimeline && _edit.SelectedSegment != null);
 
-        if (!dialogResult.EntireTimeline && _edit.SelectedSegment is { } seg)
+        if (segmentOnly && _edit.SelectedSegment is { } seg)
         {
             startSec = (_edit.TrimStartMs + seg.StartMs) / 1000.0;
             durationSec = (seg.EndMs - seg.StartMs) / 1000.0;
@@ -263,35 +284,86 @@ public partial class GranularSpeedEditorWindow
             durationSec = Math.Max(0.1, (endMs - _edit.TrimStartMs) / 1000.0);
         }
 
-        if (string.IsNullOrWhiteSpace(_edit.VideoPath) || !File.Exists(_edit.VideoPath))
+        double requestStartSec = startSec;
+        double timelineOffsetSec = _edit.TrimStartMs / 1000.0;
+
+        if (_edit.IsMergeMode && mergeClip != null && _edit.SelectedSegment is { } mSegment)
+        {
+            requestStartSec = mergeClip.ToSourceUs(mSegment.StartMs) / 1_000_000.0;
+            timelineOffsetSec = requestStartSec - startSec;
+        }
+
+        if (string.IsNullOrWhiteSpace(effectiveVideoPath) || !File.Exists(effectiveVideoPath))
         {
             await ErrorReporter.ShowAsync(this, "File Not Found", "The video clip file could not be found.");
             return;
         }
 
-        int plannedParts = CommentaryService.PlanChunks(durationSec).Count;
-        if (plannedParts > CommentaryService.ConfirmAbovePartCount)
+        string apiKey = settings.GetApiKey(commentaryConfig.Vendor);
+        string model = settings.GetEffectiveModel(AiUsage.Commentary);
+        var sentParts = CommentaryService.SentParts(OutTimeline(), timelineOffsetSec, requestStartSec, durationSec, commentaryConfig.Vendor);
+        if (sentParts.Count == 0)
         {
-            int minutes = Math.Max(1, (int)Math.Ceiling(plannedParts * CommentaryService.TypicalSecondsPerPart / 60.0));
-            bool goAhead = await ConfirmDialogWindow.AskAsync(
-                this,
-                $"This range is {FormatDurationPlain(durationSec)} long, so AI COMMENTARY will make {plannedParts} AI requests " +
-                $"(about {minutes} minute{(minutes == 1 ? "" : "s")}; each request uses your AI key).\n\n" +
-                "Tip: select one speed block and choose \"Selected block\" to caption only the best moment.",
-                "Long Commentary Run",
-                "Continue",
-                "Cancel");
-            if (!goAhead) return;
+            await ErrorReporter.ShowAsync(this, "Nothing To Caption", "All of this range is cut from the finished video, so there is nothing to write captions for. Nothing was sent.");
+            return;
         }
+        AiEstimatedUsage estimatedUsage = AiPreflight.WithCheck(
+            AiCostEstimator.EstimateCommentary(commentaryConfig.Vendor, model, durationSec, sentParts: sentParts),
+            commentaryConfig.Vendor, apiKey, model);
+
+        int plannedParts = Math.Max(1, sentParts.Count);
+        int minutes = Math.Max(1, (int)Math.Ceiling(plannedParts * CommentaryService.TypicalSecondsPerPart / 60.0));
+        RuntimeLog.Info("AiCommentary", $"Range is {FormatDurationPlain(durationSec)} long: {plannedParts} part(s), ~{minutes} min estimated. {AiCostEstimator.FormatPreRunBanner(estimatedUsage, commentaryConfig.Vendor, model)}");
+        string commentarySent = (AiVisionProviders.WatchesVideoWithAudio(commentaryConfig.Vendor)
+                ? $"{FormatDurationPlain(durationSec)} of video WITH game audio (written captions only; no voice created), in {plannedParts} part(s) of up to 8 s."
+                : $"2 still pictures per second of {FormatDurationPlain(durationSec)} of video (NO audio — cannot hear speech or sound effects; written captions only), in {plannedParts} part(s).")
+            + (plannedParts > CommentaryService.ConfirmAbovePartCount ? "\n\nTip: select one speed block and choose \"Selected block only\" to caption only the best moment." : "");
+        var killTimes = _aiEliminationTimestamps.Count > 0
+            ? _aiEliminationTimestamps.Select(t => _edit.IsMergeMode ? t + (requestStartSec - startSec) : t).ToArray()
+            : null;
+        string lastCommentaryKey = LastCommentaryKey(effectiveVideoPath, requestStartSec, durationSec, commentaryConfig.Vendor, model,
+            dialogResult, killTimes);
+        CommentaryResult? reusedResult = null;
+        if (AiResultCache.TryGet<CommentaryResult>(lastCommentaryKey, out var lastCommentary))
+        {
+            var reuse = await ConfirmDialogWindow.AskThreeWayAsync(this, "AI Commentary",
+                "You made captions for this part with the same settings a few minutes ago.\n\nUse those captions again (free, nothing is sent) or ask the AI again?",
+                "Use the last captions", "Ask the AI again", "Cancel");
+            if (reuse == ConfirmDialogWindow.ConfirmDialogResult.Yes)
+                reusedResult = lastCommentary with
+                {
+                    Track = lastCommentary.Track with { Style = dialogResult.Style, Position = dialogResult.Position, Look = dialogResult.Look, Size = dialogResult.Size },
+                };
+            else if (reuse != ConfirmDialogWindow.ConfirmDialogResult.Alt)
+                return;
+        }
+        if (reusedResult == null && !await AiRunApproval.ConfirmAsync(this, "AI Commentary", commentarySent, plannedParts, minutes,
+                estimatedUsage, commentaryConfig.Vendor, model))
+            return;
 
         var overlay = AiCommentaryProgressOverlayCtl;
+        var overlayScope = this.FindNameScope();
+        var commEstText = overlayScope?.Find("AiCommentaryEstimateText") as TextBlock;
+        var commElapsedText = overlayScope?.Find("AiCommentaryElapsedText") as TextBlock;
+        if (commEstText != null)
+            commEstText.Text = AiCostEstimator.PlainCost(estimatedUsage, commentaryConfig.Vendor, model);
+        var startedUtc = DateTime.UtcNow;
+        if (commElapsedText != null)
+            commElapsedText.Text = $"0:00 · {AiVisionProviders.DisplayName(commentaryConfig.Vendor)}";
         if (overlay != null) overlay.IsVisible = true;
         if (AiCommentaryBtnCtl is { } aiBtn) aiBtn.IsEnabled = false;
         if (AiCommentaryConsoleTextCtl != null) AiCommentaryConsoleTextCtl.Text = "";
-        if (AiCommentaryStatusLabelCtl != null) AiCommentaryStatusLabelCtl.Text = "Preparing video timeline chunks...";
+        if (AiCommentaryStatusLabelCtl != null) AiCommentaryStatusLabelCtl.Text = $"Getting {plannedParts} part{(plannedParts == 1 ? "" : "s")} of your video ready for {AiVisionProviders.DisplayName(commentaryConfig.Vendor)}…";
 
-        _aiCommentaryCts = new CancellationTokenSource();
-        var token = _aiCommentaryCts.Token;
+        var token = _aiCommentaryCts.Renew();
+        var elapsedTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        elapsedTimer.Tick += (_, _) =>
+        {
+            if (commElapsedText == null) return;
+            var el = DateTime.UtcNow - startedUtc;
+            commElapsedText.Text = $"{(int)el.TotalMinutes}:{el.Seconds:00} · {AiVisionProviders.DisplayName(commentaryConfig.Vendor)}";
+        };
+        elapsedTimer.Start();
 
         var progress = new Progress<string>(status =>
         {
@@ -312,13 +384,11 @@ public partial class GranularSpeedEditorWindow
                 AiCommentaryConsoleScrollCtl?.ScrollToEnd();
             });
         };
-
-        string apiKey = settings.GetApiKey(commentaryConfig.Vendor);
-        string model = settings.GetEffectiveModel(AiUsage.Commentary);
+        consoleLog(AiCostEstimator.FormatPreRunBanner(estimatedUsage, commentaryConfig.Vendor, model));
 
         var request = new CommentaryRequest(
-            _edit.VideoPath,
-            startSec,
+            effectiveVideoPath,
+            requestStartSec,
             durationSec,
             commentaryConfig.Vendor,
             model,
@@ -329,27 +399,52 @@ public partial class GranularSpeedEditorWindow
             dialogResult.Position,
             dialogResult.CustomNotes,
             Timeline: OutTimeline(),
-            TimelineOffsetSec: _edit.TrimStartMs / 1000.0,
+            TimelineOffsetSec: timelineOffsetSec,
             Personality: dialogResult.EffectivePersonality,
-            KillTimesSec: _aiEliminationTimestamps.Count > 0 ? _aiEliminationTimestamps.ToArray() : null,
+            KillTimesSec: killTimes,
             Look: dialogResult.Look,
             Size: dialogResult.Size);
 
-        bool segmentOnly = !dialogResult.EntireTimeline && _edit.SelectedSegment != null;
         RuntimeLog.Info("AiCommentary",
             $"Run started: {(segmentOnly ? "selected block" : "whole video")} {startSec:0.###}s + {durationSec:0.###}s of source, " +
             $"{plannedParts} part(s), {commentaryConfig.Vendor} {model}, tone {dialogResult.Tone}, base speed {_edit.BaseSpeed:0.00}x, " +
             $"{_edit.Segments.Count} speed block(s), {_edit.Cuts.Count} cut(s).");
         _aiCommentaryRunning = true;
+        _closeDuringCommentaryConfirmed = false;
 
         using var usage = AiUsageMeter.BeginTask("AI Commentary", commentaryConfig.Vendor);
+        usage.SetEstimate(estimatedUsage);
         if (AiCommentaryPreviewBarCtl is { } usageBar) SetAiUsageLines(usageBar, "AiCommentary", null);
 
+        bool retryAfterFix = false;
         try
         {
-            var result = await Task.Run(
-                async () => await CommentaryService.GenerateCommentaryWithReportAsync(request, apiKey, progress, consoleLog, token),
-                token);
+            CommentaryResult result;
+            try
+            {
+                if (reusedResult == null) await AiPreflight.EnsureAsync(commentaryConfig.Vendor, apiKey, model, token, consoleLog);
+                else consoleLog("Reused the previous captions. No new AI request.");
+                result = reusedResult ?? await Task.Run(
+                    async () => await CommentaryService.GenerateCommentaryWithReportAsync(request, apiKey, progress, consoleLog, token,
+                        (part, parts, failure) => Dispatcher.UIThread.InvokeAsync(() => AskPartFailureAsync("AI Commentary", part, parts, failure,
+                            "keep the other parts (this stretch gets no captions)", usage.Id))),
+                    token);
+                token.ThrowIfCancellationRequested();
+            }
+            catch (CommentaryCancelledException stopped) when (!_closeDuringCommentaryConfirmed
+                && stopped.Partial.Track.Lines is { Count: > 0 })
+            {
+                int keptCount = stopped.Partial.Track.Lines!.Count;
+                bool keep = await ConfirmDialogWindow.AskAsync(this,
+                    $"You stopped AI Commentary. {keptCount} caption line(s) from the parts that already finished are ready.\n\n" +
+                    "Keep them for review (nothing is applied until you press ACCEPT), or throw them away?",
+                    "Keep What Was Written?", "Keep lines", "Discard");
+                if (!keep) throw;
+                RuntimeLog.Info("AiCommentary", $"Run cancelled; user kept {keptCount} line(s) from finished parts.");
+                result = stopped.Partial;
+            }
+            if (reusedResult == null && result.FailedChunks == 0 && result.Track.Lines is { Count: > 0 })
+                AiResultCache.Put(lastCommentaryKey, result);
             var generatedTrack = result.Track;
             _aiCommentaryRunning = false;
             RuntimeLog.Info("AiCommentary",
@@ -358,23 +453,42 @@ public partial class GranularSpeedEditorWindow
             if (overlay != null) overlay.IsVisible = false;
             if (AiCommentaryBtnCtl is { } btnAfter) btnAfter.IsEnabled = true;
 
-            var usageLines = ReportAiUsage(usage, consoleLog);
+            var usageLines = ReportAiUsage(usage, consoleLog, estimatedUsage);
             if (generatedTrack.Lines == null || generatedTrack.Lines.Count == 0)
             {
                 await ErrorReporter.ShowAsync(
                     this,
-                    "No Commentary Generated",
-                    "The AI did not generate any commentary lines for the selected timeline range. Try adjusting the custom hints or selecting a section with active gameplay.\n\n" +
+                    "No Captions Written",
+                    "The AI wrote no captions for this part of the video. Try a part with more action, or change your hints.\n\n" +
+                    usage.PlainSummary(),
                     $"{usageLines.Usage}\n{usageLines.Allowance}");
                 return;
             }
 
+            CaptionTrack finalTrack = generatedTrack;
+            if (_edit.IsMergeMode && mergeClip != null && generatedTrack.Lines != null)
+            {
+                double timeShiftSec = startSec - requestStartSec;
+                var remappedLines = generatedTrack.Lines.Select(l =>
+                {
+                    double s = l.SourceStartSec + timeShiftSec;
+                    double e = l.SourceEndSec + timeShiftSec;
+                    return l with
+                    {
+                        SourceStartSec = s,
+                        SourceEndSec = e,
+                        Words = CaptionTimeline.DistributeWords(l.Text, s, e)
+                    };
+                }).ToList();
+                finalTrack = generatedTrack with { Lines = remappedLines };
+            }
+
             CaptionTrack candidate = segmentOnly
-                ? CommentaryService.MergeSegment(_edit.CaptionTrack, generatedTrack, startSec, startSec + durationSec)
-                : generatedTrack;
+                ? CommentaryService.MergeSegment(_edit.CaptionTrack, finalTrack, startSec, startSec + durationSec)
+                : finalTrack;
 
             BeginAiCommentaryPreview(candidate, startSec);
-            if (AiCommentaryPreviewBarCtl is { } bar) SetAiUsageLines(bar, "AiCommentary", usageLines);
+            if (AiCommentaryPreviewBarCtl is { } bar) SetAiUsageLines(bar, "AiCommentary", (usage.PlainSummary(), ""), $"{usageLines.Usage}\n{usageLines.Allowance}");
 
             if (result.FailedChunks > 0)
                 NotifyError($"{result.FailedChunks} of {result.TotalChunks} part(s) could not be analysed, so they have no captions. Review the rest, or run AI COMMENTARY again on those parts.");
@@ -384,32 +498,38 @@ public partial class GranularSpeedEditorWindow
             RuntimeLog.Info("AiCommentary", "Run cancelled.");
             if (overlay != null) overlay.IsVisible = false;
             if (AiCommentaryBtnCtl is { } btnAfter) btnAfter.IsEnabled = true;
-            var (u, _) = ReportAiUsage(usage, consoleLog);
-            Notify($"AI Commentary generation cancelled. {u}");
+            ReportAiUsage(usage, consoleLog, estimatedUsage);
+            Notify($"AI Commentary was cancelled. {usage.PlainSummary()} (Reference: {usage.Id})");
         }
         catch (Exception ex)
         {
             if (overlay != null) overlay.IsVisible = false;
             if (AiCommentaryBtnCtl is { } btnAfter) btnAfter.IsEnabled = true;
             RuntimeLog.Fail("AiCommentary", $"AI Commentary generation error: {ex.Message}");
-            var (u, a) = ReportAiUsage(usage, consoleLog);
-            await ErrorReporter.ShowAsync(
-                this,
-                "Commentary Generation Failed",
-                $"AI Commentary generation encountered an error:\n\n{ex.Message}\n\n{u}\n{a}");
+            var (u, a) = ReportAiUsage(usage, consoleLog, estimatedUsage);
+            if (AiAccountFix.Find(ex) is { } account)
+                retryAfterFix = await AiAccountFix.OfferAsync(this, account, AiUsage.Commentary);
+            else
+                await ErrorReporter.ShowAsync(
+                    this,
+                    "AI Commentary Stopped",
+                    $"AI Commentary could not finish:\n\n{ex.Message}\n\n{usage.PlainSummary()}" + usage.ReferenceSuffix,
+                    $"{u}\n{a}");
         }
         finally
         {
+            elapsedTimer.Stop();
             _aiCommentaryRunning = false;
+            if (overlay != null) overlay.IsVisible = false;
+            if (AiCommentaryBtnCtl is { } finishedButton) finishedButton.IsEnabled = true;
+        }
+        if (retryAfterFix)
+        {
+            RuntimeLog.Info("AiCommentary", $"{AiAccountFix.Tag}: the AI account was fixed; starting AI Commentary again.");
+            Dispatcher.UIThread.Post(() => _ = OnAiCommentaryClickedAsync());
         }
     }
 
-    /// <summary>
-    /// Mounts generated candidate track as an un-checkpointed preview in libmpv.
-    /// AICOMMENTARY_PREVIEWCLOCK_01 — libmpv plays the SOURCE file (its clock is absolute source seconds,
-    /// speed changes and freezes are applied live), so the preview script is written in source time with no
-    /// output-timeline projection; the export burns the same track through the output timeline.
-    /// </summary>
     private void BeginAiCommentaryPreview(CaptionTrack candidate, double playbackStartSec)
     {
         _aiCommentaryOriginalTrack = _edit.CaptionTrack;
@@ -431,13 +551,6 @@ public partial class GranularSpeedEditorWindow
         Notify("AI Commentary ready — review captions in preview, then ACCEPT & APPLY or DISCARD.");
     }
 
-    /// <summary>
-    /// AIUNDO_01 (docs/07) — Finalizes or discards the live commentary preview.
-    ///
-    /// <para>The candidate preview is placed in the active session WITHOUT a checkpoint so it can
-    /// be discarded cleanly. On ACCEPT, the original state is restored first, <see cref="PushUndo"/>
-    /// is called, and only then is the candidate committed.</para>
-    /// </summary>
     private void EndAiCommentaryPreview(bool accept)
     {
         if (!_isAiCommentaryPreviewing) return;
@@ -475,13 +588,29 @@ public partial class GranularSpeedEditorWindow
 
     internal void SyncCaptionsPreviewSubtitles() => MountPreviewCaptions(_edit.CaptionTrack);
 
-    /// <summary>
-    /// AICAPTION_PREVIEWSUB_01 — the ONE way captions reach the preview. libmpv's <c>sub-remove</c> (no id) removes
-    /// only the SELECTED track and every <c>sub-add … select</c> adds a new one, so the old code stacked a track per
-    /// edit, preview and discard; deleting every caption could leave an old track on screen that the export would
-    /// never show. Now the track this window loaded (always the selected one) is removed BEFORE the next is
-    /// added, so at most one caption track is ever loaded, and its temp file is deleted when it is replaced.
-    /// </summary>
+    private System.Collections.Generic.IReadOnlyList<(double X, double Y, double W, double H)>? _previewHudRects;
+    private bool _previewHudRectsLoading;
+
+    private async Task EnsurePreviewHudRectsLoadedAsync(CaptionTrack trackToRefresh)
+    {
+        if (!_edit.IsMobileFormat || _previewHudRects != null || _previewHudRectsLoading) return;
+        _previewHudRectsLoading = true;
+        try
+        {
+            var coords = await VideoConfig.GetMobileCoordinatesAsync().ConfigureAwait(false);
+            var d = SettingsManager.Instance.Defaults;
+            _previewHudRects = MobileFilterBuilder.HudCanvasRects(coords, d.StartShowTeammates, showSpectating: true);
+            Dispatcher.UIThread.Post(() =>
+            {
+                var current = _isAiCommentaryPreviewing ? _aiCommentaryCandidateTrack : _edit.CaptionTrack;
+                if (ReferenceEquals(current, trackToRefresh) || current?.Lines?.Count == trackToRefresh.Lines?.Count)
+                    MountPreviewCaptions(current);
+            });
+        }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+        finally { _previewHudRectsLoading = false; }
+    }
+
     private void MountPreviewCaptions(CaptionTrack? track)
     {
         var ipc = _videoHost?.IpcClient;
@@ -495,11 +624,20 @@ public partial class GranularSpeedEditorWindow
             {
                 var (sw, sh) = CoordinateMath.GetResolutionInts(_edit.OriginalResolution);
                 if (sw <= 0 || sh <= 0) { sw = 1920; sh = 1080; }
-                int ow = _edit.IsMobileFormat ? Math.Min(sw, sh) : Math.Max(sw, sh);
-                int oh = _edit.IsMobileFormat ? Math.Max(sw, sh) : Math.Min(sw, sh);
+                var (ow, oh) = CaptionAssWriter.ExportCanvas(_edit.IsMergeMode, _edit.IsMobileFormat, sw, sh);
+                if (_edit.IsMobileFormat && _previewHudRects == null)
+                    _ = EnsurePreviewHudRectsLoadedAsync(track);
 
                 string assPath = Path.Combine(Path.GetTempPath(), $"fvs_captions_live_{Guid.NewGuid():N}.ass");
-                CaptionAssWriter.WriteToFile(assPath, track, null, ow, oh, isPortrait: _edit.IsMobileFormat, baseOffsetSec: 0.0);
+                CaptionAssWriter.WriteToFile(
+                    assPath,
+                    track,
+                    null,
+                    ow,
+                    oh,
+                    isPortrait: _edit.IsMobileFormat,
+                    hudRects: _edit.IsMobileFormat ? _previewHudRects : null,
+                    baseOffsetSec: 0.0);
                 _ = ipc.AddSubtitlesAsync(assPath);
                 _liveCaptionsAssPath = assPath;
             }

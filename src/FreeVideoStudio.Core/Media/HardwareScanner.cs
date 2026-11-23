@@ -1,18 +1,10 @@
-﻿
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
 public static class HardwareScanner
 {
-    /// <summary>
-    /// G03: returned when the scan could NOT complete (exception / timeout) as opposed to
-    /// completing and legitimately finding no hardware encoder. These two outcomes used to
-    /// collapse into the same "CPU" string, which made EncoderManager set ForcedCpu=true and
-    /// discard its own successful encoder detection — the exact reason a machine with a working
-    /// RTX exported every video on libx264. NEVER merge this back into "CPU".
-    /// </summary>
     public const string ScanFailed = "SCAN_FAILED";
 
     private static readonly string[] Priority = ["NVIDIA", "AMD", "INTEL"];
@@ -25,19 +17,6 @@ public static class HardwareScanner
         { "CPU", "libx264" }
     };
 
-    /// <summary>
-    /// Suite-wide entry point (issue 2). Returns the shared result published by whichever app
-    /// scanned first, and only pays for a real scan when there is nothing valid to reuse.
-    ///
-    /// A full <see cref="ScanAsync"/> spawns ffmpeg.exe up to FOUR times (one `-hwaccels` listing
-    /// plus a real trial encode per vendor). Doing that in every process of a three-process suite
-    /// was pure waste AND allowed two apps to disagree about the same machine. Every caller should
-    /// use THIS method; call <see cref="ScanAsync"/> directly only when a forced re-probe is
-    /// genuinely wanted.
-    ///
-    /// A successful result is published for the other apps. A failure is deliberately NOT
-    /// published — see <see cref="HardwareCapability"/>.
-    /// </summary>
     public static async Task<string> ScanSharedAsync(string ffmpegPath, CancellationToken cancellationToken = default)
     {
         var cached = HardwareCapability.TryLoadEncoder(ffmpegPath);
@@ -109,7 +88,7 @@ public static class HardwareScanner
         try { ChildProcessTracker.AddProcess(process); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
         Task<string> outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
         Task<string> errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        
+
         try
         {
             await process.WaitForExitAsync(cancellationToken);
@@ -149,7 +128,7 @@ public static class HardwareScanner
         using var killReg = cancellationToken.Register(() => { try { process.Kill(true); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); } });
         try { ChildProcessTracker.AddProcess(process); } catch (System.Exception ex) { CoreLogger.Swallowed(ex); }
         Task<string> errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        
+
         try
         {
             await process.WaitForExitAsync(cancellationToken);

@@ -1,6 +1,5 @@
 ﻿using System.Diagnostics;
 using System.Net;
-using System.Net.Sockets;
 using System.Security.Principal;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
@@ -8,7 +7,6 @@ using Microsoft.Win32;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>UPGRADE_09 — privileged work is restricted to verified machine installation roots.</summary>
 internal static class UpgradeInstallWorker
 {
     internal static bool IsElevated()
@@ -19,11 +17,11 @@ internal static class UpgradeInstallWorker
 
     public static async Task<int> RunAsync(string[] args)
     {
-        if (!IsElevated() || args.Length < 3 || !int.TryParse(args[1], out int port) || port is < 1 or > 65535 ||
+        if (!IsElevated() || args.Length < 3 || !Core.Ipc.PipeAccess.IsUpgradePipeName(args[1]) ||
             args[2].Length != 64 || args[2].Any(c => !Uri.IsHexDigit(c))) return 2;
-        using var client = new TcpClient();
-        await client.ConnectAsync(IPAddress.Loopback, port).ConfigureAwait(false);
+        var client = new System.IO.Pipes.NamedPipeClientStream(".", args[1], System.IO.Pipes.PipeDirection.InOut, System.IO.Pipes.PipeOptions.Asynchronous);
         using var channel = new UpgradeChannel(client);
+        await client.ConnectAsync(30_000).ConfigureAwait(false);
         await channel.SendAsync("hello", args[2]).ConfigureAwait(false);
         using var gate = new Semaphore(1, 1, DeploymentFootprint.InstallerGateName);
         using var legacyGate = new Semaphore(1, 1, @"Global\" + LegacyProductIdentity.CompactName + "_InstallerGate");
@@ -78,7 +76,7 @@ internal static class UpgradeInstallWorker
             }
             else
             {
-                throw new IOException("This program is not an installer. Download FreeVideoStudio-Setup.exe to install Free Video Studio.");
+                throw new IOException("This program is not an installer. Download FreeVideoStudio.exe to install Free Video Studio.");
             }
             await relay.RunAsync("install", report => transaction.Prepare(candidate =>
             {
@@ -110,7 +108,7 @@ internal static class UpgradeInstallWorker
             {
                 if (!int.TryParse(pidText, out int pid)) throw new IOException("Invalid first-launch confirmation.");
                 using Process app = Process.GetProcessById(pid);
-                if (app.HasExited || !string.Equals(app.MainModule?.FileName, DeploymentFootprint.InstallPath, StringComparison.OrdinalIgnoreCase))
+                if (app.HasExited || !string.Equals(ProcessImage.TryGetPath(app.Id), DeploymentFootprint.InstallPath, StringComparison.OrdinalIgnoreCase))
                     throw new IOException("The new installed app did not confirm a successful startup.");
             }
             transaction.Confirm(DateTimeOffset.UtcNow);
@@ -147,11 +145,6 @@ internal static class UpgradeInstallWorker
         }
     }
 
-    /// <summary>
-    /// UPGRADEUX_01 — relays "phase|fraction" to the broker while synchronous file work runs on the
-    /// thread pool. Only this flow writes to the channel, so progress can never interleave with a
-    /// protocol message. Reporting is best-effort display data; a lost line changes nothing.
-    /// </summary>
     private sealed class ProgressRelay(UpgradeChannel channel)
     {
         private readonly object _gate = new();
@@ -194,17 +187,13 @@ internal static class UpgradeInstallWorker
         }
     }
 
-    /// <summary>
-    /// DIST-SMART — the elevated side NEVER trusts what the unelevated updater checked. It re-reads the
-    /// manifest and signature from the staging folder and verifies the signature itself, against the
-    /// pinned publisher root (or, for a publicly trusted certificate, against its OWN signer).
-    /// </summary>
     private static SmartUpdateManifest LoadVerifiedSmartUpdate(string folder)
     {
         UpgradeFiles.RequirePlainPath(folder);
         byte[] json = File.ReadAllBytes(Path.Combine(folder, SmartUpdateManifest.FileName));
         byte[] signature = File.ReadAllBytes(Path.Combine(folder, SmartUpdateManifest.SignatureFileName));
         string? self = OperatingSystem.IsWindows() ? AuthenticodeVerifier.Inspect(Environment.ProcessPath ?? string.Empty) is { ChainValid: true } own
+                                                     && !AuthenticodeVerifier.IsSharedPublisher(own.Subject)
             ? own.Thumbprint : null : null;
         if (!SmartUpdateManifest.VerifySignature(json, signature, self, out string detail))
             throw new IOException("The update could not be verified, so nothing was installed. " + detail);
@@ -304,14 +293,18 @@ internal static class UpgradeInstallWorker
                 transaction.PruneBackup(DateTimeOffset.UtcNow,
                     supersededByNewer: newest is { } latest && transaction.ConfirmedAt is { } at && at < latest);
             }
-            string xml = await TaskCommandAsync("/Query", "/TN", LegacyProductIdentity.CompactName, "/XML").ConfigureAwait(false);
+            string xml = LegacyScheduledTask.Exists(LegacyProductIdentity.CompactName)
+                ? await TaskCommandAsync("/Query", "/TN", LegacyProductIdentity.CompactName, "/XML").ConfigureAwait(false)
+                : string.Empty;
             var oldExecutables = Transactions().SelectMany(x => x.Roots)
                 .SelectMany(root => LegacyProductIdentity.ExecutableNames.Select(name => Path.Combine(root, name)))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             if (!string.IsNullOrWhiteSpace(xml) && System.Xml.Linq.XDocument.Parse(xml).Descendants()
                     .Where(x => x.Name.LocalName == "Command").Any(x => oldExecutables.Contains(x.Value.Trim('"'))))
                 _ = await TaskCommandAsync("/Delete", "/TN", LegacyProductIdentity.CompactName, "/F").ConfigureAwait(false);
-            string ownTask = await TaskCommandAsync("/Query", "/TN", DeploymentFootprint.ScheduledTaskName, "/XML").ConfigureAwait(false);
+            string ownTask = LegacyScheduledTask.Exists(DeploymentFootprint.ScheduledTaskName)
+                ? await TaskCommandAsync("/Query", "/TN", DeploymentFootprint.ScheduledTaskName, "/XML").ConfigureAwait(false)
+                : string.Empty;
             if (!string.IsNullOrWhiteSpace(ownTask))
                 _ = await TaskCommandAsync("/Delete", "/TN", DeploymentFootprint.ScheduledTaskName, "/F").ConfigureAwait(false);
             return 0;

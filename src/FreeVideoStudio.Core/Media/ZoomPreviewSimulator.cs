@@ -1,66 +1,17 @@
-﻿namespace FreeVideoStudio.Core.Media;
+﻿using System.Collections.Concurrent;
 
-/// <summary>
-/// LIVE ZOOM PREVIEW — ONE IMPLEMENTATION, SHARED BY EVERY PREVIEW SURFACE IN THE SUITE.
-///
-/// Turns "where is the playhead" into the mpv <c>video-crop</c> string that makes the on-screen
-/// preview show exactly what the exported file will show, including the SLOW glide.
-///
-/// ── WHY THIS CLASS EXISTS ────────────────────────────────────────────────────────────────────
-/// The Granular editor grew its own copy of the export's ramp maths. Adding the same preview to
-/// the Main App and to Music Wizard phase 3 would have meant a THIRD and FOURTH copy of:
-///   the steal-window rules · the two-Slow-zooms gap rule · the progress ramp · the centre lerp ·
-///   the even-pixel rounding · the edge clamp
-/// Four copies of one algorithm is four chances for the preview to stop matching the export, and
-/// a preview that lies is worse than no preview. There is now exactly ONE copy, here, and it
-/// reads its timing constants straight from <see cref="GranularSpeedBuilder"/> — the export engine
-/// itself. Preview and export cannot drift apart without a compile error.
-///
-/// ⚠️ IF YOU CHANGE THE RAMP RULES, CHANGE THEM IN <see cref="GranularSpeedBuilder"/> AND THIS
-/// FILE FOLLOWS AUTOMATICALLY. Never hard-code 0.5 / 1.0 in a window.
-///
-/// ── GPU ONLY. THIS IS DELIBERATE. ────────────────────────────────────────────────────────────
-/// Callers must gate on <c>VideoRenderMode.Current.UseHardwareAcceleration</c>. On the GPU path
-/// mpv applies the crop inside its own renderer — a texture-coordinate change, effectively free.
-/// On the CPU fallback path (hwdec=no, software scale into a WriteableBitmap) every crop CHANGE
-/// forces mpv to rebuild its software scaler, and a 0.5s glide produces ~10 of them; on machines
-/// that by definition have no GPU that is a visible hitch. CPU-only machines therefore keep the
-/// static guide rectangle and nothing else — an owner decision, not an oversight.
-///
-/// ── KNOWN, ACCEPTED DIFFERENCE FROM THE EXPORT ───────────────────────────────────────────────
-/// Near the frame edges the export PADS with black where this preview CLAMPS the crop inside the
-/// picture. So a zoom box pushed hard against an edge previews very slightly differently from the
-/// rendered file. Documented in docs/README.md (formerly project_structure.txt); do not "fix" it by letting the crop leave
-/// the frame — mpv rejects an out-of-bounds crop and the preview would simply stop updating.
-/// PREVIEWFIDELITY_01 — the difference is no longer silent: <see cref="Result.EdgeClamped"/> and
-/// <see cref="AnyEdgePadding"/> report a material clamp so the window can say the preview is not the export.
-/// </summary>
+namespace FreeVideoStudio.Core.Media;
+
 public static class ZoomPreviewSimulator
 {
-    /// <summary>Result of a simulation tick. <see cref="Crop"/> is empty when no crop applies.</summary>
-    /// <param name="EdgeClamped">
-    /// PREVIEWFIDELITY_01 — true when the export's window runs past the frame edge here (the export
-    /// PADS with black, this preview had to CLAMP), by more than <see cref="MaterialEdgeFraction"/> of the
-    /// window. The preview is then not what the file will show, and the caller says so.
-    /// </param>
     public readonly record struct Result(string Crop, double Progress, bool EdgeClamped = false)
     {
         public static readonly Result None = new(string.Empty, 0.0);
         public bool HasCrop => !string.IsNullOrEmpty(Crop);
     }
 
-    /// <summary>
-    /// PREVIEWFIDELITY_01 — a clamp that moves the window by more than this fraction of its own size is
-    /// a visible difference (a black band in the export); anything smaller is sub-pixel noise.
-    /// </summary>
     public const double MaterialEdgeFraction = 0.01;
 
-    /// <summary>
-    /// PREVIEWFIDELITY_01 — true when ANY box zoom in <paramref name="segments"/> would, at some point of
-    /// its glide or hold, show black padding in the export that this clamping preview cannot show.
-    /// Checked at the held zoom and at quarter points of a slow glide. AI-tracked zooms clamp in the
-    /// export too (their crop expression is <c>min/max</c>-bounded), so they never pad.
-    /// </summary>
     public static bool AnyEdgePadding(IReadOnlyList<SpeedSegment>? segments, bool portraitMode = false)
     {
         if (segments == null) return false;
@@ -76,37 +27,6 @@ public static class ZoomPreviewSimulator
         return false;
     }
 
-    /// <summary>
-    /// Computes the mpv <c>video-crop</c> value for a moment in the clip.
-    /// </summary>
-    /// <param name="segments">
-    /// The speed segments carrying the zoom boxes. Segments without a complete zoom are ignored.
-    /// </param>
-    /// <param name="tSec">
-    /// Playhead position in seconds, RELATIVE TO THE TRIM START — the same origin the export uses.
-    /// Callers holding an absolute player time must subtract their trim start first.
-    /// </param>
-    /// <param name="durSec">Trimmed clip length in seconds. Used as the "clip end" boundary.</param>
-    /// <returns><see cref="Result.None"/> when the picture should be uncropped.</returns>
-    /// <param name="portraitMode">
-    /// PORTRAIT_01 — true when the export will run the Portrait Canvas Trick.
-    ///
-    /// ⚠️ THIS IS NOT OPTIONAL POLISH; WITHOUT IT THE PREVIEW LIES. In portrait the export does
-    /// THREE things: (1) crop a window around the zoom box, WIDENED to the source aspect ratio,
-    /// (2) scale that back to full frame, (3) centre-crop to the 2:3 slice, keeping only the
-    /// middle 1280 of the 3414-wide internal space (= 720 of 1920 source px). Steps 1 and 3
-    /// cancel, so the net result is exactly the box the user drew.
-    ///
-    /// The preview used to perform step 1 ONLY. Measured on a 1920x1080 source with a 480x720 box:
-    /// the export showed a 480px-wide region, the preview showed 1280px — 2.67x too wide. The
-    /// centres matched at every position, so nothing drifted sideways; the FRAMING was simply
-    /// wrong, which reads to the eye as "not the same".
-    ///
-    /// It also means a portrait preview must be cropped to the 2:3 slice even when NO zoom is
-    /// active, because that is what the export always produces.
-    /// </param>
-    /// <param name="srcW">Source width. Required for the no-zoom portrait slice, where there is no zoom box to read it from.</param>
-    /// <param name="srcH">Source height.</param>
     public static Result Compute(IReadOnlyList<SpeedSegment>? segments, double tSec, double durSec,
                                  bool portraitMode = false, int srcW = 0, int srcH = 0, double trimStartSec = 0)
     {
@@ -191,7 +111,7 @@ public static class ZoomPreviewSimulator
 
         if (!string.IsNullOrEmpty(active.AiTrackingTrajectory) && p >= 0.999)
         {
-            var traj = AiTrajectorySmoother.SmoothedTrajectory.FromJson(active.AiTrackingTrajectory);
+            var traj = GetCachedTrajectory(active.AiTrackingTrajectory);
             if (traj != null && traj.Keyframes.Count > 0)
             {
                 double segStart = ((active.ZoomStartMs ?? active.StartMs) / 1000.0) - trimStartSec;
@@ -224,11 +144,6 @@ public static class ZoomPreviewSimulator
         return new Result($"{win.W}x{win.H}+{win.X}+{win.Y}", p, win.EdgeClamped);
     }
 
-    /// <summary>
-    /// The box zoom's visible window at progress <paramref name="p"/>: the export's centre lerp and zoom
-    /// ramp (<c>GranularSpeedBuilder.BuildConstantZoomFilter</c>), then — because mpv rejects an
-    /// out-of-bounds crop — clamped into the picture. <c>EdgeClamped</c> reports a material clamp.
-    /// </summary>
     private static (int W, int H, int X, int Y, bool EdgeClamped) BoxWindow(SpeedSegment active, double p, int sw, int sh, bool portraitMode)
     {
         double targetZ = Math.Min((double)sw / active.ZoomW!.Value, (double)sh / active.ZoomH!.Value);
@@ -263,24 +178,12 @@ public static class ZoomPreviewSimulator
         return (iw, ih, ix, iy, clamped);
     }
 
-    /// <summary>
-    /// PORTRAIT_01 — how much of the SOURCE width survives the portrait centre-crop.
-    ///
-    /// Derived from `CoordinateConstants` rather than hard-coded, so it tracks the Portrait Canvas
-    /// Trick automatically: the frame is scaled up until it covers the 1280x1920 internal space,
-    /// then 1280px is cropped from the middle. Undoing that scale gives the surviving source width
-    /// — 720px on a 1920x1080 source, which is the number mandate #3 quotes.
-    /// </summary>
     private static double PortraitSurvivingWidth(double sw, double sh)
     {
         double scale = Math.Max(CoordinateConstants.InternalW / sw, CoordinateConstants.InternalH / sh);
         return CoordinateConstants.InternalW / scale;
     }
 
-    /// <summary>
-    /// PORTRAIT_01 — the crop for "portrait, but no zoom happening right now".
-    /// Exactly the 2:3 slice the export always delivers, full height.
-    /// </summary>
     private static Result PortraitSliceOnly(int sw, int sh)
     {
         if (sw <= 0 || sh <= 0) return Result.None;
@@ -291,5 +194,32 @@ public static class ZoomPreviewSimulator
         int ix = Math.Max(0, Math.Min(sw - iw, (int)Math.Round((sw - survW) / 2.0)));
 
         return new Result($"{iw}x{ih}+{ix}+0", 0.0);
+    }
+
+    private const int TrajectoryCacheMaxEntries = 64;
+    private static readonly object TrajectoryCacheGate = new();
+    private static readonly Dictionary<string, AiTrajectorySmoother.SmoothedTrajectory> TrajectoryCache = new(StringComparer.Ordinal);
+    private static readonly Queue<string> TrajectoryCacheOrder = new();
+
+    internal static AiTrajectorySmoother.SmoothedTrajectory? GetCachedTrajectory(string json)
+    {
+        if (string.IsNullOrEmpty(json)) return null;
+        lock (TrajectoryCacheGate)
+        {
+            if (TrajectoryCache.TryGetValue(json, out var hit)) return hit;
+        }
+
+        var parsed = AiTrajectorySmoother.SmoothedTrajectory.FromJson(json);
+        if (parsed == null) return null;
+
+        lock (TrajectoryCacheGate)
+        {
+            if (TrajectoryCache.TryGetValue(json, out var existing)) return existing;
+            if (TrajectoryCache.Count >= TrajectoryCacheMaxEntries && TrajectoryCacheOrder.TryDequeue(out string? oldest))
+                TrajectoryCache.Remove(oldest);
+            TrajectoryCache[json] = parsed;
+            TrajectoryCacheOrder.Enqueue(json);
+        }
+        return parsed;
     }
 }

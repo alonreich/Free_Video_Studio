@@ -6,21 +6,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// MERGESESSION_01 — THE VIDEO MERGER'S WRITE-BEHIND AUTOSAVE (Video-Merger-Migration.md P3.2, D6).
-///
-/// Every edit calls <see cref="Schedule"/> (cheap, UI thread). The newest edit list is written
-/// <see cref="DefaultDebounce"/> after the LAST edit, on the thread pool, atomically
-/// (<see cref="AtomicJsonFile.WriteText"/>). A burst of edits costs one write.
-///
-/// ORDER (WRITEORDER_01 style): every Schedule/Clear takes a number from one process-wide counter
-/// at call time; a write or delete is applied only if its number is newer than the last one applied
-/// to the file. A slow write queued before a Clear can therefore never resurrect the file.
-///
-/// <see cref="Load"/> never throws: a missing, locked or corrupt file is simply "nothing to restore".
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public sealed class MergerAutosaveStore : IDisposable
 {
     public static readonly TimeSpan DefaultDebounce = TimeSpan.FromMilliseconds(750);
@@ -45,7 +30,6 @@ public sealed class MergerAutosaveStore : IDisposable
 
     public string FilePath => _path;
 
-    /// <summary>Queues <paramref name="edl"/> for writing. An empty edit list means "nothing to restore" and clears the file.</summary>
     public void Schedule(MergeEdl edl)
     {
         if (edl.Clips.Count == 0) { Clear(); return; }
@@ -57,14 +41,12 @@ public sealed class MergerAutosaveStore : IDisposable
         }
     }
 
-    /// <summary>Writes anything pending now (still off the caller's thread). The task completes when the write is done.</summary>
     public Task FlushAsync()
     {
         lock (_gate) _timer.Change(Timeout.Infinite, Timeout.Infinite);
         return StartFlush();
     }
 
-    /// <summary>Deletes the autosave (ordered after every earlier Schedule).</summary>
     public void Clear()
     {
         long version = Interlocked.Increment(ref _versionCounter);
@@ -84,7 +66,6 @@ public sealed class MergerAutosaveStore : IDisposable
         }
     }
 
-    /// <summary>The saved edit list, or null. Never throws. Call off the UI thread.</summary>
     public MergeEdl? Load()
     {
         try

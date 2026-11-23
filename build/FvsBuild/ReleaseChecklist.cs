@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using FreeVideoStudio.Core.Infrastructure;
@@ -6,22 +6,6 @@ using Microsoft.Win32;
 
 namespace FvsBuild;
 
-/// <summary>
-/// NEWRELEASE_01 — after a SUCCESSFUL publish (Build.cmd only; never --dev or --no-publish), prepare
-/// everything docs\New-Release.md asks the human to do, then open that checklist in Notepad++.
-///
-/// <para>
-/// Why: a brand-new file has no reputation, so Microsoft Defender's cloud AI may flag it in its first
-/// days. The free remedy is a manual false-positive submission to Microsoft (WDSI), which has no free
-/// API and accepts at most 50 MB per file. The 300 MB installer cannot be sent; the installed program
-/// (~62 MB, ~25 MB zipped) can. This class makes that upload a two-minute job:
-///   obj\ReleaseSubmit\FreeVideoStudio-program-&lt;version&gt;.zip   — the file to upload to Microsoft
-///   obj\ReleaseSubmit\submission-text.txt                     — every form field, ready to copy
-/// </para>
-///
-/// Nothing here can fail the build: a release is already public when this runs. Any problem is a
-/// warning, and the checklist still opens.
-/// </summary>
 internal static class ReleaseChecklist
 {
     private const string Repository = "alonreich/Free_Video_Studio";
@@ -123,7 +107,7 @@ internal static class ReleaseChecklist
             The release installer is too big for this form (50 MB limit), so this zip contains the installed
             program file, which is part of the same release.
             SHA-256 of the program file (FreeVideoStudio.exe, inside this zip): {programHash}
-            SHA-256 of the release installer (FreeVideoStudio-Setup.exe on GitHub, an Inno Setup package): {installerHash}
+            SHA-256 of the release installer (FreeVideoStudio.exe on GitHub, an Inno Setup package): {installerHash}
             Please review the file and the installer and remove the false detection. Thank you.
             --------------------------------------------------------------------------
             """;

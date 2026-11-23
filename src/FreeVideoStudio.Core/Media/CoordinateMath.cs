@@ -1,14 +1,8 @@
-﻿
-
-using System.Numerics;
+﻿using System.Numerics;
 using System.Text.RegularExpressions;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// Exact rational arithmetic to match Python's Fraction semantics.
-/// Used throughout coordinate transforms to guarantee identical rounding.
-/// </summary>
 public readonly struct Frac : IEquatable<Frac>, IComparable<Frac>
 {
     public readonly long Num;
@@ -56,11 +50,6 @@ public readonly struct Frac : IEquatable<Frac>, IComparable<Frac>
         return new Frac(neg ? -p1 : p1, q1 == 0 ? 1 : q1);
     }
 
-    /// <summary>
-    /// Parses "30", "30000/1001" or "29.97". Values arrive from ffprobe/ffmpeg output, so nothing
-    /// here may throw on malformed text — an unparseable or zero-denominator expression yields
-    /// <see cref="Zero"/> and lets the caller apply its own default.
-    /// </summary>
     public static Frac FromString(string s)
     {
         if (string.IsNullOrWhiteSpace(s)) return Zero;
@@ -138,7 +127,6 @@ public readonly struct Frac : IEquatable<Frac>, IComparable<Frac>
     public override string ToString() => SafeDen == 1 ? Num.ToString() : $"{Num}/{SafeDen}";
 }
 
-
 public static class CoordinateConstants
 {
     public const int PortraitW = 1080;
@@ -163,10 +151,8 @@ public static class CoordinateConstants
 
 public readonly record struct ZoomWindow(int CropW, int CropH, int PadX, int PadY, int CanvasW, int CanvasH, int CropX, int CropY);
 
-
 public static class CoordinateMath
 {
-
     public static int FracFloor(Frac v)
     {
         long q = v.Num / v.SafeDen;
@@ -186,7 +172,6 @@ public static class CoordinateMath
     public static int EvenDown(int v) => v % 2 == 0 ? v : v - 1;
     public static int EvenUp(int v) => v % 2 == 0 ? v : v + 1;
 
-
     public static int ScaleRound(Frac val)
     {
         if (val.Num >= 0)
@@ -195,7 +180,6 @@ public static class CoordinateMath
     }
 
     public static int ScaleRound(double d) => ScaleRound(Frac.FromDouble(d));
-
 
     public static (int x, int y, int w, int h) OutwardRoundRect(Frac x, Frac y, Frac w, Frac h)
     {
@@ -206,26 +190,6 @@ public static class CoordinateMath
         return (ix, iy, Math.Max(1, iw), Math.Max(1, ih));
     }
 
-
-    /// <summary>
-    /// Parses "1920x1080" into numbers, falling back to 1920x1080 for anything unusable.
-    ///
-    /// ISSUE_2 — two guards that were missing. This value is not always produced in-process: zoom
-    /// settings persist it as plain TEXT in the recovery JSON on disk (SpeedSegment.ZoomOrigRes),
-    /// and it comes back out through GranularSpeedBuilder at export time. A damaged or hand-edited
-    /// file could therefore feed this anything.
-    ///
-    ///   * ZERO. The regex happily matches "0x0". A zero then reached ScalePlan's
-    ///     `new Frac(InternalW, inW)`, and the Frac constructor throws DivideByZeroException on a
-    ///     zero denominator. Both dimensions must be positive to be a usable resolution.
-    ///   * OVERFLOW. int.Parse throws OverflowException on a run of digits too large for an int.
-    ///     TryParse simply fails instead.
-    ///
-    /// Both faults threw out of the export path and out of crash recovery — and until ISSUE_1 was
-    /// fixed, a throw during recovery deleted the user's saved session. Falling back is always
-    /// safer here than throwing: a wrong-but-sane resolution produces a slightly wrong crop, while
-    /// an exception loses the whole job.
-    /// </summary>
     public static (int w, int h) GetResolutionInts(string? resStr)
     {
         if (string.IsNullOrWhiteSpace(resStr)) return (1920, 1080);
@@ -242,7 +206,6 @@ public static class CoordinateMath
         return (1920, 1080);
     }
 
-
     public static (int scaledW, int scaledH, int cropX, int cropY, Frac scale) ScalePlan(string originalResolution)
     {
         var (inW, inH) = GetResolutionInts(originalResolution);
@@ -256,7 +219,6 @@ public static class CoordinateMath
         int cropY = EvenDown(FracFloor(new Frac(scaledH - CoordinateConstants.InternalH, 2)));
         return (scaledW, scaledH, cropX, cropY, scale);
     }
-
 
     public static (Frac x, Frac y, Frac w, Frac h) TransformToContentArea(
         (double x, double y, double w, double h) rect, string originalResolution, string? driftType = null)
@@ -286,7 +248,6 @@ public static class CoordinateMath
         var uiScale = CoordinateConstants.UIToInternalScale;
         return (internalX / uiScale, internalY / uiScale, internalW / uiScale, internalH / uiScale);
     }
-
 
     public static (Frac x, Frac y, Frac w, Frac h) InverseTransformFromContentArea(
         (double x, double y, double w, double h) rect, string originalResolution, string? driftType = null)
@@ -328,30 +289,6 @@ public static class CoordinateMath
         return (finalX, finalY, finalW, finalH);
     }
 
-
-    /// <summary>
-    /// Content-space rect -> SOURCE-video rect, as whole even pixels.
-    ///
-    /// ISSUE_3 — ONE-WAY CONTRACT. This rounds strictly OUTWARD (floor the origin, ceil the far
-    /// edge, then EvenDown/EvenUp) and that is deliberate: the FFmpeg crop it feeds must fully
-    /// COVER the region the user selected, because a crop that lands one pixel short permanently
-    /// clips a column of HUD pixels out of the export. <see cref="TransformToContentAreaInt"/>
-    /// rounds outward for the same reason.
-    ///
-    /// The consequence is that the two integer wrappers are NOT inverses of each other — composing
-    /// them grows the rect by up to 2px per axis. The exact-rational
-    /// <see cref="TransformToContentArea"/> / <see cref="InverseTransformFromContentArea"/> pair IS
-    /// symmetric; only the integer snapping is lossy.
-    ///
-    /// This is safe today because nothing in the pipeline iterates the composition: the Crop Tools
-    /// editor never rehydrates saved config entries into editable items (existing layers are drawn
-    /// as read-only placeholders by LoadExistingPlaceholdersAsync), undo/redo stores the SourceRect
-    /// verbatim in ItemSnapshot, and the exporter transforms once per render.
-    ///
-    /// DO NOT feed the output of one of these back into the other in a loop, and do not "fix" the
-    /// rounding to nearest — that would silently change the crop geometry of every existing saved
-    /// profile.
-    /// </summary>
     public static (int x, int y, int w, int h) InverseTransformFromContentAreaInt(
         (int x, int y, int w, int h) rect, string originalResolution, string? driftType = null)
     {
@@ -372,19 +309,12 @@ public static class CoordinateMath
         return (ix, iy, Math.Max(2, ex - ix), Math.Max(2, ey - iy));
     }
 
-
-    /// <summary>
-    /// SOURCE-video rect -> content-space (1080x1620) rect, as whole pixels.
-    /// ISSUE_3: rounds outward via <see cref="OutwardRoundRect"/>. See the one-way contract note on
-    /// <see cref="InverseTransformFromContentAreaInt"/> — these two must not be composed in a loop.
-    /// </summary>
     public static (int x, int y, int w, int h) TransformToContentAreaInt(
         (int x, int y, int w, int h) rect, string originalResolution, string? driftType = null)
     {
         var (fx, fy, fw, fh) = TransformToContentArea((rect.x, rect.y, rect.w, rect.h), originalResolution, driftType);
         return OutwardRoundRect(fx, fy, fw, fh);
     }
-
 
     public static (int x, int y) ClampOverlayPosition(
         double x, double y, double width, double height,
@@ -409,7 +339,6 @@ public static class CoordinateMath
         return (Math.Clamp(rawX, 0, limitX), Math.Clamp(rawY, paddingTopUi, limitY));
     }
 
-
     public static (int w, int h, int x, int y) ClampContentCrop((int w, int h, int x, int y) rect)
     {
         int w = Math.Max(0, Math.Min(CoordinateConstants.ContentW * 3, rect.w));
@@ -419,73 +348,8 @@ public static class CoordinateMath
         return (w, h, x, y);
     }
 
-
-    public static (Frac x, Frac y, Frac w, Frac h) ScaleRect(
-        (double x, double y, double w, double h) rect, double scaleFactor)
-    {
-        var fx = Frac.FromDouble(rect.x);
-        var fy = Frac.FromDouble(rect.y);
-        var fw = Frac.FromDouble(rect.w);
-        var fh = Frac.FromDouble(rect.h);
-        var factor = Frac.FromDouble(scaleFactor);
-        return (fx, fy, fw * factor, fh * factor);
-    }
-
-    public static (int x, int y, int w, int h) ScaleRectInt(
-        (int x, int y, int w, int h) rect, double scaleFactor)
-    {
-        var (x, y, w, h) = ScaleRect(rect, scaleFactor);
-        return (ScaleRound(x), ScaleRound(y), Math.Max(1, FracCeil(w)), Math.Max(1, FracCeil(h)));
-    }
-
-    /// <summary>
-    /// RATIOLOCK_01 — the smallest step a HUD layer's backend size may move in.
-    ///
-    /// TWO, not thirty-two. See <see cref="QuantizeBackendSizeInternal"/> for why the 32 went and
-    /// what replaced the property it was protecting. Two rather than one because ffmpeg's scale
-    /// filter feeds a yuv420p chain, whose chroma planes are half-resolution: an odd layer size is
-    /// legal but makes the encoder round it anyway, in a place this code cannot see.
-    /// </summary>
     public const int BackendSizeStep = 2;
 
-    /// <summary>
-    /// ISSUE_4 — THE single quantizer for HUD layer size, in BACKEND (1280x1920 internal) pixels.
-    ///
-    /// ══════════════════════════════════════════════════════════════════════════════════════
-    /// RATIOLOCK_01 — WHAT CHANGED AND WHY THE OLD 32-PIXEL GRID HAD TO GO.
-    ///
-    /// This method used to round WIDTH and HEIGHT INDEPENDENTLY to multiples of 32 backend pixels
-    /// (= <c>BackendScale.Num</c>, since 1280/1080 reduces to 32/27). Two faults came out of that,
-    /// and both were reported from the composer as feel problems rather than as maths problems:
-    ///
-    ///   * THE RATIO WAS DESTROYED. Two axes rounded separately do not keep their proportion. A
-    ///     300x60 element became 297x54 — a 10% vertical squash — and a 100x40 element became
-    ///     81x27, a 33% squash. The user drew a box around a health bar on the frozen frame and
-    ///     the composer showed them a different shape. No amount of care with the mouse could fix
-    ///     it, because the distortion was applied AFTER the mouse.
-    ///   * THE RESIZE STAIRCASED. 32 backend pixels is 27 content pixels, so dragging a corner
-    ///     moved the edge in 27-pixel jumps. That is the "jumpy, stuttery, unstable" feel: the box
-    ///     does not follow the pointer, it lurches after it.
-    ///
-    /// The 32 existed for one reason, stated in the old comment: a backend size that is a multiple
-    /// of 32 converts to <c>(rw / 32) * 27</c> content pixels EXACTLY, with no rounding. That is a
-    /// nicety, not a requirement — <see cref="QuantizeBackendSize"/> has always passed that
-    /// conversion through <see cref="ScaleRound"/>, and MobileFilterBuilder never converts a layer
-    /// size back to content space at all: it hands <c>rw</c> and <c>rh</c> straight to ffmpeg's
-    /// scale filter in backend pixels. Giving up exactness costs at most half a content pixel of
-    /// display rounding. Keeping it cost the user the shape of every element they cropped.
-    ///
-    /// SO: the WIDTH is rounded to <see cref="BackendSizeStep"/>, and the HEIGHT is then derived
-    /// from the width by the EXACT source ratio (contentH : contentW) rather than being rounded on
-    /// its own. The ratio is therefore locked by construction, to within one backend pixel, at
-    /// every size — which is the property the composer, the preview and the export all needed and
-    /// none of them had.
-    ///
-    /// Rounding stays exact rational half-up via <see cref="ScaleRound"/>, NOT
-    /// <c>Math.Round(double)</c>: 32/27 has no exact binary representation and banker's rounding
-    /// would put preview and export half a pixel apart at random sizes.
-    /// ══════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
     public static (int backendW, int backendH) QuantizeBackendSizeInternal(int contentW, int contentH, Frac scaleFrac)
     {
         Frac backendScale = CoordinateConstants.BackendScale;
@@ -504,11 +368,6 @@ public static class CoordinateMath
         return (rw, rh);
     }
 
-    /// <summary>
-    /// Same quantization as <see cref="QuantizeBackendSizeInternal"/>, expressed in UI/content
-    /// (1080x1620) pixels. Used by the Crop Tools preview and by HudConfig. The division is exact
-    /// because the backend size is always a multiple of 32.
-    /// </summary>
     public static (int width, int height) QuantizeBackendSize(int contentW, int contentH, Frac scaleFrac)
     {
         Frac backendScale = CoordinateConstants.BackendScale;
@@ -542,10 +401,6 @@ public static class CoordinateMath
         return pick < 2 ? 2 : pick;
     }
 
-    /// <summary>
-    /// DRIFT_01 — snaps zoom crop window onto the grid FFmpeg actually uses.
-    /// Emits a window that is whole and chroma-aligned, preserving the centre exactly.
-    /// </summary>
     public static ZoomWindow SnapZoomWindow(double cropWRaw, double cropHRaw, double resW, double resH,
                                             double cxTarget, double cyTarget)
     {

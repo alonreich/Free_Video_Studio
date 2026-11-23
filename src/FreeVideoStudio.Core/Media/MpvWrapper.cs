@@ -1,20 +1,13 @@
-
-using System;
+﻿using System;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// Native libmpv P/Invoke bindings using NativeAOT-friendly [LibraryImport]
-/// source generation, plus safe synchronous wrappers for common operations.
-/// All methods operate on the raw <c>mpv_handle*</c> (<see cref="nint"/>).
-/// </summary>
 public static partial class MpvWrapper
 {
     private const string LibraryName = "libmpv-2.dll";
-
 
     [LibraryImport(LibraryName)]
     public static partial nint mpv_create();
@@ -25,9 +18,35 @@ public static partial class MpvWrapper
     [LibraryImport(LibraryName)]
     public static partial void mpv_terminate_destroy(nint ctx);
 
-
     [LibraryImport(LibraryName, StringMarshalling = StringMarshalling.Utf8)]
     public static partial int mpv_command_string(nint ctx, string args);
+
+    [LibraryImport(LibraryName)]
+    private static partial int mpv_command_async(nint ctx, ulong replyUserdata, nint arguments);
+
+    [LibraryImport(LibraryName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int mpv_get_property_async(nint ctx, ulong replyUserdata, string name, MpvFormat format);
+
+    public static int CommandAsync(nint handle, ulong replyUserdata, string[] arguments)
+    {
+        nint[] strings = new nint[arguments.Length];
+        nint argv = Marshal.AllocHGlobal((arguments.Length + 1) * nint.Size);
+        try
+        {
+            for (int i = 0; i < arguments.Length; i++)
+            {
+                strings[i] = Marshal.StringToCoTaskMemUTF8(arguments[i]);
+                Marshal.WriteIntPtr(argv, i * nint.Size, strings[i]);
+            }
+            Marshal.WriteIntPtr(argv, arguments.Length * nint.Size, nint.Zero);
+            return mpv_command_async(handle, replyUserdata, argv);
+        }
+        finally
+        {
+            foreach (nint value in strings) if (value != nint.Zero) Marshal.FreeCoTaskMem(value);
+            Marshal.FreeHGlobal(argv);
+        }
+    }
 
     [LibraryImport(LibraryName, StringMarshalling = StringMarshalling.Utf8)]
     public static partial int mpv_set_property_string(nint ctx, string name, string data);
@@ -40,7 +59,6 @@ public static partial class MpvWrapper
 
     [LibraryImport(LibraryName)]
     public static partial void mpv_free(nint data);
-
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern int mpv_observe_property(nint ctx, ulong reply_userdata,
@@ -55,20 +73,22 @@ public static partial class MpvWrapper
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern void mpv_wakeup(nint ctx);
 
-
-    /// <summary>mpv event IDs (partial — only the ones we handle).</summary>
     public enum MpvEventId : int
     {
         None = 0,
         Shutdown = 1,
         LogMessage = 2,
+        GetPropertyReply = 3,
+        SetPropertyReply = 4,
+        CommandReply = 5,
+        StartFile = 6,
         EndFile = 7,
+        FileLoaded = 8,
         Seek = 20,
         PlaybackRestart = 21,
         PropertyChange = 22,
     }
 
-    /// <summary>mpv property formats (partial).</summary>
     public enum MpvFormat : int
     {
         None = 0,
@@ -76,11 +96,6 @@ public static partial class MpvWrapper
         Double = 5,
     }
 
-
-    /// <summary>
-    /// Layout: { int event_id; int error; uint64_t reply_userdata; void* data; }
-    /// Total on 64-bit: 4 + 4 + 8 + 8 = 24 bytes.
-    /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     public struct MpvEvent
     {
@@ -90,10 +105,6 @@ public static partial class MpvWrapper
         public nint Data;
     }
 
-    /// <summary>
-    /// Layout: { const char* name; mpv_format format; void* data; }
-    /// On 64-bit: 8 + 4 + 4(padding) + 8 = 24 bytes.
-    /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     public struct MpvEventProperty
     {
@@ -102,8 +113,6 @@ public static partial class MpvWrapper
         public nint Data;
     }
 
-
-    /// <summary>Safely terminates and destroys an mpv handle (null-safe).</summary>
     public static void SafeDestroy(ref nint handle)
     {
         if (handle == nint.Zero) return;
@@ -111,98 +120,12 @@ public static partial class MpvWrapper
         handle = nint.Zero;
     }
 
-
-    /// <summary>Sets the 'pause' property.</summary>
-    public static void SetPause(nint handle, bool pause)
-    {
-        if (handle != nint.Zero)
-            mpv_set_property_string(handle, "pause", pause ? "yes" : "no");
-    }
-
-
-    /// <summary>Sets the 'volume' property (integer 0–100+).</summary>
-    public static void SetVolume(nint handle, int volume)
-    {
-        if (handle != nint.Zero)
-            mpv_set_property_string(handle, "volume", volume.ToString(CultureInfo.InvariantCulture));
-    }
-
-    /// <summary>Sets the 'volume' property (double, InvariantCulture).</summary>
-    public static void SetVolume(nint handle, double volume)
-    {
-        if (handle != nint.Zero)
-            mpv_set_property_string(handle, "volume", volume.ToString(CultureInfo.InvariantCulture));
-    }
-
-
-    /// <summary>Stops playback and clears the playlist.</summary>
     public static void Stop(nint handle)
     {
         if (handle != nint.Zero)
             mpv_command_string(handle, "stop");
     }
 
-
-    /// <summary>
-    /// Loads a file into mpv. The path is automatically escaped for the mpv
-    /// command-string parser (backslashes doubled, entire path quoted).
-    /// </summary>
-    /// <summary>
-    /// ISSUE_15 — loads a file into the player.
-    ///
-    /// WHAT WAS WRONG: the path was interpolated between hand-written quotes after doubling only
-    /// its backslashes. A double quote inside the filename therefore closed the string early and
-    /// handed mpv a malformed command, which it rejects without producing any diagnosable error —
-    /// the video simply never appeared. This is the code path EVERY video load goes through
-    /// (upload, drag &amp; drop, Explorer "Open with", crash recovery), so a single awkward
-    /// filename made the app look broken with nothing in the log to explain it.
-    ///
-    /// Both special characters inside an mpv double-quoted string are now escaped, backslashes
-    /// first so the escapes introduced for the quotes are not themselves doubled.
-    /// </summary>
-    public static void LoadFile(nint handle, string path)
-    {
-        if (handle == nint.Zero) return;
-        string safePath = path.Replace("\\", "\\\\").Replace("\"", "\\\"");
-        mpv_command_string(handle, $"loadfile \"{safePath}\"");
-    }
-
-    /// <summary>
-    /// AICAPTION_EXPORT_01 — loads an ASS subtitle file into libmpv (sub-add) for live preview.
-    /// </summary>
-    public static void AddSubtitles(nint handle, string path, bool select = true)
-    {
-        if (handle == nint.Zero) return;
-        string safePath = path.Replace("\\", "\\\\").Replace("\"", "\\\"");
-        string flag = select ? "select" : "auto";
-        mpv_command_string(handle, $"sub-add \"{safePath}\" {flag}");
-    }
-
-    /// <summary>
-    /// AICAPTION_EXPORT_01 — removes subtitle tracks from libmpv preview.
-    /// </summary>
-    public static void RemoveSubtitles(nint handle)
-    {
-        if (handle == nint.Zero) return;
-        mpv_command_string(handle, "sub-remove");
-    }
-
-    /// <summary>
-    /// Sets the 'start' property independently BEFORE a loadfile, per project
-    /// IPC rule (mpv ignores options embedded in the loadfile command).
-    /// </summary>
-    public static void SetStartPosition(nint handle, double seconds)
-    {
-        if (handle != nint.Zero)
-            mpv_set_property_string(handle, "start",
-                seconds > 0 ? seconds.ToString(CultureInfo.InvariantCulture) : "0");
-    }
-
-
-    /// <summary>
-    /// Reads a property as a string. The returned nint is automatically freed.
-    /// Returns null if the handle is invalid or the property has no value.
-    /// </summary>
     public static string? GetPropertyString(nint handle, string name)
     {
         if (handle == nint.Zero) return null;
@@ -213,18 +136,12 @@ public static partial class MpvWrapper
         return result;
     }
 
-    /// <summary>Reads 'duration' as a double. Returns 0 on failure.</summary>
     public static double GetDuration(nint handle)
     {
         string? s = GetPropertyString(handle, "duration");
         return double.TryParse(s, CultureInfo.InvariantCulture, out double v) ? v : 0;
     }
 
-
-    /// <summary>
-    /// Registers interest in a property. When it changes, MPV_EVENT_PROPERTY_CHANGE
-    /// events will be delivered on the event queue.
-    /// </summary>
     public static ulong ObserveProperty(nint handle, string name, MpvFormat format)
     {
         if (handle == nint.Zero) return 0;
@@ -232,20 +149,12 @@ public static partial class MpvWrapper
         return (ulong)id;
     }
 
-    /// <summary>Removes a property observation by its ID.</summary>
     public static void UnobserveProperty(nint handle, ulong id)
     {
         if (handle != nint.Zero && id != 0)
             mpv_unobserve_property(handle, id);
     }
 
-
-    /// <summary>
-    /// Waits for the next mpv event (up to <paramref name="timeoutSeconds"/>).
-    /// Returns the marshalled <see cref="MpvEvent"/> struct.
-    /// The returned struct's <see cref="MpvEvent.Data"/> pointer is owned by
-    /// mpv and is only valid until the next call to this method.
-    /// </summary>
     public static MpvEvent WaitEvent(nint handle, double timeoutSeconds = -1.0)
     {
         if (handle == nint.Zero)
@@ -258,10 +167,6 @@ public static partial class MpvWrapper
         return Marshal.PtrToStructure<MpvEvent>(ptr);
     }
 
-    /// <summary>
-    /// Reads a <see cref="MpvEventProperty"/> from an event's Data pointer
-    /// (only valid when <see cref="MpvEvent.EventId"/> == <see cref="MpvEventId.PropertyChange"/>).
-    /// </summary>
     public static MpvEventProperty ReadEventProperty(MpvEvent ev)
     {
         if (ev.Data == nint.Zero)
@@ -269,18 +174,11 @@ public static partial class MpvWrapper
         return Marshal.PtrToStructure<MpvEventProperty>(ev.Data);
     }
 
-    /// <summary>
-    /// Reads the property name from an <see cref="MpvEventProperty"/> (UTF-8 string).
-    /// </summary>
     public static string? GetEventPropertyName(MpvEventProperty prop)
     {
         return prop.Name == nint.Zero ? null : Marshal.PtrToStringUTF8(prop.Name);
     }
 
-    /// <summary>
-    /// Reads the double value from an MPV_FORMAT_DOUBLE property change event.
-    /// The <see cref="MpvEventProperty.Data"/> pointer points directly to a double.
-    /// </summary>
     public static double ReadEventPropertyDouble(MpvEventProperty prop)
     {
         if (prop.Data == nint.Zero) return 0;

@@ -1,16 +1,10 @@
-﻿
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
 using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// PREVIEWFIDELITY_01 — the Main App preview says when it is not the export (<see cref="PreviewFidelity"/>).
-/// Re-evaluated on the rendered-mix scheduler tick (250 ms), so it costs nothing per frame; the marker
-/// changes only when the set of differences changes, and every change is logged once.
-/// </summary>
 public partial class MainWindow
 {
     private Infrastructure.PreviewFidelityBadge? _fidelityBadge;
@@ -62,7 +56,6 @@ public partial class MainWindow
         return ext is ".png" or ".jpg" or ".jpeg";
     }
 
-    /// <summary>Reads the source's colour tags once per loaded file, off the UI thread (one ffprobe).</summary>
     private void EnsureFidelityColorProbe(string path)
     {
         if (string.Equals(_fidelityColorPath, path, StringComparison.OrdinalIgnoreCase)) return;

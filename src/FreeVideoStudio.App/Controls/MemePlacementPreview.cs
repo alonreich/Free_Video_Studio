@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
@@ -13,16 +12,6 @@ using MemePlacement = FreeVideoStudio.Core.Media.MemePlacement;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// MEMEPICK_03 / MEMEPOS_01 — the meme picker's live preview: a small frame shaped like the export
-/// (9:16 in portrait, else 16:9) with the chosen meme playing (silently) where it will play —
-/// filling the frame for FULL SCREEN, or in its box for CORNER, laid out with
-/// <see cref="MemeOverlayLayout.Place"/> exactly like the export and every preview. In CORNER mode the
-/// meme can be dragged anywhere in the frame; that writes <see cref="PosX"/> / <see cref="PosY"/>
-/// (two-way bound to the view-model). Frames come from <see cref="CornerMemeFrames"/> (bounded,
-/// leased, decoded off the UI thread — CACHEBOUND_05); one lease is held at a time and released on
-/// every change and when the control leaves the tree.
-/// </summary>
 public sealed class MemePlacementPreview : Canvas
 {
     public static readonly StyledProperty<string?> MemePathProperty =

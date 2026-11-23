@@ -8,10 +8,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// COMMENTARYMIX_01, COMMENTARYUI_02, TACTICAL_01..03, SWEARING_01, REWRITELINE_01, CAPTIONRTL_01 — the AI
-/// Commentary "brain" and its options window (04 UI-AICOMMENTARY, 01 TL-CAPTIONS).
-/// </summary>
 public sealed class CommentaryPersonalityTests
 {
     private static string Prompt(CommentaryPersonality mix, string language = "English", System.Collections.Generic.IReadOnlyList<double>? kills = null, string? rewrite = null)

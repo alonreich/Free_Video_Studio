@@ -103,7 +103,7 @@ public static unsafe class WglInterop
     public const uint GL_FRAMEBUFFER = 0x8D40;
     public const uint GL_COLOR_ATTACHMENT0 = 0x8CE0;
     public const uint GL_RGBA8 = 0x8058;
-    
+
     public const uint GL_TEXTURE_MIN_FILTER = 0x2801;
     public const uint GL_TEXTURE_MAG_FILTER = 0x2800;
     public const int GL_LINEAR = 0x2601;
@@ -112,10 +112,10 @@ public static unsafe class WglInterop
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     public delegate void glGenFramebuffers_t(int n, uint[] framebuffers);
-    
+
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     public delegate void glDeleteFramebuffersDelegate(int n, uint[] framebuffers);
-    
+
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     public delegate uint glCheckFramebufferStatusDelegate(uint target);
 
@@ -148,7 +148,7 @@ public static unsafe class WglInterop
     public static glCheckFramebufferStatusDelegate? glCheckFramebufferStatus;
     public static glBindFramebuffer_t? glBindFramebuffer;
     public static glFramebufferTexture2D_t? glFramebufferTexture2D;
-    
+
     public static wglDXOpenDeviceNV_t? wglDXOpenDeviceNV;
     public static wglDXCloseDeviceNV_t? wglDXCloseDeviceNV;
     public static wglDXRegisterObjectNV_t? wglDXRegisterObjectNV;

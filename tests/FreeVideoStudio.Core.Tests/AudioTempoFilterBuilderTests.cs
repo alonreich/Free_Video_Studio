@@ -10,14 +10,9 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// TEMPO_01 — 03 FFM-TEMPO. One tempo policy for every export route: none at 1.0x, Rubber Band
-/// below 1.0x when the bundled FFmpeg genuinely supports it, the atempo chain otherwise.
-/// </summary>
 public class AudioTempoFilterBuilderTests
 {
     public static IEnumerable<object[]> Rates => new[] { 0.25, 0.5, 0.75, 1.0, 1.25, 2.0, 4.0 }.Select(r => new object[] { r });
-
 
     [Theory]
     [InlineData(0.25, new[] { "rubberband=tempo=0.2500:transients=mixed:window=short" })]
@@ -77,7 +72,6 @@ public class AudioTempoFilterBuilderTests
         Assert.Equal("atempo=2.0,atempo=2.0000,", AudioTempoFilterBuilder.Segment(4.0, false, true));
     }
 
-
     [Fact]
     public void Unprobed_IsAbsent_AndAScopedOverrideIsLocalToItsFlow()
     {
@@ -88,7 +82,6 @@ public class AudioTempoFilterBuilderTests
             Assert.StartsWith("atempo=", AudioTempoFilterBuilder.Build(0.5)[0]);
     }
 
-    /// <summary>Verbatim `ffmpeg -hide_banner -h filter=rubberband` option table (identical in the bundled build's strings).</summary>
     internal const string RealHelp = """
         Filter rubberband
           Apply time-stretching and pitch-shifting.
@@ -143,7 +136,6 @@ public class AudioTempoFilterBuilderTests
         Assert.False(await AudioTempoFilterBuilder.EnsureProbedAsync(Path.Combine(Path.GetTempPath(), "no-such-ffmpeg-" + Guid.NewGuid().ToString("N"))));
         Assert.True(AudioTempoFilterBuilder.IsProbed);
     }
-
 
     [Theory]
     [MemberData(nameof(Rates))]
@@ -210,7 +202,6 @@ public class AudioTempoFilterBuilderTests
         Assert.Contains("AudioTempoFilterBuilder.EnsureProbedAsync(_ffmpegPath)", Read("MergerWorker.cs"));
     }
 
-
     [MediaFact]
     public async Task RealFfmpeg_ProbeFindsRubberBand()
         => Assert.True(await AudioTempoFilterBuilder.EnsureProbedAsync(MediaFactAttribute.Ffmpeg!));
@@ -251,9 +242,8 @@ public class AudioTempoFilterBuilderTests
             double hz = ZeroCrossingHz(s, (int)(s.Length * 0.25), (int)(s.Length * 0.75));
             Assert.True(Math.Abs(hz - 440.0) <= 1.0, $"{(cap ? "rubberband" : "atempo")} @ {rate}x: {hz:F2} Hz");
         }
-        finally { try { File.Delete(raw); } catch (IOException) { /* temp file; nothing to do */ } }
+        finally { try { File.Delete(raw); } catch (IOException) {  } }
     }
-
 
     private static (string filterGraph, double finalDuration) Built(double rate, bool cap)
     {
@@ -292,10 +282,6 @@ public class AudioTempoFilterBuilderTests
     }
 }
 
-/// <summary>
-/// CITEST_01 — runs only where a real FFmpeg exists: the bundled <c>binaries\ffmpeg.exe</c> on
-/// Windows, or the binary named by <c>FVS_TEST_FFMPEG</c> anywhere. Otherwise SKIPS, never fails.
-/// </summary>
 public sealed class MediaFactAttribute : FactAttribute
 {
     public static readonly string? Ffmpeg = Resolve();

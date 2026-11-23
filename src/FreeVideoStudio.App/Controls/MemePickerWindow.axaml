@@ -12,7 +12,6 @@
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaTitleBarHeightHint="30">
 
-    <!-- MEMEMODE_01 — the two choice cards and the corner/size buttons. Selected = accent frame. -->
     <Window.Styles>
         <Style Selector="Button.MemeCard">
             <Setter Property="Background" Value="{DynamicResource AppPanelBrush}"/>
@@ -62,9 +61,6 @@
                                FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextMutedBrush}"/>
                 </StackPanel>
 
-                <!-- MEMEPICK_01 — search plus the two download buttons. The download rows used to
-                     exist only in the main-screen combo, so a user inside the editor had to close it
-                     to get more memes. -->
                 <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="15,0,15,8">
                     <TextBox Grid.Column="0" Name="SearchBox" Watermark="Search memes by name…" MinHeight="32"/>
                     <Button Grid.Column="1" Name="DownloadVideosBtn" Classes="Secondary" Content="⬇ More videos" Margin="8,0,0,0" Cursor="Hand"
@@ -73,7 +69,6 @@
                             ToolTip.Tip="Fetch more still-image memes from the official library. Files you already have are skipped, never overwritten."/>
                 </Grid>
 
-                <!-- MEMEPICK_03 — the list on the left, a live preview of where the meme will play on the right. -->
                 <Grid Grid.Row="3" ColumnDefinitions="*,12,300" Margin="15,0,15,0">
                 <ListBox Grid.Column="0" Name="MemeList"
                          Background="{DynamicResource AppSurfaceBrush}" CornerRadius="4"
@@ -104,7 +99,6 @@
                                                    Foreground="{DynamicResource AppDangerBrush}"
                                                    FontSize="{DynamicResource AppFontSize10}" TextWrapping="Wrap"/>
                                     </StackPanel>
-                                    <!-- MEMEFAV_01: ★ keeps a meme at the top of the list. -->
                                     <Button Grid.Column="2" Classes="Secondary" VerticalAlignment="Center" Padding="8,2" Cursor="Hand"
                                             Content="{CompiledBinding StarText}" Command="{CompiledBinding ToggleFavoriteCommand}"
                                             ToolTip.Tip="Favourite: favourites are listed first, then the memes you used last."/>
@@ -139,7 +133,6 @@
                                FontSize="{DynamicResource AppFontSize10}" Foreground="{DynamicResource AppTextMutedBrush}"/>
                 </StackPanel>
                 </Grid>
-                <!-- MEMEMODE_01 — how the meme plays. Shown once a meme is chosen. -->
                 <StackPanel Grid.Row="4" Margin="15,12,15,0" Spacing="10" IsVisible="{CompiledBinding HasMeme}">
                     <TextBlock Text="The meme file is missing. You can still change how it plays, or pick another meme to replace it."
                                IsVisible="{CompiledBinding FileMissing}" TextWrapping="Wrap"
@@ -164,7 +157,6 @@
                             </StackPanel>
                         </Button>
                     </Grid>
-                    <!-- MEMETRIM_01 / MEMESOUND_02 — the part used and the sound, for BOTH modes. -->
                     <Grid ColumnDefinitions="Auto,*,Auto">
                         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                             <TextBlock Text="Shows for" VerticalAlignment="Center" IsVisible="{CompiledBinding IsImage}"
@@ -189,7 +181,6 @@
                                   IsChecked="{CompiledBinding PlaySound}" Foreground="{DynamicResource AppTextPrimaryBrush}"
                                   ToolTip.Tip="Off = the meme plays silently. In a corner the game sound gets quieter while the meme's sound plays."/>
                     </Grid>
-                    <!-- MEMETRANS_01 — full screen: how it cuts in and out. -->
                     <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{CompiledBinding IsFullScreen}">
                         <TextBlock Text="In and out" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="{DynamicResource AppFontSize11}" Foreground="{DynamicResource AppTextMutedBrush}"/>
                         <Button Classes="MemeOption" Classes.Selected="{CompiledBinding IsTransCut}" Content="Cut" Command="{CompiledBinding TransCutCommand}" ToolTip.Tip="Straight cut to the meme and back."/>

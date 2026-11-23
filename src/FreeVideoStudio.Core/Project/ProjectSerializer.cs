@@ -6,29 +6,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.Core.Project;
 
-/// <summary>
-/// PROJ_02 — TURNS A <see cref="ProjectDocument"/> INTO JSON AND BACK, WITHOUT REFLECTION.
-///
-/// <para>
-/// ⚠️ WHY THIS IS HAND-WRITTEN AND NOT <c>JsonSerializer.Serialize(document)</c>: the product ships
-/// as a NativeAOT single binary with <c>TrimMode=full</c>. Reflection-based System.Text.Json is not
-/// AOT-safe — it compiles, it passes in Debug, and it throws <c>NotSupportedException</c> only in
-/// the published .exe on the user's machine. The codebase already avoids this correctly
-/// (<c>IpcJsonContext</c> uses source generation; <c>AtomicJsonFile</c> works in
-/// <see cref="JsonObject"/>). A user's saved work is the last place in the application that may
-/// depend on a mechanism that fails silently after publish, so this reader and writer touch nothing
-/// but <see cref="JsonNode"/>.
-/// </para>
-///
-/// <para>
-/// ⚠️ THE READER IS DELIBERATELY FORGIVING AND THE WRITER IS DELIBERATELY EXPLICIT. Every
-/// <c>Read*</c> helper below takes a default and never throws on a missing, null or wrong-typed
-/// key. This is what makes "add a new optional field" a non-breaking change: an older file simply
-/// does not have the key and gets the default. The one thing that IS refused is a schema number
-/// from the future beyond what <see cref="ProjectDocument.SchemaVersion"/> understands — see
-/// <see cref="Read"/>.
-/// </para>
-/// </summary>
 public static class ProjectSerializer
 {
     private const string KeyFormat = "format";
@@ -51,16 +28,15 @@ public static class ProjectSerializer
 
     private const string KeyCaptions = "captions";
 
-    /// <summary>
-    /// PROJ_03 — the top-level keys this build understands. Anything else found on read is carried
-    /// in <see cref="ProjectDocument.UnknownFields"/> and written back out untouched, so an older
-    /// build cannot amputate a newer build's data by opening and saving a file.
-    /// </summary>
+    private const string KeyFreeze = "freeze";
+
+    private const string KeyOverlayText = "overlay_text";
+
     private static readonly HashSet<string> KnownKeys = new(StringComparer.Ordinal)
     {
         KeyFormat, KeySchema, KeyTitle, KeyCreated, KeyModified, KeySource, KeyBaseSpeed,
         KeyCutStart, KeyTrimmed, KeySegments, KeyCuts, KeyMemes, KeyAudio, KeyExport,
-        KeyMask, KeyMerge, KeyCaptions,
+        KeyMask, KeyMerge, KeyCaptions, KeyFreeze, KeyOverlayText,
     };
 
     public static JsonObject Write(ProjectDocument doc)
@@ -98,6 +74,8 @@ public static class ProjectSerializer
         root[KeyBaseSpeed] = doc.BaseSpeed;
         root[KeyCutStart] = doc.SourceCutStartMs;
         root[KeyTrimmed] = doc.TrimmedDurationMs;
+        root[KeyFreeze] = new JsonObject { ["time_ms"] = doc.FreezeTimeMs, ["duration_s"] = doc.FreezeDurationS };
+        root[KeyOverlayText] = doc.OverlayText ?? string.Empty;
 
         JsonArray segments = new();
         foreach (SpeedSegment s in doc.Segments)
@@ -153,6 +131,11 @@ public static class ProjectSerializer
             ["voice_over_takes"] = VoiceOverTakeJson.Write(doc.Audio.VoiceOverTakes),
             ["voice_over_duck_audio"] = doc.Audio.VoiceOverDuckAudio,
             ["voice_over_protect_music"] = doc.Audio.VoiceOverProtectFromMusic,
+            ["music_songs"] = WriteMusicSongs(doc.Audio.MusicSongs),
+            ["music_timeline_start_sec"] = doc.Audio.MusicTimelineStartSec,
+            ["music_timeline_end_sec"] = doc.Audio.MusicTimelineEndSec,
+            ["music_loop"] = doc.Audio.MusicLoop,
+            ["music_carving"] = doc.Audio.MusicCarving,
         };
 
         root[KeyExport] = new JsonObject
@@ -206,18 +189,6 @@ public static class ProjectSerializer
         return root;
     }
 
-    /// <summary>
-    /// PROJ_02 — parses a document. Returns <see langword="null"/> and sets <paramref name="error"/>
-    /// when the payload is not a project this build can honour.
-    /// <para>
-    /// The two refusals are deliberate and are NOT the same as a parse failure: a file that is not
-    /// a project at all, and a project written by a future build whose schema this one may
-    /// misinterpret. Both are reported in words the UI can show verbatim. Everything else — missing
-    /// keys, nulls, wrong types inside a known key — is absorbed with defaults, because a project
-    /// that opens with one setting reset is worth infinitely more to a user than a project that
-    /// refuses to open.
-    /// </para>
-    /// </summary>
     public static ProjectDocument? Read(JsonObject? root, out string? error)
     {
         error = null;
@@ -332,6 +303,11 @@ public static class ProjectSerializer
             VoiceOverTakes = VoiceOverTakeJson.Read(audioObj?["voice_over_takes"]),
             VoiceOverDuckAudio = ReadBool(audioObj, "voice_over_duck_audio", false),
             VoiceOverProtectFromMusic = ReadBool(audioObj, "voice_over_protect_music", true),
+            MusicSongs = ReadMusicSongs(audioObj?["music_songs"]),
+            MusicTimelineStartSec = ReadDouble(audioObj, "music_timeline_start_sec", 0),
+            MusicTimelineEndSec = ReadDouble(audioObj, "music_timeline_end_sec", 0),
+            MusicLoop = ReadBool(audioObj, "music_loop", false),
+            MusicCarving = ReadBool(audioObj, "music_carving", ReadBool(audioObj, "sidechain_ducking", false)),
         };
 
         JsonObject? exportObj = root[KeyExport] as JsonObject;
@@ -390,6 +366,9 @@ public static class ProjectSerializer
         }
 
         CaptionTrack? captions = CaptionTrackJson.Read(root[KeyCaptions]);
+        JsonObject? freezeObj = root[KeyFreeze] as JsonObject;
+        double freezeMs = ReadDouble(freezeObj, "time_ms", -1);
+        double freezeSec = ReadDouble(freezeObj, "duration_s", 1.0);
 
         return new ProjectDocument
         {
@@ -403,6 +382,9 @@ public static class ProjectSerializer
             Mask = mask,
             Merge = merge,
             Captions = captions,
+            FreezeTimeMs = double.IsFinite(freezeMs) && freezeMs >= 0 ? freezeMs : -1,
+            FreezeDurationS = double.IsFinite(freezeSec) && freezeSec > 0 ? freezeSec : 1.0,
+            OverlayText = ReadString(root, KeyOverlayText, string.Empty) ?? string.Empty,
             Segments = segments,
             Cuts = cuts,
             Memes = memes,
@@ -412,6 +394,37 @@ public static class ProjectSerializer
         };
     }
 
+    private static JsonArray WriteMusicSongs(IReadOnlyList<ProjectMusicSong> songs)
+    {
+        var array = new JsonArray();
+        foreach (var song in songs)
+            array.AddNode(new JsonObject
+            {
+                ["path"] = song.Path,
+                ["full_sec"] = song.FullSec,
+                ["in_sec"] = song.InSec,
+                ["out_sec"] = song.OutSec,
+                ["user_trimmed"] = song.UserTrimmed,
+            });
+        return array;
+    }
+
+    private static IReadOnlyList<ProjectMusicSong> ReadMusicSongs(JsonNode? node)
+    {
+        if (node is not JsonArray array) return Array.Empty<ProjectMusicSong>();
+        var songs = new List<ProjectMusicSong>(array.Count);
+        foreach (var item in array)
+        {
+            if (item is not JsonObject o) continue;
+            string? path = ReadString(o, "path", null);
+            if (string.IsNullOrWhiteSpace(path)) continue;
+            double full = Math.Max(0.0, ReadDouble(o, "full_sec", 0));
+            double inSec = Math.Max(0.0, ReadDouble(o, "in_sec", 0));
+            double outSec = Math.Max(0.0, ReadDouble(o, "out_sec", 0));
+            songs.Add(new ProjectMusicSong(path!, full, inSec, outSec, ReadBool(o, "user_trimmed", false)));
+        }
+        return songs;
+    }
 
     private static string? ReadString(JsonObject? o, string key, string? fallback)
     {
@@ -419,33 +432,6 @@ public static class ProjectSerializer
         return v.TryGetValue(out string? s) ? s : fallback;
     }
 
-    /// <summary>
-    /// PROJ_10 — EVERY NUMERIC READ TRIES EVERY NUMERIC BACKING, BECAUSE A <c>JsonValue</c> KNOWS
-    /// WHAT CLR TYPE IT WAS BUILT FROM AND WILL NOT CONVERT.
-    ///
-    /// <para>
-    /// ⚠️ THE BUG THIS CLOSES WAS SILENT DATA LOSS IN THE SOURCE FINGERPRINT.
-    /// <c>Write</c> stores <c>doc.Source.SizeBytes</c> — a <see cref="long"/> — so the node is a
-    /// <c>JsonValue</c> backed by <see cref="long"/>. <c>Read</c> asked it for a
-    /// <see cref="double"/>. <c>JsonValue.TryGetValue&lt;double&gt;</c> on a long-backed value
-    /// returns <see langword="false"/>: it is an exact-type accessor, not a numeric converter.
-    /// So the fallback won, and <c>SizeBytes</c> and <c>ModifiedUtcSeconds</c> came back as
-    /// <b>0 on every load</b> — while the writer kept faithfully saving the real values.
-    /// </para>
-    ///
-    /// <para>
-    /// The damage was not the two fields. Those two fields ARE the source-integrity fingerprint
-    /// (<c>PROJ_05</c> / §6 PROJ-INTEGRITY). <c>CheckSource</c> compared a real file's size against
-    /// a stored 0 and answered <c>Changed</c> for every project ever reopened — so the warning that
-    /// exists to tell a user their source clip was re-encoded or replaced fired constantly and
-    /// meant nothing. A warning that is always on is a warning that is off.
-    /// </para>
-    ///
-    /// <para>
-    /// The reader stays forgiving (§2: absorb a missing key, a null, a wrong type) — it just no
-    /// longer treats "stored as a different numeric type than I asked for" as absent.
-    /// </para>
-    /// </summary>
     private static double ReadDouble(JsonObject? o, string key, double fallback)
     {
         if (o == null || o[key] is not JsonValue v) return fallback;
@@ -458,12 +444,6 @@ public static class ProjectSerializer
         return fallback;
     }
 
-    /// <summary>
-    /// PROJ_10 — the 64-bit read. <c>(long)ReadDouble(...)</c> is not a substitute: a double carries
-    /// 53 bits of mantissa, so a file size or a Unix timestamp past 2^53 would round on the way
-    /// through. These two fields are compared for EQUALITY by the integrity check, and a value that
-    /// rounds is a value that never matches.
-    /// </summary>
     private static long ReadLong(JsonObject? o, string key, long fallback)
     {
         if (o == null || o[key] is not JsonValue v) return fallback;
@@ -476,7 +456,6 @@ public static class ProjectSerializer
         return fallback;
     }
 
-    /// <summary>PROJ_10 — see <see cref="ReadDouble"/>. Same exact-type trap, same widening.</summary>
     private static double? ReadNullableDouble(JsonObject? o, string key)
     {
         if (o == null || o[key] is not JsonValue v) return null;
@@ -487,7 +466,6 @@ public static class ProjectSerializer
         return null;
     }
 
-    /// <summary>PROJ_10 — see <see cref="ReadDouble"/>. Same exact-type trap, same widening.</summary>
     private static int ReadInt(JsonObject? o, string key, int fallback)
     {
         if (o == null || o[key] is not JsonValue v) return fallback;
@@ -499,7 +477,6 @@ public static class ProjectSerializer
         return fallback;
     }
 
-    /// <summary>PROJ_10 — see <see cref="ReadDouble"/>. Same exact-type trap, same widening.</summary>
     private static int? ReadNullableInt(JsonObject? o, string key)
     {
         if (o == null || o[key] is not JsonValue v) return null;

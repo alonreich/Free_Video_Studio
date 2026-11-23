@@ -1,5 +1,4 @@
-
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -9,55 +8,18 @@ using System;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// LANES_03 — the shared two-lane timeline used by the Granular Speed Editor AND Music Wizard
-/// phase 3.
-///
-/// ── WHAT IT OWNS ─────────────────────────────────────────────────────────────────────────────
-/// The ruler, the gridlines, the caret (including drag-to-scrub), both clocks, and every
-/// click-to-seek surface. The host window supplies ONLY its own lane content via
-/// <see cref="LaneAHost"/> / <see cref="LaneBHost"/> and tells this control the duration and
-/// position. Fix the caret once and both windows get it.
-///
-/// ── WHY THE HOSTS ARE PANELS, NOT TEMPLATED CONTENT ──────────────────────────────────────────
-/// Both windows already build their lanes in code-behind (a drawing Canvas in Granular, Images in
-/// phase 3). Exposing two plain Panels to add children to is far more predictable under NativeAOT
-/// than templated ContentPresenters, and needs no data binding at all.
-///
-/// ── THE BUG THIS ALSO FIXES ──────────────────────────────────────────────────────────────────
-/// Neither window's ruler reliably appeared. Three causes were possible and all three are closed
-/// here: the ruler now has an EXPLICIT height (a Canvas reports zero desired size, so an Auto row
-/// resting on MinHeight is fragile), it REDRAWS ON SIZE CHANGE (there was no SizeChanged handler
-/// on either ruler canvas, so a first paint at width 0 left it permanently blank), and the ticks
-/// are full-height and high-contrast rather than 4px grey hairlines.
-///
-/// ── ZOOM_01 — TIMELINE ZOOM (horizontal affine scaling) ─────────────────────────────────────
-/// <see cref="ZoomFactor"/> (1.0–<see cref="MaxZoomFactor"/>) horizontally scales the whole
-/// presentation layer by sizing <c>LanesGrid</c> to viewport-width × factor inside a horizontal
-/// <see cref="ScrollViewer"/>. Ctrl+mouse-wheel zooms anchored at the cursor, the plain wheel
-/// pans while zoomed, and the viewport auto-follows the playhead when it leaves view. Every
-/// fraction-of-width computation in this control AND in the host windows becomes zoom-correct
-/// with no other change, and no time model ever sees a zoom factor.
-/// </summary>
 public partial class TimelineLanesControl : UserControl
 {
-
-    /// <summary>Raised continuously while the user scrubs — caret drag, ruler click, lane click.</summary>
     public event Action<double>? SeekRequested;
 
-    /// <summary>ZOOM_01 — raised whenever the timeline zoom changes (UI thread).</summary>
     public event Action<double>? ZoomChanged;
 
-    /// <summary>ZOOM_01 — the zoom ceiling (directive: default 1.0, max 10.0).</summary>
     public const double MaxZoomFactor = 10.0;
 
-    /// <summary>ZOOM_01 — multiplicative zoom step per Ctrl+wheel notch (1.25^10 ≈ 9.3).</summary>
     private const double ZoomWheelStep = 1.25;
 
-    /// <summary>ZOOM_01 — pixels panned per plain-wheel notch while zoomed in.</summary>
     private const double WheelPanPx = 120.0;
 
-    /// <summary>ZOOM_01 — dead band either side of the playhead before the viewport follows it.</summary>
     private const double CaretFollowMarginPx = 48.0;
 
     private double _durationSec;
@@ -65,12 +27,6 @@ public partial class TimelineLanesControl : UserControl
     private bool _caretDragging;
     private double _zoomFactor = 1.0;
 
-    /// <summary>
-    /// ZOOM_01 — declared height of the row above the ruler that the floating camera markers paint
-    /// into. 0 by default (Music Wizard phase 3 never floats markers); the Granular Speed Editor
-    /// sets 56 to cover <c>FreezeMarkerOverlayTop = -52</c> plus its glow, and cancels the growth
-    /// with a matching negative top margin so the on-screen ruler position does not move.
-    /// </summary>
     public static readonly StyledProperty<double> MarkerHeadroomPxProperty =
         AvaloniaProperty.Register<TimelineLanesControl, double>(nameof(MarkerHeadroomPx));
 
@@ -80,12 +36,56 @@ public partial class TimelineLanesControl : UserControl
         set => SetValue(MarkerHeadroomPxProperty, value);
     }
 
-    /// <summary>
-    /// ZOOM_01 — opt-in switch for the Ctrl+wheel zoom / wheel pan gestures. OFF by default so the
-    /// Music Wizard phase 3 instance of this control behaves exactly as before; the Granular Speed
-    /// Editor turns it on in <c>BuildLaneContent</c>.
-    /// </summary>
     public bool ZoomGesturesEnabled { get; set; }
+
+    private bool _boldCaret;
+
+    public bool BoldCaret
+    {
+        get => _boldCaret;
+        set
+        {
+            _boldCaret = value;
+            if (CaretLineCtl is { } line) line.Width = value ? 4 : 3;
+            UpdateCaret();
+        }
+    }
+
+    public double LaneHeightPx
+    {
+        get => LaneABorderCtl?.Height ?? 60;
+        set
+        {
+            double h = Math.Max(36, value);
+            foreach (var border in new[] { LaneABorderCtl, LaneBBorderCtl })
+            {
+                if (border == null) continue;
+                border.Height = h;
+                border.MinHeight = h;
+            }
+            QueueRefresh();
+        }
+    }
+
+    public const double MinSplitLaneHeightPx = 20;
+
+    public void SetLaneHeights(double laneAPx, double laneBPx)
+    {
+        var lanes = LanesGridCtl;
+        var pairs = new[] { (LaneABorderCtl, laneAPx, 2), (LaneBBorderCtl, laneBPx, 3) };
+        bool changed = false;
+        foreach (var (border, px, row) in pairs)
+        {
+            if (border == null) continue;
+            double h = Math.Max(MinSplitLaneHeightPx, px);
+            if (Math.Abs(border.Height - h) < 0.5 && Math.Abs(border.MinHeight - h) < 0.5) continue;
+            border.Height = h;
+            border.MinHeight = h;
+            if (lanes != null && lanes.RowDefinitions.Count > row) lanes.RowDefinitions[row].MinHeight = h;
+            changed = true;
+        }
+        if (changed) QueueRefresh();
+    }
 
     public TimelineLanesControl()
     {
@@ -127,27 +127,18 @@ public partial class TimelineLanesControl : UserControl
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
-    /// <summary>Upper 60px lane. The host window adds its own content here.</summary>
     public Panel? LaneAHost => this.FindControl<Panel>("LaneAHostPanel");
 
-    /// <summary>Lower 60px lane. The host window adds its own content here.</summary>
     public Panel? LaneBHost => this.FindControl<Panel>("LaneBHostPanel");
 
-    /// <summary>Captions 36px lane (Lane C). The host window adds its caption blocks here.</summary>
     public Panel? LaneCHost => LaneCHostPanelCtl;
 
-    /// <summary>
-    /// Whether clicking the CAPTIONS lane seeks. Default false when lane handles its own pointer input.
-    /// </summary>
     public bool LaneCSeekable
     {
         get => LaneCSeekCanvasCtl?.IsVisible ?? false;
         set { var c = LaneCSeekCanvasCtl; if (c != null) c.IsVisible = value; }
     }
 
-    /// <summary>
-    /// Whether the third lane (captions) is visible. 36px height when visible, collapsed when false.
-    /// </summary>
     public bool LaneCVisible
     {
         get => LaneCBorderCtl?.IsVisible ?? false;
@@ -159,52 +150,26 @@ public partial class TimelineLanesControl : UserControl
         }
     }
 
-    /// <summary>
-    /// MARKER_01 — the floating marker layer: above both seek surfaces, below the caret.
-    ///
-    /// <para>
-    /// For markers that belong ON TOP OF the timeline rather than inside a lane — a camera head
-    /// floating above the ruler with its stick dropping down through the lanes. Its width matches
-    /// the lanes exactly, so an X computed against a lane canvas transfers here unchanged; its
-    /// origin is the TOP OF THE RULER, so a marker that should float above the timeline is placed
-    /// at a NEGATIVE Canvas.Top.
-    /// </para>
-    /// <para>
-    /// ⚠️ Put ONLY markers here, and never give this canvas a Background. It is non-hit-testable
-    /// where it is empty precisely so ordinary clicks fall through to the seek surfaces beneath;
-    /// a background would make the entire timeline unclickable in one stroke.
-    /// </para>
-    /// </summary>
     public Canvas? MarkerOverlayHost => this.FindControl<Canvas>("MarkerOverlayCanvas");
 
-    /// <summary>
-    /// Whether clicking the UPPER lane seeks. OFF for Granular, whose upper lane runs its own
-    /// pointer pipeline (block move, edge resize, drag-to-create) and must not be shadowed.
-    /// </summary>
     public bool LaneASeekable
     {
         get => LaneASeekCanvasCtl?.IsVisible ?? false;
         set { var c = LaneASeekCanvasCtl; if (c != null) c.IsVisible = value; }
     }
 
-    /// <summary>Whether clicking the LOWER lane seeks. ON in both windows today.</summary>
     public bool LaneBSeekable
     {
         get => LaneBSeekCanvasCtl?.IsVisible ?? false;
         set { var c = LaneBSeekCanvasCtl; if (c != null) c.IsVisible = value; }
     }
 
-    /// <summary>Clip length in seconds. Setting it redraws the ruler and both clocks.</summary>
     public double DurationSeconds
     {
         get => _durationSec;
         set { _durationSec = Math.Max(0, value); Refresh(); }
     }
 
-    /// <summary>
-    /// Playhead position in seconds from the start of the trimmed clip.
-    /// Ignored while the user is dragging the caret — otherwise playback would fight the pointer.
-    /// </summary>
     public double PositionSeconds
     {
         get => _positionSec;
@@ -221,9 +186,6 @@ public partial class TimelineLanesControl : UserControl
     private bool _refreshQueued;
     private bool _inRefresh;
 
-    /// <summary>
-    /// LAYOUTLOOP_01 — coalesced, deferred redraw. Safe to call from a layout/size callback.
-    /// </summary>
     private void QueueRefresh()
     {
         if (_refreshQueued) return;
@@ -236,7 +198,6 @@ public partial class TimelineLanesControl : UserControl
         }, Avalonia.Threading.DispatcherPriority.Background);
     }
 
-    /// <summary>Redraws ruler, gridlines, caret and clocks. Safe to call at any time.</summary>
     public void Refresh()
     {
         if (_inRefresh) return;
@@ -253,11 +214,6 @@ public partial class TimelineLanesControl : UserControl
         }
     }
 
-    /// <summary>
-    /// ZOOM_01 — the horizontal timeline zoom. 1.0 is the legacy 1:1 mapping; up to
-    /// <see cref="MaxZoomFactor"/> the lanes content is laid out at viewport × factor inside the
-    /// horizontal <c>LanesScroll</c> ScrollViewer, which supplies panning.
-    /// </summary>
     public double ZoomFactor
     {
         get => _zoomFactor;
@@ -277,17 +233,8 @@ public partial class TimelineLanesControl : UserControl
         }
     }
 
-    /// <summary>
-    /// ZOOM_01 — THE zoom multiplication. Sizes <c>LanesGrid</c> to viewport-width × ZoomFactor so
-    /// the ScrollViewer gets its pan extent and every stretched layer (ruler, gridlines, both
-    /// lanes, seek surfaces, marker overlay, caret host, and the host window's own lane content)
-    /// reports the zoomed width through <c>Bounds.Width</c>. All fraction-based pixel math — this
-    /// control's and the host windows' <c>SrcMsToX</c>/<c>XToSrcMs</c> pairs — therefore carries
-    /// the factor exactly once, with no per-layer transform to drift out of agreement.
-    /// </summary>
     private bool _inZoomSizing;
 
-    /// <summary>ZOOMSIZE_02 — the width the content was last sized from; see ApplyZoomSizing.</summary>
     private double _lastViewportW;
 
     private void ApplyZoomSizing()
@@ -315,11 +262,6 @@ public partial class TimelineLanesControl : UserControl
         }
     }
 
-    /// <summary>
-    /// ZOOM_01 — Ctrl+wheel zooms anchored at the cursor (the content fraction under the pointer
-    /// stays under the pointer); the plain wheel pans horizontally while zoomed in. Registered as a
-    /// TUNNEL handler so the ScrollViewer cannot swallow the gesture first.
-    /// </summary>
     private void HandleTimelineWheel(object? sender, PointerWheelEventArgs e)
     {
         if (!ZoomGesturesEnabled) return;
@@ -367,11 +309,6 @@ public partial class TimelineLanesControl : UserControl
         }
     }
 
-    /// <summary>
-    /// ZOOM_01 — pans the viewport so the playhead stays in view while scrubbing, dragging the
-    /// caret or playing. At zoom 1 the extent equals the viewport and this is a guaranteed no-op,
-    /// so non-zoomed hosts behave exactly as before.
-    /// </summary>
     private void EnsureCaretVisible()
     {
         var scroll = LanesScrollCtl;
@@ -392,11 +329,6 @@ public partial class TimelineLanesControl : UserControl
         if (Math.Abs(target - off) > 0.5) scroll.Offset = new Vector(target, 0);
     }
 
-    /// <summary>
-    /// MM:SS, escalating to HH:MM:SS only at one hour or more. Never milliseconds.
-    /// Phase 3 previously used `m\:ss`, which printed "1:05" instead of "01:05" and could never
-    /// show hours at all — so a long clip's ruler was simply wrong.
-    /// </summary>
     public static string FormatClock(double seconds)
     {
         var ts = TimeSpan.FromSeconds(seconds < 0 ? 0 : seconds);
@@ -473,11 +405,6 @@ public partial class TimelineLanesControl : UserControl
         }
     }
 
-    /// <summary>
-    /// Picks a tick spacing that keeps labels readable at the CURRENT width rather than at an
-    /// assumed one — a 40s clip in a narrow window needs coarser ticks than the same clip
-    /// maximised, and the old fixed 10/30/60 ladder ignored width entirely.
-    /// </summary>
     private static double ChooseInterval(double durationSec, double widthPx)
     {
         double[] steps = { 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600 };
@@ -506,7 +433,7 @@ public partial class TimelineLanesControl : UserControl
 
         if (badge != null && badgeText != null)
         {
-            badge.IsVisible = _caretDragging;
+            badge.IsVisible = _caretDragging || _boldCaret;
             badgeText.Text = FormatClock(_positionSec);
 
             var scroll = LanesScrollCtl;
@@ -529,7 +456,7 @@ public partial class TimelineLanesControl : UserControl
 
         void SetHighlight(bool on)
         {
-            line.Width = on ? 5 : 3;
+            line.Width = on ? 5 : (_boldCaret ? 4 : 3);
             line.Effect = on
                 ? new Avalonia.Media.DropShadowEffect
                 {

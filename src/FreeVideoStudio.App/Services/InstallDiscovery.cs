@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using FreeVideoStudio.Core.Infrastructure;
 using Microsoft.Win32;
 
@@ -12,20 +12,9 @@ internal static class InstallDiscovery
     public static string[] CompanionExecutables => ["ffmpeg.exe", "ffprobe.exe", "mpv.exe"];
     public static string[] AllMonitoredProcessNames => Executables.Concat(CompanionExecutables).Select(x => Path.GetFileNameWithoutExtension(x)!).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
-    /// <summary>
-    /// NOSPACE_01 — install destinations a machine journal may legitimately name: today's
-    /// space-free folder, and the spaced folder every journal written before NOSPACE_01 names.
-    /// </summary>
     public static string[] KnownDestinations =>
         [UpgradeFiles.FullPath(Destination), UpgradeFiles.FullPath(DeploymentFootprint.LegacyInstallFolder)];
 
-    /// <summary>
-    /// NOSPACE_01 — where a COMPACT installer reuses unchanged runtime files from. It used to be
-    /// <see cref="Destination"/> unconditionally, which does not exist yet when the update is also
-    /// the one that moves the install out of the spaced folder: every compact update for such a
-    /// machine would have failed with "Download the full installer". The first existing root that
-    /// holds an install manifest wins, Destination first.
-    /// </summary>
     public static string? ReuseRoot(IEnumerable<string> roots) =>
         new[] { Destination }.Concat(roots)
             .FirstOrDefault(r => File.Exists(Path.Combine(r, InstallPayload.ManifestName)));
@@ -102,7 +91,7 @@ internal static class InstallDiscovery
                     try
                     {
                         if (process.HasExited) continue;
-                        string? executable = process.MainModule?.FileName;
+                        string? executable = ProcessImage.GetPath(process.Id);
                         if (executable != null && roots.Any(root => UpgradeFiles.IsWithin(executable, root)))
                             throw new IOException("Finish editing, exporting or recording and close all app windows, including other Windows sessions, before updating.");
                     }
@@ -119,14 +108,6 @@ internal static class InstallDiscovery
         }
     }
 
-    /// <summary>
-    /// UPGRADEUX_03 — the NON-throwing, non-elevated twin of <see cref="EnsureIdle"/>, used by the
-    /// broker BEFORE Windows is asked for permission, so "close the app first" is a question the user
-    /// can answer instead of an error after the UAC prompt. <see cref="EnsureIdle"/> in the elevated
-    /// worker stays the authority; this only makes the common case friendly.
-    /// Processes we may close are returned (caller disposes them); a process this account cannot
-    /// inspect (another Windows user) only sets <c>OtherAccount</c>.
-    /// </summary>
     public static (List<Process> Mine, bool OtherAccount) FindOpenApps(IEnumerable<string> roots, params int[] excludedPids)
     {
         var mine = new List<Process>();
@@ -140,7 +121,7 @@ internal static class InstallDiscovery
                 try
                 {
                     if (excludedPids.Contains(process.Id) || process.HasExited) continue;
-                    string? executable = process.MainModule?.FileName;
+                    string? executable = ProcessImage.GetPath(process.Id);
                     keep = executable != null && rootList.Any(root => UpgradeFiles.IsWithin(executable, root));
                 }
                 catch (System.ComponentModel.Win32Exception ex)

@@ -4,31 +4,11 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// A speed or freeze segment for the granular timeline.
-/// </summary>
-/// <summary>
-/// CUT_01 — a stretch of footage the user deleted, in ABSOLUTE SOURCE MILLISECONDS.
-///
-/// ⚠️ TWO FRAMES OF REFERENCE, ON PURPOSE. This mirrors <see cref="SpeedSegment"/>: the UI and the
-/// saved session speak absolute source milliseconds, because that is what trim handles and speed
-/// segments already use and what survives a trim change. The Core timeline model speaks
-/// CLIP-RELATIVE seconds (<see cref="OutputTimeline.Cut"/>), because that is what
-/// <see cref="OutputTimeline.Insertion"/> uses. <see cref="ToClipRelative"/> is the ONE conversion
-/// between them — do not hand a CutRange straight to OutputTimeline, and do not "simplify" either
-/// type into the other's units.
-/// </summary>
 public readonly record struct CutRange(double StartMs, double EndMs)
 {
-    /// <summary>
-    /// Converts to the Core timeline's clip-relative seconds, given the export's trim-in point.
-    /// Clamping is left to <see cref="OutputTimeline.NormalizeCuts"/>, which owns every rule about
-    /// ordering, merging and minimum length.
-    /// </summary>
     public OutputTimeline.Cut ToClipRelative(double sourceCutStartMs) =>
         new((StartMs - sourceCutStartMs) / 1000.0, (EndMs - sourceCutStartMs) / 1000.0);
 
-    /// <summary>Convenience for the common "convert a whole list" call at an export boundary.</summary>
     public static List<OutputTimeline.Cut> ToClipRelative(
         IReadOnlyList<CutRange>? cuts, double sourceCutStartMs)
     {
@@ -48,20 +28,10 @@ public record SpeedSegment(double StartMs, double EndMs, double Speed,
 
 public class GranularSpeedBuilder
 {
-    private record ZoomConfig(double StartSec, double EndSec, int X, int Y, int W, int H, string Res, bool Slow, string? AiTrackingTrajectory = null, double AiOriginSec = 0);
+    internal record ZoomConfig(double StartSec, double EndSec, int X, int Y, int W, int H, string Res, bool Slow, string? AiTrackingTrajectory = null, double AiOriginSec = 0);
     private record ZoomPhase(double Start, double End, ZoomConfig Config, double ProgStart, double ProgEnd);
     private record ChunkSpec(double Start, double End, double Speed, double FreezeDur = 0, ZoomPhase? Zoom = null);
 
-    /// <summary>
-    /// TIME_01 - ABSOLUTE source seconds to FINISHED-VIDEO seconds.
-    ///
-    /// <para>
-    /// The mathematics no longer lives here. It moved to <see cref="OutputTimeline"/>, which is the
-    /// only place in the application that knows how speed changes and freezes stretch time. This
-    /// method survives purely as an adapter: six callers depend on its exact signature and on being
-    /// handed a plain <see cref="Func{T, TResult}"/>.
-    /// </para>
-    /// </summary>
     public static Func<double, double> CreateTimeMapper(
         double totalDurationMs,
         IReadOnlyList<SpeedSegment>? segments,
@@ -73,28 +43,10 @@ public class GranularSpeedBuilder
                              .SourceToOutput;
     }
 
-    /// <summary>
-    /// ISSUE_08 — chunk count above which the graph's parallel branches are likely to buffer an
-    /// uncomfortable number of uncompressed frames in RAM (see <see cref="Build"/> remarks).
-    /// Exposed so the UI can warn BEFORE the render starts rather than after the machine swaps.
-    /// </summary>
     public const int HighChunkCountWarnThreshold = 24;
 
-    /// <summary>
-    /// SPLICE_01 — length of the de-click fade applied at each end of every concatenated audio
-    /// chunk, in seconds. 8 ms is under half a frame at 60fps: long enough to turn a step
-    /// discontinuity into a ramp the ear reads as continuous, short enough that no one perceives a
-    /// gap. Raising this into the tens of milliseconds starts to be audible as a stutter at every
-    /// speed change; lowering it below ~3 ms stops suppressing the click.
-    /// </summary>
     public const double SpliceFadeSec = 0.008;
 
-    /// <summary>
-    /// SPLICE_01 — the fade pair for one audio chunk, or an empty string when the chunk is too
-    /// short to carry one. A chunk shorter than twice the fade would have its fade-in and fade-out
-    /// overlap, which attenuates the middle and audibly ducks very short chunks — so those are
-    /// left alone; they are far too brief for a click to register anyway.
-    /// </summary>
     private static string BuildSpliceFade(double chunkDurationSec)
     {
         if (chunkDurationSec <= SpliceFadeSec * 3) return string.Empty;
@@ -110,61 +62,12 @@ public class GranularSpeedBuilder
 
     private const double MaxZoomWorkingPixels = 100_000_000.0;
 
-
-    /// <summary>
-    /// How long the glide lasts, in seconds, on a side that has room for it.
-    ///
-    /// FIXED length, deliberately. It used to be "up to 1 second, or whatever is available if
-    /// that is less" — which meant the same Slow setting produced a 1.0s glide in open footage
-    /// and a 0.6s glide next to a neighbour, with no way for the user to know which they got.
-    /// A full second also simply read as too slow for gameplay clips. It is now always exactly
-    /// this value, or nothing at all.
-    /// </summary>
     public const double ZoomRampSeconds = 0.5;
 
-    /// <summary>
-    /// Minimum free footage a side must have before it gets a glide at all.
-    ///
-    /// Equal to <see cref="ZoomRampSeconds"/> by construction: a side either has room for the
-    /// whole ramp or it gets none. There is no partial ramp any more.
-    /// A side with less than this snaps instantly — see the Slow-zoom notes in
-    /// docs/README.md (formerly project_structure.txt) Section 9.
-    /// </summary>
     public const double ZoomRampMinAvailableSeconds = ZoomRampSeconds;
 
-    /// <summary>
-    /// OPTION A — free footage required between TWO ADJACENT **SLOW** ZOOMS before either of them
-    /// is granted a ramp on the side that faces the other. Twice the ramp length, because BOTH
-    /// zooms want to borrow from that one gap: the earlier zoom needs 0.5s after it to glide out,
-    /// the later zoom needs 0.5s before it to glide in.
-    ///
-    /// THE BUG THIS FIXES: the two borrow windows used to be allowed to overlap. The chunk builder
-    /// takes the FIRST matching zoom phase and stops looking, so the earlier zoom's glide-out won
-    /// the whole contested stretch and the later zoom's glide-in was partly or entirely discarded.
-    /// Measured results before the fix, with the zooms 0.75s apart: the picture glided out to
-    /// normal, then JUMPED straight to half zoom, then glided the rest of the way in — a visible
-    /// hop that looked like a rendering fault. At 0.5s apart the later zoom's glide vanished
-    /// completely and it hard-cut in, despite the user having chosen Slow.
-    ///
-    /// The rule is now symmetric and all-or-nothing: if two Slow zooms are closer than this,
-    /// NEITHER gets a ramp on the facing side and both snap. Predictable beats clever here — a
-    /// clean cut reads as deliberate, a half-zoom hop reads as broken.
-    ///
-    /// ⚠️ ONLY APPLIES WHEN BOTH NEIGHBOURS ARE SLOW. An Instant zoom borrows nothing, so it never
-    /// contests the gap and the ordinary <see cref="ZoomRampMinAvailableSeconds"/> applies against
-    /// it. Same for the clip start and clip end. Do not widen this to all neighbours — that would
-    /// deny ramps that are perfectly safe.
-    /// </summary>
     public const double ZoomRampRequiredGapBetweenSlowZooms = ZoomRampSeconds * 2.0;
 
-    /// <summary>
-    /// SLOWZOOMGLIDE_01 — Per-side glide availability evaluation for a slow zoom.
-    ///
-    /// Evaluates whether the potential 0.5s incoming and outgoing ramps fit the source footage.
-    /// Uses exact renderer ordering and nearest valid neighbour on each side:
-    /// - Clip boundaries or Instant zoom neighbour: requires ZoomRampMinAvailableSeconds (0.5s)
-    /// - Adjacent Slow zoom neighbour: requires ZoomRampRequiredGapBetweenSlowZooms (1.0s)
-    /// </summary>
     public readonly record struct SlowZoomGlideAvailability(
         bool HasZoom,
         bool IsSlow,
@@ -225,10 +128,6 @@ public class GranularSpeedBuilder
         }
     }
 
-    /// <summary>
-    /// SLOWZOOMGLIDE_01 — Evaluates per-side glide availability for the zoom at <paramref name="segIndex"/>.
-    /// Uses exact renderer ordering and nearest valid neighbour on each side.
-    /// </summary>
     public static SlowZoomGlideAvailability GetSlowZoomGlideAvailability(
         IReadOnlyList<SpeedSegment>? segments,
         int segIndex,
@@ -318,7 +217,6 @@ public class GranularSpeedBuilder
             ZoomEndSec: target.ze);
     }
 
-    /// <summary>ISSUE_02 — filter dimensions must be positive even integers.</summary>
     private static int EvenDim(double v)
     {
         int i = (int)Math.Round(v);
@@ -326,23 +224,6 @@ public class GranularSpeedBuilder
         return i - (i % 2);
     }
 
-    /// <summary>
-    /// G05 — minimal safe black margin (per side) for a digital-zoom pan, in source pixels.
-    ///
-    /// WHY A MARGIN EXISTS AT ALL: the zoom is `pad -> crop`. The crop window follows the zoom
-    /// box's centre, and that centre can sit anywhere from 0 to the frame edge — so the window
-    /// half-hangs off the frame at the extremes. Without a black border FFmpeg throws an
-    /// out-of-bounds `crop` error and the whole export dies (changelog item (10)).
-    ///
-    /// WHY THIS SIZE: for a FIXED crop window of width `cropExtent`, the furthest it can ever
-    /// hang off either edge is exactly `cropExtent / 2`. Anything beyond that is black pixels
-    /// that are allocated, cleared and then never sampled. The old code hardcoded HALF THE FULL
-    /// FRAME regardless of zoom level, which — combined with the `pad=iw+` double-count bug in
-    /// PadFilterNode — produced a 7680x4320 working frame for a 2560x1440 source.
-    ///
-    /// The +2px and the even-alignment are float-rounding insurance; `crop` is unforgiving and
-    /// two wasted pixels cost nothing.
-    /// </summary>
     private static double ZoomPadMargin(double cropExtent) => CoordinateMath.ZoomPadMargin(cropExtent);
 
     private static ZoomWindow SnapZoomWindow(double cropWRaw, double cropHRaw, double resW, double resH,
@@ -351,22 +232,6 @@ public class GranularSpeedBuilder
 
     private static int SnapExtent(double raw, int centre) => CoordinateMath.SnapExtent(raw, centre);
 
-    /// <param name="needHudBranch">
-    /// ISSUE_08 — whether the caller will actually CONSUME the HUD output label.
-    ///
-    /// The graph fans the decoded stream out with a `split` and gives every chunk its own
-    /// branch. Because `concat` reads branch 1 to completion before touching branch 2, frames
-    /// pushed down the not-yet-read branches sit in FFmpeg's link queues in RAM — so peak memory
-    /// scales with the NUMBER OF BRANCHES.
-    ///
-    /// This flag halves that. The HUD copy only exists for the portrait/mobile cut-out overlay;
-    /// in landscape the caller used to feed it straight into `nullsink`, which meant FFmpeg
-    /// still allocated, filled and buffered an entire second set of branches purely to throw
-    /// them away. Pass false and no HUD split/trim/concat is emitted at all: `split=n` instead
-    /// of `split=2n`.
-    ///
-    /// When false the returned <c>hudLabel</c> is an empty string — callers must check it.
-    /// </param>
     public static (string filterGraph, string videoLabel, string hudLabel, string audioLabel, double finalDuration, Func<double, double> timeMapper) Build(
         double totalDurationMs,
         List<SpeedSegment>? segments,
@@ -376,7 +241,9 @@ public class GranularSpeedBuilder
         string? inputAudioLabel = "[0:a]",
         string targetFps = "60",
         bool needHudBranch = true,
-        IReadOnlyList<OutputTimeline.Cut>? cuts = null)
+        IReadOnlyList<OutputTimeline.Cut>? cuts = null,
+        FreezeSound? freezeSound = null,
+        double? freezeVideoLufs = null)
     {
         double totalDurationSec = totalDurationMs / 1000.0;
         double timelineOriginSec = sourceCutStartMs / 1000.0;
@@ -638,6 +505,7 @@ public class GranularSpeedBuilder
         }
 
         double fpsValue = ParseFps(targetFps);
+        var freezeSounds = new List<(double OutStartSec, double HoldSec)>();
 
         for (int i = 0; i < chunks.Count; i++)
         {
@@ -645,7 +513,7 @@ public class GranularSpeedBuilder
             string vSrcMain = $"[v_split_main_{i}]";
             string vSrcHud = $"[v_split_hud_{i}]";
             string? aSrc = !string.IsNullOrEmpty(inputAudioLabel) ? $"[a_split_{i}]" : null;
-            
+
             string vChunkMainLabel = $"[v_chunk_main_{i}]";
             string vChunkHudLabel = $"[v_chunk_hud_{i}]";
             string aChunkLabel = $"[a_chunk_{i}]";
@@ -794,8 +662,8 @@ public class GranularSpeedBuilder
                 if (!string.IsNullOrEmpty(aSrc))
                     fullParts.Add($"{aSrc}anullsink");
 
-                fullParts.Add($"anullsrc=r=48000:cl=stereo," +
-                              $"atrim=duration={freezeQuantDur.ToString("F5", CultureInfo.InvariantCulture)},asetpts=PTS-STARTPTS{aChunkLabel}");
+                fullParts.Add($"anullsrc=r=48000:cl=stereo,atrim=duration={freezeQuantDur.ToString("F5", CultureInfo.InvariantCulture)},asetpts=PTS-STARTPTS{aChunkLabel}");
+                freezeSounds.Add((finalDuration, freezeQuantDur));
 
                 finalDuration += freezeQuantDur;
             }
@@ -822,7 +690,6 @@ public class GranularSpeedBuilder
                         $"fps={targetFps}:start_time=0:round=near," +
                         $"format=yuv420p,setsar=1{vChunkHudLabel}");
                 }
-
 
                 if (!string.IsNullOrEmpty(aSrc))
                 {
@@ -863,32 +730,33 @@ public class GranularSpeedBuilder
         {
             fullParts.Add("[v_hud_concat]setpts=PTS-STARTPTS[v_hud_out]");
         }
-        fullParts.Add("[a_speed_concat]aresample=48000:async=1:min_comp=0.01,asetpts=PTS-STARTPTS[a_speed_out]");
+        if (freezeSounds.Count == 0)
+        {
+            fullParts.Add("[a_speed_concat]aresample=48000:async=1:min_comp=0.01,asetpts=PTS-STARTPTS[a_speed_out]");
+        }
+        else
+        {
+            var sound = freezeSound ?? FreezeSoundEffect.Selected;
+            double freezeGainDb = FreezeSoundEffect.GainDbFor(freezeVideoLufs, sound);
+            fullParts.Add("[a_speed_concat]aresample=48000:async=1:min_comp=0.01,asetpts=PTS-STARTPTS[a_speed_body]");
+            string mixPads = "[a_speed_body]";
+            for (int k = 0; k < freezeSounds.Count; k++)
+            {
+                var (outStart, hold) = freezeSounds[k];
+                fullParts.Add(FreezeSoundEffect.Source(hold, $"[a_freeze_sfx_{k}]", sound, (long)Math.Round(outStart * FreezeSoundEffect.SampleRate), freezeGainDb));
+                mixPads += $"[a_freeze_sfx_{k}]";
+            }
+            fullParts.Add($"{mixPads}amix=inputs={freezeSounds.Count + 1}:normalize=0:duration=first:dropout_transition=0,asetpts=PTS-STARTPTS[a_speed_out]");
+        }
 
         return (string.Join(";", fullParts), "[v_speed_out]", needHudBranch ? "[v_hud_out]" : "", "[a_speed_out]",
             finalDuration, TimeMapper);
     }
 
-    /// <summary>
-    /// ISSUE_02 — builds the zoom filter for a chunk whose ramp progress does NOT change across
-    /// it. That covers the entire held body of every slow zoom (emitted with ProgStart =
-    /// ProgEnd = 1.0) and every freeze frame.
-    ///
-    /// It computes the visible source region directly and scales THAT to the output, instead of
-    /// magnifying the whole padded canvas and cropping a window out of the result. Both express
-    /// the identical region — this was confirmed by rendering the old and new expressions through
-    /// FFmpeg and comparing the framing, which matched exactly at p = 1.0 — but this form never
-    /// materialises the giant intermediate frame, and resamples the picture once rather than
-    /// twice, so it is marginally sharper as well.
-    ///
-    /// The padding is kept at +-resW/-+resH (the value the audited instant-zoom path uses) so the
-    /// coordinate chain documented in docs/README.md (formerly project_structure.txt) is unchanged; with no per-frame scale
-    /// in this branch the padding costs nothing meaningful.
-    /// </summary>
-    private static string BuildConstantZoomFilter(
+    internal static string BuildConstantZoomFilter(
         string preScale, ZoomConfig zc, double resW, double resH, int outW, int outH, double p, double chunkStartSec = 0)
     {
-        if (!string.IsNullOrEmpty(zc.AiTrackingTrajectory))
+        if (!string.IsNullOrEmpty(zc.AiTrackingTrajectory) && p >= 0.999)
         {
             var traj = AiTrajectorySmoother.SmoothedTrajectory.FromJson(zc.AiTrackingTrajectory);
             if (traj != null)
@@ -927,12 +795,6 @@ public class GranularSpeedBuilder
             .ToFFmpegString() + ",";
     }
 
-    /// <summary>
-    /// ISSUE_04 — the atempo-only chain, kept as a forwarder for the gates that check atempo's
-    /// [0.5, 2.0] element bounds. The guard against impossible rates and the AVSYNC_01 empty chain
-    /// at 1.0x live in <see cref="AudioTempoFilterBuilder"/>; export routes call
-    /// <see cref="AudioTempoFilterBuilder.Build(double)"/> (TEMPO_01), never this.
-    /// </summary>
     public static List<string> BuildAtempoChain(double speed) => AudioTempoFilterBuilder.BuildAtempoChain(speed);
 
     private static double ParseFps(string fpsExpr)

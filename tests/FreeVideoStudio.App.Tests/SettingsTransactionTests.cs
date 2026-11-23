@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -12,11 +11,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// SETTX_02 — behavioural proof of the settings transaction: one named-mutex acquisition spans
-/// read → migrate → patch → serialize → atomic write; unknown/future data survives; Instance is
-/// published only after a durable write.
-/// </summary>
 public sealed class SettingsTransactionTests : IDisposable
 {
     private readonly string _tempDir;
@@ -42,7 +36,7 @@ public sealed class SettingsTransactionTests : IDisposable
             if (File.Exists(_settingsFile)) File.SetAttributes(_settingsFile, FileAttributes.Normal);
             if (Directory.Exists(_tempDir)) Directory.Delete(_tempDir, true);
         }
-        catch (Exception) { /* best-effort temp cleanup */ }
+        catch (Exception) {  }
     }
 
     private AppSettings ReadDisk()
@@ -301,15 +295,18 @@ public sealed class SettingsTransactionTests : IDisposable
     [Fact]
     public void SettingsWindowSave_IsOneLogicalTransaction()
     {
-        string save = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "Controls", "SettingsWindow.Save.cs"));
-        Assert.Single(Regex.Matches(save, @"\bSettingsManager\s*\.\s*Update\s*\("));
-        Assert.DoesNotMatch(@"\bSettingsManager\s*\.\s*(SetAutoUpdateChecks|Save)\s*\(", save);
-        Assert.Empty(ArchitectureRuleTests.FindDirectSettingsWrites(save));
+        string commit = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "ViewModels", "SettingsViewModel.Services.cs"));
+        Match body = Regex.Match(commit, @"public\s+bool\s+Commit\s*\(\s*\)\s*\{(?<body>.*?)\n    \}", RegexOptions.Singleline);
+        Assert.True(body.Success);
+        Assert.Single(Regex.Matches(body.Groups["body"].Value, @"\bStore\s*\.\s*TryUpdate\s*\("));
+        Assert.DoesNotContain("SettingsManager", body.Groups["body"].Value);
 
-        string output = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "Controls", "SettingsWindow.Output.cs"));
-        Match apply = Regex.Match(output, @"void\s+ApplyPendingOutputSettings\s*\(AppSettings\s+s\)\s*\{(?<body>[^{}]*)\}");
-        Assert.True(apply.Success);
-        Assert.DoesNotContain("SettingsManager", apply.Groups["body"].Value);
+        foreach (string part in new[] { "SettingsWindow.Save.cs", "SettingsWindow.Output.cs" })
+        {
+            string code = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "Controls", part));
+            Assert.DoesNotMatch(@"\bSettingsManager\s*\.\s*(Update|SetAutoUpdateChecks|Save)\s*\(", code);
+            Assert.Empty(ArchitectureRuleTests.FindDirectSettingsWrites(code));
+        }
     }
 
     [Fact]

@@ -15,11 +15,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// CLAUDEPROVIDER_01 / AIPROVIDER_01 (docs/05 SYS-AISETTINGS) — Anthropic Claude implementation of <see cref="IAiVisionProvider"/>.
-/// Uses Messages API with x-api-key and anthropic-version headers, base64 images, tool use structured JSON schemas,
-/// and extended thinking / reasoning controls. Enforces GEMINICLIENT_01 security and error handling invariants.
-/// </summary>
 public sealed class ClaudeProvider : IAiVisionProvider
 {
     public const string DefaultModelName = "claude-sonnet-5-5";
@@ -40,11 +35,13 @@ public sealed class ClaudeProvider : IAiVisionProvider
     });
 
     private readonly HttpClient _http;
+    private readonly AiKeyHealthStore _keyHealth;
     private readonly Action<string> _log;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
 
     public ClaudeProvider(HttpClient? httpClient = null, Action<string>? log = null, Func<TimeSpan, CancellationToken, Task>? delay = null)
     {
+        _keyHealth = AiKeyHealth.For(httpClient);
         _http = httpClient ?? SharedHttp.Value;
         _log = log ?? (line => CoreLogger.Info("CLAUDE", line));
         _delay = delay ?? ((d, ct) => Task.Delay(d, ct));
@@ -77,7 +74,7 @@ public sealed class ClaudeProvider : IAiVisionProvider
             using HttpResponseMessage response = await _http.SendAsync(request, HttpCompletionOption.ResponseContentRead, timeoutCts.Token).ConfigureAwait(false);
             body = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
-                throw Classify((int)response.StatusCode, body, key, "models", response.Headers.RetryAfter?.Delta);
+                throw _keyHealth.Observe(Classify((int)response.StatusCode, body, key, "models", AiHttpHelper.ParseRetryAfter(response)), key);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -119,7 +116,40 @@ public sealed class ClaudeProvider : IAiVisionProvider
         {
             CoreLogger.Swallowed(ex);
         }
+        names.Sort(CompareClaudeModelsNewestFirst);
         return names;
+    }
+
+    private static int CompareClaudeModelsNewestFirst(string a, string b)
+    {
+        var ka = ParseClaudeSortKey(a);
+        var kb = ParseClaudeSortKey(b);
+        int c = kb.VersionScore.CompareTo(ka.VersionScore);
+        if (c != 0) return c;
+        c = kb.FamilyRank.CompareTo(ka.FamilyRank);
+        if (c != 0) return c;
+        c = kb.DateStamp.CompareTo(ka.DateStamp);
+        if (c != 0) return c;
+        return string.CompareOrdinal(a, b);
+    }
+
+    private static (double VersionScore, int FamilyRank, int DateStamp) ParseClaudeSortKey(string name)
+    {
+        double version = 0;
+        Match mFamilyFirst = Regex.Match(name, @"^claude-(?:opus|sonnet|haiku)-(\d{1,2})(?:[.-](\d{1,2})(?!\d))?", RegexOptions.IgnoreCase);
+        Match mVerFirst = Regex.Match(name, @"^claude-(\d{1,2})(?:[.-](\d{1,2})(?!\d))?", RegexOptions.IgnoreCase);
+        Match m = mFamilyFirst.Success ? mFamilyFirst : mVerFirst;
+        if (m.Success && int.TryParse(m.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int major))
+        {
+            int minor = m.Groups[2].Success && int.TryParse(m.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int mn) ? mn : 0;
+            version = major + minor / 100.0;
+        }
+        int familyRank = name.Contains("sonnet", StringComparison.OrdinalIgnoreCase) ? 3
+            : name.Contains("opus", StringComparison.OrdinalIgnoreCase) ? 2
+            : name.Contains("haiku", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        Match d = Regex.Match(name, @"-(\d{8})$");
+        int dateStamp = d.Success && int.TryParse(d.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int dt) ? dt : 99999999;
+        return (version, familyRank, dateStamp);
     }
 
     public async Task<string> GenerateJsonAsync(
@@ -136,26 +166,66 @@ public sealed class ClaudeProvider : IAiVisionProvider
     {
         string key = apiKey?.Trim() ?? string.Empty;
         if (key.Length == 0)
-            throw new AiProviderException(Vendor, AiProviderErrorKind.InvalidKey, "No Anthropic API key is configured. Add one in Settings.");
+            throw new AiProviderException(Vendor, AiProviderErrorKind.InvalidKey, "No Anthropic API key is configured. Add one in Settings › AI.");
+        _keyHealth.ThrowIfBlocked(Vendor, key);
 
         options ??= GeminiCallOptions.Tracking;
-        string resolvedModel = AiVisionProviders.EffectiveModel(Vendor, ResolveModel(model));
+        string resolvedModel = AiVisionProviders.EffectiveModel(Vendor, ResolveModel(model), key);
 
+        if (reasoning != null && AiReasoningPolicy.IsRejectedBy(Vendor, resolvedModel)) reasoning = null;
         AiJsonSchema.Translated schema = AiJsonSchema.Translate(jsonSchema, strict: false);
         byte[] requestBody = BuildClaudeRequestBody(resolvedModel, prompt, images, video, schema.Schema, reasoning);
         bool fallbackTried = false;
+        bool jsonRetried = false;
+        bool reasoningDropped = false;
 
         for (int attempt = 0; ; attempt++)
         {
             ct.ThrowIfCancellationRequested();
             try
             {
-                string responseBody = await PostOnceAsync(MessagesEndpoint, key, resolvedModel, requestBody, options.Timeout, ct).ConfigureAwait(false);
+                string responseBody = await AiHttpHelper.SendWithProgressAsync(
+                    "Anthropic Claude", resolvedModel, requestBody.Length, attempt, options.MaxRetries, options.Timeout, userLog,
+                    () => PostOnceAsync(MessagesEndpoint, key, resolvedModel, requestBody, options.Timeout, userLog, ct),
+                    ct).ConfigureAwait(false);
+                if (AiAnswerGuard.IsTruncated(Vendor, responseBody))
+                {
+                    RuntimeLog.Fail("CLAUDE_PARSE", AiDiagnostics.Tag + GeminiClient.Redact($"Model '{resolvedModel}' answer cut off at its length limit. Raw response: {GeminiClient.Truncate(responseBody, 1200)}", key));
+                    throw AiAnswerGuard.Truncated(Vendor, AiAnswerGuard.StopReason(Vendor, responseBody));
+                }
+                if (AiAnswerGuard.IsRefusal(Vendor, responseBody))
+                {
+                    RuntimeLog.Fail("CLAUDE_PARSE", AiDiagnostics.Tag + GeminiClient.Redact($"Model '{resolvedModel}' declined to answer. Raw response: {GeminiClient.Truncate(responseBody, 1200)}", key));
+                    throw AiAnswerGuard.Refused(Vendor, "Anthropic", AiAnswerGuard.StopReason(Vendor, responseBody));
+                }
                 if (TryExtractToolResult(responseBody, out string result, out string? error))
-                    return string.IsNullOrWhiteSpace(jsonSchema) ? result : AiJsonSchema.Normalize(result, schema.Wrapped);
+                {
+                    if (string.IsNullOrWhiteSpace(jsonSchema)) return result;
+                    string normalized = AiJsonSchema.Normalize(result, schema.Wrapped);
+                    if (AiAnswerGuard.IsReadableJson(normalized)) return normalized;
+                    RuntimeLog.Fail("CLAUDE_PARSE", AiDiagnostics.Tag + GeminiClient.Redact($"Model '{resolvedModel}' answer is not readable JSON. Raw answer: {GeminiClient.Truncate(result, 1200)}", key));
+                    if (!jsonRetried)
+                    {
+                        jsonRetried = true;
+                        userLog?.Invoke($"Anthropic ({resolvedModel}) sent an answer that could not be read — asking once more…");
+                        attempt--;
+                        continue;
+                    }
+                    throw AiAnswerGuard.UnreadableTwice(Vendor, "Anthropic");
+                }
 
+                RuntimeLog.Fail("CLAUDE_PARSE", AiDiagnostics.Tag + GeminiClient.Redact(
+                    $"Model '{resolvedModel}' parse failure ({error}). Prompt snippet: {GeminiClient.Truncate(prompt, 240)} | Raw response: {GeminiClient.Truncate(responseBody, 1200)}", key));
                 throw new AiProviderException(Vendor, AiProviderErrorKind.MalformedResponse,
                     "Anthropic answer could not be parsed.", GeminiClient.Redact(error, key));
+            }
+            catch (AiProviderException ex) when (!reasoningDropped && reasoning != null && AiAnswerGuard.IsReasoningRejection(ex))
+            {
+                reasoningDropped = true;
+                AiReasoningPolicy.MarkRejected(Vendor, resolvedModel);
+                reasoning = null;
+                requestBody = BuildClaudeRequestBody(resolvedModel, prompt, images, video, schema.Schema, reasoning);
+                attempt--;
             }
             catch (AiProviderException ex) when (ex.Kind == AiProviderErrorKind.ModelNotFound && !fallbackTried)
             {
@@ -171,6 +241,7 @@ public sealed class ClaudeProvider : IAiVisionProvider
                 TimeSpan wait = ex.RetryAfter ?? TimeSpan.FromSeconds(Math.Min(30, Math.Pow(2, attempt + 1)));
                 if (wait > options.MaxRetryDelay)
                 {
+                    userLog?.Invoke($"Anthropic ask-back wait ({wait.TotalSeconds:0}s) exceeds retry ceiling ({options.MaxRetryDelay.TotalSeconds:0}s) — stopping.");
                     _log($"Claude {ex.Kind}: suggested wait {wait.TotalSeconds:0}s exceeds ceiling — aborting retry.");
                     throw;
                 }
@@ -181,16 +252,19 @@ public sealed class ClaudeProvider : IAiVisionProvider
             }
             catch (AiProviderException ex)
             {
-                RuntimeLog.Fail("CLAUDE_API", GeminiClient.Redact($"{ex.Kind}: {ex.Message} {ex.Detail}", key));
+                RuntimeLog.Fail("CLAUDE_API", AiDiagnostics.Tag + GeminiClient.Redact($"{ex.Kind}: {ex.Message} {ex.Detail}", key));
                 throw;
             }
         }
     }
 
-    private async Task<string> PostOnceAsync(string url, string key, string model, byte[] requestBody, TimeSpan timeout, CancellationToken ct)
+    private async Task<string> PostOnceAsync(string url, string key, string model, byte[] requestBody, TimeSpan timeout, Action<string>? userLog, CancellationToken ct)
     {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(timeout);
+        AiUsageMeter.RequestStarted(Vendor, key);
+        string diagnosticId = AiDiagnostics.Start("Anthropic", model, requestBody, key);
+        var attemptClock = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
@@ -201,28 +275,36 @@ public sealed class ClaudeProvider : IAiVisionProvider
 
             using HttpResponseMessage response = await _http.SendAsync(request, HttpCompletionOption.ResponseContentRead, timeoutCts.Token).ConfigureAwait(false);
             string body = await response.Content.ReadAsStringAsync(timeoutCts.Token).ConfigureAwait(false);
+            AiDiagnostics.Write(diagnosticId, $"HTTP {(int)response.StatusCode} response={body}", key);
+            AiDiagnostics.End(diagnosticId, $"HTTP {(int)response.StatusCode}", attemptClock.Elapsed, key);
             if (response.IsSuccessStatusCode)
             {
                 var (inTok, outTok, thinkTok) = AiUsageMeter.ParseClaudeUsage(body);
-                AiUsageMeter.Record(Vendor, inTok, outTok, thinkTok, AiUsageMeter.ParseClaudeLimits(response));
+                AiUsageMeter.Record(Vendor, model, inTok, outTok, thinkTok, AiUsageMeter.ParseClaudeLimits(response), key);
+                long totalTok = inTok + outTok + thinkTok;
+                if (totalTok > 0)
+                    userLog?.Invoke($"Anthropic Claude ({model}): {totalTok:N0} tokens ({inTok:N0} in + {outTok:N0} out).");
                 return body;
             }
 
-            TimeSpan? retryAfter = response.Headers.RetryAfter?.Delta;
-            throw Classify((int)response.StatusCode, body, key, model, retryAfter);
+            TimeSpan? retryAfter = AiHttpHelper.ParseRetryAfter(response);
+            throw _keyHealth.Observe(Classify((int)response.StatusCode, body, key, model, retryAfter), key);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            AiDiagnostics.End(diagnosticId, "cancelled by the user", attemptClock.Elapsed, key);
             throw;
         }
         catch (OperationCanceledException ex)
         {
+            AiDiagnostics.End(diagnosticId, "kind=Timeout", attemptClock.Elapsed, key);
             throw new AiProviderException(Vendor, AiProviderErrorKind.Timeout,
                 $"Anthropic did not answer within {timeout.TotalSeconds:0} seconds. Check your connection and try again.",
                 ex.GetType().Name);
         }
         catch (HttpRequestException ex)
         {
+            AiDiagnostics.End(diagnosticId, "kind=Network", attemptClock.Elapsed, key);
             throw new AiProviderException(Vendor, AiProviderErrorKind.Network,
                 "Could not reach Anthropic servers. Check your internet connection and try again.",
                 GeminiClient.Redact($"{ex.GetType().Name}: {ex.Message}", key));
@@ -284,15 +366,7 @@ public sealed class ClaudeProvider : IAiVisionProvider
                 w.WriteEndArray();
 
                 w.WriteStartObject("tool_choice");
-                if (enableThinking)
-                {
-                    w.WriteString("type", "auto");
-                }
-                else
-                {
-                    w.WriteString("type", "tool");
-                    w.WriteString("name", "submit_result");
-                }
+                w.WriteString("type", "auto");
                 w.WriteEndObject();
             }
 
@@ -323,7 +397,7 @@ public sealed class ClaudeProvider : IAiVisionProvider
 
             w.WriteStartObject();
             w.WriteString("type", "text");
-            w.WriteString("text", enableThinking && !string.IsNullOrWhiteSpace(jsonSchema)
+            w.WriteString("text", !string.IsNullOrWhiteSpace(jsonSchema)
                 ? prompt + "\n\nSubmit your answer by calling the submit_result tool."
                 : prompt);
             w.WriteEndObject();
@@ -396,8 +470,8 @@ public sealed class ClaudeProvider : IAiVisionProvider
                 using var doc = JsonDocument.Parse(body);
                 if (doc.RootElement.TryGetProperty("error", out JsonElement err) && err.ValueKind == JsonValueKind.Object)
                 {
-                    if (err.TryGetProperty("type", out JsonElement t)) anthropicType = t.GetString() ?? "";
-                    if (err.TryGetProperty("message", out JsonElement m)) anthropicMsg = m.GetString() ?? "";
+                    if (err.TryGetProperty("type", out JsonElement t) && t.ValueKind == JsonValueKind.String) anthropicType = t.GetString() ?? "";
+                    if (err.TryGetProperty("message", out JsonElement m) && m.ValueKind == JsonValueKind.String) anthropicMsg = m.GetString() ?? "";
                 }
             }
         }
@@ -416,14 +490,26 @@ public sealed class ClaudeProvider : IAiVisionProvider
                 detail, status);
         }
 
+        if (status is 400 or 402 or 403 && AiAnswerGuard.LooksLikeBilling(anthropicType, anthropicMsg))
+        {
+            return new AiProviderException(AiVendor.Anthropic, AiProviderErrorKind.QuotaExhausted,
+                "Your Anthropic account has no credit left. Add credit at console.anthropic.com (Billing), then try again.",
+                detail, status);
+        }
+
+        if (status is 400 or 403 && AiAnswerGuard.LooksLikeRegion(anthropicType, anthropicMsg))
+            return new AiProviderException(AiVendor.Anthropic, AiProviderErrorKind.PermissionDenied,
+                "Anthropic's AI service is not available in your country. Choose Google or OpenAI in Settings › AI.",
+                detail, status) { Problem = AiAccountProblem.RegionNotSupported };
+
         switch (status)
         {
             case 403:
                 return new AiProviderException(AiVendor.Anthropic, AiProviderErrorKind.PermissionDenied,
-                    $"Your Anthropic API key is not permitted to use '{model}'.", detail, status);
+                    $"Your Anthropic API key is not permitted to use '{model}'.", detail, status) { Problem = AiAccountProblem.ModelNotAllowed };
             case 404:
                 return new AiProviderException(AiVendor.Anthropic, AiProviderErrorKind.ModelNotFound,
-                    $"The AI model '{model}' is not available on Anthropic (it may have been retired). Choose another model in Settings › AI Features.", detail, status);
+                    $"The AI model '{model}' is not available on Anthropic (it may have been retired). Choose another model in Settings › AI.", detail, status);
             case 429:
                 int waitSec = (int)Math.Ceiling((retryAfterHeader ?? TimeSpan.FromSeconds(30)).TotalSeconds);
                 return new AiProviderException(AiVendor.Anthropic, AiProviderErrorKind.RateLimited,

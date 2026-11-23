@@ -4,78 +4,82 @@ using NAudio.Wave;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// MUSICSYNC_02 — ONE SLAVE-TO-THE-VIDEO RULE FOR EVERY PREVIEW AUDIO PLAYER.
-///
-/// The video (mpv time-pos, mapped to OUTPUT seconds through OutputTimeline) is the master clock.
-/// Every other preview sound (voice-over takes on NAudio, the music bed on its own audio-only mpv)
-/// follows it. Before this they each ran open-loop:
-///   • voice-over takes on a default WaveOutEvent: 300 ms of buffering, compared against the
-///     READER position (which runs ahead of what is audible by that buffering), and a 0.5 s
-///     tolerance. A take could sit up to half a second off the picture before anything corrected it;
-///   • the music bed never corrected at all during continuous playback.
-///
-/// The rule:
-///   • Correct by SEEKING only. Never change a follower's playback RATE. Music and voice always
-///     play at 1.0x. Only the video changes speed.
-///   • Tolerance <see cref="DriftToleranceSec"/> (≈ 3 frames at 24 fps). A correction needs
-///     <see cref="DriftStrikes"/> consecutive readings over tolerance, so tick jitter never
-///     causes a seek.
-///   • NAudio's reader runs <see cref="VoiceReaderLeadSec"/> ahead of the speaker. That lead is
-///     subtracted before comparing, and added back when repositioning.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
+internal enum VoiceSyncAction { None, StartAt, Pause, SeekTo }
+
+internal readonly record struct VoiceSyncDecision(VoiceSyncAction Action, double ReaderSec = 0);
+
 internal static class PreviewAudioSync
 {
-    public const double DriftToleranceSec = 0.12;
-    public const int DriftStrikes = 2;
+    public const double DriftToleranceSec = BedPreviewFollower.DriftToleranceSec;
+    public const int DriftStrikes = BedPreviewFollower.DriftStrikes;
+    public const int DriftConfirmMs = BedPreviewFollower.DriftConfirmMs;
 
-    /// <summary>Total WaveOutEvent buffering. Low enough to track the picture, high enough not to underrun.</summary>
     public const int VoiceLatencyMs = 120;
     public const int VoiceBuffers = 3;
     public const double VoiceReaderLeadSec = VoiceLatencyMs / 1000.0;
 
-    /// <summary>A WaveOut configured for picture-locked preview.</summary>
     public static WaveOut CreateVoicePlayer()
         => new() { BufferMilliseconds = VoiceLatencyMs / VoiceBuffers, NumberOfBuffers = VoiceBuffers };
 
-    /// <summary>
-    /// Drives one voice-over take toward <paramref name="voiceTimeSec"/> (seconds into the take that
-    /// should be AUDIBLE now). <paramref name="strikes"/> is per-take state owned by the caller.
-    /// Call from the one thread that owns the player (the UI tick, or VoiceOverPreviewPlayer's worker).
-    /// </summary>
-    public static void SyncVoiceTake(WavAudioReader reader, WaveOut player, bool shouldPlay, double voiceTimeSec, ref int strikes)
+    public static void DisposeOffUiThread(params IDisposable?[] items)
     {
-        bool playing = player.PlaybackState == PlaybackState.Playing;
-        double total = reader.TotalTime.TotalSeconds;
+        if (items.Length == 0 || items.All(i => i == null)) return;
+        _ = System.Threading.Tasks.Task.Run(() =>
+        {
+            using var blocking = FreeVideoStudio.Core.Infrastructure.BlockingCallTracker.Enter("audio output dispose");
+            foreach (var item in items)
+            {
+                try { item?.Dispose(); } catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+            }
+        });
+    }
 
+    public static VoiceSyncDecision Decide(bool playing, double readerSec, double totalSec, bool shouldPlay,
+        double voiceTimeSec, ref long overSinceMs, long nowMs)
+    {
         if (shouldPlay && !playing)
         {
-            if (voiceTimeSec >= 0 && voiceTimeSec < total)
-                reader.CurrentTime = TimeSpan.FromSeconds(voiceTimeSec);
-            player.Play();
-            strikes = 0;
-            return;
+            overSinceMs = 0;
+            return new VoiceSyncDecision(VoiceSyncAction.StartAt,
+                voiceTimeSec >= 0 && voiceTimeSec < totalSec ? voiceTimeSec : double.NaN);
         }
 
         if (!shouldPlay)
         {
-            if (playing) player.Pause();
-            strikes = 0;
-            return;
+            overSinceMs = 0;
+            return playing ? new VoiceSyncDecision(VoiceSyncAction.Pause) : default;
         }
 
-        double audible = reader.CurrentTime.TotalSeconds - VoiceReaderLeadSec;
+        double audible = readerSec - VoiceReaderLeadSec;
         if (Math.Abs(audible - voiceTimeSec) <= DriftToleranceSec)
         {
-            strikes = 0;
-            return;
+            overSinceMs = 0;
+            return default;
         }
 
-        if (++strikes < DriftStrikes) return;
-        strikes = 0;
-        double target = Math.Clamp(voiceTimeSec + VoiceReaderLeadSec, 0, Math.Max(0, total));
-        reader.CurrentTime = TimeSpan.FromSeconds(target);
+        if (overSinceMs <= 0) { overSinceMs = Math.Max(1, nowMs); return default; }
+        if (nowMs - overSinceMs < DriftConfirmMs) return default;
+        overSinceMs = 0;
+        return new VoiceSyncDecision(VoiceSyncAction.SeekTo,
+            Math.Clamp(voiceTimeSec + VoiceReaderLeadSec, 0, Math.Max(0, totalSec)));
+    }
+
+    public static void SyncVoiceTake(WavAudioReader reader, WaveOut player, bool shouldPlay, double voiceTimeSec, ref long overSinceMs)
+    {
+        var decision = Decide(player.PlaybackState == PlaybackState.Playing, reader.CurrentTime.TotalSeconds,
+            reader.TotalTime.TotalSeconds, shouldPlay, voiceTimeSec, ref overSinceMs, Environment.TickCount64);
+        switch (decision.Action)
+        {
+            case VoiceSyncAction.StartAt:
+                if (double.IsFinite(decision.ReaderSec)) reader.CurrentTime = TimeSpan.FromSeconds(decision.ReaderSec);
+                player.Play();
+                break;
+            case VoiceSyncAction.Pause:
+                player.Pause();
+                break;
+            case VoiceSyncAction.SeekTo:
+                reader.CurrentTime = TimeSpan.FromSeconds(decision.ReaderSec);
+                break;
+        }
     }
 }

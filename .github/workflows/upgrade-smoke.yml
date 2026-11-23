@@ -1,21 +1,3 @@
-# ══════════════════════════════════════════════════════════════════════════════════════════════
-# UPGRADESMOKE_01 — DOES A REAL OLD INSTALL UPDATE TO THE NEW RELEASE? (docs/09 DIST-UPGRADESMOKE)
-#
-# ⚠️ WHY THIS EXISTS. Every user today runs an older public release (before the rebrand, the Inno
-# installer and the pinned publisher root). Unit tests prove the pieces; nothing proved that such a
-# copy, installed for real, ends up on the new version. This workflow does exactly that on a clean,
-# free GitHub-hosted Windows machine:
-#   1. downloads the OLD release's installer and installs it the way its own updater does
-#      (--install --auto-update);
-#   2. downloads the NEW release's FreeVideoStudio-Setup.exe (a draft works too) and runs it the way
-#      the new in-app updater does (/VERYSILENT … --install --auto-update --no-launch);
-#   3. checks that the installed program is the new version, and uploads the logs.
-#
-# Run it by hand (Actions › Upgrade smoke › Run workflow) BEFORE making a draft public, or after
-# Build.cmd --resume left a draft. It changes nothing in the repository or its releases.
-# Free: GitHub-hosted runners cost nothing for public repositories.
-# ══════════════════════════════════════════════════════════════════════════════════════════════
-
 name: Upgrade smoke
 
 on:
@@ -26,11 +8,11 @@ on:
         required: true
         default: 'v2026.09.26.1215'
       new_tag:
-        description: 'Updated to (a release or draft that carries FreeVideoStudio-Setup.exe)'
+        description: 'Updated to (a release or draft that carries FreeVideoStudio.exe)'
         required: true
 
 permissions:
-  contents: write   # needed only to SEE draft releases; no step writes anything
+  contents: write
 
 jobs:
   upgrade:
@@ -64,13 +46,13 @@ jobs:
 
       - name: Download the new setup
         shell: pwsh
-        run: gh release download $env:NEW_TAG --repo $env:GITHUB_REPOSITORY --pattern FreeVideoStudio-Setup.exe --dir new
+        run: gh release download $env:NEW_TAG --repo $env:GITHUB_REPOSITORY --pattern FreeVideoStudio.exe --dir new
 
       - name: Update to the new release (as the in-app updater does)
         shell: pwsh
         run: |
           $setupArgs = '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','--install','--auto-update','--source-current','--no-launch'
-          $p = Start-Process -FilePath (Resolve-Path new\FreeVideoStudio-Setup.exe) -ArgumentList $setupArgs -PassThru
+          $p = Start-Process -FilePath (Resolve-Path new\FreeVideoStudio.exe) -ArgumentList $setupArgs -PassThru
           if (-not $p.WaitForExit(20 * 60 * 1000)) { $p.Kill($true); throw 'The new setup did not finish in 20 minutes.' }
           Write-Host "New setup exit code: $($p.ExitCode)"
 

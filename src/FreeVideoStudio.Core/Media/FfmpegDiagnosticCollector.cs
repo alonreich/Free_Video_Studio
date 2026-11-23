@@ -1,13 +1,8 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// Concurrently collects and categorizes diagnostic output during an FFmpeg execution.
-/// Preserves early error lines so that later routine diagnostic output does not push them out of view.
-/// </summary>
 public sealed class FfmpegDiagnosticCollector
 {
     private readonly object _sync = new();

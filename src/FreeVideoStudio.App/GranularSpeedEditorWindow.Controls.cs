@@ -1,5 +1,4 @@
-
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Media;
@@ -8,32 +7,8 @@ using FreeVideoStudio.App.Controls;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// MVVM_03 — the cached control accessors for <see cref="GranularSpeedEditorWindow"/>.
-///
-/// <para>
-/// ⚠️ IN ITS OWN FILE ON PURPOSE. MVVM_02 caps window code-behind and the cap may only ever
-/// fall, so adding these to the code-behind — even while REMOVING lookups from it — would
-/// have pushed several files past their ceiling and forced the ratchet up. A ratchet that
-/// gets raised to accommodate an improvement stops being a ratchet.
-/// </para>
-///
-/// <para>
-/// These replace repeated <c>this.FindControl&lt;T&gt;("Name")</c> calls — some controls were
-/// resolved by string fifteen times in one file. Each lookup walks the visual tree and can
-/// return null, so a renamed control compiled cleanly and produced a dead button at run time
-/// (QUALITY_04). Now a rename breaks in exactly one place.
-/// </para>
-///
-/// <para>
-/// This is a STEP toward MVVM_01, not the destination. The end state is a binding to a
-/// view-model property; until then, one resolution per control means the eventual binding
-/// replaces one accessor instead of hunting every call site.
-/// </para>
-/// </summary>
 public partial class GranularSpeedEditorWindow
 {
-
     private Avalonia.Controls.Canvas? _cZoomOverlayCanvas;
     private Avalonia.Controls.Canvas? ZoomOverlayCanvasCtl => _cZoomOverlayCanvas ??= this.FindControl<Avalonia.Controls.Canvas>("ZoomOverlayCanvas");
     private FreeVideoStudio.App.Controls.SpinningWheelSlider? _cPendingSpeedSlider;
@@ -82,6 +57,8 @@ public partial class GranularSpeedEditorWindow
     private Button? AiTrackingCancelBtnCtl => _cAiTrackingCancelBtn ??= (this.FindNameScope()?.Find("AiTrackingCancelBtn") as Button);
     private Border? _cAiTrackingPreviewBar;
     private Border? AiTrackingPreviewBarCtl => _cAiTrackingPreviewBar ??= (this.FindNameScope()?.Find("AiTrackingPreviewBar") as Border);
+    private Button? _cAiTrackingReplayBtn;
+    private Button? AiTrackingReplayBtnCtl => _cAiTrackingReplayBtn ??= (this.FindNameScope()?.Find("AiTrackingReplayBtn") as Button);
     private Button? _cAiTrackingDiscardBtn;
     private Button? AiTrackingDiscardBtnCtl => _cAiTrackingDiscardBtn ??= (this.FindNameScope()?.Find("AiTrackingDiscardBtn") as Button);
     private Button? _cAiTrackingAcceptBtn;
@@ -102,8 +79,6 @@ public partial class GranularSpeedEditorWindow
     private Button? AiCommentaryCancelBtnCtl => _cAiCommentaryCancelBtn ??= (this.FindNameScope()?.Find("AiCommentaryCancelBtn") as Button);
     private TextBlock? _cAiCommentaryStatusLabel;
     private TextBlock? AiCommentaryStatusLabelCtl => _cAiCommentaryStatusLabel ??= (this.FindNameScope()?.Find("AiCommentaryStatusLabel") as TextBlock);
-    private ProgressBar? _cAiCommentaryProgressBar;
-    private ProgressBar? AiCommentaryProgressBarCtl => _cAiCommentaryProgressBar ??= (this.FindNameScope()?.Find("AiCommentaryProgressBar") as ProgressBar);
     private TextBlock? _cAiCommentaryConsoleText;
     private TextBlock? AiCommentaryConsoleTextCtl => _cAiCommentaryConsoleText ??= (this.FindNameScope()?.Find("AiCommentaryConsoleText") as TextBlock);
     private ScrollViewer? _cAiCommentaryConsoleScroll;

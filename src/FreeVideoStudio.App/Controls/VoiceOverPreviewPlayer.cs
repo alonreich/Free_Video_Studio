@@ -12,23 +12,14 @@ public sealed class VoiceOverPreviewTake : IDisposable
     public required FreeVideoStudio.Core.Media.WavAudioReader Reader { get; init; }
     public required NAudio.Wave.WaveOut Player { get; init; }
     public double StartProjectSec { get; set; }
-    /// <summary>MUSICSYNC_02 — consecutive out-of-tolerance readings (PreviewAudioSync).</summary>
-    public int DriftStrikes;
+    public long DriftSinceMs;
 
     public void Dispose()
     {
-        try { Player.Dispose(); } catch (System.Exception swallowed)
-        {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed);
-        }
-        try { Reader.Dispose(); } catch (System.Exception swallowed2)
-        {
-            global::FreeVideoStudio.App.RuntimeLog.Swallowed(swallowed2);
-        }
+        Infrastructure.PreviewAudioSync.DisposeOffUiThread(Player, Reader);
     }
 }
 
-/// <summary>GRANULARPERF_01 — all file/device operations belong to one bounded background worker.</summary>
 public sealed class VoiceOverPreviewPlayer : IDisposable
 {
     private readonly List<VoiceOverPreviewTake> _takes = new();
@@ -126,12 +117,12 @@ public sealed class VoiceOverPreviewPlayer : IDisposable
                 {
                     try
                     {
-                        take.Reader.Volume = (float)MpvIpcClient.MasterLinearGain;
+                        take.Reader.Volume = VoiceOverLevel.PreviewGain(take.Take.Gain, MpvIpcClient.MasterLinearGain);
                         take.StartProjectSec = VoiceOverTiming.OutputStart(take.Take, request.Mapper);
                         double voiceTime = request.Time - take.StartProjectSec;
                         bool play = (!request.Paused || request.Frozen) && !request.Ended &&
                             voiceTime >= 0 && voiceTime <= take.Reader.TotalTime.TotalSeconds;
-                        Infrastructure.PreviewAudioSync.SyncVoiceTake(take.Reader, take.Player, play, voiceTime, ref take.DriftStrikes);
+                        Infrastructure.PreviewAudioSync.SyncVoiceTake(take.Reader, take.Player, play, voiceTime, ref take.DriftSinceMs);
                     }
                     catch (Exception ex) { CoreLogger.Swallowed(ex); }
                 }
@@ -144,16 +135,6 @@ public sealed class VoiceOverPreviewPlayer : IDisposable
     {
         foreach (var take in _takes) take.Dispose();
         _takes.Clear();
-    }
-
-    public void DisposeTakes()
-    {
-        lock (_stateGate)
-        {
-            if (_disposed) return;
-            _latest = _latest with { Takes = [], Revision = _latest.Revision + 1 };
-            _pending.Writer.TryWrite(_latest);
-        }
     }
 
     public void Dispose()

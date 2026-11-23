@@ -3,7 +3,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>VOTIMING_01: one AOT-safe format for projects and crash recovery.</summary>
 public static class VoiceOverTakeJson
 {
     public static JsonArray Write(IEnumerable<VoiceOverTake> takes)
@@ -14,7 +13,8 @@ public static class VoiceOverTakeJson
             {
                 ["path"] = t.Path, ["startSec"] = t.StartSec, ["outputOffsetSec"] = t.OutputOffsetSec,
                 ["durationSec"] = t.DurationSec, ["recordedEndSec"] = t.RecordedEndSec,
-                ["timingSignature"] = t.TimingSignature, ["needsTimingReview"] = t.NeedsTimingReview
+                ["timingSignature"] = t.TimingSignature, ["needsTimingReview"] = t.NeedsTimingReview,
+                ["gain"] = VoiceOverLevel.Clamp(t.Gain)
             });
         return array;
     }
@@ -39,7 +39,7 @@ public static class VoiceOverTakeJson
             if (duration < 0) throw new FormatException("Invalid voiceover duration.");
             takes.Add(new VoiceOverTake(path, Number("startSec"), Number("outputOffsetSec"), duration,
                 Optional("recordedEndSec"), o["timingSignature"]?.GetValue<string>(),
-                o["needsTimingReview"]?.GetValue<bool>() ?? false));
+                o["needsTimingReview"]?.GetValue<bool>() ?? false, VoiceOverLevel.Clamp(Number("gain", 1))));
         }
         return takes;
     }

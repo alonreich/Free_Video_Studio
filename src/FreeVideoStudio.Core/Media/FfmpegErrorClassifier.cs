@@ -1,16 +1,10 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// Conservatively identifies the root cause of an FFmpeg export failure.
-/// Prefers process-start exceptions and explicit FFmpeg error codes, then tested text patterns,
-/// and returns an honest Unknown category when evidence is insufficient.
-/// </summary>
 public static class FfmpegErrorClassifier
 {
     private static readonly (string Needle, ExportFailureCategory Category, string Summary)[] KnownPatterns =

@@ -10,22 +10,6 @@ namespace FreeVideoStudio.Core.Media;
 
 public static class TextOverlayGenerator
 {
-    /// <summary>
-    /// Renders the portrait caption to a transparent PNG.
-    ///
-    /// TEXTGEN_01: the defaults are BOUND to the portrait canvas, not typed as literals. This
-    /// PNG is composited by <c>MobileFilterBuilder</c> with <c>overlay=0:0</c> onto the final
-    /// portrait frame, so <paramref name="width"/> must equal the canvas width and
-    /// <paramref name="height"/> must equal the top padding band the caption lives in. Writing
-    /// 1080 and 150 here duplicated <see cref="CoordinateConstants.PortraitW"/> and
-    /// <see cref="CoordinateConstants.UIPaddingTop"/>; changing either constant would then have
-    /// silently misaligned the caption instead of failing.
-    ///
-    /// A <c>fontSize</c> parameter used to sit in this signature and was never read — the size
-    /// is chosen by the auto-fit loop below, which starts at 110 and descends until the text
-    /// fits BOTH the given width and height. It has been removed rather than left implying a
-    /// control the caller never had.
-    /// </summary>
     public static void GeneratePng(string text, string outputPath,
                                    int width = CoordinateConstants.PortraitW,
                                    int height = CoordinateConstants.UIPaddingTop,
@@ -60,7 +44,7 @@ public static class TextOverlayGenerator
         {
             font.Size = currentFontSize;
             finalLines = WrapText(text, font, paint, width - (padding * 4));
-            
+
             float totalHeight = finalLines.Count * (currentFontSize * 1.2f);
             if (totalHeight <= height - (padding * 2))
             {
@@ -83,14 +67,14 @@ public static class TextOverlayGenerator
         {
             string displayLine = hasHebrew ? ReorderRtl(line) : line;
             displayLines.Add(displayLine);
-            
+
             font.MeasureText(displayLine, out SKRect bounds, paint);
             if (bounds.Width > maxLineWidth) maxLineWidth = bounds.Width;
         }
 
         float bgWidth = maxLineWidth + (padding * 4);
         float xOffset = (width - bgWidth) / 2f;
-        
+
         float yOffset = height - bgHeight - padding;
         if (yOffset < 0) yOffset = 0; 
 
@@ -153,16 +137,16 @@ public static class TextOverlayGenerator
     private static string ReorderRtl(string input)
     {
         if (string.IsNullOrWhiteSpace(input)) return input;
-        
+
         var tokens = Regex.Split(input, @"([\s]+)");
         var result = new StringBuilder();
         var ltrBuffer = new List<string>();
-        
+
         for (int i = tokens.Length - 1; i >= 0; i--)
         {
             string token = tokens[i];
             bool isHebrewWord = token.Any(c => c >= 0x0590 && c <= 0x05FF);
-            
+
             if (isHebrewWord)
             {
                 if (ltrBuffer.Count > 0)

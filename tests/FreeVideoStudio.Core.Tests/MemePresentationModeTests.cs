@@ -11,11 +11,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// MEMEMODE_01 — dual-mode memes. A FULL SCREEN meme interrupts the gameplay and adds its length;
-/// a CORNER OVERLAY plays over the gameplay and adds ZERO output seconds (01 TL-MEME, 03 FFM-MEMECORNER,
-/// 06 PROJ-SCHEMA, 07 UNDO-STATE).
-/// </summary>
 public class MemePresentationModeTests
 {
     private const double ClipMs = 10_000;
@@ -35,7 +30,6 @@ public class MemePresentationModeTests
         TrimmedDurationMs = ClipMs,
         Memes = memes.ToList(),
     };
-
 
     [Fact] public void TenSecondsPlusFourSecondInline_IsFourteen() => Assert.Equal(14.0, Total(Inline("a", 5)), 6);
 
@@ -71,7 +65,6 @@ public class MemePresentationModeTests
         Assert.Single(MemePlacement.InlineOnly(new[] { Inline("a", 1), Corner("b", 2) }));
         Assert.Single(MemePlacement.CornerOnly(new[] { Inline("a", 1), Corner("b", 2) }));
     }
-
 
     [Fact]
     public void EveryMomentAfterACornerMeme_MapsExactlyAsWithoutIt()
@@ -118,7 +111,6 @@ public class MemePresentationModeTests
         Assert.Contains("else memes.Add(m);", src);
         Assert.Contains("memes.Select(m => (m.CutOutputSec, m.DurationSec))", src);
     }
-
 
     [Fact]
     public void ProjectFile_RoundTripsModeCornerSizeAndSound()
@@ -208,7 +200,6 @@ public class MemePresentationModeTests
         Assert.InRange(bm.AtUs, 99_000, 101_000);
     }
 
-
     [Fact]
     public void EveryPropertyChange_IsAnUndoableStep()
     {
@@ -230,7 +221,6 @@ public class MemePresentationModeTests
         Assert.Equal(a, stack.Undo());
     }
 
-
     [Fact]
     public void MergerPreview_CornerMemesAreNeverCutaways_AndRunOnTheGameplayClock()
     {
@@ -250,7 +240,6 @@ public class MemePresentationModeTests
         Assert.Equal(9.0, plan.OutputSecAt(5.0), 3);
         Assert.Equal(14.0, plan.TotalOutputSec, 3);
     }
-
 
     [Fact]
     public void MergeClipGraph_CornerIsAnOverlay_FullScreenIsSpliced_LengthOnlyGrowsByFullScreen()
@@ -323,7 +312,7 @@ public class MemePresentationModeTests
             byte[] audio = RunBytes("-v", "error", "-i", outFile, "-map", "0:a", "-ac", "1", "-ar", "48000", "-f", "f32le", "-");
             Assert.InRange(audio.Length / 4 / 48000.0, 9.99, 10.01);
         }
-        finally { try { Directory.Delete(dir, true); } catch (IOException) { /* temp folder; nothing to do */ } }
+        finally { try { Directory.Delete(dir, true); } catch (IOException) {  } }
     }
 
     private static void Run(params string[] args)

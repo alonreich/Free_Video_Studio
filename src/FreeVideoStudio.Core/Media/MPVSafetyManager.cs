@@ -1,54 +1,18 @@
-﻿
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Threading.Channels;
 using System.Globalization;
 using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// Absorbs a rapid-scrub seek storm into ONE issued mpv seek, and watches for a seek that never
-/// lands.
-///
-/// <para><b>MPVSAFETY_01 — TEARDOWN ORDER IS SIGNAL, WAIT, THEN FREE. IN THAT ORDER, ALWAYS.</b></para>
-/// <para>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// WHAT WAS WRONG: <c>Dispose()</c> was two lines — <c>_cts.Cancel()</c> immediately followed by
-/// <c>_cts.Dispose()</c>. At that instant TWO threads were still bound to <c>_cts.Token</c>: the
-/// watchdog polling <c>IsCancellationRequested</c> on a 500 ms <c>Thread.Sleep</c> cycle, and the
-/// seek processor suspended inside <c>ReadAllAsync(_cts.Token)</c> or <c>Task.Delay(..., token)</c>.
-/// Freeing the source underneath live registrations makes those consumers observe
-/// <see cref="ObjectDisposedException"/>, NOT <see cref="OperationCanceledException"/>.
-///
-/// The watchdog already guarded that case. The seek processor did not — and it was declared
-/// <c>async void</c> and started from a raw <see cref="Thread"/>, so it had no
-/// SynchronizationContext to rethrow onto. The exception surfaced on the thread pool as an
-/// unobserved top-level throw, which under the .NET default policy FAST-FAILS THE PROCESS. A user
-/// closing a window mid-scrub could lose the whole app with no managed stack anywhere.
-///
-/// Neither thread was joined either, so <c>_mpvHandle</c> could be commanded after its owner had
-/// already destroyed it — a native access violation (0xC0000005) that no managed catch can contain.
-///
-/// THE FIX is the ordering <c>Ipc/NamedPipeStateServer.Dispose</c> already proves under
-/// IPCTEARDOWN_01, plus the handle-ownership discipline <c>MpvIpcClient.Dispose</c> proves under
-/// ISSUE_13: stop producing, signal, WAIT (bounded) for every consumer to actually exit, and only
-/// then free what they were using. There is no <c>async void</c> left in this file.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </para>
-/// </summary>
 public class MPVSafetyManager : IDisposable
 {
-    /// <summary>MPVSAFETY_01 — minimum spacing between two ISSUED seeks. Tuned; do not raise.</summary>
     private const int SeekDebounceMs = 50;
 
-    /// <summary>MPVSAFETY_01 — a seek still outstanding after this long is considered stuck.</summary>
     private const double StuckSeekSeconds = 2.5;
 
-    /// <summary>MPVSAFETY_01 — watchdog cadence. The stop signal short-circuits the wait, so this
-    /// is a poll interval, NOT a floor on teardown latency.</summary>
     private const int WatchdogPollMs = 500;
 
-    /// <summary>MPVSAFETY_01 — a consumer that will not stop must not hang the caller's shutdown.</summary>
     private static readonly TimeSpan TeardownJoinCeiling = TimeSpan.FromSeconds(2);
 
     private nint _mpvHandle;
@@ -57,17 +21,11 @@ public class MPVSafetyManager : IDisposable
     private readonly Thread _watchdogThread;
     private readonly Thread _seekThread;
 
-    /// <summary>MPVSAFETY_01 — set once the owner hands the handle back or teardown begins. Checked
-    /// immediately before every native command so a destroyed handle is never dereferenced.</summary>
     private volatile bool _handleValid;
 
-    /// <summary>MPVSAFETY_01 — the ONLY reliable signal that each loop has genuinely stopped
-    /// touching <c>_cts</c> and <c>_mpvHandle</c>. Same contract as MpvIpcClient._eventLoopExited.</summary>
     private volatile bool _watchdogExited;
     private volatile bool _seekLoopExited;
 
-    /// <summary>MPVSAFETY_01 — unblocks the watchdog's wait the instant teardown starts, so a join
-    /// never costs a full poll interval.</summary>
     private readonly ManualResetEventSlim _stopSignal = new(false);
 
     private int _disposed;
@@ -106,24 +64,12 @@ public class MPVSafetyManager : IDisposable
         _watchdogThread.Start();
     }
 
-    /// <summary>
-    /// Fire-and-forget, non-blocking, allocation-free. Safe to call from an input handler on the UI
-    /// thread and safe to call after <see cref="Dispose"/> (it becomes a no-op).
-    /// </summary>
     public void RequestSeek(double timeSeconds)
     {
         if (Volatile.Read(ref _disposed) != 0) return;
         _seekChannel.Writer.TryWrite(timeSeconds);
     }
 
-
-    /// <summary>
-    /// MPVSAFETY_01 — the thread body. It exists so the loop can be <c>async Task</c> instead of
-    /// <c>async void</c> while the thread KEEPS ITS NAME (crash digests are read by that name), and
-    /// so every possible throw is terminated here rather than on the thread pool. Blocking on the
-    /// task is correct on a thread we own and started for exactly this purpose: there is no
-    /// SynchronizationContext to deadlock against and no pool worker is being starved.
-    /// </summary>
     private void SeekProcessorThreadBody()
     {
         try
@@ -194,12 +140,6 @@ public class MPVSafetyManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// MPVSAFETY_01 — the ONLY place the native handle is dereferenced, and it is gated on
-    /// <see cref="_handleValid"/>. The <c>"F1"</c> / InvariantCulture formatting is load-bearing:
-    /// mpv's command-string parser reads an invariant decimal point, and a comma from a localised
-    /// format produces a command it silently fails to parse.
-    /// </summary>
     private void IssueSeek(double percent)
     {
         if (!_handleValid) return;
@@ -211,15 +151,6 @@ public class MPVSafetyManager : IDisposable
         MpvWrapper.mpv_command_string(handle, $"seek {pct} absolute-percent");
     }
 
-
-    /// <summary>
-    /// MPVSAFETY_01 — trips when a seek has been outstanding past <see cref="StuckSeekSeconds"/>.
-    ///
-    /// <para>It used to report through <c>Console.Error.WriteLine</c>, which in a windowed Avalonia
-    /// process goes nowhere at all — a tripped watchdog left no artifact on any machine that was
-    /// not running under a console. It now reports through <see cref="CoreLogger"/> like every
-    /// other diagnostic in this assembly, and names the target it gave up on.</para>
-    /// </summary>
     private void WatchdogLoop()
     {
         try
@@ -261,11 +192,6 @@ public class MPVSafetyManager : IDisposable
         }
     }
 
-
-    /// <summary>
-    /// MPVSAFETY_01 — idempotent, never throws, and NEVER frees the token source while a consumer
-    /// can still touch it. See the class remarks for the defect this ordering closes.
-    /// </summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;

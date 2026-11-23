@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
@@ -13,12 +12,6 @@ using NAudio.Wave;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// VOREC_01 / VOLIVE_01 — a capture device pair that behaves like the production NAudio adapters:
-/// the recorder writes a real 44.1 kHz mono PCM16 WAV, raises VolumeChanged then PcmAvailable for
-/// every buffer (the VoiceRecorder order) and reports its real byte/buffer counters at drain.
-/// Gates hold the open and the drain so in-between states can be observed.
-/// </summary>
 internal sealed class LiveCaptureDevices : IVoiceCaptureDeviceFactory
 {
     public bool HasInputDevice { get; set; } = true;
@@ -39,7 +32,6 @@ internal sealed class LiveCaptureDevices : IVoiceCaptureDeviceFactory
         return r;
     }
 
-    /// <summary>One PCM16 mono buffer of <paramref name="seconds"/> at constant amplitude (0 = digital silence).</summary>
     public static byte[] Pcm(double seconds, float amplitude)
     {
         int frames = (int)Math.Round(seconds * 44100);
@@ -97,7 +89,6 @@ internal sealed class LiveRecorder(string path, LiveCaptureDevices devices) : IV
         IsRecording = true;
     }
 
-    /// <summary>One driver callback: WAV write, level, raw PCM — the production order.</summary>
     public void Deliver(byte[] data)
     {
         if (_budget != null) data = data[.._budget.AcceptBytes(BytesCaptured, data.Length, 2)];
@@ -140,7 +131,6 @@ internal sealed class LiveRecorder(string path, LiveCaptureDevices devices) : IV
     }
 }
 
-/// <summary>A movable preview clock for <see cref="VoiceOverWindow.PreviewClockSeam"/>.</summary>
 internal sealed class TestPreviewClock
 {
     public double Time { get; set; }
@@ -149,12 +139,10 @@ internal sealed class TestPreviewClock
     public (double, bool, double) Read() => (Time, Paused, Duration);
 }
 
-/// <summary>Shared driving helpers: dispatcher pumping and a full arm → open → deliver sequence.</summary>
 internal static class LiveCaptureDriver
 {
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
-    /// <summary>The production post target: the UI dispatcher (never inline from the chain thread).</summary>
     public static VoiceCaptureSession NewSession(LiveCaptureDevices devices)
         => new(devices, work => Dispatcher.UIThread.Post(work));
 
@@ -170,10 +158,6 @@ internal static class LiveCaptureDriver
         Dispatcher.UIThread.RunJobs();
     }
 
-    /// <summary>
-    /// Presses RECORD, lets the video clock roll by one tick so arming opens the microphone, and
-    /// waits until the device is open. Returns the new recorder. The take is NOT yet receiving audio.
-    /// </summary>
     public static async Task<LiveRecorder> ArmAndOpenAsync(VoiceOverWindow window, LiveCaptureDevices devices, TestPreviewClock clock, double startAt)
     {
         int before = devices.Recorders.Count;
@@ -192,7 +176,6 @@ internal static class LiveCaptureDriver
         return devices.Recorders[^1];
     }
 
-    /// <summary>Delivers <paramref name="seconds"/> of audio in 50 ms buffers while the clock follows at <paramref name="speed"/>.</summary>
     public static void Deliver(LiveRecorder recorder, TestPreviewClock clock, double seconds, float amplitude, double speed = 1.0)
     {
         int buffers = (int)Math.Round(seconds / 0.05);
@@ -203,7 +186,6 @@ internal static class LiveCaptureDriver
         }
     }
 
-    /// <summary>Isolated ProgramData root (temp takes, persisted voiceovers) for one test class.</summary>
     public static IDisposable IsolateProgramData(string root)
     {
         string? previous = Environment.GetEnvironmentVariable(ApplicationPaths.ProgramDataRootOverrideEnvironmentVariable);

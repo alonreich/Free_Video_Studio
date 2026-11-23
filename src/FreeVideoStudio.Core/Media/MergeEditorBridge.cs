@@ -1,15 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 
 namespace FreeVideoStudio.Core.Media;
 
-//   • PLAYBACK — mpv plays an inline EDL (edl://) of every clip's kept window. Each segment's LENGTH
-
-/// <summary>One clip as the merge editor sees it (merged ms ↔ this clip's source µs).</summary>
-//   • PLAYBACK — mpv plays an inline EDL (edl://) of every clip's kept window. Each segment's LENGTH
-//   • PLAYBACK — mpv plays an inline EDL (edl://) of every clip's kept window. Each segment's LENGTH
 public sealed record MergeEditorClip(
     int Index, Guid ClipId, string Path,
     double StartMs, double EndMs,
@@ -25,28 +21,24 @@ public sealed record MergeEditorClip(
         => StartMs + Math.Clamp(sourceUs - KeepInUs, 0, KeepOutUs - KeepInUs) / 1000.0;
 }
 
-/// <summary>What the editor is opened with / hands back — all positions in MERGED milliseconds.</summary>
 public sealed record MergeEditorState(
     IReadOnlyList<SpeedSegment> Segments,
     double FreezeTimeMs,
     double FreezeDurationS,
     IReadOnlyList<CutRange> Cuts,
     IReadOnlyList<MemePlacement> Memes,
-    double BaseSpeed);
+    double BaseSpeed,
+    CaptionTrack? Captions = null);
 
-/// <summary>The whole merge as ONE editor source.</summary>
 public sealed class MergeEditorSource
 {
-    /// <summary>One merged frame, the tolerance for "on the first/last frame" (D17).</summary>
     public const double FrameMs = 1000.0 / CompositeTimeline.MergeFps;
 
     public IReadOnlyList<MergeEditorClip> Clips { get; }
     public double TotalMs { get; }
 
-    /// <summary>mpv inline EDL that plays the merge as one file whose clock is the merged clock.</summary>
     public string MpvUrl { get; }
 
-    /// <summary>Freezes that the v1 editor (one freeze for the whole merge) could not show; kept on Accept.</summary>
     public int ExtraFreezes { get; private set; }
 
     private MergeEditorSource(List<MergeEditorClip> clips, double totalMs, string url)
@@ -87,7 +79,67 @@ public sealed class MergeEditorSource
         return new MergeEditorSource(clips, tl.TotalMergedFrames * FrameMs, url.ToString());
     }
 
-    /// <summary>The clip that owns merged position <paramref name="ms"/>. A boundary belongs to the clip that STARTS there; the very end to the last clip.</summary>
+    public const double SilenceChunkSec = 10.0;
+
+    public static (string Url, bool UsesAudioStream) PreviewUrl(CompositeTimeline tl, Func<string, bool> hasAudio, string? silencePath)
+    {
+        var plain = Build(tl).MpvUrl;
+        var live = tl.Clips.Where(c => c.MergedFrames > 0).ToList();
+        if (string.IsNullOrEmpty(silencePath) || live.All(c => hasAudio(c.Path))) return (plain, false);
+
+        var ci = CultureInfo.InvariantCulture;
+        static string Entry(string path, double start, double length, IFormatProvider ci) =>
+            "%" + Encoding.UTF8.GetByteCount(path).ToString(ci) + "%" + path + "," + start.ToString("0.######", ci) + "," + length.ToString("0.######", ci);
+        var audio = new List<string>();
+        foreach (var c in live)
+        {
+            double len = c.MergedFrames / (double)CompositeTimeline.MergeFps;
+            if (hasAudio(c.Path)) { audio.Add(Entry(c.Path, c.KeepInUs / 1_000_000.0, len, ci)); continue; }
+            for (double done = 0; done < len - 1e-6; done += SilenceChunkSec)
+                audio.Add(Entry(silencePath, 0, Math.Min(SilenceChunkSec, len - done), ci));
+        }
+        return ("edl://!new_stream;" + plain["edl://".Length..] + ";!new_stream;" + string.Join(";", audio), true);
+    }
+
+    public static async System.Threading.Tasks.Task<string?> EnsureSilenceFileAsync(string ffmpegPath, string directory)
+    {
+        try
+        {
+            string path = System.IO.Path.Combine(directory, "merge-preview-silence-48k.flac");
+            if (System.IO.File.Exists(path) && new System.IO.FileInfo(path).Length > 0) return path;
+            System.IO.Directory.CreateDirectory(directory);
+            string tmp = path + ".part.flac";
+            var psi = new System.Diagnostics.ProcessStartInfo(ffmpegPath) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true };
+            foreach (string a in new[] { "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+                                         "-t", SilenceChunkSec.ToString(CultureInfo.InvariantCulture), "-c:a", "flac", tmp })
+                psi.ArgumentList.Add(a);
+            var r = await AsyncProcessRunner.RunAsync(psi).ConfigureAwait(false);
+            if (r.ExitCode != 0 || !System.IO.File.Exists(tmp)) return null;
+            System.IO.File.Move(tmp, path, overwrite: true);
+            return path;
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            Infrastructure.CoreLogger.Swallowed(ex);
+            return null;
+        }
+    }
+
+    public static int? SilentStreamAudioTrack(string? trackListJson)
+    {
+        if (string.IsNullOrWhiteSpace(trackListJson)) return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(trackListJson);
+            int? last = null;
+            foreach (var t in doc.RootElement.EnumerateArray())
+                if (t.TryGetProperty("type", out var type) && type.GetString() == "audio" && t.TryGetProperty("id", out var id))
+                    last = id.GetInt32();
+            return last;
+        }
+        catch (System.Text.Json.JsonException ex) { Infrastructure.CoreLogger.Swallowed(ex); return null; }
+    }
+
     public int ClipAt(double ms)
     {
         if (Clips.Count == 0) return -1;
@@ -101,7 +153,6 @@ public sealed class MergeEditorSource
         for (int i = 0; i < Clips.Count; i++) if (Clips[i].ClipId == id) return i;
         return -1;
     }
-
 
     public MergeEditorState ToEditor(MergeEdl edl)
     {
@@ -148,14 +199,9 @@ public sealed class MergeEditorSource
         segments.Sort((a, b) => a.StartMs.CompareTo(b.StartMs));
         cuts.Sort((a, b) => a.StartMs.CompareTo(b.StartMs));
         memes.Sort((a, b) => a.AtSourceSecRelative.CompareTo(b.AtSourceSecRelative));
-        return new MergeEditorState(segments, freezeAt, freezeDur, cuts, memes, edl.BaseSpeed);
+        return new MergeEditorState(segments, freezeAt, freezeDur, cuts, memes, edl.BaseSpeed, edl.Captions);
     }
 
-
-    /// <summary>
-    /// Puts the editor's result back into the clips. Freezes the v1 editor could not show
-    /// (<see cref="ExtraFreezes"/>) are kept in their clips; everything else is replaced.
-    /// </summary>
     public MergeEdl FromEditor(MergeEditorState st, MergeEdl edl)
     {
         int n = Clips.Count;
@@ -220,16 +266,14 @@ public sealed class MergeEditorSource
                 Effects = old with { Speed = speed[i], Cuts = cuts[i], Memes = memes[i], Freezes = keptFreezes },
             };
         }
-        return edl with { Clips = clips, BaseSpeed = st.BaseSpeed > 0 && double.IsFinite(st.BaseSpeed) ? st.BaseSpeed : edl.BaseSpeed };
+        return edl with
+        {
+            Clips = clips,
+            BaseSpeed = st.BaseSpeed > 0 && double.IsFinite(st.BaseSpeed) ? st.BaseSpeed : edl.BaseSpeed,
+            Captions = st.Captions,
+        };
     }
 
-    /// <summary>
-    /// MERGEMEME_02 — what the merge will really do with a meme the editor holds at
-    /// <paramref name="mergedSec"/>: a FULL SCREEN meme inside a clip's fade-in / fade-out is moved to
-    /// that clip's start / where its fade-out begins (D17), and a CORNER meme stops where its clip ends
-    /// (effects stay inside one clip, D4). The editor applies the first at once, so what it shows is
-    /// what is exported, and draws the second.
-    /// </summary>
     public double ResolveMemeAt(double mergedSec, bool corner, out double clipEndSec, out string? note)
     {
         note = null;
@@ -254,7 +298,6 @@ public sealed class MergeEditorSource
         return snapped / 1000.0;
     }
 
-    /// <summary>D17 — Start/Mid/End by where the meme was dropped.</summary>
     public static EdlMemePlacement PlacementAt(MergeEditorClip clip, double atMs)
     {
         double rel = atMs - clip.StartMs;
@@ -264,7 +307,6 @@ public sealed class MergeEditorSource
         return EdlMemePlacement.Mid;
     }
 
-    /// <summary>Splits [a, b) merged ms at clip boundaries. Pieces shorter than 1 ms are dropped.</summary>
     public IEnumerable<(int Clip, double A, double B)> Split(double a, double b)
     {
         if (b < a) (a, b) = (b, a);

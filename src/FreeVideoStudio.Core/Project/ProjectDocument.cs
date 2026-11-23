@@ -1,5 +1,4 @@
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json.Nodes;
@@ -7,192 +6,57 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.Core.Project;
 
-/// <summary>
-/// PROJ_01 — THE SAVEABLE DOCUMENT. Everything a user built, in one immutable value.
-///
-/// <para>
-/// WHY THIS TYPE EXISTS: until now the application had no way to save work. The only thing that
-/// ever reached disk was <c>recovery_v2.json</c>, which is a CRASH artefact — it answers "the app
-/// died, what was on screen?", not "open the montage I made on Tuesday". Closing the app on
-/// purpose destroyed the session. An hour of markers, cuts, speed ramps, zooms and meme placements
-/// existed only in the live window.
-/// </para>
-///
-/// <para>
-/// The set of fields here is not a guess. It is exactly the input surface of
-/// <see cref="OutputTimeline.Create"/> plus the settings that decide how those chunks are rendered.
-/// If a field is not needed to reconstruct the finished video, it does not belong in the document;
-/// if it is, its absence is a silent data-loss bug. <see cref="BuildTimeline"/> is the proof — it
-/// reconstructs the authoritative timeline from nothing but this record, which is the test that the
-/// document is complete.
-/// </para>
-///
-/// <para>
-/// ⚠️ NORTH STAR #2 (ABSOLUTE AUTHORITY FOR TIME) APPLIES HERE. This document stores the INPUTS to
-/// <see cref="OutputTimeline"/> and never a derived duration. Caching <c>TotalOutputSeconds</c> in
-/// the file would create a second answer to "how long is the video", which would go stale the
-/// moment the maths is corrected in a later build and would then be believed over the real model.
-/// <see cref="SourceClip.DurationMs"/> is the one measured value stored, and it is a property of
-/// the FILE, not of the edit.
-/// </para>
-///
-/// <para>
-/// ⚠️ IMMUTABLE ON PURPOSE. Undo (PROJ_07 / <c>UndoStack</c>) keeps a stack of these. If the record
-/// were mutable, every entry on that stack would be the same object and undo would restore the
-/// present. Mutate by <c>with</c>-expression only, and keep every collection an
-/// <see cref="IReadOnlyList{T}"/> of value types or immutable records — never a UI control, bitmap,
-/// stream or IPC handle (the rule 04_UI_UX_AVALONIA_SPEC.md §6 UI-GRANULAR already states for the
-/// granular editor's stack, generalised).
-/// </para>
-/// </summary>
 public sealed record ProjectDocument
 {
-    /// <summary>Magic string written into every file so a wrong-type file is rejected by name, not by crash.</summary>
     public const string FormatId = "fvsproj";
 
-    /// <summary>
-    /// PROJ_02 — the schema number this build WRITES. Bump it only when the meaning of an existing
-    /// field changes; adding a new optional field does not need a bump, because
-    /// <see cref="ProjectSerializer"/> tolerates missing keys on read.
-    /// </summary>
-    /// <remarks>
-    /// <b>2 — PROJ_11.</b> Added <see cref="Mask"/> and <see cref="Merge"/>. Both are optional on
-    /// read, so a v1 file loads unchanged; the bump records that a v2 writer stores information a
-    /// v1 reader will park in <see cref="UnknownFields"/> rather than lose.
-    /// <b>3 — PROJ_12.</b> Added <see cref="ProjectMerge.Edl"/> (the Video Merger's full edit list:
-    /// effects, thumbnail, music). It lives INSIDE <c>merge</c>, where a v2 reader keeps no unknown
-    /// keys, so a v2 build would silently drop the effects; refusing the file is the safer answer.
-    /// <b>4 — MEMEMODE_01.</b> Each meme carries <c>mode</c> / <c>corner</c> / <c>size</c> / <c>sound</c>.
-    /// They live INSIDE a meme object, where a v3 reader keeps no unknown keys: it would read a corner
-    /// overlay as a full-screen cutaway (a different, longer video) and drop the keys on save. Refused
-    /// instead. Files at 1..3 read unchanged: no keys = full-screen with sound.
-    /// <b>5 — VOTIMING_01.</b> v4 readers would discard nested voice takes, freeze offsets and review state.
-    /// <b>6 — CAPTIONS_01.</b> Added <see cref="Captions"/> (AI Live Commentary Captions track).
-    /// <b>7 — MEMEAUDIT_01.</b> Each meme may carry <c>clipIn</c> / <c>posX</c> / <c>posY</c> /
-    /// <c>animation</c> / <c>transition</c>. Inside a meme object, where a v6 reader keeps no unknown
-    /// keys: it would play a trimmed meme in full (a longer video) and drop the keys on save. Refused
-    /// instead. Files at 1..6 read unchanged: no keys = the whole meme, in its corner, no effects.
-    /// </remarks>
-    public const int SchemaVersion = 7;
+    public const int SchemaVersion = 9;
 
-    /// <summary>
-    /// PROJ_02 — the oldest schema this build can still READ. A file below this is refused with an
-    /// explanation instead of being silently mangled into something the user did not author.
-    /// </summary>
     public const int MinimumReadableSchemaVersion = 1;
 
     public const string FileExtension = ".fvsproj";
 
-    /// <summary>The gameplay file being edited, plus enough fingerprint to notice it changed.</summary>
     public required SourceClip Source { get; init; }
 
-    /// <summary>Speed applied to every stretch not covered by a <see cref="Segments"/> entry.</summary>
     public double BaseSpeed { get; init; } = 1.0;
 
-    /// <summary>
-    /// Trim-in point in ABSOLUTE source milliseconds. This is the same number
-    /// <see cref="OutputTimeline.Create"/> takes as <c>sourceCutStartMs</c>, and it is the origin
-    /// that makes every other position in this document clip-relative.
-    /// </summary>
     public double SourceCutStartMs { get; init; }
 
-    /// <summary>
-    /// Length of the trimmed clip in milliseconds — <c>totalDurationMs</c> for
-    /// <see cref="OutputTimeline.Create"/>. Zero means "not trimmed", and
-    /// <see cref="EffectiveDurationMs"/> falls back to the measured file duration.
-    /// </summary>
     public double TrimmedDurationMs { get; init; }
 
-    /// <summary>Speed ramps and freezes, in ABSOLUTE source milliseconds (as <see cref="SpeedSegment"/> is defined).</summary>
     public IReadOnlyList<SpeedSegment> Segments { get; init; } = Array.Empty<SpeedSegment>();
 
-    /// <summary>Deleted stretches, CLIP-RELATIVE seconds (as <see cref="OutputTimeline.Cut"/> is defined).</summary>
     public IReadOnlyList<OutputTimeline.Cut> Cuts { get; init; } = Array.Empty<OutputTimeline.Cut>();
 
-    /// <summary>Meme cutaways, CLIP-RELATIVE seconds (as <see cref="MemePlacement"/> is defined).</summary>
     public IReadOnlyList<MemePlacement> Memes { get; init; } = Array.Empty<MemePlacement>();
 
     public ProjectAudio Audio { get; init; } = new();
 
     public ProjectExport Export { get; init; } = new();
 
-    /// <summary>
-    /// PROJ_11 — WHICH HUD MASK THIS MONTAGE WAS BUILT AGAINST. Null means "no mask was applied".
-    ///
-    /// <para>
-    /// ⚠️ THE DEFECT THIS CLOSES: the mask was a machine-wide setting, not a property of the work.
-    /// The active profile name lived in <c>SettingsManager.ActiveMaskOverlay</c> and the rectangles
-    /// lived in one shared <c>crop_coordinates.json</c>. Neither was in the project file. So a
-    /// project saved in March and reopened in May was exported through whatever mask happened to be
-    /// active THEN — different rectangles, different overlays, a different finished video — and
-    /// nothing anywhere said so. The user's own record of their edit did not include the single
-    /// setting that decides what the frame looks like.
-    /// </para>
-    ///
-    /// <para>
-    /// The snapshot is stored, not just the name, because a profile is editable. Naming "Fortnite"
-    /// and trusting the machine to still mean the same thing by it is the same bug one level down.
-    /// </para>
-    /// </summary>
     public ProjectMask? Mask { get; init; }
 
-    /// <summary>
-    /// PROJ_11 — the Video Merger's queue. Null means this project is a single-clip edit.
-    ///
-    /// <para>
-    /// ⚠️ THE DEFECT THIS CLOSES: merge state lived nowhere. A user could queue eight clips, trim
-    /// each of them, close the Merger — and the queue existed only in that window's
-    /// <c>ObservableCollection&lt;string&gt;</c>. Saving the project recorded none of it, so
-    /// reopening produced a single-clip document with no indication that seven clips had been
-    /// dropped on the floor.
-    /// </para>
-    ///
-    /// <para>
-    /// ⚠️ THIS IS ALSO THE DOCUMENT'S ROUTE OUT OF BEING SINGLE-SOURCE. <see cref="Source"/> is one
-    /// clip because the main editor edits one clip; a montage of several is what the Merger is for,
-    /// and until now those were two unrelated features sharing an application. Storing the ordered
-    /// list here makes the merge a property of the project, which is the precondition for ever
-    /// treating a multi-clip edit as one document rather than two workflows.
-    /// </para>
-    /// </summary>
     public ProjectMerge? Merge { get; init; }
 
-    /// <summary>
-    /// CAPTIONS_01 — AI Live Commentary Captions track. Null means no commentary captions were generated.
-    /// </summary>
     public CaptionTrack? Captions { get; init; }
 
-    /// <summary>Free-text name shown in the title bar and the recent list. Never used as a file path.</summary>
+    public double FreezeTimeMs { get; init; } = -1;
+
+    public double FreezeDurationS { get; init; } = 1.0;
+
+    public string OverlayText { get; init; } = string.Empty;
+
     public string Title { get; init; } = "Untitled";
 
     public DateTimeOffset CreatedUtc { get; init; } = DateTimeOffset.UtcNow;
 
     public DateTimeOffset ModifiedUtc { get; init; } = DateTimeOffset.UtcNow;
 
-    /// <summary>
-    /// PROJ_03 — FORWARD COMPATIBILITY BAG. Top-level keys this build did not recognise, kept
-    /// verbatim so that opening a v2 file in a v1 build and saving it back does not AMPUTATE the
-    /// v2 fields. Without this, one accidental open-and-save on an older machine silently destroys
-    /// work the newer build could have read. It is never interpreted, only carried.
-    /// </summary>
     public JsonObject? UnknownFields { get; init; }
 
-    /// <summary>
-    /// The duration the timeline should actually be built against: the explicit trim when one was
-    /// set, otherwise the measured length of the file.
-    /// </summary>
     public double EffectiveDurationMs =>
         TrimmedDurationMs > 0.001 ? TrimmedDurationMs : Source.DurationMs;
 
-    /// <summary>
-    /// PROJ_04 — reconstructs the authoritative timeline from the document alone.
-    /// <para>
-    /// This is deliberately the ONLY way the rest of the application is allowed to turn a loaded
-    /// project into a timeline. Any screen that re-derives chunks from its own copies of these
-    /// lists is re-introducing exactly the duplicated-maths defect that
-    /// <see cref="OutputTimeline"/>'s own header documents.
-    /// </para>
-    /// </summary>
     public OutputTimeline BuildTimeline()
     {
         var insertions = MemePlacement.ToInsertions(Memes);
@@ -206,16 +70,6 @@ public sealed record ProjectDocument
             Cuts);
     }
 
-    /// <summary>
-    /// PROJ_05 — is the gameplay file still the one this project was built against?
-    /// <para>
-    /// A project stores a PATH, and paths outlive the files they point at. Answering this before
-    /// restoring an edit is what lets the app say "that video has been replaced, your cuts may not
-    /// line up" instead of cheerfully rendering markers against different footage. Length and
-    /// modification time are a fingerprint, not a hash: hashing a 4 GB capture on every open would
-    /// cost more than the entire load.
-    /// </para>
-    /// </summary>
     public SourceIntegrity CheckSource()
     {
         if (string.IsNullOrWhiteSpace(Source.FilePath)) return SourceIntegrity.Missing;
@@ -246,29 +100,6 @@ public sealed record ProjectDocument
         return SourceIntegrity.Intact;
     }
 
-    /// <summary>Creates the empty document a brand-new edit starts from.</summary>
-    /// <summary>
-    /// UNDOEQ_01 — EDIT-STATE EQUALITY. <c>docs/07_UNDO_AND_HISTORY.md</c> §3: "U4 depends on
-    /// <c>Equals</c> being a real state comparison — a reference-equality default silently disables
-    /// it."
-    /// <para>
-    /// The compiler-generated record equality WAS that default. <see cref="Segments"/>,
-    /// <see cref="Cuts"/> and <see cref="Memes"/> are arrays built fresh by every
-    /// <c>ProjectSession.Capture()</c>, so they were compared BY REFERENCE. <see cref="ModifiedUtc"/>
-    /// and <see cref="CreatedUtc"/> default to <c>UtcNow</c>, and <see cref="Mask"/> carries a fresh
-    /// <c>JsonObject</c>. Two captures of an untouched editor were therefore never equal: U4
-    /// (never push a no-op) could not fire, and every no-op click became an undo step that visibly
-    /// did nothing.
-    /// </para>
-    /// <para>
-    /// Compared: everything the user can change and everything the export reads. The lists are
-    /// compared element-wise (the element types are value records). The mask is compared by its
-    /// content fingerprint, the same identity <see cref="ProjectMask.MatchesLive"/> uses.
-    /// NOT compared: <see cref="CreatedUtc"/>, <see cref="ModifiedUtc"/> (bookkeeping, not state),
-    /// <see cref="Title"/> (derived from the source path, which is compared) and
-    /// <see cref="UnknownFields"/> (round-trip carriage for newer writers, never edited here).
-    /// </para>
-    /// </summary>
     public bool Equals(ProjectDocument? other)
     {
         if (ReferenceEquals(this, other)) return true;
@@ -285,10 +116,13 @@ public sealed record ProjectDocument
             && Equals(Export, other.Export)
             && string.Equals(Mask?.ProfileName, other.Mask?.ProfileName, StringComparison.Ordinal)
             && string.Equals(Mask?.Fingerprint, other.Mask?.Fingerprint, StringComparison.Ordinal)
-            && Equals(Merge, other.Merge);
+            && Equals(Merge, other.Merge)
+            && Equals(Captions, other.Captions)
+            && FreezeTimeMs.Equals(other.FreezeTimeMs)
+            && FreezeDurationS.Equals(other.FreezeDurationS)
+            && string.Equals(OverlayText ?? string.Empty, other.OverlayText ?? string.Empty, StringComparison.Ordinal);
     }
 
-    /// <summary>UNDOEQ_01 — consistent with <see cref="Equals(ProjectDocument?)"/>: timestamps excluded.</summary>
     public override int GetHashCode()
     {
         var hash = new HashCode();
@@ -320,32 +154,21 @@ public sealed record ProjectDocument
     }
 }
 
-/// <summary>PROJ_05 — the answer to "is the footage still what this project was cut against?".</summary>
 public enum SourceIntegrity
 {
-    /// <summary>File is present and matches the stored fingerprint.</summary>
     Intact,
 
-    /// <summary>File is present but its size or timestamp differs — the edit may no longer line up.</summary>
     Changed,
 
-    /// <summary>File is gone or unreadable. The project can still be opened to relink it.</summary>
     Missing,
 
-    /// <summary>No fingerprint was stored (older project). Do not warn the user about this.</summary>
     Unknown,
 }
 
-/// <summary>
-/// PROJ_05 — the gameplay file plus the measurements the editor needs before it can lay anything
-/// out. Width/height/fps are stored because probing a file costs a process launch, and a project
-/// should open into a drawn timeline rather than into a spinner.
-/// </summary>
 public sealed record SourceClip
 {
     public required string FilePath { get; init; }
 
-    /// <summary>Full length of the FILE in milliseconds, before any trim.</summary>
     public double DurationMs { get; init; }
 
     public int Width { get; init; }
@@ -354,13 +177,10 @@ public sealed record SourceClip
 
     public double Fps { get; init; }
 
-    /// <summary>Size in bytes at save time. Zero means "not measured" — see <see cref="ProjectDocument.CheckSource"/>.</summary>
     public long SizeBytes { get; init; }
 
-    /// <summary>Unix seconds of last write at save time. Zero means "not measured".</summary>
     public long ModifiedUtcSeconds { get; init; }
 
-    /// <summary>Reads the fingerprint fields off disk. Never throws; an unreadable file yields zeroes.</summary>
     public static SourceClip Probe(string filePath, double durationMs, int width, int height, double fps)
     {
         long size = 0;
@@ -392,30 +212,8 @@ public sealed record SourceClip
     }
 }
 
-/// <summary>
-/// PROJ_11 — THE HUD MASK, AS A PROPERTY OF THE PROJECT RATHER THAN OF THE MACHINE.
-/// </summary>
-/// <param name="ProfileName">
-/// The profile the user chose, as shown in the Crop Tool's picker. Kept so the UI can say
-/// "this project was built with <i>Apex Legends</i>" rather than showing an anonymous blob.
-/// </param>
-/// <param name="Fingerprint">
-/// A stable hash of <paramref name="Config"/>. Comparing hashes answers "is the profile on this
-/// machine still the one this project was built with" in one line, and answers it correctly even
-/// when the profile was edited without being renamed — which renaming-based checks cannot do.
-/// </param>
-/// <param name="Config">
-/// The resolved crop configuration itself: rectangles, scales, overlay positions and z-orders.
-/// Stored verbatim so the project reproduces its own export on a machine that has never seen the
-/// named profile. A few kilobytes of JSON against the alternative of an unreproducible render.
-/// </param>
 public sealed record ProjectMask(string ProfileName, string Fingerprint, JsonObject? Config)
 {
-    /// <summary>
-    /// The hash stored in <see cref="Fingerprint"/>. Content-addressed, whitespace-insensitive:
-    /// two configs that would produce the same filtergraph must produce the same fingerprint, or
-    /// the mismatch warning fires on formatting and is promptly ignored by everyone.
-    /// </summary>
     public static string ComputeFingerprint(JsonObject? config)
     {
         if (config is null) return string.Empty;
@@ -463,51 +261,22 @@ public sealed record ProjectMask(string ProfileName, string Fingerprint, JsonObj
         }
     }
 
-    /// <summary>
-    /// True when <paramref name="liveConfig"/> is the same mask this project was built with.
-    /// A false answer is a Degraded fault, not a silent re-render: the user is about to export a
-    /// different video than the one they saved.
-    /// </summary>
     public bool MatchesLive(JsonObject? liveConfig)
         => string.Equals(Fingerprint, ComputeFingerprint(liveConfig), StringComparison.Ordinal);
 }
 
-/// <summary>
-/// PROJ_11 — one clip in the merge queue, with the trim the user set on it.
-/// </summary>
-/// <param name="FilePath">Absolute path to the source file, as the user picked it.</param>
-/// <param name="StartSec">Trim-in, seconds from the start of THAT file. Zero means untrimmed.</param>
-/// <param name="EndSec">Trim-out, seconds from the start of THAT file. Zero means "to the end".</param>
 public readonly record struct MergeClip(string FilePath, double StartSec, double EndSec);
 
-/// <summary>
-/// PROJ_11 — the Video Merger's queue, in order.
-/// </summary>
 public sealed record ProjectMerge
 {
-    /// <summary>The clips, in the order they are concatenated. Order is meaning here, not presentation.</summary>
     public IReadOnlyList<MergeClip> Clips { get; init; } = Array.Empty<MergeClip>();
 
-    /// <summary>
-    /// Speed applied to the merged result, mirroring the main editor's <see cref="ProjectDocument.BaseSpeed"/>.
-    /// </summary>
     public double BaseSpeed { get; init; } = 1.0;
 
-    /// <summary>
-    /// PROJ_12 — the Video Merger's full edit list (MERGEEDL_01): clip windows, per-clip effects,
-    /// thumbnail, music. Null in files written before schema 3; <see cref="ToEdl"/> migrates those.
-    /// </summary>
     public MergeEdl? Edl { get; init; }
 
-    /// <summary>True when the queue holds anything worth restoring.</summary>
     public bool HasClips => Clips.Count > 0 || Edl is { Clips.Count: > 0 };
 
-    /// <summary>
-    /// PROJ_12 — the edit list to restore: <see cref="Edl"/> when present, otherwise the legacy
-    /// <see cref="Clips"/> migrated (user windows kept, no effects). Migrated clip ids are
-    /// DETERMINISTIC (<c>new Guid(i + 1, 0, …)</c>), so migrating the same document twice gives equal
-    /// edit lists and an undo stack never sees a phantom change.
-    /// </summary>
     public MergeEdl ToEdl()
     {
         if (Edl is not null) return Edl;
@@ -528,7 +297,6 @@ public sealed record ProjectMerge
 
     private static long SecToUs(double sec) => double.IsFinite(sec) && sec > 0 ? (long)Math.Round(sec * 1_000_000.0) : 0;
 
-    /// <summary>UNDOEQ_01 — element-wise, not by array reference (see <see cref="ProjectDocument.Equals(ProjectDocument?)"/>).</summary>
     public bool Equals(ProjectMerge? other)
         => other is not null
         && BaseSpeed.Equals(other.BaseSpeed)
@@ -538,40 +306,36 @@ public sealed record ProjectMerge
     public override int GetHashCode() => HashCode.Combine(BaseSpeed, Clips.Count);
 }
 
-/// <summary>
-/// PROJ_06 — audio choices that survive a save.
-/// <para>
-/// ⚠️ NORTH STAR #3 (STRICT A/V PROCESS ISOLATION). <see cref="MusicVolume"/> and
-/// <see cref="VideoVolume"/> are EXPORT mix levels and belong in the document. The master PREVIEW
-/// volume is a property of this machine's playback session, not of the montage, and must never be
-/// stored here — saving it would carry one machine's monitoring level into another machine's
-/// export, which is precisely the coupling that invariant forbids.
-/// </para>
-/// </summary>
+public sealed record ProjectMusicSong(string Path, double FullSec, double InSec, double OutSec, bool UserTrimmed);
+
 public sealed record ProjectAudio
 {
     public string? MusicFilePath { get; init; }
 
-    /// <summary>Where the music bed starts inside the music file, in seconds.</summary>
     public double MusicStartSec { get; init; }
 
-    /// <summary>0.0 to 1.0 export mix level for the music bed.</summary>
+    public IReadOnlyList<ProjectMusicSong> MusicSongs { get; init; } = Array.Empty<ProjectMusicSong>();
+
+    public double MusicTimelineStartSec { get; init; }
+
+    public double MusicTimelineEndSec { get; init; }
+
+    public bool MusicLoop { get; init; }
+
+    public bool MusicCarving { get; init; }
+
     public double MusicVolume { get; init; } = 1.0;
 
-    /// <summary>0.0 to 1.0 export mix level for the gameplay's own audio.</summary>
     public double VideoVolume { get; init; } = 1.0;
 
-    /// <summary>Duck the music under the gameplay / voice over.</summary>
     public bool SidechainDucking { get; init; }
 
     public string? VoiceOverFilePath { get; init; }
 
-    /// <summary>Where the recorded voice over sits in OUTPUT seconds.</summary>
     public double VoiceOverAtOutputSec { get; init; }
 
     public double VoiceOverVolume { get; init; } = 1.0;
 
-    /// <summary>VOTIMING_01: every take and its review state are saved work, including freeze offsets.</summary>
     public IReadOnlyList<VoiceOverTake> VoiceOverTakes { get; init; } = Array.Empty<VoiceOverTake>();
     public bool VoiceOverDuckAudio { get; init; }
     public bool VoiceOverProtectFromMusic { get; init; } = true;
@@ -581,7 +345,9 @@ public sealed record ProjectAudio
         MusicVolume == other.MusicVolume && VideoVolume == other.VideoVolume && SidechainDucking == other.SidechainDucking &&
         VoiceOverFilePath == other.VoiceOverFilePath && VoiceOverAtOutputSec == other.VoiceOverAtOutputSec &&
         VoiceOverVolume == other.VoiceOverVolume && VoiceOverDuckAudio == other.VoiceOverDuckAudio &&
-        VoiceOverProtectFromMusic == other.VoiceOverProtectFromMusic && VoiceOverTakes.SequenceEqual(other.VoiceOverTakes);
+        VoiceOverProtectFromMusic == other.VoiceOverProtectFromMusic && VoiceOverTakes.SequenceEqual(other.VoiceOverTakes) &&
+        MusicSongs.SequenceEqual(other.MusicSongs) && MusicTimelineStartSec == other.MusicTimelineStartSec &&
+        MusicTimelineEndSec == other.MusicTimelineEndSec && MusicLoop == other.MusicLoop && MusicCarving == other.MusicCarving;
 
     public override int GetHashCode()
     {
@@ -590,23 +356,20 @@ public sealed record ProjectAudio
         h.Add(VoiceOverFilePath); h.Add(VoiceOverAtOutputSec); h.Add(VoiceOverVolume);
         h.Add(VoiceOverDuckAudio); h.Add(VoiceOverProtectFromMusic);
         foreach (var take in VoiceOverTakes) h.Add(take);
+        foreach (var song in MusicSongs) h.Add(song);
+        h.Add(MusicTimelineStartSec); h.Add(MusicTimelineEndSec); h.Add(MusicLoop); h.Add(MusicCarving);
         return h.ToHashCode();
     }
 }
 
-/// <summary>PROJ_06 — export choices that survive a save, so re-exporting a project is one click.</summary>
 public sealed record ProjectExport
 {
-    /// <summary>Index into the quality ladder. Stored as the INDEX the user chose, never as a bitrate.</summary>
     public int QualityIndex { get; init; } = -1;
 
-    /// <summary>Explicit target size in megabytes when the user overrode the ladder; null means "use the ladder".</summary>
     public double? TargetMegabytes { get; init; }
 
-    /// <summary>"Auto", "GPU" or "CPU". Free text so a future encoder does not need a schema bump.</summary>
     public string HardwareMode { get; init; } = "Auto";
 
-    /// <summary>Folder the last export was written to, so the next one defaults sensibly.</summary>
     public string? OutputDirectory { get; init; }
 
     public bool PortraitMode { get; init; } = true;

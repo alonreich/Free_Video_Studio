@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <VSTestResultsDirectory>$(MSBuildThisFileDirectory)..\..\logs\App_Results</VSTestResultsDirectory>
     <IsTestProject>true</IsTestProject>
     <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
@@ -16,7 +17,11 @@
     <PackageReference Include="Avalonia.Headless.XUnit" Version="11.3.22" />
     <ProjectReference Include="..\..\src\FreeVideoStudio.App\FreeVideoStudio.App.csproj" />
     <ProjectReference Include="..\..\src\FreeVideoStudio.Core\FreeVideoStudio.Core.csproj" />
-    <!-- SYS-VERIFYTOOL: the sentinel check is shared code, not a second regex scraper. -->
     <ProjectReference Include="..\..\build\FvsVerify\FvsVerify.csproj" />
+    <ProjectReference Include="..\..\developer_tools\CommentRemover\CommentRemover.csproj" />
+    <ProjectReference Include="..\..\build\FvsBuild\FvsBuild.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\TestArtifactDirectory.cs" Link="TestArtifactDirectory.cs" />
   </ItemGroup>
 </Project>

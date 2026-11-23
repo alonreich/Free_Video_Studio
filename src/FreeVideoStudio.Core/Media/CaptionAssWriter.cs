@@ -7,11 +7,6 @@ using System.Text;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// AICAPTION_ASS_01 — Advanced SubStation Alpha (.ass v4.00+) writer for live commentary captions.
-/// Generates styled, karaoke-animated subtitles with exact positioning, \k centisecond highlight tags,
-/// and safe character escaping for direct consumption by FFmpeg (subtitles filter) and libmpv (sub-add).
-/// </summary>
 public static class CaptionAssWriter
 {
     public const string DefaultFontName = "Arial";
@@ -22,24 +17,22 @@ public static class CaptionAssWriter
     public const string BackColourDefault = "&H80000000";
     public const string EmphasisColourDefault = "&H0000E5FF";
 
-    /// <summary>
-    /// CAPTIONLOOK_01 — the Outline look. Stronger than before (outline 4.5 → 6, shadow 2 → 3, shadow 50 % → 75 %
-    /// opaque) so white text stays readable on snow, explosions and bright skies.
-    /// </summary>
     public const double OutlineWidth = 6.0;
     public const double ShadowDepth = 3.0;
     public const string OutlineShadowColour = "&H40000000";
 
-    /// <summary>
-    /// CAPTIONLOOK_01 — the Box look: ASS BorderStyle 3 draws an opaque box per line in the OUTLINE colour
-    /// (here black at ~69 % opacity); the outline width is the box's padding.
-    /// </summary>
     public const string BoxColour = "&H50000000";
     public const double BoxPadding = 14.0;
 
-    /// <summary>
-    /// Generates full .ass script text from a <see cref="CaptionTrack"/> and an optional <see cref="OutputTimeline"/>.
-    /// </summary>
+    public const string CanvasParityTag = "CAPTIONCANVAS_01";
+
+    public static (int Width, int Height) ExportCanvas(bool isMerge, bool portrait, int sourceWidth, int sourceHeight)
+    {
+        if (portrait) return (1080, 1920);
+        if (isMerge || sourceWidth <= 0 || sourceHeight <= 0) return (1920, 1080);
+        return (sourceWidth, sourceHeight);
+    }
+
     public static string GenerateAss(
         CaptionTrack track,
         OutputTimeline? timeline = null,
@@ -104,9 +97,6 @@ public static class CaptionAssWriter
         return sb.ToString();
     }
 
-    /// <summary>
-    /// Formats seconds into ASS timestamp standard: H:MM:SS.cc (e.g. 0:01:23.45).
-    /// </summary>
     public static string FormatAssTimestamp(double totalSec)
     {
         if (totalSec < 0) totalSec = 0;
@@ -118,9 +108,6 @@ public static class CaptionAssWriter
         return $"{hours}:{minutes:D2}:{seconds:D2}.{centis:D2}";
     }
 
-    /// <summary>
-    /// Escapes special ASS characters in text: { } \ and converts internal newlines to \N.
-    /// </summary>
     public static string EscapeAssText(string text)
     {
         if (string.IsNullOrEmpty(text)) return string.Empty;
@@ -153,9 +140,6 @@ public static class CaptionAssWriter
         return sb.ToString();
     }
 
-    /// <summary>
-    /// CAPTIONRTL_01 — true when <paramref name="text"/> contains Hebrew or Arabic letters (right-to-left scripts).
-    /// </summary>
     public static bool IsRightToLeft(string? text)
     {
         if (string.IsNullOrEmpty(text)) return false;
@@ -166,7 +150,6 @@ public static class CaptionAssWriter
         return false;
     }
 
-    /// <summary>U+200F RIGHT-TO-LEFT MARK: makes a line's base direction right-to-left whatever its first character.</summary>
     public const char RightToLeftMark = '\u200F';
 
     private static string BuildDialogueText(CaptionLayout layout, CaptionStyle style)
@@ -218,11 +201,6 @@ public static class CaptionAssWriter
         return @$"{{\an5\fs{layout.FontSize}\pos({centerX.ToString(CultureInfo.InvariantCulture)},{centerY.ToString(CultureInfo.InvariantCulture)})}}{content}";
     }
 
-    /// <summary>
-    /// AICAPTION_MEMESHIFT_01 — maps a caption from the rendered-video clock (before memes are spliced in) to the
-    /// finished-video clock: every splice at or before the start adds its duration; a caption that runs INTO a
-    /// splice ends where the meme starts. Pure.
-    /// </summary>
     public static (double Start, double End) ShiftForSplices(double start, double end, IReadOnlyList<(double AtSec, double DurationSec)>? splices)
     {
         if (splices == null || splices.Count == 0) return (start, end);
@@ -237,9 +215,6 @@ public static class CaptionAssWriter
         return (start + shift, clippedEnd + shift);
     }
 
-    /// <summary>
-    /// Writes the generated ASS subtitle script directly to a file.
-    /// </summary>
     public static void WriteToFile(
         string filePath,
         CaptionTrack track,

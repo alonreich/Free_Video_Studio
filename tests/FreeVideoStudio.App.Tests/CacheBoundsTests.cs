@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -18,11 +17,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// CACHEBOUND_01/02/03 — the lane disk cache, the meme thumbnail memory cache and the picker's
-/// viewport loader stay bounded under thousands of entries, repeated replacement, re-scans and
-/// cancellation, and never dispose a picture that is still leased.
-/// </summary>
 public sealed class CacheBoundsTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "FvsCacheBounds_" + Guid.NewGuid().ToString("N"));
@@ -49,7 +43,6 @@ public sealed class CacheBoundsTests : IDisposable
             if (Interlocked.Increment(ref Disposals) == 1) Interlocked.Decrement(ref _live);
         }
     }
-
 
     [Fact]
     public void ThousandsOfEntries_StayWithinTheByteAndEntryBudgets_AndEvictedValuesAreDisposedOnce()
@@ -184,7 +177,6 @@ public sealed class CacheBoundsTests : IDisposable
         Assert.Equal(0, cache.RetiredAliveCount);
     }
 
-
     private string MemeFile(string name, int bytes)
     {
         string p = Path.Combine(_root, name);
@@ -307,7 +299,6 @@ public sealed class CacheBoundsTests : IDisposable
         Assert.Equal(1, store.Count);
         Assert.Equal(3, lanes.CurrentCount);
     }
-
 
     private sealed class Row
     {
@@ -526,7 +517,6 @@ public sealed class CacheBoundsTests : IDisposable
         Assert.Equal(0, store.PinnedCount);
     }
 
-
     private LaneDiskStore NewStore(int maxFiles, long maxBytes) => new(Path.Combine(_root, "lanes"), maxFiles, maxBytes);
 
     private string[] CacheFiles(string ext = "*") => Directory.Exists(Path.Combine(_root, "lanes"))
@@ -647,7 +637,6 @@ public sealed class CacheBoundsTests : IDisposable
         Assert.True(File.Exists(fresh));
     }
 
-
     [Fact]
     public void FilmStrips_OnTheLaneAreNeverDisposed_AndOffLaneStripsStayWithinBudget()
     {
@@ -688,7 +677,6 @@ public sealed class CacheBoundsTests : IDisposable
         Assert.Equal(0, cache.RetiredAliveCount);
     }
 
-
     [Fact]
     public void AtomicWriteBytes_ReplacesWholeFiles_AndLeavesNoTemp()
     {
@@ -698,7 +686,6 @@ public sealed class CacheBoundsTests : IDisposable
         Assert.Equal(new byte[] { 9, 8 }, File.ReadAllBytes(p));
         Assert.Single(Directory.GetFiles(Path.GetDirectoryName(p)!));
     }
-
 
     [Fact]
     public void TheOncePerProcessPruneAndTheUnboundedThumbnailDictionaryStayGone()
@@ -729,7 +716,7 @@ public sealed class CacheBoundsTests : IDisposable
         string cornerPresenter = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "Infrastructure", "CornerMemeOverlayPresenter.cs"));
         Assert.DoesNotContain("ConcurrentDictionary<string, Task<CornerMemeFrameSet?>>", cornerPresenter);
         Assert.Contains("OwnedLruCache<CornerMemeFrameWindow>", cornerPresenter);
-        Assert.Contains("CACHEBOUND_05", cornerPresenter);
+        Assert.Contains("class CornerMemeFrameWindow", cornerPresenter);
     }
 
     private static WriteableBitmap MakeBmp(int w = 10, int h = 10)

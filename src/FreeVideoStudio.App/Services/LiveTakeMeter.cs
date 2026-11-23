@@ -1,11 +1,8 @@
-﻿
-using System;
+﻿using System;
 using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-
-/// <summary>VOLIVE_01 — an immutable view of the take in progress. Safe to hold on the UI thread.</summary>
 public sealed record LiveTakeSnapshot(
     long Buffers,
     long Frames,
@@ -15,14 +12,11 @@ public sealed record LiveTakeSnapshot(
     float MaxPeak,
     bool IsFrozen)
 {
-    /// <summary>Seconds of audio actually delivered by the device (frames / sample rate).</summary>
     public double CapturedSeconds => SampleRate > 0 ? Frames / (double)SampleRate : 0;
 
-    /// <summary>True once at least one buffer arrived — silence included. Zero buffers is a fault, not a take.</summary>
     public bool HasData => Buffers > 0 && Frames > 0;
 }
 
-/// <summary>VOLIVE_01 — bounded live capture envelope + captured-duration counter for one take.</summary>
 public sealed class LiveTakeMeter
 {
     public const double DefaultBucketSeconds = 0.05;
@@ -56,13 +50,10 @@ public sealed class LiveTakeMeter
         _peaks = new float[_maxBuckets];
     }
 
-    /// <summary>Upper bound on stored envelope values, whatever the take length.</summary>
     public int MaxBuckets => _maxBuckets;
 
-    /// <summary>Stored buckets right now (≤ <see cref="MaxBuckets"/>).</summary>
     public int StoredBuckets { get { lock (_lock) return _count; } }
 
-    /// <summary>Consumes one capture callback synchronously. The buffer is not retained.</summary>
     public void Append(in PcmBuffer pcm)
     {
         var format = pcm.Format;
@@ -114,7 +105,6 @@ public sealed class LiveTakeMeter
         }
     }
 
-    /// <summary>Ends the take. Further <see cref="Append"/> calls are ignored.</summary>
     public void Freeze()
     {
         lock (_lock)
@@ -125,7 +115,6 @@ public sealed class LiveTakeMeter
         }
     }
 
-    /// <summary>The newest immutable view. Rebuilt only when something changed since the last call.</summary>
     public LiveTakeSnapshot Snapshot()
     {
         lock (_lock)

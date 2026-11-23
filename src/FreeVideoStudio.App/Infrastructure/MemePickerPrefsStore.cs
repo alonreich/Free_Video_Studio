@@ -7,14 +7,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Infrastructure;
 
-/// <summary>
-/// MEMEFAV_01 / MEMELAST_01 — what the meme picker remembers between uses: the user's favourite memes
-/// (★, listed first), the memes used most recently (listed next) and the last way a meme was shown
-/// (full screen or corner, corner, size, sound, animation, transition), which becomes the starting
-/// choice for the next new meme. Kept by FILE NAME, like <see cref="MemePlacementStore"/>, so a meme
-/// folder that moves keeps its stars. Written atomically (ATOMICSTATE_01); a failed read or write
-/// never blocks the picker — it just starts from the defaults.
-/// </summary>
 public static class MemePickerPrefsStore
 {
     private const string FileName = "meme_picker.json";
@@ -23,7 +15,6 @@ public static class MemePickerPrefsStore
     private static readonly object _sync = new();
     private static State? _cache;
 
-    /// <summary>The remembered "how it plays" choice for a new meme.</summary>
     public sealed record LastChoice(
         MemePresentationMode Mode,
         MemeOverlayCorner Corner,
@@ -76,7 +67,6 @@ public static class MemePickerPrefsStore
         lock (_sync) return LoadUnlocked().Favorites.Contains(Path.GetFileName(memePath));
     }
 
-    /// <summary>0 = most recent; int.MaxValue when not recently used.</summary>
     public static int RecentRank(string memePath)
     {
         if (string.IsNullOrWhiteSpace(memePath)) return int.MaxValue;
@@ -103,7 +93,6 @@ public static class MemePickerPrefsStore
         });
     }
 
-    /// <summary>A meme was used: it moves to the front of the recent list and its choice is remembered.</summary>
     public static void RecordUse(string memePath, LastChoice choice)
     {
         Commit(st =>

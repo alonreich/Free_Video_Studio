@@ -7,7 +7,6 @@ namespace FreeVideoStudio.Core.Tests;
 
 public class OutputTimelineTests
 {
-
     [Fact]
     public void NormalizeCuts_EmptyOrNull_ReturnsEmptyList()
     {
@@ -74,7 +73,6 @@ public class OutputTimelineTests
         Assert.Equal(13.0, normalized[1].EndSec, 3);
     }
 
-
     [Fact]
     public void OutputTimeline_UniformSpeed_MapsBidirectionally()
     {
@@ -137,7 +135,6 @@ public class OutputTimelineTests
         Assert.Equal(25.0, timeline.OutputToSourceRelative(25.0), 3);
     }
 
-
     [Fact]
     public void OutputTimeline_FreezeSegment_ExtendsOutputAndHoldsSource()
     {
@@ -168,7 +165,6 @@ public class OutputTimelineTests
         Assert.Equal(13.0, timeline.SourceToOutput(10.0), 3);
         Assert.Equal(10.0, timeline.OutputToSourceRelative(13.0), 3);
     }
-
 
     [Fact]
     public void OutputTimeline_Cuts_ReducesOutputAndSnapsJoin()
@@ -239,7 +235,6 @@ public class OutputTimelineTests
         var tl3 = OutputTimeline.Create(60.0 * 1000.0, segments: null, cuts: endCut);
         Assert.Equal(0, tl3.ExtraChunkCost());
     }
-
 
     [Fact]
     public void OutputTimeline_Insertions_SlicesFinishedVideoAndReportsRanges()

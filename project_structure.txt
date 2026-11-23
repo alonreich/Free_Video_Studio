@@ -9,5 +9,23 @@ before touching this repository lives in ONE document:
 It holds the non-negotiable rules (including the ban on running .\Build.cmd),
 the reading order, what to record before finishing a task (docs\changes.md and
 docs\CHANGELOG.md), the build/test commands, which document answers what, and
-the repository map (§5) that used to live in this file.
+the repository map (now .\docs\REPO_MAP.md) that used to live in this file.
+
+DEVELOPER TOOLS (DEVTOOLS_01): every developer-only tool lives in
+.\developer_tools\ and nowhere else (there is no .\tools\ folder):
+
+    BuildLog.ps1, Manual_UnInstall.bat, Pull_Code_files.py,
+    Redundant_Code_Finder.py, SetConsoleFont.ps1
+    AiBakeOff\                  AI vendor comparison console
+    local_ai_pack\              builds the optional Local AI pack
+    Find_and_Remove_Comments.cmd  removes every comment and extra blank line
+                                from all code files (.cs, .ps1, .py, .cmd,
+                                .yml, .axaml/XML, .iss, .json, .sln,
+                                .editorconfig, ignore files, and the data
+                                lists build\sentinels.txt and
+                                build\revoked-signers.txt). It first
+                                lists every comment (full path, line, text) and
+                                changes nothing unless you answer Y:
+        .\developer_tools\Find_and_Remove_Comments.cmd   (or double-click it;
+        the C# project it runs is .\developer_tools\CommentRemover\)
 ===============================================================================

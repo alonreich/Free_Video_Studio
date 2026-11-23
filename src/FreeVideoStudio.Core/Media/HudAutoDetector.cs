@@ -10,135 +10,20 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// MAGICWAND_02 — AUTOMATIC HUD DETECTION. THE C# PORT OF THE OLD PYTHON TOOL'S magic_wand.py.
-///
-/// WHAT THE BUTTON USED TO DO, AND WHY IT WAS HIDDEN.
-/// <c>CropToolWindow.ShowMagicWandCandidates</c> drew six rectangles at hardcoded fractions of the
-/// frame — 0.65, 0.02, 0.32, 0.28 and five more like it — and presented them as detections. On any
-/// capture whose HUD did not happen to sit at those fractions it was confidently, silently wrong,
-/// which is worse than absent, so MAGICWAND_01 hid the button rather than delete a handler someone
-/// might one day back with a real analyser. This is that analyser.
-///
-/// WHAT IT ACTUALLY DOES, in the order it does it:
-///   1. Samples frames uniformly across the WHOLE clip (not the single frozen frame — see below).
-///   2. Takes the per-pixel TEMPORAL MEDIAN. Gameplay moves; the HUD does not. The median of sixty
-///      frames spread over a match is a picture of the parts of the screen that never change.
-///   3. Takes the per-pixel TEMPORAL STANDARD DEVIATION and inverts it into a stability mask, so
-///      "this pixel never changed" becomes a first-class, scoreable signal.
-///   4. Builds three more masks off the median: an adaptive threshold (dark HUD plates on bright
-///      gameplay), Canny edges (panel borders), and an HSV colour-anchor mask tuned to the four
-///      colour families a Fortnite HUD actually uses — health green, shield blue, loot amber,
-///      rarity purple/pink.
-///   5. For each of the five known HUD roles, looks ONLY inside that role's zone of the screen,
-///      finds connected blobs, filters them by size and aspect, and scores the survivors on eight
-///      weighted terms. Non-maximum suppression keeps the best one or two per role.
-///   6. Falls back to a generic detector if fewer than three roles were found, and to a Hough
-///      circle hunt if the minimap specifically was missed.
-///
-/// WHY IT ANALYSES THE CLIP AND NOT THE SNAPSHOT. The snapshot is one frame. One frame cannot tell
-/// a HUD panel from a wall, because both are just pixels; it is the fact that the panel is STILL
-/// THERE sixty frames later that identifies it. The old Python tool took the snapshot path as an
-/// argument too and then ignored it for exactly this reason (<c>extract_all(snapshot_path, ...)</c>
-/// reads <c>params["input_file"]</c>), and so does this. The snapshot's DIMENSIONS are what matter,
-/// and those come in as <c>sourceWidth</c>/<c>sourceHeight</c>.
-///
-/// WHY THERE IS NO OpenCV. Invariant 1 in docs/README.md is the Single Binary Executable Mandate.
-/// The primitives OpenCV supplied — adaptive threshold, morphology, contours, Canny, Hough — are
-/// implemented in <see cref="HudImageOps"/>, which documents each one against the call it replaces
-/// and every place the two differ.
-///
-/// COORDINATE SPACES. There are two, and mixing them is the classic way to break this file:
-///   • ANALYSIS space: every mask, blob and pixel index, 540 rows tall by construction.
-///   • SOURCE space: what the caller gets back, in the snapshot's own pixels.
-/// <see cref="ScaledToSourceRect"/> is the ONLY crossing point. Nothing else may convert.
-///
-/// THREADING. Pure computation with no UI types; call it from a background task. It honours the
-/// cancellation token between every stage and inside the frame reader.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public static class HudAutoDetector
 {
-    /// <summary>
-    /// One thing the detector found: a rectangle in the caller's SOURCE pixel space, plus the HUD
-    /// role it was found by.
-    ///
-    /// <see cref="RoleKey"/> is one of <see cref="HudConfig.HudKeys"/>, or null when the rectangle
-    /// came from the generic or circle fallback and the detector genuinely does not know what it
-    /// is looking at. The Python original threw this away — <c>extract_all</c> returned bare
-    /// QRects and the UI made the user label every one. Keeping it costs nothing and lets the Crop
-    /// Tool pre-select the right role when the user clicks a box, so a confident detection becomes
-    /// one click instead of two.
-    /// </summary>
     public readonly record struct DetectionRect(int X, int Y, int Width, int Height, string? RoleKey);
 
-    /// <summary>
-    /// WANDPROGRESS_01 — one progress beat, for a caller that wants to show its user what is
-    /// happening.
-    ///
-    /// WHY THIS EXISTS. Detection takes anywhere from three seconds to the full
-    /// <see cref="MaxSeconds"/> ceiling, and for every one of those seconds the only thing the
-    /// screen said was that a button had gone grey. A user cannot tell a long job from a hung one
-    /// without being told, so they sit and wonder whether the feature is working or broken — and
-    /// the honest answer is that both look identical from outside.
-    ///
-    /// <paramref name="Stage"/> is written for the person watching, not for the log: it says what
-    /// the machine is looking at in words that mean something to someone who has never heard of a
-    /// temporal median. <paramref name="Percent"/> is 0-100 and monotonic — it never goes
-    /// backwards, because a bar that retreats reads as a fault.
-    /// </summary>
     public readonly record struct DetectionProgress(int Percent, string Stage);
 
-    /// <summary>Analysis height, and therefore the whole pipeline's working resolution. 540 is the
-    /// Python original's figure and it is load-bearing: every pixel threshold, kernel size and
-    /// size range in <see cref="RoleSpecs"/> is calibrated against it. Changing it silently
-    /// re-tunes every one of them.</summary>
     private const int AnalysisHeight = 540;
 
-    /// <summary>Hard ceiling on the whole run. The old tool had the same idea
-    /// (<c>UI_BEHAVIOR.MAGIC_WAND_MAX_SECONDS</c>): a wand that never comes back is a hang, and the
-    /// user is staring at a disabled button while it thinks.</summary>
     public const int MaxSeconds = 60;
 
-    /// <summary>Above this clip length the sampler switches to keyframes only. See
-    /// <see cref="SampleFramesAsync"/> for why.</summary>
     private const double KeyframeOnlyThresholdSeconds = 150.0;
 
-    /// <summary>Upper bound on frames pulled in keyframe mode before subsampling. A two-hour
-    /// capture has thousands; we only ever want sixty, and each one costs ~1.5 MB of RAM.</summary>
     private const int MaxKeyframesRead = 400;
 
-
-    /// <summary>
-    /// Everything the detector knows about where one HUD role lives and what it looks like. Ported
-    /// value-for-value from <c>magic_wand.py :: _get_role_specs</c> — these numbers are the result
-    /// of the original tool's tuning against real captures and are NOT to be "tidied".
-    /// </summary>
-    /// <param name="RoleKey">The HudConfig key. The Python keyed these by DISPLAY name
-    /// ("Mini Map + Stats"); this build keys by the stable config key and lets the Crop Tool supply
-    /// the display name, so a renamed label can never break detection.</param>
-    /// <param name="Zone">Search window as fractions of the frame: x1, y1, x2, y2.</param>
-    /// <param name="MinW">Minimum acceptable width in SOURCE pixels.</param>
-    /// <param name="MaxW">Maximum acceptable width in SOURCE pixels.</param>
-    /// <param name="MinH">Minimum acceptable height in SOURCE pixels.</param>
-    /// <param name="MaxH">Maximum acceptable height in SOURCE pixels.</param>
-    /// <param name="MinAspect">Minimum width/height.</param>
-    /// <param name="MaxAspect">Maximum width/height.</param>
-    /// <param name="IdealAspect">The shape this role usually is; deviation costs score.</param>
-    /// <param name="IdealCx">Where this role usually sits, as a fraction of frame width.</param>
-    /// <param name="IdealCy">Same, as a fraction of frame height.</param>
-    /// <param name="Pad">Fixed padding added around a blob, in analysis pixels.</param>
-    /// <param name="MaxKeep">How many candidates NMS may keep for this role.</param>
-    /// <param name="ExpandL">Extra left padding as a fraction of the blob's own width.</param>
-    /// <param name="ExpandT">Extra top padding as a fraction of the blob's own height.</param>
-    /// <param name="ExpandR">Extra right padding as a fraction of the blob's own width.</param>
-    /// <param name="ExpandB">Extra bottom padding as a fraction of the blob's own height.</param>
-    /// <param name="MinAnchorRatio">Reject below this much HUD-coloured pixel coverage.</param>
-    /// <param name="MinStabilityRatio">Reject below this much never-changed coverage.</param>
-    /// <param name="MinPosScore">Reject below this much agreement with IdealCx/IdealCy.</param>
-    /// <param name="SecondaryMinRatio">A second candidate is kept only if it scores at least this
-    /// fraction of the winner. Used for the roles that legitimately appear twice.</param>
     private sealed record RoleSpec(
         string RoleKey,
         double ZoneX1, double ZoneY1, double ZoneX2, double ZoneY2,
@@ -150,11 +35,6 @@ public static class HudAutoDetector
         double MinAnchorRatio, double MinStabilityRatio, double MinPosScore,
         double SecondaryMinRatio);
 
-    /// <summary>
-    /// The five roles, in the order the Python's <c>role_order</c> listed them. Order matters twice:
-    /// it is the order primary picks are appended in, and it is the order the caller sees, so the
-    /// first box the user is offered is the minimap rather than whatever happened to sort first.
-    /// </summary>
     private static readonly RoleSpec[] RoleSpecs =
     [
         new("stats",
@@ -209,24 +89,6 @@ public static class HudAutoDetector
 
     ];
 
-
-    /// <summary>
-    /// Runs the whole pipeline and returns what it found, best-first within each role and roles in
-    /// <see cref="RoleSpecs"/> order.
-    ///
-    /// Returns an EMPTY list rather than throwing when the clip cannot be sampled or nothing scores
-    /// well enough — "found nothing" is a normal outcome the caller must handle anyway, and turning
-    /// it into an exception would make the ordinary case look like a failure in the logs.
-    /// </summary>
-    /// <param name="ffmpegPath">Resolved ffmpeg executable.</param>
-    /// <param name="videoPath">The clip to analyse.</param>
-    /// <param name="sourceWidth">Snapshot width. Results come back in this space.</param>
-    /// <param name="sourceHeight">Snapshot height. Results come back in this space.</param>
-    /// <param name="totalMs">Clip length, if known; 0 to have it probed.</param>
-    /// <param name="progress">WANDPROGRESS_01 — optional; receives a beat at every stage boundary
-    /// and once per sampled frame, so a caller can drive a real progress bar rather than a
-    /// spinner. Reports are posted on whatever thread the pipeline is running on, so a UI caller
-    /// must marshal (Progress&lt;T&gt; does this automatically when constructed on the UI thread).</param>
     public static async Task<IReadOnlyList<DetectionRect>> DetectAsync(
         string ffmpegPath,
         string videoPath,
@@ -294,17 +156,14 @@ public static class HudAutoDetector
     private const int PctRolesEnd = 94;
     private const int PctFallbacks = 97;
 
-    /// <summary>Maximum number of frames retained in the bounded ring buffer for temporal median calculation.</summary>
     internal const int MaxMedianFrames = 15;
 
-    /// <summary>Result of streaming frame analysis: bounded median frame, stability mask, and total frame count.</summary>
     internal sealed record SampleResult(
         byte[] Median,
         byte[] Stability,
         int FramesSampled,
         int LastProgress);
 
-    /// <summary>Monotonic progress reporter: ensures reported percentage never retreats.</summary>
     internal static void ReportProgress(
         IProgress<DetectionProgress>? progress,
         ref int lastProgress,
@@ -317,34 +176,6 @@ public static class HudAutoDetector
         progress.Report(new DetectionProgress(percent, stage));
     }
 
-
-    /// <summary>
-    /// Pulls <paramref name="targetFrames"/> frames spread evenly across the WHOLE clip, already
-    /// scaled to analysis size, as raw interleaved BGR.
-    ///
-    /// TWO MODES, AND THE REASON THERE ARE TWO.
-    /// The Python seeked with <c>CAP_PROP_POS_FRAMES</c> sixty times, which OpenCV implements as
-    /// sixty seek-and-decode-forward operations. That is fine at OpenCV's level of abstraction and
-    /// intolerable here: sixty ffmpeg processes, or one full decode of a long capture, and the user
-    /// is watching a disabled button the whole time.
-    ///
-    ///   • SHORT AND MEDIUM CLIPS (under <see cref="KeyframeOnlyThresholdSeconds"/>): one ffmpeg,
-    ///     full decode, <c>fps=</c> filter resampling the stream down to exactly the frames wanted.
-    ///     Uniform by construction, and a full decode of a two-minute clip is a few seconds.
-    ///   • LONG CLIPS: one ffmpeg with <c>-skip_frame nokey</c>, which decodes ONLY keyframes and
-    ///     is therefore roughly constant-cost per minute of footage no matter how long the file is.
-    ///     Keyframes land every 1-4 seconds in any normal game capture, so they already span the
-    ///     whole file; we read up to <see cref="MaxKeyframesRead"/> of them and then subsample
-    ///     uniformly in managed code. Deliberately NOT combined with <c>-frames:v</c>, which would
-    ///     take the first N keyframes and give us a detailed picture of the first two minutes and
-    ///     nothing at all about the rest.
-    ///
-    /// Both modes end up at "frames spread evenly over the clip", which is the only property the
-    /// median and the stability map actually depend on.
-    ///
-    /// A short read at the end of the stream is normal (ffmpeg closes the pipe mid-frame when the
-    /// stream ends); the partial frame is discarded rather than analysed as garbage.
-    /// </summary>
     private static async Task<SampleResult?> SampleFramesAsync(
         string ffmpegPath,
         string videoPath,
@@ -613,7 +444,6 @@ public static class HudAutoDetector
         return new SampleResult(median, stability, framesSampled, lastProgress);
     }
 
-
     private static IReadOnlyList<DetectionRect> Analyse(
         byte[] median,
         byte[] stability,
@@ -738,16 +568,6 @@ public static class HudAutoDetector
         return final;
     }
 
-    /// <summary>
-    /// WANDPROGRESS_01 — a role key in words the user recognises from the screen.
-    ///
-    /// Deliberately NOT the display names in CropToolWindow.Roles: this assembly has no reference
-    /// to the App project, and duplicating that table here would create two sources of truth for
-    /// something a user reads. These are short, plain descriptions of the THING, which is what a
-    /// progress line wants anyway ("Checking for the health bar" beats "Checking for
-    /// Own Health Bar (HP)"). An unknown key falls through to itself rather than to "unknown", so a
-    /// new role added to RoleSpecs still produces a sensible line before anyone updates this.
-    /// </summary>
     private static string FriendlyRoleName(string roleKey) => roleKey switch
     {
         "stats" => "mini map",
@@ -758,28 +578,11 @@ public static class HudAutoDetector
         _ => roleKey.Replace('_', ' ')
     };
 
-    /// <summary>Everything the scorers need, bundled so the signatures stay readable.</summary>
     private sealed record AnalysisContext(
         int Width, int Height,
         int SourceWidth, int SourceHeight,
         byte[] BaseMask, byte[] AnchorMask, byte[] EdgeMask, byte[] StabilityMask);
 
-
-    /// <summary>
-    /// Per-pixel, per-channel median across every sampled frame — <c>np.median(frames, axis=0)</c>.
-    ///
-    /// The median and not the mean, and this is not a detail: a mean smears a bright muzzle flash
-    /// across every pixel it touched, while a median ignores it entirely unless it was present in
-    /// more than half the frames. HUD elements are present in all of them.
-    ///
-    /// Quickselect rather than a sort. With sixty samples per channel and roughly 1.5 million
-    /// channels at analysis resolution, an insertion sort is ~1.4 billion comparisons and a
-    /// noticeable stall; quickselect is linear in the sample count and finishes in well under a
-    /// second. The median-of-an-even-count convention is the LOWER of the two middle values, which
-    /// is what OpenCV/NumPy's integer path effectively yields after the cast back to uint8.
-    /// Per-pixel, per-channel median across the bounded ring buffer of frames — <c>np.median(frames, axis=0)</c>.
-    /// Quickselect over at most 15 samples per channel completes in milliseconds with zero LOH churn.
-    /// </summary>
     internal static byte[] TemporalMedian(byte[][] frames, int frameCount, int width, int height)
     {
         int n = frameCount;
@@ -796,8 +599,6 @@ public static class HudAutoDetector
         return median;
     }
 
-    /// <summary>Hoare selection over a scratch buffer. Destroys <paramref name="data"/>, which is
-    /// fine — the caller refills it for every pixel.</summary>
     internal static byte QuickSelect(byte[] data, int count, int k)
     {
         int lo = 0, hi = count - 1;
@@ -822,22 +623,6 @@ public static class HudAutoDetector
         return data[lo];
     }
 
-    /// <summary>
-    /// The stability mask — <c>_compute_temporal_stability_mask</c>. Bright means "this pixel did
-    /// not change over the clip", which is the closest thing to a definition of "HUD" that exists.
-    ///
-    /// Per-pixel standard deviation over time (population, ddof=0, matching NumPy's default),
-    /// averaged across the three channels, min-max normalised, inverted, and thresholded hard at
-    /// 165. The open-then-close pass afterwards removes single-pixel speckle and then seals the
-    /// gaps inside what survived, so a panel reads as one region rather than a constellation.
-    ///
-    /// Under three frames there is nothing meaningful to measure and the Python returned an
-    /// all-pass mask rather than a misleading one; so does this.
-    /// The stability mask — converted directly from online variance accumulators (Welford's algorithm).
-    /// Bright means "this pixel did not change over the clip", which identifies static HUD panels.
-    /// Inverted min-max normalization via <see cref="HudImageOps.NormalizeMinMaxToByte"/>, hard thresholded
-    /// at 165, and morphological open/close to seal panel regions.
-    /// </summary>
     internal static byte[] TemporalStabilityMask(double[] runningM2, int k, int width, int height)
     {
         int pixels = width * height;
@@ -862,14 +647,6 @@ public static class HudAutoDetector
         return HudImageOps.MorphClose(opened, width, height, 7, 7);
     }
 
-    /// <summary>
-    /// <c>get_hud_color_anchors</c> — the four colour families a Fortnite HUD is actually built
-    /// from, in OpenCV's 8-bit HSV (hue 0..179).
-    ///
-    /// These four ranges are the single strongest signal the detector has, which is why the role
-    /// scorer weights their coverage at 44 out of roughly 130. Gameplay is muddy; a health bar is
-    /// a saturated green rectangle and nothing else on screen looks like one.
-    /// </summary>
     private static byte[] BuildColourAnchorMask(byte[] hsv, int width, int height)
     {
         var mask = new byte[width * height];
@@ -889,20 +666,6 @@ public static class HudAutoDetector
         return mask;
     }
 
-
-    /// <summary>
-    /// <c>_extract_role_candidates</c> — find and rank the candidates for one role.
-    ///
-    /// The role's zone is cut out of the three masks first, so a blob is only ever found where that
-    /// role could legitimately be. Inside the zone the search mask is
-    /// <c>(base OR close(anchor)) AND dilate(stability)</c>, then closed: read that as "dark
-    /// structure or HUD-coloured pixels, but only where nothing moved".
-    ///
-    /// Eight weighted terms decide the ranking; the weights are the Python's and are not arbitrary:
-    /// colour anchoring (44) dominates, then position agreement and aspect plausibility (16 each),
-    /// then edges (20), stability (16), fill (9) and size (6). Minimap candidates get a bonus for
-    /// having a busy top band, which is what the stats row above the map looks like.
-    /// </summary>
     private static List<(double Score, DetectionRect Rect)> ExtractRoleCandidates(AnalysisContext ctx, RoleSpec spec)
     {
         int sx1 = (int)(ctx.Width * spec.ZoneX1);
@@ -1009,18 +772,6 @@ public static class HudAutoDetector
         return NonMaxSuppress(scored, iouThreshold: 0.40, maxKeep: spec.MaxKeep);
     }
 
-    /// <summary>
-    /// <c>_extract_generic_candidates</c> — the "I do not recognise this HUD" path.
-    ///
-    /// Searches the union of every role's zone and applies shape, size and position heuristics
-    /// instead of role knowledge: corners and edges of the screen are preferred, the centre is
-    /// penalised (that is where the game is), and the middle-right band has to clear an extra bar
-    /// because that is where gameplay most often produces a stable-looking rectangle that is not a
-    /// HUD element at all.
-    ///
-    /// Returns candidates with no role key: the detector genuinely does not know what these are,
-    /// and guessing a label the user then has to correct is worse than asking.
-    /// </summary>
     private static List<(double Score, DetectionRect Rect)> ExtractGenericCandidates(AnalysisContext ctx)
     {
         byte[] zoneMask = BuildHudZoneMask(ctx);
@@ -1082,8 +833,6 @@ public static class HudAutoDetector
         return NonMaxSuppress(scored, iouThreshold: 0.42, maxKeep: 6);
     }
 
-    /// <summary><c>_build_hud_zone_mask</c> — the union of all five role zones, i.e. everywhere a HUD
-    /// element is allowed to be at all.</summary>
     private static byte[] BuildHudZoneMask(AnalysisContext ctx)
     {
         var mask = new byte[ctx.Width * ctx.Height];
@@ -1107,27 +856,6 @@ public static class HudAutoDetector
         return mask;
     }
 
-
-    /// <summary>
-    /// <c>_hunt_for_circles</c> — the minimap-specific last resort, run only when the role detector
-    /// found no minimap at all.
-    ///
-    /// A Hough gradient circle detector, matching <c>cv2.HoughCircles(HOUGH_GRADIENT, dp=1,
-    /// minDist=120, param1=50, param2=30, ...)</c> in structure: Canny at (param1/2, param1), then
-    /// every edge pixel votes for centres along its own gradient line at each radius in range, then
-    /// centres are the local maxima above param2, separated by minDist, and each centre's radius is
-    /// the most-supported distance to the edge pixels around it.
-    ///
-    /// APPROXIMATION, DECLARED: OpenCV refines centres to sub-pixel accuracy and groups radii with
-    /// a sorted-distance walk; this votes on an integer accumulator and takes the modal radius
-    /// bin. Results can therefore differ by a pixel or two from the Python's. That is acceptable
-    /// here and nowhere else in this file: this path produces a SUGGESTION the user then drags into
-    /// place, it runs only when everything better has already failed, and the ±10px margin the
-    /// original added around every circle it found is an order of magnitude larger than the
-    /// disagreement.
-    ///
-    /// Searched region is the top-right of the frame only, which is where a minimap is.
-    /// </summary>
     private static List<DetectionRect> HuntForCircles(AnalysisContext ctx, byte[] gray)
     {
         double scaleX = ctx.SourceWidth / (double)ctx.Width;
@@ -1246,13 +974,6 @@ public static class HudAutoDetector
         return results;
     }
 
-
-    /// <summary>
-    /// THE ONLY PLACE ANALYSIS PIXELS BECOME SOURCE PIXELS. <c>_scaled_to_original_rect</c>.
-    /// Everything upstream is in the 540-row analysis space; everything the caller sees is in the
-    /// snapshot's own space. If a coordinate ever looks wrong by a constant factor, it went around
-    /// this method.
-    /// </summary>
     private static DetectionRect ScaledToSourceRect(AnalysisContext ctx, int x, int y, int w, int h, string? roleKey)
     {
         double sx = ctx.SourceWidth / (double)ctx.Width;
@@ -1275,7 +996,6 @@ public static class HudAutoDetector
         return new DetectionRect(rx, ry, rw, rh, roleKey);
     }
 
-    /// <summary>Copies a rectangular window out of a full-frame mask. Callers have already clamped.</summary>
     private static byte[] CropMask(byte[] src, int srcWidth, int x, int y, int w, int h)
     {
         var dst = new byte[w * h];
@@ -1286,15 +1006,12 @@ public static class HudAutoDetector
         return dst;
     }
 
-    /// <summary>Fraction of a window that is non-zero in the given mask. The denominator is the
-    /// CLAMPED window, so a window hanging off the frame still yields a meaningful ratio.</summary>
     private static double Ratio(byte[] mask, AnalysisContext ctx, int x, int y, int w, int h)
     {
         (int nonZero, int total) = HudImageOps.CountNonZero(mask, ctx.Width, ctx.Height, x, y, w, h);
         return total <= 0 ? 0.0 : nonZero / (double)total;
     }
 
-    /// <summary><c>_rect_iou</c> — intersection over union.</summary>
     private static double Iou(DetectionRect a, DetectionRect b)
     {
         int ix = Math.Max(a.X, b.X);
@@ -1311,7 +1028,6 @@ public static class HudAutoDetector
         return inter / (double)Math.Max(1, union);
     }
 
-    /// <summary><c>_nms_candidates</c> — greedy non-maximum suppression, highest score first.</summary>
     private static List<(double Score, DetectionRect Rect)> NonMaxSuppress(
         List<(double Score, DetectionRect Rect)> scored, double iouThreshold, int maxKeep)
     {
@@ -1329,18 +1045,6 @@ public static class HudAutoDetector
         return kept;
     }
 
-    /// <summary>
-    /// <c>_merge_overlapping_rects</c> — unions any two rectangles that come within 25 source pixels
-    /// of each other, repeatedly, until nothing more merges.
-    ///
-    /// This is what turns "the health bar" and "the shield bar just above it" into one box the user
-    /// can place as a unit, which is how the HUD is actually laid out and how the exporter expects
-    /// to receive it.
-    ///
-    /// Role keys are preserved on merge: if either input knew what it was, the union inherits it.
-    /// When two DIFFERENT roles merge, the FIRST one wins, and since the caller appends in role
-    /// order that means the earlier (more important) role keeps the label.
-    /// </summary>
     private static List<DetectionRect> MergeOverlapping(List<DetectionRect> rects)
     {
         const int Slack = 25;
@@ -1387,9 +1091,6 @@ public static class HudAutoDetector
         return merged;
     }
 
-    /// <summary><c>_dedupe_rects_by_iou</c> — keeps the first of any group of near-identical boxes.
-    /// Input order is significant and is role order, so the labelled box survives the unlabelled
-    /// one.</summary>
     private static List<DetectionRect> DedupeByIou(List<DetectionRect> rects, double iouThreshold)
     {
         var kept = new List<DetectionRect>();

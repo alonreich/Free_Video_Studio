@@ -8,12 +8,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// PROJ_01..PROJ_09. These tests exist because a project file is the one artefact in the product
-/// whose loss is unrecoverable, and because the risk called out when this feature was proposed was
-/// specifically "version 2 of the app cannot open version 1's projects". The round-trip and
-/// forward-compatibility cases below are that risk, written down.
-/// </summary>
 public class ProjectDocumentTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "fvsproj_tests_" + Guid.NewGuid().ToString("N"));
@@ -75,7 +69,6 @@ public class ProjectDocumentTests : IDisposable
         },
     };
 
-
     [Fact]
     public void RoundTrip_PreservesEveryField()
     {
@@ -110,21 +103,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.Equal(original.Export, loaded.Export);
     }
 
-    /// <summary>
-    /// PROJ_10 — THE REGRESSION TEST FOR THE BUG THAT MADE THE INTEGRITY WARNING MEANINGLESS.
-    ///
-    /// <para>
-    /// <c>SizeBytes</c> and <c>ModifiedUtcSeconds</c> are <see langword="long"/>. The writer stored
-    /// them as long-backed <c>JsonValue</c>s; the reader asked for <see langword="double"/>, which
-    /// on a long-backed value returns false, so both came back 0 on EVERY load. Those two fields
-    /// are the whole source fingerprint, so <c>CheckSource</c> compared a real file against a
-    /// stored zero and shouted "this clip changed" at every project anyone ever reopened.
-    /// </para>
-    ///
-    /// <para>The values below are deliberately past 2^53 in the timestamp and well past
-    /// <see cref="int"/> in the size, so a reader that routes through <see langword="double"/> or
-    /// truncates to <see langword="int"/> fails here rather than silently rounding.</para>
-    /// </summary>
     [Fact]
     public void RoundTrip_PreservesSixtyFourBitSourceFingerprint()
     {
@@ -146,10 +124,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.Equal(original.Source.ModifiedUtcSeconds, loaded.Source.ModifiedUtcSeconds);
     }
 
-    /// <summary>
-    /// PROJ_10 — the reader stays forgiving about HOW a number was stored. A hand-edited file, or
-    /// one written by a future build that widened a field, must still load.
-    /// </summary>
     [Fact]
     public void Read_AcceptsNumbersStoredAsAnyNumericKind()
     {
@@ -168,7 +142,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.Equal(1920, loaded.Source.Width);
     }
 
-
     private static JsonObject SampleMaskConfig() => new()
     {
         ["schema_version"] = 4,
@@ -179,15 +152,6 @@ public class ProjectDocumentTests : IDisposable
         },
     };
 
-    /// <summary>
-    /// PROJ_11 — the mask survives a round trip INCLUDING its configuration.
-    ///
-    /// <para>
-    /// The name alone would not be enough: a profile is editable, so "Apex Legends" on this machine
-    /// in May is not necessarily "Apex Legends" as it was in March. Storing the resolved config is
-    /// what makes the project reproduce its own export.
-    /// </para>
-    /// </summary>
     [Fact]
     public void RoundTrip_PreservesTheHudMask()
     {
@@ -206,10 +170,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.True(loaded.Mask.MatchesLive(config));
     }
 
-    /// <summary>
-    /// PROJ_11 — the whole point of the fingerprint. A profile edited without being renamed is the
-    /// case a name comparison cannot catch, and it is the common case: users tune a mask in place.
-    /// </summary>
     [Fact]
     public void AnEditedProfileNoLongerMatchesTheStoredMask()
     {
@@ -223,11 +183,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.False(mask.MatchesLive(edited));
     }
 
-    /// <summary>
-    /// PROJ_11 — the fingerprint is content-addressed, not text-addressed. Two configs that would
-    /// produce the same filtergraph must agree, or the mismatch warning fires on key ordering and
-    /// gets ignored — which is how warnings die.
-    /// </summary>
     [Fact]
     public void TheFingerprintIgnoresKeyOrder()
     {
@@ -237,11 +192,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.Equal(ProjectMask.ComputeFingerprint(a), ProjectMask.ComputeFingerprint(b));
     }
 
-    /// <summary>
-    /// PROJ_11 — a hand-edited file whose checksum no longer describes its own config. The CONFIG
-    /// is the work; the fingerprint is a checksum of it. Recomputing keeps the "does the live
-    /// profile still match" comparison honest instead of comparing against a stale claim.
-    /// </summary>
     [Fact]
     public void AStoredFingerprintThatDoesNotDescribeItsConfigIsRecomputed()
     {
@@ -283,7 +233,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.Equal(1.25, loaded.Merge!.BaseSpeed);
         Assert.Equal(original.Merge!.Clips, loaded.Merge.Clips);
     }
-
 
     [Fact]
     public void T31a_ASchemaTwoMergeQueueMigratesToAnEdl()
@@ -379,10 +328,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.Single(loaded.Merge.ToEdl().Clips);
     }
 
-    /// <summary>
-    /// A queue entry with no path is not a clip. Restoring it as an empty row would leave the user
-    /// hunting for something to delete before the merge would run.
-    /// </summary>
     [Fact]
     public void MergeEntriesWithoutAPathAreDropped()
     {
@@ -398,10 +343,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.Single(loaded!.Merge!.Clips);
     }
 
-    /// <summary>
-    /// PROJ_02 / PROJ_11 — a schema-1 file has neither key, and that is not a failure. It opens as
-    /// a single-clip project with no mask recorded, which is exactly what it was.
-    /// </summary>
     [Fact]
     public void ASchemaOneFileLoadsWithNoMaskAndNoMerge()
     {
@@ -432,7 +373,6 @@ public class ProjectDocumentTests : IDisposable
         for (int i = 0; i < a.Chunks.Count; i++)
             Assert.Equal(a.Chunks[i], b.Chunks[i]);
     }
-
 
     [Fact]
     public void Read_FutureSchema_IsRefusedWithAnExplanation()
@@ -519,7 +459,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.Single(loaded.Cuts);
     }
 
-
     [Fact]
     public void Save_AppendsTheExtensionWhenTheUserOmitsIt()
     {
@@ -577,6 +516,24 @@ public class ProjectDocumentTests : IDisposable
     }
 
     [Fact]
+    public void Load_FileFromANewerVersion_IsRefusedEvenWhenAnOlderBackupExists()
+    {
+        string path = PathIn("montage.fvsproj");
+        ProjectStore.Save(SampleDocument() with { Title = "older" }, path);
+        ProjectStore.Save(SampleDocument() with { Title = "newer" }, path);
+        JsonObject newer = FreeVideoStudio.Core.Infrastructure.AtomicJsonFile.ReadObject(path)!;
+        newer["schema_version"] = ProjectDocument.SchemaVersion + 1;
+        FreeVideoStudio.Core.Infrastructure.AtomicJsonFile.WriteObject(path, newer);
+
+        ProjectDocument? loaded = ProjectStore.Load(path, out string? error, out bool fromBackup);
+
+        Assert.True(loaded is null, $"A project saved by a newer app version was silently replaced by its older backup ('{loaded?.Title}').");
+        Assert.False(fromBackup);
+        Assert.NotNull(error);
+        Assert.Contains("newer version", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Load_MissingFile_ReportsItRatherThanThrowing()
     {
         ProjectDocument? loaded = ProjectStore.Load(PathIn("nope.fvsproj"), out string? error, out _);
@@ -584,7 +541,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.Null(loaded);
         Assert.NotNull(error);
     }
-
 
     [Fact]
     public void CheckSource_MissingFile_IsMissing()
@@ -630,7 +586,6 @@ public class ProjectDocumentTests : IDisposable
         Assert.Equal(SourceIntegrity.Changed, stale.CheckSource());
     }
 
-
     [Fact]
     public void Recent_TouchMovesToTopAndDeduplicatesCaseInsensitively()
     {
@@ -667,7 +622,6 @@ public class ProjectDocumentTests : IDisposable
         RecentProject entry = Assert.Single(recent.Read());
         Assert.False(entry.Exists);
     }
-
 
     private static ProjectDocument FreshCaptureOf(ProjectDocument d) => d with
     {
@@ -837,4 +791,3 @@ public class ProjectDocumentTests : IDisposable
         Assert.Equal("Healing behind cover", restoredSession.CaptionTrack.Lines[0].Text);
     }
 }
-

@@ -19,25 +19,8 @@ public static class RuntimeLog
     private const long MaxTotalOldBytes = 50L * 1024 * 1024;
     private static readonly TimeSpan MaxOldAge = TimeSpan.FromDays(14);
 
-    /// <summary>
-    /// ISSUE_1 — hard ceiling on ONE log entry.
-    ///
-    /// Without this the 10 MB file cap is not enforceable: a single caller can hand the queue an
-    /// arbitrarily large string (the biggest real one today is the 400-line FFmpeg stderr dump in
-    /// ProcessWorker, roughly 40 KB), and one entry larger than MaxLogSize would blow the cap the
-    /// instant it is written to a freshly rotated, empty file. Oversized entries are truncated
-    /// with an explicit marker rather than dropped, so evidence is never silently lost.
-    /// </summary>
     private const int MaxSingleEntryBytes = 64 * 1024;
 
-    /// <summary>
-    /// ISSUE_1 — hard ceiling on ONE write batch.
-    ///
-    /// The drain loop used to empty the ENTIRE queue (up to 10,000 entries) into one StringBuilder
-    /// before the size check ran, so the batch itself was unbounded in both memory and bytes
-    /// written. Bounding the batch is what makes the "rotate before the cap is exceeded" check
-    /// meaningful: after a rotation the new file receives at most this much.
-    /// </summary>
     private const long MaxBatchBytes = 1L * 1024 * 1024;
 
     private static string? _cachedLogPath;
@@ -49,17 +32,14 @@ public static class RuntimeLog
     }
     private static Mutex? _globalMutex;
 
-    /// <summary>USERSCOPE_01 — the log file now lives in the per-user root, so its lock is per user too.</summary>
     private static readonly string LogMutexName =
         FreeVideoStudio.Core.Infrastructure.NamedSystemMutex.UserScopedName("FreeVideoStudioLogMutex");
     private static readonly BlockingCollection<string> _logQueue = new(10000);
     private static long _estimatedSize = -1;
     private static long _droppedCount;
 
-    /// <summary>ISSUE_4 — batches lost to disk errors since the last successful write.</summary>
     private static long _failedBatchCount;
 
-    /// <summary>ISSUE_3 — retention sweep runs once per process, on the writer thread.</summary>
     private static bool _startupCleanupDone;
     private static readonly string _sessionId = Guid.NewGuid().ToString("N")[..8];
     public static string SessionId => _sessionId;
@@ -69,7 +49,7 @@ public static class RuntimeLog
     {
         _processTask = Task.Factory.StartNew(ProcessLogQueue, TaskCreationOptions.LongRunning);
     }
-    
+
     public static event Action<string>? LogAppended;
 
     public static string LogPath
@@ -105,15 +85,8 @@ public static class RuntimeLog
         }
     }
 
-    /// <summary>
-    /// Returns true if the app is running in dev mode (FVS_DEV_LOG_DIR env var is set).
-    /// Used to enable verbose MPV debug logging and other dev-only diagnostics.
-    /// </summary>
     public static bool IsDevMode => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FVS_DEV_LOG_DIR"));
 
-    /// <summary>
-    /// Returns the dev log directory if in dev mode, otherwise null.
-    /// </summary>
     public static string? DevLogDir => Environment.GetEnvironmentVariable("FVS_DEV_LOG_DIR");
 
     public static void InitializeAppName(string[] args)
@@ -135,16 +108,16 @@ public static class RuntimeLog
             {
                 string lp = LogPath;
             }
-            catch { /* ignore — counter starts at 0 */ }
+            catch {  }
 
             if (!_exitRegistered)
             {
                 AppDomain.CurrentDomain.ProcessExit += (s, e) => {
                     SafeWrite($"{_appName} {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} [INFO] SHUTDOWN - Process exiting (PID: {Environment.ProcessId}, Session: {_sessionId})." + Environment.NewLine);
                     WriteExitSeparator();
-                    try { _logQueue.CompleteAdding(); } catch (System.Exception) { /* L7/ISSUE_13: the logger may NEVER log its own failure — that recurses. Loss is surfaced by the _failedBatchCount warning instead. */ }
+                    try { _logQueue.CompleteAdding(); } catch (System.Exception) {  }
                     _processTask?.Wait(3000);
-                    try { _globalMutex?.Dispose(); } catch (System.Exception) { /* L7/ISSUE_13: the logger may NEVER log its own failure — that recurses. Loss is surfaced by the _failedBatchCount warning instead. */ }
+                    try { _globalMutex?.Dispose(); } catch (System.Exception) {  }
                 };
                 _exitRegistered = true;
             }
@@ -189,10 +162,6 @@ public static class RuntimeLog
         Write("INFO", step, detail);
     }
 
-    /// <summary>
-    /// Verbose diagnostics (full commands, full file paths). Persisted only in dev mode
-    /// so the normal production log does not expose sensitive paths and commands.
-    /// </summary>
     public static void Debug(string step, string detail)
     {
         if (!IsDevMode) return;
@@ -209,13 +178,6 @@ public static class RuntimeLog
         Write("FAIL", step, detail);
     }
 
-    /// <summary>
-    /// ISSUE_13 — the App-side twin of <see cref="FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed"/>.
-    /// Read the long note on that method before changing either: they are one contract in two
-    /// assemblies, because Core cannot reference this class.
-    /// INFO gets the exception type, message and source location; the full stack is DEBUG (dev only),
-    /// per logging rule L8. Never throws (rule L3).
-    /// </summary>
     public static void Swallowed(
         Exception ex,
         [System.Runtime.CompilerServices.CallerMemberName] string member = "",
@@ -258,12 +220,6 @@ public static class RuntimeLog
         }
     }
 
-    /// <summary>
-    /// LOGVIS_01 — the per-key 30s gate shared by <see cref="SwallowedThrottled"/>, the production
-    /// Recoverable breadcrumb and <see cref="WarnThrottled"/>. True = emit now;
-    /// <paramref name="suppressed"/> = how many were swallowed by the gate since the last emission.
-    /// Allocation-free after the first hit per key; bounded because keys are call sites, not values.
-    /// </summary>
     public static bool TryPassThrottle(string key, out int suppressed)
     {
         long now = DateTime.UtcNow.Ticks;
@@ -286,13 +242,8 @@ public static class RuntimeLog
         return emit;
     }
 
-    /// <summary>LOGVIS_01 — a failure that did not change the user's outcome, written in production too.</summary>
     public static void Warn(string step, string detail) => Write("WARN", step, detail);
 
-    /// <summary>
-    /// LOGVIS_01 — <see cref="Warn"/> behind the shared 30s gate, keyed by step + the message's
-    /// leading text, so a failure repeating at frame rate costs one line per 30s plus a count.
-    /// </summary>
     public static void WarnThrottled(string step, string detail)
     {
         try
@@ -309,17 +260,9 @@ public static class RuntimeLog
     public static void AppendRaw(string line)
     {
         SafeWrite(line + Environment.NewLine);
-        try { LogAppended?.Invoke(line); } catch (System.Exception) { /* L7/ISSUE_13: the logger may NEVER log its own failure — that recurses. Loss is surfaced by the _failedBatchCount warning instead. */ }
+        try { LogAppended?.Invoke(line); } catch (System.Exception) {  }
     }
 
-    /// <summary>
-    /// Synchronous, queue-BYPASSING, best-effort direct write to the log file, flushed to
-    /// disk immediately. Crash handlers must use this: a native access violation (0xC0000005)
-    /// fast-fails the process before the async <see cref="ProcessLogQueue"/> can drain, so a
-    /// normal Info/Fail would never reach disk. This writes straight through so the crash line
-    /// survives the process dying. Uses the pre-resolved cached path to avoid taking locks in
-    /// a possibly-corrupted process state.
-    /// </summary>
     public static void EmergencyWrite(string step, string detail)
     {
         bool acquired = false;
@@ -331,7 +274,7 @@ public static class RuntimeLog
                 acquired = _globalMutex.WaitOne(500);
             }
             catch (AbandonedMutexException) { acquired = true; }
-            catch (System.Exception) { /* L7/ISSUE_13: the logger may NEVER log its own failure — that recurses. Loss is surfaced by the _failedBatchCount warning instead. */ }
+            catch (System.Exception) {  }
 
             string? path = _cachedLogPath;
             if (path == null)
@@ -341,21 +284,22 @@ public static class RuntimeLog
                 else if (DeploymentFootprint.IsRunningFromInstallPath()) path = Path.Combine(FreeVideoStudio.Core.Infrastructure.ApplicationPaths.CreateDefault().LogsDirectory, "FreeVideoStudio.log");
                 else path = DeploymentFootprint.InstallReportPath;
             }
-            
+
             if (!acquired) path += $".crash.{Environment.ProcessId}.log";
 
-            string line = $"{_appName} [s:{_sessionId}] {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} [FATAL] {step} - {detail}{Environment.NewLine}";
+            string safeDetail = FreeVideoStudio.Core.Diagnostics.SecretRedactor.RedactSecrets(detail);
+            string line = $"{_appName} [s:{_sessionId}] {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} [FATAL] {step} - {safeDetail}{Environment.NewLine}";
             byte[] bytes = Encoding.UTF8.GetBytes(line);
             using var fs = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
             fs.Write(bytes, 0, bytes.Length);
             fs.Flush(true);
         }
-        catch (System.Exception) { /* L7/ISSUE_13: the logger may NEVER log its own failure — that recurses. Loss is surfaced by the _failedBatchCount warning instead. */ }
+        catch (System.Exception) {  }
         finally
         {
             if (acquired && _globalMutex != null)
             {
-                try { _globalMutex.ReleaseMutex(); } catch (System.Exception) { /* L7/ISSUE_13: the logger may NEVER log its own failure — that recurses. Loss is surfaced by the _failedBatchCount warning instead. */ }
+                try { _globalMutex.ReleaseMutex(); } catch (System.Exception) {  }
             }
         }
     }
@@ -373,15 +317,12 @@ public static class RuntimeLog
             ResetForProcess();
         }
 
-        string line = $"{_appName} [s:{_sessionId}] {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} [{level}] {step} - {detail}{Environment.NewLine}";
+        string safeDetail = FreeVideoStudio.Core.Diagnostics.SecretRedactor.RedactSecrets(detail);
+        string line = $"{_appName} [s:{_sessionId}] {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} [{level}] {step} - {safeDetail}{Environment.NewLine}";
         SafeWrite(line);
-        try { LogAppended?.Invoke(line.TrimEnd()); } catch (System.Exception) { /* L7/ISSUE_13: the logger may NEVER log its own failure — that recurses. Loss is surfaced by the _failedBatchCount warning instead. */ }
+        try { LogAppended?.Invoke(line.TrimEnd()); } catch (System.Exception) {  }
     }
 
-    /// <summary>
-    /// The ONE funnel every log line passes through. ISSUE_1: oversized entries are truncated here
-    /// rather than at each call site, so no future caller can bypass the file-size guarantee.
-    /// </summary>
     private static void SafeWrite(string text)
     {
         if (_logQueue.IsAddingCompleted) return;
@@ -403,7 +344,7 @@ public static class RuntimeLog
             if (!_logQueue.TryAdd(text))
                 Interlocked.Increment(ref _droppedCount);
         }
-        catch (System.Exception) { /* L7/ISSUE_13: the logger may NEVER log its own failure — that recurses. Loss is surfaced by the _failedBatchCount warning instead. */ }
+        catch (System.Exception) {  }
     }
 
     private static void ProcessLogQueue()
@@ -417,7 +358,7 @@ public static class RuntimeLog
             _cachedLogPath = LogPath + $".{Environment.ProcessId}.local.log";
             _globalMutex = new Mutex(false);
         }
-        
+
         if (!_startupCleanupDone)
         {
             _startupCleanupDone = true;
@@ -482,7 +423,7 @@ public static class RuntimeLog
                                     CleanupOldLogs();
                                 }
                             }
-                            catch (System.Exception) { /* L7/ISSUE_13: the logger may NEVER log its own failure — that recurses. Loss is surfaced by the _failedBatchCount warning instead. */ }
+                            catch (System.Exception) {  }
                         }
 
                         using var fs = new FileStream(LogPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
@@ -513,7 +454,7 @@ public static class RuntimeLog
                     }
                 }
             }
-            catch (System.Exception) { /* L7/ISSUE_13: the logger may NEVER log its own failure — that recurses. Loss is surfaced by the _failedBatchCount warning instead. */ }
+            catch (System.Exception) {  }
         }
     }
 
@@ -559,10 +500,10 @@ public static class RuntimeLog
                 bool tooOld = f.CreationTimeUtc < cutoff;
                 if (overCount || overSize || tooOld)
                 {
-                    try { f.Delete(); } catch (System.Exception) { /* L7/ISSUE_13: the logger may NEVER log its own failure — that recurses. Loss is surfaced by the _failedBatchCount warning instead. */ }
+                    try { f.Delete(); } catch (System.Exception) {  }
                 }
             }
         }
-        catch (System.Exception) { /* L7/ISSUE_13: the logger may NEVER log its own failure — that recurses. Loss is surfaced by the _failedBatchCount warning instead. */ }
+        catch (System.Exception) {  }
     }
 }

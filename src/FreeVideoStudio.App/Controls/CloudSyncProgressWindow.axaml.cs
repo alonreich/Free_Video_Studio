@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -8,13 +7,6 @@ using Avalonia.Threading;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// ISSUE_11 — modal progress + cancel for a cloud asset download.
-///
-/// Usage: <c>await CloudSyncProgressWindow.RunAsync(owner, "Downloading memes", (progress, ct) =&gt; ...)</c>.
-/// The window owns the <see cref="CancellationTokenSource"/>, closes itself when the work
-/// finishes, and returns the worker's result. Cancelling is a normal outcome, not an error.
-/// </summary>
 public partial class CloudSyncProgressWindow : Window
 {
     private readonly CancellationTokenSource _cts = new();
@@ -23,6 +15,7 @@ public partial class CloudSyncProgressWindow : Window
     public CloudSyncProgressWindow()
     {
         InitializeComponent();
+        DialogFit.Apply(this, drag: true);
 
         var cancelBtn = this.FindControl<Button>("CancelSyncBtn");
         if (cancelBtn != null)
@@ -37,9 +30,6 @@ public partial class CloudSyncProgressWindow : Window
         }
     }
 
-    /// <summary>
-    /// Runs <paramref name="work"/> with this window shown modally over <paramref name="owner"/>.
-    /// </summary>
     public static async Task<(int downloaded, string? error)> RunAsync(
         Window owner,
         string title,

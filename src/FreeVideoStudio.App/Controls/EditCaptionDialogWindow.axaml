@@ -2,61 +2,69 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="FreeVideoStudio.App.Controls.EditCaptionDialogWindow"
         Title="Edit Commentary Caption"
-        Width="500" Height="360"
+        Width="540" MinHeight="300" SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
-        CanResize="False"
-        Background="{DynamicResource AppSurfaceBrush}">
+        CanResize="True"
+        Background="{DynamicResource AppSurfaceBrush}"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="30">
 
-    <Border Padding="20" Background="{DynamicResource AppSurfaceBrush}">
-        <Grid RowDefinitions="Auto,*,Auto">
-            <!-- Header -->
-            <StackPanel Grid.Row="0" Margin="0,0,0,16">
-                <TextBlock Name="DialogTitleText" Text="Edit Commentary Caption"
-                           FontSize="{DynamicResource AppFontSize14}" FontWeight="Bold"
-                           Foreground="{DynamicResource AppTextPrimaryBrush}"/>
-                <TextBlock Text="Adjust subtitle text, fine-tune timing, regenerate this line, or delete."
-                           FontSize="{DynamicResource AppFontSize11}"
-                           Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,3,0,0"/>
-            </StackPanel>
+    <Border Background="{DynamicResource AppSurfaceBrush}" BorderBrush="{DynamicResource WindowTitleBorder}" BorderThickness="3">
+        <Grid RowDefinitions="30,Auto,Auto,Auto">
+            <Border Grid.Row="0" Background="{DynamicResource TitleBarBackground}">
+                <TextBlock Name="DialogTitleText" Text="Edit Commentary Caption" Classes="WindowTitleText"
+                           Foreground="{DynamicResource TitleBarForeground}"/>
+            </Border>
 
-            <!-- Form Content -->
-            <StackPanel Grid.Row="1" Spacing="12">
-                <!-- Timing Row -->
+            <TextBlock Grid.Row="1" Margin="20,14,20,12" TextWrapping="Wrap"
+                       Text="Change the words or timing, rewrite this line with AI, or delete it."
+                       FontSize="{DynamicResource AppFontSize11}"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+
+            <StackPanel Grid.Row="2" Spacing="12" Margin="20,0,20,0">
                 <Grid ColumnDefinitions="*,16,*">
                     <StackPanel Grid.Column="0">
-                        <TextBlock Text="Start Time (seconds):" FontSize="{DynamicResource AppFontSize11}"
+                        <TextBlock Text="Start (seconds)" FontSize="{DynamicResource AppFontSize11}"
                                    Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,4"/>
-                        <TextBox Name="StartTimeBox" Classes="FormInput" Height="32"/>
+                        <TextBox Name="StartTimeBox" Classes="FormInput" MinHeight="32"
+                                 AutomationProperties.Name="Start time in seconds"
+                                 ToolTip.Tip="Seconds, for example 12.5 or 0:12.5"/>
                     </StackPanel>
                     <StackPanel Grid.Column="2">
-                        <TextBlock Text="End Time (seconds):" FontSize="{DynamicResource AppFontSize11}"
+                        <TextBlock Text="End (seconds)" FontSize="{DynamicResource AppFontSize11}"
                                    Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,4"/>
-                        <TextBox Name="EndTimeBox" Classes="FormInput" Height="32"/>
+                        <TextBox Name="EndTimeBox" Classes="FormInput" MinHeight="32"
+                                 AutomationProperties.Name="End time in seconds"
+                                 ToolTip.Tip="Seconds, for example 14 or 0:14"/>
                     </StackPanel>
                 </Grid>
 
-                <!-- Caption Text -->
                 <StackPanel>
-                    <TextBlock Text="Caption Text:" FontSize="{DynamicResource AppFontSize11}"
+                    <TextBlock Text="Caption text" FontSize="{DynamicResource AppFontSize11}"
                                Foreground="{DynamicResource AppTextSecondaryBrush}" Margin="0,0,0,4"/>
-                    <TextBox Name="CaptionTextBox" Classes="FormInput" Height="80"
-                             TextWrapping="Wrap" AcceptsReturn="True"/>
+                    <TextBox Name="CaptionTextBox" Classes="FormInput" MinHeight="80"
+                             TextWrapping="Wrap" AcceptsReturn="True"
+                             AutomationProperties.Name="Caption text"/>
                 </StackPanel>
+
+                <TextBlock Name="ValidationText" IsVisible="False" TextWrapping="Wrap"
+                           FontSize="{DynamicResource AppFontSize12}" FontWeight="SemiBold"
+                           Foreground="{DynamicResource AppWarningBrush}"
+                           AutomationProperties.LiveSetting="Assertive"/>
             </StackPanel>
 
-            <!-- Action Buttons Footer -->
-            <Grid Grid.Row="2" ColumnDefinitions="Auto,Auto,*,Auto,Auto" Margin="0,16,0,0">
-                <Button Grid.Column="0" Name="DeleteBtn" Content="🗑️ Delete Line"
-                        Classes="Danger" Height="32" Margin="0,0,8,0"
-                        ToolTip.Tip="Remove this caption line from commentary"/>
-                <Button Grid.Column="1" Name="RegenerateBtn" Content="⚡ Regenerate Line"
-                        Classes="Secondary" Height="32"
-                        ToolTip.Tip="Ask AI to regenerate commentary for this line's span"/>
+            <Grid Grid.Row="3" ColumnDefinitions="Auto,Auto,*,Auto,Auto" Margin="20,16,20,20">
+                <Button Grid.Column="0" Name="DeleteBtn" Content="🗑️ Delete line"
+                        Classes="Danger" Margin="0,0,8,0"
+                        ToolTip.Tip="Remove this caption line. Ctrl+Z brings it back."/>
+                <Button Grid.Column="1" Name="RegenerateBtn" Content="⚡ Rewrite with AI"
+                        Classes="Secondary"
+                        ToolTip.Tip="Ask AI to write new commentary for this line's time span"/>
 
                 <Button Grid.Column="3" Name="CancelBtn" Content="Cancel"
-                        Classes="Secondary" Height="32" Margin="0,0,8,0"/>
-                <Button Grid.Column="4" Name="SaveBtn" Content="✓ Save &amp; Apply"
-                        Classes="Primary" Height="32"/>
+                        Classes="Secondary" Margin="0,0,8,0" IsCancel="True"/>
+                <Button Grid.Column="4" Name="SaveBtn" Content="✓ Save"
+                        Classes="Primary" IsDefault="True"/>
             </Grid>
         </Grid>
     </Border>

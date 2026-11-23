@@ -1,4 +1,3 @@
-﻿
 using System.Diagnostics;
 using System.Globalization;
 using FreeVideoStudio.Core.Media;
@@ -9,26 +8,6 @@ using Xunit.Abstractions;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// LIBAVFRAME_01/03 — native single-frame decode vs the ffmpeg subprocess it replaces.
-///
-/// <para>
-/// FRAME SELECTION is compared EXACTLY: the "counter" fixtures paint the frame number into the
-/// picture (lossless H.264, B-frames, short GOP), so a native/ffmpeg disagreement about WHICH frame
-/// <c>-ss T</c> selects is a hard failure, at every timestamp, with zero tolerance.
-/// </para>
-///
-/// <para>
-/// PIXELS are compared with a justified tolerance, never byte-for-byte on PNG/JPEG files:
-///   • thumbnail path (<c>scale=160:-2</c> → PNG) vs native (same swscale, bicubic, same colour
-///     matrix, BGRA instead of rgb24): dimensions EXACT, mean |Δ| ≤ <see cref="ThumbMaxMae"/> and
-///     PSNR ≥ <see cref="ThumbMinPsnr"/> dB. The only legitimate differences are swscale's packed
-///     output writer (rgb24 vs bgra) and, for rotated sources, transposing before vs after the scale.
-///   • full-size still vs ffmpeg's same frame as lossless PNG: the thumbnail tolerance. ffmpeg's
-///     <c>-q:v 2</c> JPEG is compared for dimensions and its MAE reported (see the still test).
-/// Every measured value is written to the test output so the margin is visible on each run.
-/// </para>
-/// </summary>
 public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.Fixtures>
 {
     internal const double ThumbMaxMae = 2.5, ThumbMinPsnr = 35.0;
@@ -41,7 +20,6 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
         _fx = fx;
         _out = output;
     }
-
 
     [Theory]
     [InlineData("0", 0L)]
@@ -92,7 +70,6 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
         Assert.Equal((w, h), (ow, oh));
     }
 
-    /// <summary>libavutil/display.c av_display_rotation_set, reproduced to build test matrices.</summary>
     private static int[] RotationMatrix(double angle, bool hflip = false)
     {
         double radians = -angle * Math.PI / 180.0f;
@@ -141,7 +118,6 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
         Assert.Equal(new uint[] { 6, 5, 4, 3, 2, 1 }, Run(new(-1, true, true, false), out int w2, out int h2));
         Assert.Equal((3, 2), (w2, h2));
     }
-
 
     private sealed class FakeNative(NativeFrameStatus status, Exception? toThrow = null) : INativeFrameDecoder
     {
@@ -239,13 +215,11 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
         finally { Environment.SetEnvironmentVariable(VideoFrameGrabber.BackendEnvironmentVariable, old); }
     }
 
-
     public sealed class Fixtures : IAsyncLifetime
     {
         public string Root { get; private set; } = string.Empty;
         public string FfmpegPath => Path.Combine(Root, "binaries", "ffmpeg.exe");
         public string Work { get; } = Path.Combine(Path.GetTempPath(), $"fvs-libavframe-{Guid.NewGuid():N}");
-        /// <summary>Counter clips: the frame number is painted into the picture (see <see cref="FrameNumber"/>).</summary>
         public Dictionary<string, string> Counters { get; } = new();
         public Dictionary<string, string> Clips { get; } = new();
         public Dictionary<string, string> Invalid { get; } = new();
@@ -316,7 +290,7 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
         public Task DisposeAsync()
         {
             try { if (Directory.Exists(Work)) Directory.Delete(Work, recursive: true); }
-            catch (IOException) { /* temp cleanup only; a locked file here is reported by the lock assertions */ }
+            catch (IOException) {  }
             return Task.CompletedTask;
         }
     }
@@ -335,7 +309,6 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
         return (p.ExitCode, ms.ToArray(), await err);
     }
 
-    /// <summary>The exact MemeThumbnailCache subprocess (PNG on stdout), decoded to BGRA. Null = no picture.</summary>
     internal static async Task<DecodedVideoFrame?> FfmpegThumb(string ffmpeg, string path, string seek)
     {
         var (exit, png, _) = await RunFfmpeg(ffmpeg, ["-hide_banner", "-loglevel", "error", "-ss", seek, "-i", path,
@@ -343,7 +316,6 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
         return exit == 0 && png.Length > 0 ? DecodeImage(png) : null;
     }
 
-    /// <summary>The exact GeminiTrackingService subprocess (-q:v 2 JPEG file), decoded to BGRA. Null = no file.</summary>
     internal static async Task<DecodedVideoFrame?> FfmpegStill(string ffmpeg, string path, string seek, string work)
     {
         string jpg = Path.Combine(work, $"still-{Guid.NewGuid():N}.jpg");
@@ -360,7 +332,6 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
         return new DecodedVideoFrame(bgra.GetPixelSpan().ToArray(), bgra.Width, bgra.Height, bgra.RowBytes, null);
     }
 
-    /// <summary>Mean absolute difference over B,G,R and PSNR (dB). Dimensions must match.</summary>
     internal static (double Mae, double Psnr) Compare(DecodedVideoFrame a, DecodedVideoFrame b)
     {
         Assert.Equal((a.Width, a.Height), (b.Width, b.Height));
@@ -379,13 +350,6 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
         return (sum / n, mse == 0 ? double.PositiveInfinity : 10 * Math.Log10(255.0 * 255.0 / mse));
     }
 
-    /// <summary>
-    /// The painted frame number as a 4-sample signature: the Y level (in 12-level steps) at the
-    /// centres of the four QUADRANTS. No sample lies on the half/half boundary in any of the 8
-    /// orientations (the first version sampled the centre column, which IS the boundary once the
-    /// picture is transposed, and read a blend there), so two decodes of the SAME frame in the same
-    /// orientation have equal signatures and adjacent frames never do.
-    /// </summary>
     internal static (int TopLeft, int TopRight, int BottomLeft, int BottomRight) Signature(DecodedVideoFrame f)
     {
         int G(int x, int y) => f.Pixels[y * f.Stride + x * 4 + 1];
@@ -394,7 +358,6 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
         return (Level(G(x1, y1)), Level(G(x2, y1)), Level(G(x1, y2)), Level(G(x2, y2)));
     }
 
-    /// <summary>Frame number for an UPRIGHT counter frame (top = N mod 16, bottom = N / 16).</summary>
     internal static int UprightFrameNumber(DecodedVideoFrame f)
     {
         var s = Signature(f);
@@ -485,14 +448,6 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
         Assert.True(diffs.Count == 0, string.Join(Environment.NewLine, diffs));
     }
 
-    /// <summary>
-    /// Gemini stills. PIXELS are compared against ffmpeg's full-size frame as lossless PNG (same
-    /// command, PNG instead of -q:v 2 JPEG), with the thumbnail tolerance. The -q:v 2 JPEG itself is
-    /// compared for dimensions only, and its MAE is REPORTED, not asserted: Windows validation
-    /// (2026-10-04) showed BT.709-tagged saturated content at MAE ≈ 8.5 vs ffmpeg's JPEG because
-    /// ffmpeg stores BT.709 YCbCr in a JFIF file that every decoder reads as BT.601 — the native
-    /// still is the colour-correct one, and the lossless comparison proves it is the same frame.
-    /// </summary>
     [WindowsOnlyFact]
     public async Task FullSizeStillMatchesTheGeminiSubprocess()
     {
@@ -615,7 +570,9 @@ public sealed class LibAvFrameDecodeTests : IClassFixture<LibAvFrameDecodeTests.
     public async Task RapidCancellationIsBoundedAndLeavesNoLock()
     {
         var rng = new Random(4321);
-        string clip = _fx.Clips.FirstOrDefault(kv => kv.Key.StartsWith("meme/", StringComparison.Ordinal)).Value ?? _fx.Counters["counter-bframes.mp4"];
+        string source = _fx.Clips.FirstOrDefault(kv => kv.Key.StartsWith("meme/", StringComparison.Ordinal)).Value ?? _fx.Counters["counter-bframes.mp4"];
+        string clip = Path.Combine(FreeVideoStudio.Testing.TestArtifactDirectory.SuiteWork(FreeVideoStudio.Testing.TestOutputSuite.Name), $"frame-cancellation-{Guid.NewGuid():N}{Path.GetExtension(source)}");
+        File.Copy(source, clip);
         int cancelled = 0, completed = 0;
         long worst = 0;
         for (int i = 0; i < 150; i++)

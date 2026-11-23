@@ -3,18 +3,11 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// Mission 8 — UNDO_26 / UNDO_27 / UNDO_28. The behaviour of the three histories is unit-tested in
-/// Core (<c>SharedHistoryMigrationTests</c>), where the snapshot types and the Granular adapter
-/// live. These pin the WINDOW wiring that a compiler is happy to lose: which handler records, which
-/// one does not, and that the old private engines did not creep back.
-/// </summary>
 public sealed class SharedHistoryWiringTests
 {
     private static string Src(string file) =>
         File.ReadAllText(Path.Combine(RepoRoot.Path, "src", "FreeVideoStudio.App", file));
 
-    /// <summary>The body of the first method named <paramref name="name"/>, by brace matching.</summary>
     private static string Body(string code, string name)
     {
         Match m = Regex.Match(code, @"\b" + Regex.Escape(name) + @"\s*\([^)]*\)\s*\{");
@@ -30,7 +23,6 @@ public sealed class SharedHistoryWiringTests
 
     private static int Count(string text, string pattern) => Regex.Matches(text, pattern).Count;
 
-
     [Fact]
     public void NoWindowOwnsAPrivateHistoryEngineAnyMore()
     {
@@ -45,11 +37,12 @@ public sealed class SharedHistoryWiringTests
             Assert.DoesNotMatch(@"\bUndoGestureIdleMs\b|\bMaxUndoDepth\b", code);
         }
 
-        Assert.Contains("UndoStack<CropLayoutSnapshot>", Src("CropToolWindow.History.cs"));
-        Assert.Contains("GranularEditHistory", Src("GranularSpeedEditorWindow.History.cs"));
+        Assert.Contains("_edit.Capture()", Src("CropToolWindow.History.cs"));
+        Assert.Contains("UndoStack<CropLayoutSnapshot>", File.ReadAllText(Path.Combine(RepoRoot.Path, "src", "FreeVideoStudio.Core", "Editing", "CropEditSession.cs")));
+        Assert.Contains("_edit.History.UndoCount", Src("GranularSpeedEditorWindow.History.cs"));
+        Assert.Contains("public GranularEditHistory History", File.ReadAllText(Path.Combine(RepoRoot.Path, "src", "FreeVideoStudio.Core", "Editing", "GranularEditSession.History.cs")));
         Assert.Contains("UndoStack<MusicWizardSnapshot>", Src("MusicWizardWindow.History.cs"));
     }
-
 
     [Fact]
     public void T10_T11_Crop_PointerGestureRecordsOnceOnRelease_NeverWhileMoving()
@@ -87,7 +80,6 @@ public sealed class SharedHistoryWiringTests
         Assert.Contains("NextRedoLabel", Src("CropToolWindow.History.cs"));
     }
 
-
     [Fact]
     public void T16_Granular_EveryGestureCallSiteKeepsItsCoalesceKey()
     {
@@ -111,7 +103,6 @@ public sealed class SharedHistoryWiringTests
         Assert.Contains("_edit.AdoptParkedHistory()", Src("GranularSpeedEditorWindow.History.cs"));
     }
 
-
     [Fact]
     public void T08_T09_Music_ShortcutsGoThroughTheSharedTable_AndYieldToTextInput()
     {
@@ -129,10 +120,10 @@ public sealed class SharedHistoryWiringTests
         Assert.Contains("_history.ReplaceCurrent(", Body(history, "ApplyWizardSnapshotAsync"));
         Assert.Contains("PointerReleasedEvent", Body(history, "WireWizardHistory"));
 
-        string window = Src("MusicWizardWindow.axaml.cs") + Src("MusicWizardWindow.Playlist.cs") + Src("MusicWizardWindow.SongLane.cs");
+        string window = Src("MusicWizardWindow.axaml.cs") + Src("MusicWizardWindow.Playlist.cs") + Src("MusicWizardWindow.SongLane.cs") + Src("MusicWizardWindow.Steps.cs");
         Assert.True(Count(window, @"\bEndWizardGesture\s*\(\s*\)") >= 2, "both waveform scrubs must close their gesture");
-        foreach (string method in new[] { "OnTrackSelected", "ApplySongStartSeconds", "SetOffsetFromPointer",
-                                          "HandleSongOffsetKeyDown", "BuildAutoFillQueue", "MoveQueuedTrack", "RemoveSelectedQueuedTrack" })
+        foreach (string method in new[] { "ApplySongStartSeconds", "ApplyPartWindow", "AcceptPartAsync",
+                                          "BuildAutoFillQueue", "MoveQueuedTrack", "RemoveSelectedQueuedTrack" })
             Assert.Contains("RecordWizardEdit();", Body(window, method));
     }
 }

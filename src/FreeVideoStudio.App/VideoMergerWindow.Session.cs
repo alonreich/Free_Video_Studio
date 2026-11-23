@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.IO;
@@ -11,21 +11,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// MERGESESSION_01 — THE MERGER SURVIVES ITS WINDOW (Video-Merger-Migration.md P3.2, D6).
-///
-/// • Every queue row has a stable ClipId (<see cref="ClipIdList"/>), kept in step with the queue's
-///   collection events, so effects and anchors follow a clip through reorders.
-/// • Any edit calls <see cref="NoteEdlChanged"/>. It only POSTS one coalesced capture; the capture
-///   (<see cref="MergerSession.Capture"/>, pure and cheap) runs once per burst on the UI thread and
-///   hands the edit list to the project document (ToolNavigator) and to the write-behind autosave,
-///   whose I/O is on the thread pool. Nothing here blocks the UI thread.
-/// • On open with an empty queue the Merger restores the project's edit list, or else the autosave
-///   (read off the UI thread). A file that is gone is left out and named; a file that changed is
-///   kept, re-analysed and named. Nothing here can crash the window.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class VideoMergerWindow
 {
     private static readonly Lazy<MergerAutosaveStore> MergerAutosave =
@@ -33,11 +18,33 @@ public partial class VideoMergerWindow
 
     private readonly ClipIdList _clipIds = new();
     private MergeEdl? _lastEdl;
+    private CaptionTrack? _captionTrack;
     private bool _edlCapturePosted;
     private bool _restoringSession;
 
-    /// <summary>The newest captured edit list (undo, P3.3, reads this).</summary>
     private MergeEdl CurrentEdl => _lastEdl ?? MergeEdl.Empty;
+
+    internal const string DoneCleanTag = "DONECLEAN_01";
+
+    private bool _mergedCleanSinceLastEdit;
+
+    private void MarkMergeFinishedClean()
+    {
+        _mergedCleanSinceLastEdit = true;
+        RuntimeLog.Info("MERGER", $"{DoneCleanTag}: merge finished; closing now leaves an empty merger for next time.");
+    }
+
+    private void WipeFinishedMergeForExit()
+    {
+        try
+        {
+            MergerAutosave.Value.Clear();
+            AtomicJsonFile.TryDelete(MergerAutosave.Value.FilePath);
+            Services.ToolNavigator.PublishMergeEdl(MergeEdl.Empty);
+            RuntimeLog.Info("MERGER", $"{DoneCleanTag}: closed after a finished merge; the saved queue was cleared.");
+        }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+    }
 
     private void InitializeSession()
     {
@@ -75,7 +82,6 @@ public partial class VideoMergerWindow
 
     private int _removedPending;
 
-    /// <summary>REMOVEUX_01 — one notice per removal gesture (a multi-row remove raises several events).</summary>
     private void NoteClipsRemoved(int count)
     {
         bool first = _removedPending == 0;
@@ -91,7 +97,6 @@ public partial class VideoMergerWindow
         }, DispatcherPriority.Background);
     }
 
-    /// <summary>Something the edit list records changed: capture once, soon, on the UI thread.</summary>
     private void NoteEdlChanged()
     {
         _appliedSpeed = double.NaN;
@@ -104,7 +109,6 @@ public partial class VideoMergerWindow
         }, DispatcherPriority.Background);
     }
 
-    /// <summary>Captures the edit list now and publishes it. <paramref name="flush"/> also starts the autosave write immediately (close path).</summary>
     private void CaptureEdlNow(bool flush)
     {
         if (_restoringSession) return;
@@ -120,11 +124,18 @@ public partial class VideoMergerWindow
                 ThumbPath = _thumbPath,
                 ThumbSourceSec = _thumbSourceSec,
                 Music = _musicIsStale ? null : MusicStateFromResult(_musicResult),
+                Captions = _captionTrack,
+                ClearCaptions = _captionTrack == null && _lastEdl?.Captions != null,
             };
             var edl = MergerSession.Capture(state, AnalysisFor, FileIdentity, TimelineMatchesQueue() ? _timeline : null, _lastEdl);
             if (_musicIsStale && _lastEdl?.Music is EdlMusic keep) edl = edl with { Music = keep };
 
             bool changed = !Equals(edl, _lastEdl);
+            if (changed && _mergedCleanSinceLastEdit)
+            {
+                _mergedCleanSinceLastEdit = false;
+                RuntimeLog.Info("MERGER", $"{DoneCleanTag}: the queue changed after a finished merge; it is kept for next time again.");
+            }
             _lastEdl = edl;
             RecordHistory(edl);
             Services.ToolNavigator.PublishMergeEdl(edl);
@@ -169,7 +180,6 @@ public partial class VideoMergerWindow
             r.MusicVolume, r.VideoVolume, r.LoopMusic, r.EnableDucking, r.EnableCarving, starts, ends);
     }
 
-    /// <summary>Opened with an empty queue: bring back the project's merge, or the autosaved one.</summary>
     private async Task RestoreSessionAsync()
     {
         if (VideoQueue.Count > 0) return;
@@ -248,4 +258,3 @@ public partial class VideoMergerWindow
 
     internal Task ApplyRestorePlanForTesting(MergerRestorePlan plan) => ApplyRestorePlanAsync(plan, "test");
 }
-

@@ -1,5 +1,4 @@
-﻿
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
@@ -64,7 +63,7 @@ public partial class AmbientDropzoneControl : UserControl
     {
         if (_isPulsing || _pulseBorder == null) return;
         _isPulsing = true;
-        
+
         var transform = _pulseBorder.RenderTransform as ScaleTransform;
         if (transform == null)
         {

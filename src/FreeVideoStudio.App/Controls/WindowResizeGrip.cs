@@ -1,5 +1,4 @@
-﻿
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Automation;
 using Avalonia.Input;
@@ -11,49 +10,15 @@ using ShapePath = Avalonia.Controls.Shapes.Path;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════
-/// GRIP_01 — ONE RESIZE GRIP, EVERY WINDOW, AND IT ACTUALLY RESIZES.
-///
-/// Every window in the suite is borderless (`ExtendClientAreaToDecorationsHint="True"`), so the
-/// OS draws no resize frame and the only affordance a user has for "you can drag this corner" is
-/// the one the app draws itself. The state before this class:
-///
-///   Voice Over Studio      grip drawn, wired.                     works
-///   Granular Speed Editor  grip drawn, NEVER WIRED.               a dead decoration — the
-///                                                                 single worst outcome, because
-///                                                                 it advertises a control that
-///                                                                 does nothing when grabbed
-///   Main App, Music Wizard, Video Merger,
-///   Crop Tools, Settings   no grip at all.
-///
-/// Two near-identical copies of the same 20 lines had already drifted into "one works, one does
-/// not", which is exactly what a shared implementation prevents. Attach() is now the only way a
-/// window gets a grip: it reuses the Border the XAML already declares where there is one, builds
-/// one where there is not, and wires the behaviour identically in both cases.
-///
-/// ⚠️ NORTH STAR 1 — the mark is vector geometry built in memory (PathGeometry), never an image
-/// asset beside the binary.
-/// ⚠️ NORTH STAR 5 — the stroke is bound to the `AppBorderBrush` TOKEN through a resource
-/// observable, not resolved once to a literal, so it follows a theme change like everything else.
-/// ══════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public static class WindowResizeGrip
 {
-    /// <summary>The corner mark: three diagonal strokes, shortest at the outside.</summary>
     private const string GripGeometry = "M 8,20 L 20,8 M 13,20 L 20,13 M 18,20 L 20,18";
 
-    /// <summary>Matches the hit target every existing grip in the suite already used.</summary>
     private const double GripSizePx = 24;
 
     private const double RestingOpacity = 0.75;
     private const double HoverOpacity = 1.0;
 
-    /// <summary>
-    /// Gives <paramref name="window"/> a working bottom-right resize grip. Safe to call on a
-    /// window whose XAML already declares a Border named "ResizeGrip" — that one is adopted
-    /// rather than duplicated.
-    /// </summary>
     public static void Attach(Window window, string tooltip)
     {
         if (window == null) return;
@@ -97,12 +62,6 @@ public static class WindowResizeGrip
         };
     }
 
-    /// <summary>
-    /// Puts the grip in front of everything in the window. Most windows root a Panel and the grip
-    /// simply joins it; a window rooted on a single control (Crop Tools roots a Border) is wrapped
-    /// in a Grid first. Wrapping preserves the window's name scope, so every existing
-    /// FindControl in that window keeps working.
-    /// </summary>
     private static IBrush ResolveBrush(Window window, string token, IBrush fallback)
     {
         try

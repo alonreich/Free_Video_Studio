@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -11,7 +10,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>LOGVIS_01 — a Recoverable fault leaves a production breadcrumb, once per call site per 30s.</summary>
 public sealed class FaultVisibilityTests
 {
     private sealed class SilentNotifier : IUserNotifier
@@ -19,6 +17,7 @@ public sealed class FaultVisibilityTests
         public void Notify(string text, NoticeKind kind = NoticeKind.Info) { }
         public void Alert(string title, string message) { }
         public Task<bool> ConfirmAsync(string title, string message, string confirmText, string cancelText) => Task.FromResult(true);
+        public Task<ConfirmDialogWindow.SaveChangesChoice> AskSaveChangesAsync(string title, string message) => Task.FromResult(ConfirmDialogWindow.SaveChangesChoice.BackToEditing);
     }
 
     [Fact]

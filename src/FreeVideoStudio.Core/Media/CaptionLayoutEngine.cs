@@ -6,9 +6,6 @@ using SkiaSharp;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// AICAPTION_LAYOUT_01 — one laid-out subtitle line with exact positioning and wrapped words.
-/// </summary>
 public sealed record CaptionLayoutLine(
     double X,
     double Y,
@@ -17,9 +14,6 @@ public sealed record CaptionLayoutLine(
     string Text,
     IReadOnlyList<MappedCaptionWord> Words);
 
-/// <summary>
-/// AICAPTION_LAYOUT_01 — complete layout result for one caption line on the target canvas.
-/// </summary>
 public sealed record CaptionLayout(
     int LineId,
     double OutputStartSec,
@@ -31,18 +25,12 @@ public sealed record CaptionLayout(
     int FontSize,
     IReadOnlyList<CaptionLayoutLine> Lines);
 
-/// <summary>
-/// AICAPTION_LAYOUT_01 — Pure geometric layout engine for live commentary captions.
-/// Handles font measurement, word-wrapping (max 8 words/line, max 2 lines), portrait/landscape canvas
-/// rules (avoiding 150 px top/bottom voids in portrait), and dynamic collision avoidance over HUD rects.
-/// </summary>
 public static class CaptionLayoutEngine
 {
     public const int PortraitWidth = 1080;
     public const int PortraitHeight = 1920;
     public const int PortraitVoidTop = 150;
     public const int PortraitVoidBottom = 150;
-    public const int PortraitContentHeight = 1620;
 
     public const int LandscapeWidth = 1920;
     public const int LandscapeHeight = 1080;
@@ -50,31 +38,16 @@ public static class CaptionLayoutEngine
     public const int MaxWordsPerLine = 8;
     public const int MaxLinesOnScreen = 2;
 
-    /// <summary>AICAPTION_LAYOUT_02 — default caption font size on a 1080x1920 portrait canvas (was 54).</summary>
     public const int PortraitFontSize = 76;
 
-    /// <summary>AICAPTION_LAYOUT_02 — default caption font size on a 1920x1080 landscape canvas (was 58).</summary>
     public const int LandscapeFontSize = 64;
 
-    /// <summary>
-    /// AICAPTION_LAYOUT_02 — where the DEFAULT (BottomContent) caption's CENTRE sits, as a fraction of the canvas
-    /// height: exactly on the line between the upper two-thirds and the lower third. Above the bottom HUD band
-    /// (health / shield / stamina / hotbar) and below the action in the middle of the screen. HUD pieces that
-    /// still overlap push it further up (<see cref="AvoidHudCollisions"/>).
-    /// </summary>
     public const double DefaultCenterFraction = 2.0 / 3.0;
 
-    /// <summary>AICAPTION_LAYOUT_02 — the gap kept between a caption and a HUD piece it was moved off.</summary>
     public const double HudGapPx = 24.0;
 
-    /// <summary>
-    /// CAPTIONPLACE_01 — the TOP of a <see cref="CaptionPosition.Middle"/> caption box, as a fraction of the canvas
-    /// height: just under the centre, so the crosshair / aim point in the middle of the screen stays clear while
-    /// the text still sits where the eyes are. HUD pieces it overlaps push it DOWN.
-    /// </summary>
     public const double MiddleTopFraction = 0.54;
 
-    /// <summary>CAPTIONSIZE_01 — text size multiplier. Medium (1.0) is the size used before the option existed.</summary>
     public static double SizeScale(CaptionSize size) => size switch
     {
         CaptionSize.Small => 0.8,
@@ -82,14 +55,9 @@ public static class CaptionLayoutEngine
         _ => 1.0,
     };
 
-    /// <summary>CAPTIONSIZE_01 — the base font size for a canvas and a size choice.</summary>
     public static int BaseFontSize(bool isPortrait, CaptionSize size) =>
         (int)Math.Round((isPortrait ? PortraitFontSize : LandscapeFontSize) * SizeScale(size));
 
-    /// <summary>
-    /// Computes the layout for a single <see cref="MappedCaptionLine"/> given canvas dimensions, mode,
-    /// placement preset, and optional active HUD bounding boxes in output canvas pixels.
-    /// </summary>
     public static CaptionLayout ComputeLayout(
         MappedCaptionLine captionLine,
         int outputW,
@@ -121,22 +89,18 @@ public static class CaptionLayoutEngine
             wrappedLines = WrapCaptionWords(captionLine.Words, font, paint, (float)maxTextWidth);
         }
 
+        int shrinkFloor = Math.Max(MinFontSize, (int)(baseFontSize * ShrinkFloorFraction));
+        while (wrappedLines.Count > MaxLinesOnScreen && fontSize > shrinkFloor && captionLine.Words.Count <= MaxWordsPerLine * MaxLinesOnScreen)
+        {
+            fontSize = Math.Max(shrinkFloor, (int)(fontSize * 0.92));
+            font.Size = fontSize;
+            wrappedLines = WrapCaptionWords(captionLine.Words, font, paint, (float)maxTextWidth);
+        }
+
         if (wrappedLines.Count > MaxLinesOnScreen)
         {
-            var firstLine = wrappedLines[0];
-            var remainderWords = new List<MappedCaptionWord>();
-            for (int i = 1; i < wrappedLines.Count; i++)
-                remainderWords.AddRange(wrappedLines[i].Words);
-
-            string secondLineText = string.Join(" ", remainderWords.Select(w => w.Text));
-            float secondLineWidth = MeasureTextWidth(secondLineText, font, paint);
-            float lineHeight = fontSize * 1.25f;
-
-            wrappedLines = new List<CaptionLayoutLine>
-            {
-                firstLine,
-                new CaptionLayoutLine(0, 0, secondLineWidth, lineHeight, secondLineText, remainderWords)
-            };
+            wrappedLines = FoldIntoTwoRows(captionLine.Words, font, paint, (float)maxTextWidth);
+            fontSize = (int)font.Size;
         }
 
         double totalTextHeight = wrappedLines.Sum(l => l.Height);
@@ -179,6 +143,9 @@ public static class CaptionLayoutEngine
             positionedLines);
     }
 
+    private static double Fit(double value, double lo, double hi, int outputH, double boxHeight) =>
+        hi >= lo ? Math.Clamp(value, lo, hi) : Math.Max(0.0, (outputH - boxHeight) / 2.0);
+
     private static double ComputeDefaultBoxY(int outputH, double boxHeight, bool isPortrait, CaptionPosition position)
     {
         double defaultY = outputH * DefaultCenterFraction - boxHeight / 2.0;
@@ -189,16 +156,16 @@ public static class CaptionLayoutEngine
             {
                 CaptionPosition.Top => PortraitVoidTop + 40.0,
                 CaptionPosition.BottomVoid => (outputH - PortraitVoidBottom) + ((PortraitVoidBottom - boxHeight) / 2.0),
-                CaptionPosition.Middle => Math.Clamp(middleY, PortraitVoidTop + 20.0, outputH - PortraitVoidBottom - boxHeight - 20.0),
-                _ => Math.Clamp(defaultY, PortraitVoidTop + 20.0, outputH - PortraitVoidBottom - boxHeight - 20.0),
+                CaptionPosition.Middle => Fit(middleY, PortraitVoidTop + 20.0, outputH - PortraitVoidBottom - boxHeight - 20.0, outputH, boxHeight),
+                _ => Fit(defaultY, PortraitVoidTop + 20.0, outputH - PortraitVoidBottom - boxHeight - 20.0, outputH, boxHeight),
             };
         }
 
         return position switch
         {
             CaptionPosition.Top => 60.0,
-            CaptionPosition.Middle => Math.Clamp(middleY, 40.0, outputH - boxHeight - 40.0),
-            _ => Math.Clamp(defaultY, 40.0, outputH - boxHeight - 40.0),
+            CaptionPosition.Middle => Fit(middleY, 40.0, outputH - boxHeight - 40.0, outputH, boxHeight),
+            _ => Fit(defaultY, 40.0, outputH - boxHeight - 40.0, outputH, boxHeight),
         };
     }
 
@@ -284,6 +251,60 @@ public static class CaptionLayoutEngine
         }
 
         return lines;
+    }
+
+    public const string TwoRowFitTag = "CAPTIONFIT_02";
+    public const int MinFontSize = 8;
+    public const double ShrinkFloorFraction = 0.6;
+
+    private static List<CaptionLayoutLine> FoldIntoTwoRows(
+        IReadOnlyList<MappedCaptionWord> words,
+        SKFont font,
+        SKPaint paint,
+        float maxWidth)
+    {
+        var all = words.ToList();
+        var widths = new float[all.Count];
+        float space = MeasureTextWidth("a a", font, paint) - MeasureTextWidth("aa", font, paint);
+        if (space <= 0) space = font.Size * 0.28f;
+        float total = 0;
+        for (int i = 0; i < all.Count; i++)
+        {
+            widths[i] = MeasureTextWidth(all[i].Text, font, paint);
+            total += widths[i] + (i > 0 ? space : 0);
+        }
+
+        int split = 1;
+        float best = float.MaxValue;
+        float left = 0;
+        for (int k = 1; k < all.Count; k++)
+        {
+            left += widths[k - 1] + (k > 1 ? space : 0);
+            float right = total - left - space;
+            float widest = Math.Max(left, right);
+            if (widest < best) { best = widest; split = k; }
+        }
+
+        var first = all.GetRange(0, split);
+        var second = all.GetRange(split, all.Count - split);
+        string firstText = string.Join(" ", first.Select(w => w.Text));
+        string secondText = string.Join(" ", second.Select(w => w.Text));
+
+        float firstWidth = MeasureTextWidth(firstText, font, paint);
+        float secondWidth = MeasureTextWidth(secondText, font, paint);
+        for (int pass = 0; pass < 4 && Math.Max(firstWidth, secondWidth) > maxWidth && font.Size > 1; pass++)
+        {
+            font.Size = Math.Max(1, (int)Math.Floor(font.Size * maxWidth / Math.Max(firstWidth, secondWidth)));
+            firstWidth = MeasureTextWidth(firstText, font, paint);
+            secondWidth = MeasureTextWidth(secondText, font, paint);
+        }
+
+        float lineHeight = font.Size * 1.25f;
+        return new List<CaptionLayoutLine>
+        {
+            new CaptionLayoutLine(0, 0, firstWidth, lineHeight, firstText, first),
+            new CaptionLayoutLine(0, 0, secondWidth, lineHeight, secondText, second)
+        };
     }
 
     private static float MeasureTextWidth(string text, SKFont font, SKPaint paint)

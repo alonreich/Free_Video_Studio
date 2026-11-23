@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Media.Imaging;
@@ -11,97 +10,14 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// LANES_01 — builds the "film strip" image that fills a 60px timeline lane.
-///
-/// Renders N evenly-spaced frames of a video range into ONE tiled PNG (`tile=Nx1`), 60px tall, so
-/// the caller can stretch a single Image across the lane instead of managing N separate bitmaps.
-///
-/// ── WHY IT LIVES HERE ────────────────────────────────────────────────────────────────────────
-/// This logic was written for Music Wizard phase 3 and lived as a private method on that window.
-/// The Granular Speed Editor now needs the identical strip, and copying it would have created a
-/// second implementation free to drift — different frame counts, different scaling, a different
-/// temp-file cleanup story. `MusicWizardWindow.GenerateThumbnailsStripAsync` now delegates here,
-/// so there is exactly one.
-///
-/// ── CALLER OWNS THE FILE ─────────────────────────────────────────────────────────────────────
-/// On success this returns a path to a temp PNG the caller MUST delete when it is done (both
-/// callers track theirs in a list and delete on teardown). It is not cached and never reused
-/// between runs — see mandate #1.
-///
-/// ── THROTTLE_01 — EVERY PROCESS THIS CLASS SPAWNS IS BELOW-NORMAL AND YIELDS ──────────────
-/// A film strip is a 60px UI decoration; it must never compete with the preview monitor for
-/// CPU or disk. Two mechanisms, both scoped to this file because this file owns every
-/// extraction process:
-///   * OS-level: every FFmpeg here is started at ProcessPriorityClass.BelowNormal, so the
-///     scheduler only gives it cores the Normal-priority player is not using.
-///   * Cooperative: <see cref="StreamAsync"/> accepts a yield gate; while it says "something
-///     is playing" the reader stops consuming, FFmpeg blocks on a full pipe, and its decode
-///     and disk reads stop — resuming later from the exact byte it stopped at. Only
-///     background callers (the prewarm) pass the gate; a lane a user is watching fill never
-///     waits on playback.
-/// </summary>
 public static class ThumbnailStripGenerator
 {
-    /// <summary>Frames per strip. 15 is what phase 3 shipped with and reads well at lane width.</summary>
     public const int DefaultFrames = 15;
 
-    /// <summary>Lane height in pixels; frames are scaled to exactly this tall.</summary>
     public const int StripHeightPx = 60;
 
-    /// <summary>
-    /// STRIP_01 — the crossover between the two render strategies, in seconds of video per
-    /// thumbnail (<c>durationSec / frames</c>).
-    ///
-    /// AT OR ABOVE IT: N keyframe-seeked inputs. Decodes N frames instead of the whole range.
-    /// BELOW IT: the full-range sweep. Counter-intuitive but measured — on a short range the sweep
-    /// is CHEAPER than seeking, because an accurate seek re-decodes from the preceding keyframe
-    /// every time (15 samples x half a GOP beats decoding 6 seconds outright), and a keyframe seek
-    /// is not usable at all: with spacing below one GOP several samples collapse onto the SAME
-    /// keyframe and the lane shows one picture repeated.
-    ///
-    /// ⚠️ THERE IS DELIBERATELY NO ACCURATE-SEEK PATH. It was implemented and benchmarked and it
-    /// loses on BOTH sides of this crossover — 5474ms vs 1488ms for the sweep on a 6s range, and
-    /// 2846ms vs 799ms for keyframe seeking on a 60s one. Do not reintroduce it as a "compromise".
-    ///
-    /// 2.0s is above a typical capture GOP, so whenever the seeked path runs, the keyframe snap is
-    /// smaller than the spacing between samples and cannot produce a duplicate.
-    /// </summary>
     private const double SeekedPathMinSpacingSec = 2.0;
 
-    /// <summary>
-    /// Renders <paramref name="frames"/> stills from <paramref name="videoPath"/>, starting at
-    /// <paramref name="startSec"/> and covering <paramref name="durationSec"/>, into one wide PNG.
-    /// Returns null on any failure — a missing strip must degrade to an empty lane, never to an
-    /// error the user has to dismiss.
-    ///
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// STRIP_01 — WHY THIS NO LONGER SWEEPS THE WHOLE RANGE.
-    ///
-    /// The original command was `-ss start -t dur -i v -vf fps=N/dur,...,tile=Nx1`. The `-ss` is a
-    /// fast input seek, but `-t dur` then makes FFmpeg DECODE EVERY FRAME in the range so the `fps`
-    /// filter can throw almost all of them away. On a 2560x1440 120fps capture — what this app is
-    /// built for — an 85-second clip decodes ~10,200 frames to produce 15 thumbnails. That is the
-    /// entire reason the film lane took so long to appear on every screen that has one.
-    ///
-    /// It now opens the SAME file N times, each input carrying its own `-ss` to the exact moment
-    /// that thumbnail represents, takes one frame from each (`trim=end_frame=1`) and `hstack`s them.
-    /// Decode cost drops from "the whole range" to "N frames". MEASURED on a 60s 1920x1080 60fps
-    /// H.264 file, 15 frames, identical 1605x60 output:
-    ///     old, full-range sweep        12590 ms
-    ///     new, accurate seek            2846 ms   (4.4x)
-    ///     new, keyframe seek             799 ms   (15.8x)
-    /// The user's real source is heavier than the probe on every axis, so the saving there is
-    /// larger still.
-    ///
-    /// ⚠️ THE LEGACY SWEEP IS STILL HERE AS A FALLBACK AND MUST STAY. N seeked inputs is the fast
-    /// path, not the safe one: a seek landing past the real end of file (a container whose declared
-    /// duration lies, a caller passing a range longer than the media) yields an input with no
-    /// frames, and `hstack` cannot configure without one frame per input. Rather than reason about
-    /// every such case, a failed fast path silently re-runs the old command, which tolerates all of
-    /// them. Do not delete the fallback to "simplify".
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
     public static async Task<string?> GenerateAsync(
         string ffmpegPath,
         string videoPath,
@@ -160,9 +76,6 @@ public static class ThumbnailStripGenerator
         return null;
     }
 
-    /// <summary>STRIP_01 — N independently KEYFRAME-seeked inputs of the same file, one frame each,
-    /// stacked. Only ever chosen when the spacing between samples exceeds a GOP; see
-    /// <see cref="SeekedPathMinSpacingSec"/>.</summary>
     private static string[] BuildSeekedArgs(
         string videoPath, string outPng, double startSec, double durationSec, int frames)
     {
@@ -218,7 +131,6 @@ public static class ThumbnailStripGenerator
         return args.ToArray();
     }
 
-    /// <summary>STRIP_01 — the original full-range sweep, kept as the tolerant fallback.</summary>
     private static string[] BuildSweepArgs(
         string videoPath, string outPng, double startSec, double durationSec, int frames)
     {
@@ -250,14 +162,6 @@ public static class ThumbnailStripGenerator
         }
     }
 
-    /// <summary>
-    /// THROTTLE_01 — drops an extraction process one priority band below everything else in the
-    /// app. A 60px timeline decoration must never contend with the preview monitor for CPU:
-    /// Windows only schedules BelowNormal work onto cores the Normal-priority player has left,
-    /// so the strip still renders at full speed when nothing is playing and loses instantly when
-    /// something is. Best-effort by design — if the process already exited or the OS refuses,
-    /// the render simply proceeds at Normal priority.
-    /// </summary>
     private static void TrySetBelowNormalPriority(Process process)
     {
         try { process.PriorityClass = ProcessPriorityClass.BelowNormal; }
@@ -341,82 +245,12 @@ public static class ThumbnailStripGenerator
         }
     }
 
-    /// <summary>
-    /// STRIP_03 — the frame width every streamed thumbnail is forced to, in pixels.
-    ///
-    /// <see cref="StripHeightPx"/> x 16/9 = 106.67 -> 107. Forcing it rather than using
-    /// `scale=-1:60` is deliberate: it makes the frame size known BEFORE the first byte arrives,
-    /// which is what lets the reader below treat the pipe as fixed-size records instead of hunting
-    /// for image boundaries. It also makes an assumption the lane was ALREADY making honest —
-    /// `GranularSpeedEditorWindow.RelayoutFrameLane` computes each frame's source span as
-    /// `stripPxH * 16/9 / stripPxW`, i.e. it has always assumed 16:9 frames. On a non-16:9 source
-    /// the old `-1` width made that computation subtly wrong; now it is exact by construction.
-    /// </summary>
     public const int FrameWidthPx = 107;
 
-    /// <summary>
-    /// LEAK_01 — hard ceiling on one streamed strip. Nothing else ever cancels a prewarm that is
-    /// not superseded, so an ffmpeg that opens a file and then produces nothing (a network path
-    /// that stalls, a container it cannot walk) would leave a process and a pending read alive for
-    /// the life of the app. A watchdog expiry is NOT treated as user cancellation: the process is
-    /// killed and the call returns false so the caller falls back, exactly as it would on any
-    /// other failure.
-    /// </summary>
     private const int StreamWatchdogSeconds = 30;
 
-    /// <summary>
-    /// THROTTLE_01 — how often a yielding stream re-checks its gate while it waits for playback
-    /// to stop. 250ms is far below what a human can perceive as lag when the strip RESUMES, and
-    /// costs one volatile read and one timer per tick — nothing measurable next to the decode it
-    /// is deferring.
-    /// </summary>
     private const int YieldPollMs = 250;
 
-    /// <summary>
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// STRIP_03 — PAINT THE LANE WHILE IT IS STILL BEING DECODED.
-    ///
-    /// <see cref="GenerateAsync"/> is all-or-nothing: it renders a tiled PNG and the lane stays
-    /// empty until the last frame is done. Even at STRIP_01 speed that is most of a second of
-    /// blank grey, and blank-then-complete is what reads as slow — not the total.
-    ///
-    /// This streams instead. ONE ffmpeg process decodes ONLY keyframes (`-skip_frame nokey`) and
-    /// writes uncompressed BGRA straight to stdout; each frame is blitted into a
-    /// <see cref="WriteableBitmap"/> the caller is handed as soon as the FIRST one lands, and the
-    /// caller repaints on every frame after that. MEASURED, 60s 1920x1080 60fps, 15 frames:
-    ///     first frame painted   221 ms
-    ///     strip complete        533 ms
-    ///     arrivals (ms)         221 221 307 307 307 368 368 453 453 453 512 512 533 533 533
-    /// against 852 ms of nothing at all before this change.
-    ///
-    /// ⚠️ RAW BGRA, NOT MJPEG — AND THIS IS THE LOAD-BEARING DECISION.
-    ///   * The frame is a FIXED 107x60x4 = 25,680 bytes, so framing the pipe is arithmetic. An
-    ///     MJPEG pipe has to be scanned for SOI/EOI markers, which is guesswork on a byte stream.
-    ///   * No decode step, so no second image codec in the hot path.
-    ///   * `-pix_fmt bgra` is byte-for-byte `PixelFormat.Bgra8888`. Piping MJPEG would mean
-    ///     decoding through Avalonia, whose output channel order is platform-dependent — a
-    ///     red/blue swap that would only show up on someone else's machine.
-    /// The cost is bandwidth: 15 x 25 KB = 385 KB down a pipe. That is nothing.
-    ///
-    /// ⚠️ KEYFRAME SNAPPING IS ACCEPTED HERE UNCONDITIONALLY (owner's decision) — the lane is a
-    /// visual index, and this is what Jellyfin, Premiere and every scrub-thumbnail implementation
-    /// does. If a caller ever needs frame-exact stills, it must use <see cref="GenerateAsync"/>,
-    /// which still picks its strategy by sample spacing.
-    ///
-    /// Returns false if not one frame arrived, so the caller can fall back to
-    /// <see cref="GenerateAsync"/>. Never throws except on cancellation.
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
-    /// <param name="onReady">Invoked ON THE UI THREAD with the strip bitmap when the first frame
-    /// has landed. This is the moment to swap the loading overlay for the lane.</param>
-    /// <param name="onFrame">Invoked ON THE UI THREAD after every frame, including the first.
-    /// Repaint here.</param>
-    /// <param name="yieldWhile">THROTTLE_01 — optional cooperative-yield gate for BACKGROUND
-    /// callers only. While it returns true ("playback is active") the reader stops consuming;
-    /// FFmpeg's stdout pipe fills within a frame or two, it blocks on write, and its decode and
-    /// disk reads stop without any process suspension. Reading resumes from the exact byte it
-    /// stopped at when the gate opens. Pass null (the default) for on-demand strips a user is
-    /// watching fill — those must not wait on playback.</param>
     public static async Task<bool> StreamAsync(
         string ffmpegPath,
         string videoPath,

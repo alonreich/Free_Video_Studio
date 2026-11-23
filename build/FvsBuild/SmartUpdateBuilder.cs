@@ -3,30 +3,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FvsBuild;
 
-/// <summary>
-/// DIST-SMART / BINDELTA_01 — produces what lets an update download only what changed:
-/// <list type="bullet">
-/// <item>obj\ReleaseAssets\smart\f-&lt;sha256&gt;.br — every installed file, Brotli-compressed, named by
-///   its CONTENT (the same name always means the same bytes);</item>
-/// <item>obj\ReleaseAssets\smart\p-&lt;from&gt;-&lt;to&gt;.patch — binary patches turning recent versions'
-///   FreeVideoStudio.exe into this one (only when clearly smaller than the compressed file);</item>
-/// <item>obj\ReleaseAssets\update.json + update.sig.json — the list, signed with the publisher key.</item>
-/// <item>NODROPPER_01 — a second signed copy of the same list WITHOUT the full-installer entry (the
-///   installer cannot name its own hash), packed into the Inno Setup installer beside the files. The
-///   elevated worker installs from it exactly as from a smart update.</item>
-/// </list>
-/// Patch bases come from obj\ReleaseHistory\&lt;version&gt;\ (the signed program file of earlier builds).
-/// A release build patches from the last versions that were actually PUBLISHED; a dev build from the
-/// last builds of any kind, so dev_build.cmd + dev.cmd exercise the same path (D1).
-/// <para>DELTABASE_01 — before a release build makes its patches, <see cref="EnsurePublishedBases"/>
-/// makes sure the program file of each of the last <see cref="PatchBases"/> PUBLISHED releases is in
-/// that history and marked released: it reads each release's signed update.json, takes the program's
-/// SHA-256 from it, and either marks a matching local copy as released or downloads that release's
-/// own content-addressed program asset (<c>f-&lt;sha&gt;.br</c>) and verifies it. It used to run only when
-/// the history folder was empty, and then fetched the release asset named <c>FreeVideoStudio.exe</c> —
-/// which is the INSTALLER under its pre-Inno alias, not the program — so a release patched from a
-/// file no installed copy has, or (with only unmarked local builds) from nothing at all.</para>
-/// </summary>
 internal static class SmartUpdateBuilder
 {
     private const string AssetsDir = @".\obj\ReleaseAssets";
@@ -39,10 +15,6 @@ internal static class SmartUpdateBuilder
     private static SmartUpdateManifest? _prepared;
     private static string? _preparedExe;
 
-    /// <summary>
-    /// Step 1 of 2: per-file assets, patches, and the signed list the installer carries
-    /// (<paramref name="installerListDir"/>, NODROPPER_01). <see cref="Finish"/> writes the release copy.
-    /// </summary>
     public static bool Prepare(string buildVersion, string stagingDir, string installerListDir, BuildLog log)
     {
         log.Info("[Smart] Building per-file update assets, patches and the signed update.json...");
@@ -138,7 +110,6 @@ internal static class SmartUpdateBuilder
         }
     }
 
-    /// <summary>Step 2 of 2: the release copy of update.json, naming the finished full installer.</summary>
     public static bool Finish(string buildVersion, string fullInstaller, BuildLog log)
     {
         if (_prepared is null || _preparedExe is null)
@@ -188,10 +159,8 @@ internal static class SmartUpdateBuilder
         return true;
     }
 
-    /// <summary>Set by Program for dev_build.cmd: patch bases are then any recent build.</summary>
     public static bool IsDevBuild { get; set; }
 
-    /// <summary>Every smart asset of this build, for the release upload.</summary>
     public static string[] ReleaseFiles() =>
         File.Exists(Path.Combine(AssetsDir, SmartUpdateManifest.FileName))
             ? [Path.Combine(AssetsDir, SmartUpdateManifest.FileName), Path.Combine(AssetsDir, SmartUpdateManifest.SignatureFileName),
@@ -235,13 +204,6 @@ internal static class SmartUpdateBuilder
         }
     }
 
-    /// <summary>
-    /// DELTABASE_01 — guarantees patch bases for the last <see cref="PatchBases"/> published releases.
-    /// Best effort: without the GitHub CLI, or for a release that predates update.json, it logs and
-    /// moves on (that release simply gets no patch; the client then downloads the compressed program).
-    /// Every downloaded byte is checked against the release's SIGNED update.json, so a base is either
-    /// exactly the program that release installed or it is not used.
-    /// </summary>
     internal static void EnsurePublishedBases(string signerThumbprint, BuildLog log)
     {
         if (Cli.FindOnPath("gh.exe") is null || Cli.RunQuiet("gh", ["auth", "status"]) != 0)

@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
@@ -9,29 +8,11 @@ using static FreeVideoStudio.Core.Editing.GranularJsonRead;
 
 namespace FreeVideoStudio.Core.Editing;
 
-/// <summary>
-/// RECOVERY_03 — the Granular editor's live session as the <c>"granular_session"</c> node of the
-/// crash-recovery file, and back.
-///
-/// <para>
-/// EDITSTATE_01 — the persistence-facing VALUES moved here from the window with the state they
-/// describe. The window keeps what is genuinely its own: the 300ms debounce timer, the
-/// <c>EditorRecoveryWriter</c> and the file read. This type is pure: a session in, a node out.
-/// </para>
-///
-/// <para>
-/// Segments and cuts are TRIM-RELATIVE ms and memes are CLIP-RELATIVE source seconds — the exact
-/// frames of reference the session holds them in, so rehydration needs no translation. A node is
-/// honoured only when its video path AND trim window match; anything else is a stale snapshot from
-/// another clip (or an older trim) and is ignored. A malformed entry is dropped, never fatal.
-/// </para>
-/// </summary>
 public static class GranularRecoveryCodec
 {
     public const string Key = "granular_session";
     public const int SchemaVersion = 1;
 
-    /// <summary>The live editor state as one JSON node. UI thread only (reads the lists).</summary>
     public static JsonObject Build(GranularEditSession s, DateTime utcNow)
     {
         ArgumentNullException.ThrowIfNull(s);
@@ -97,11 +78,6 @@ public static class GranularRecoveryCodec
         return result;
     }
 
-    /// <summary>
-    /// RECOVERY_03 — replaces the session's edit with <paramref name="node"/> when it holds an
-    /// unfinished session for THIS video and trim window. Returns whether it did. A merge never
-    /// restores here (MERGEEDIT_02 — the Merger autosaves the merge itself).
-    /// </summary>
     public static bool TryApply(JsonObject? node, GranularEditSession s)
     {
         ArgumentNullException.ThrowIfNull(s);

@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
@@ -9,27 +8,6 @@ using System.Threading.Tasks;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ISSUE_03 — makes sure only ONE Main App process runs at a time.
-///
-/// WHY THIS IS NOT COSMETIC: <c>RecoveryManager.AcquireLock()</c> blindly overwrites
-/// <c>app_session.lock</c> with its own PID, and <c>CleanupLock()</c> on a clean exit deletes
-/// that lock AND calls <c>ClearState()</c>. With two Main App instances running, the first one
-/// to close therefore wiped the second one's crash-recovery state, and both were writing the
-/// same <c>recovery_v2.json</c> on top of each other the whole time. The user's protection
-/// against a crash was silently gone.
-///
-/// SCOPE — this guard applies ONLY to the Main App. The Video Merger (<c>--merger</c>) and the
-/// Crop Tools (<c>--crop-tool</c>) are, by architectural mandate, separate processes with their
-/// own memory isolation, and the installer/uninstaller workers must obviously be able to run
-/// alongside anything. See <see cref="AppliesTo"/> — do not widen it.
-///
-/// BEHAVIOUR when a second Main App launch happens:
-///   * If it was started with a video file (Explorer "Open with"), the path is handed to the
-///     already-running instance over a named pipe and loaded there. This is strictly better
-///     than the old behaviour, where "Open with" spawned a rival process.
-///   * Either way the running window is brought to the front and the new process exits quietly.
-/// </summary>
 public static class SingleInstanceGuard
 {
     private const string MutexNameBase = @"Local\FreeVideoStudio_MainApp_SingleInstance";
@@ -41,10 +19,6 @@ public static class SingleInstanceGuard
 
     private static string? _cachedUserScope;
 
-    /// <summary>
-    /// A stable, per-user suffix for kernel object names. The SID is preferred (it is unique and
-    /// cannot collide); the user name is a fallback for the rare case where the SID is unavailable.
-    /// </summary>
     private static string UserScope
     {
         get
@@ -75,21 +49,23 @@ public static class SingleInstanceGuard
         }
     }
 
-    private static string MutexName => $"{MutexNameBase}_{UserScope}";
-    private static string PipeName => $"{PipeNameBase}_{UserScope}";
+    private static string MutexName => $"{MutexNameBase}_{UserScope}{FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.ScopeSuffix}";
+    private static string PipeName => $"{PipeNameBase}_{UserScope}{FreeVideoStudio.Core.Infrastructure.DevelopmentEnvironment.ScopeSuffix}";
 
-    /// <summary>Raised on a background thread when another launch hands us a file path.</summary>
     public static event Action<string>? VideoPathReceived;
 
-    /// <summary>
-    /// True only for a Main App launch. Sub-applications and deployment workers are exempt:
-    /// they are meant to run concurrently.
-    ///
-    /// NOTE: the caller additionally gates on the command being "run-ui" (or an Open-With file
-    /// path). The headless CLI commands — paths, read-state, phase1-gate and friends — are
-    /// diagnostics/CI gates that must keep working while the editor is open, so they never
-    /// reach this guard.
-    /// </summary>
+    internal const string HandoffFailTag = "HANDOFFFAIL_01";
+
+    private const int HandoffRetryDelayMs = 400;
+
+    internal static Action<string> HandoffFailedNotifier { get; set; } =
+        message => NativeDialog.ShowError(message, "Free Video Studio");
+
+    internal static string HandoffFailureMessage(string videoPath)
+        => "Free Video Studio is already open, but this video could not be passed to it:" + Environment.NewLine + Environment.NewLine +
+           Path.GetFileName(videoPath) + Environment.NewLine + Environment.NewLine +
+           "In the open window, click OPEN VIDEO and pick the file, or drag it onto the window.";
+
     public static bool AppliesTo(string[] args)
     {
         foreach (string a in args)
@@ -107,12 +83,6 @@ public static class SingleInstanceGuard
         return true;
     }
 
-    /// <summary>
-    /// Attempts to become the one-and-only Main App.
-    /// Returns true if this process owns the instance and should keep booting.
-    /// Returns false if another instance already owns it — the caller must exit immediately
-    /// WITHOUT touching the recovery lock or any shared state.
-    /// </summary>
     public static bool TryAcquire(string[] args)
     {
         if (!AppliesTo(args)) return true;
@@ -145,21 +115,27 @@ public static class SingleInstanceGuard
 
         string? pendingPath = OpenWithLaunch.PendingVideoPath;
         bool delivered = TrySendHandoff(pendingPath);
+        if (!delivered && !string.IsNullOrEmpty(pendingPath))
+        {
+            Thread.Sleep(HandoffRetryDelayMs);
+            delivered = TrySendHandoff(pendingPath);
+        }
+
+        FocusExistingWindow();
 
         if (!string.IsNullOrEmpty(pendingPath) && !delivered)
         {
             RuntimeLog.Fail("SingleInstance",
-                "Could not hand the video path to the running instance. The user will need to load it manually.");
+                $"{HandoffFailTag}: could not hand the video path to the running instance; telling the user to load it there.");
+            try { HandoffFailedNotifier(HandoffFailureMessage(pendingPath)); }
+            catch (Exception ex) { RuntimeLog.Swallowed(ex); }
         }
-
-        FocusExistingWindow();
 
         try { _mutex.Dispose(); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
         _mutex = null;
         return false;
     }
 
-    /// <summary>Releases the instance claim. Safe to call more than once.</summary>
     public static void Release()
     {
         try { _listenerCts?.Cancel(); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
@@ -171,11 +147,6 @@ public static class SingleInstanceGuard
         _mutex = null;
     }
 
-    /// <summary>
-    /// Background named-pipe server. One connection per handoff; the loop restarts after each
-    /// so any number of later launches can hand off. All failures are swallowed — a broken
-    /// listener must never disturb the running editor.
-    /// </summary>
     private static void StartHandoffListener()
     {
         _listenerCts = new CancellationTokenSource();
@@ -250,39 +221,13 @@ public static class SingleInstanceGuard
         }, token);
     }
 
-    /// <summary>
-    /// ISSUE_13 — creates the handoff server.
-    ///
-    /// SECURITY MODEL, and why it is built this way:
-    ///   1. The pipe NAME is scoped to the current user's SID (see <see cref="PipeName"/>), so a
-    ///      different user's session cannot even guess at, let alone squat, this app's pipe.
-    ///   2. Every accepted connection is IDENTITY-CHECKED against the current user before a single
-    ///      byte is acted upon (see <see cref="IsConnectedClientTrusted"/>). This is the control
-    ///      that actually matters: previously the listener acted on whatever arrived, from anyone,
-    ///      so any local process could make the editor open a file of its choosing.
-    ///   3. Payloads are length-capped and must look like a local video path
-    ///      (<see cref="IsAcceptableHandoffPath"/>).
-    ///
-    /// NOTE ON THE ACL. A `PipeSecurity` DACL would be worthwhile defence-in-depth on top of the
-    /// above, but `PipeSecurity`/`NamedPipeServerStreamAcl` live in the separate
-    /// `System.IO.Pipes.AccessControl` NuGet package, which this project does not reference. Adding
-    /// a package to the NativeAOT single-EXE build is not a change worth making blind, so it is
-    /// deliberately left out: an untrusted local process can still CONNECT, but it is identified
-    /// and disconnected without being read, which removes the exploitable behaviour. If that
-    /// package is ever added, switch this method to `NamedPipeServerStreamAcl.Create` with a DACL
-    /// granting the current user and LocalSystem only.
-    /// </summary>
     private static NamedPipeServerStream CreateSecuredPipeServer()
     {
-        return new NamedPipeServerStream(
+        return FreeVideoStudio.Core.Ipc.PipeAccess.CreateServer(
             PipeName, PipeDirection.In, 1,
-            PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+            PipeOptions.Asynchronous | PipeOptions.FirstPipeInstance);
     }
 
-    /// <summary>
-    /// ISSUE_13 — confirms the connected client runs as the same user as this process. Belt and
-    /// braces alongside the ACL: the listener used to act on whatever arrived, from anyone.
-    /// </summary>
     private static bool IsConnectedClientTrusted(NamedPipeServerStream server)
     {
         if (!OperatingSystem.IsWindows()) return true;
@@ -308,11 +253,6 @@ public static class SingleInstanceGuard
         }
     }
 
-    /// <summary>
-    /// ISSUE_13 — a handoff payload is only ever an absolute local path to a video this app
-    /// supports. Anything else (a URL, a UNC share, a relative path, a traversal attempt, a
-    /// non-video extension) is refused before the editor is asked to open it.
-    /// </summary>
     private static bool IsAcceptableHandoffPath(string path)
     {
         try
@@ -341,6 +281,12 @@ public static class SingleInstanceGuard
             using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
             client.Connect(HandoffTimeoutMs);
 
+            if (!FreeVideoStudio.Core.Ipc.PipeAccess.IsServerTrusted(client))
+            {
+                RuntimeLog.Fail("SingleInstance", "Refused the handoff: the listening pipe belongs to a different user account.");
+                return false;
+            }
+
             using var writer = new StreamWriter(client);
             writer.Write(videoPath ?? string.Empty);
             writer.Flush();
@@ -352,7 +298,6 @@ public static class SingleInstanceGuard
             return false;
         }
     }
-
 
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
@@ -373,12 +318,6 @@ public static class SingleInstanceGuard
 
     private const int SwRestore = 9;
 
-    /// <summary>
-    /// Best-effort: find the other instance's top-level window and raise it, so the user sees a
-    /// response instead of a launch that appears to do nothing. Windows may refuse the
-    /// foreground change (focus-stealing prevention) — in that case the taskbar button flashes,
-    /// which is still feedback.
-    /// </summary>
     private static void FocusExistingWindow()
     {
         if (!OperatingSystem.IsWindows()) return;

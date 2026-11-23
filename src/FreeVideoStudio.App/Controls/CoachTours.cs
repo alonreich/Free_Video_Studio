@@ -1,32 +1,9 @@
-﻿
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// ISSUE_04 — EVERY SCREEN'S WALKTHROUGH SCRIPT, IN ONE PLACE.
-///
-/// The engine that draws these is <see cref="CoachOverlay"/>. This file is deliberately nothing but
-/// copy, so the wording can be reviewed and improved without touching animation code, and so it is
-/// obvious at a glance which screens have onboarding and which do not.
-///
-/// WRITING RULES — these are what make the difference between a tour and a wall of jargon:
-///   (W1) Write for someone who has NEVER edited a video. No "trim", "segment", "render", "encode",
-///        "codec", "keyframe". Say "cut", "block", "save your video".
-///   (W2) Title: six words or fewer, in the user's language, not the button's label.
-///   (W3) Body: two sentences maximum. Say what the thing DOES and why they would want it.
-///   (W4) Every TargetName must be a real x:Name in that window's .axaml. A name that no longer
-///        exists does not crash — CoachOverlay dims the whole screen and shows the text as plain
-///        advice — but it silently loses the pointing, so check names when you rename a control.
-///   (W5) Keep tours to 5-7 steps. Past that people stop reading and hit SKIP, which burns their
-///        remaining automatic showings for that screen.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public static class CoachTours
 {
-    /// <summary>Screen keys double as the UiStateStore counter filenames. Do not rename casually —
-    /// a changed key resets everyone's "already seen this" state and the tour reappears.</summary>
     public const string MainAppKey = "mainapp";
     public const string MergerKey = "merger";
     public const string CropToolKey = "croptool";
@@ -174,34 +151,22 @@ public static class CoachTours
     public static readonly IReadOnlyList<CoachStep> MusicWizard = new[]
     {
         new CoachStep(
-            "Step one: pick your music",
-            "Press ▶ on a song to hear its best part, and press it again to stop. Press + to add the song. Nothing plays until you ask it to.",
+            "Step one: pick a song",
+            "Click a song to hear it. When you like it, press NEXT → (or double-click the song).",
             "MusicListBox", CoachGesture.Point),
 
         new CoachStep(
-            "Your songs",
-            "Songs you add line up here and play one after another. The bar shows whether they cover your whole video, and the button under it can fill the rest for you.",
-            "PlaylistPanel", CoachGesture.Point),
-
-        new CoachStep(
-            "Step two: see it with your video",
-            "Press NEXT. Your video plays with the music, and each song is a coloured block under the film. Drag the right edge of a block to make that song end sooner or later.",
+            "Go on",
+            "NEXT → is always here, bottom right. BACK is always bottom left. The ✕ at the top closes without changing your video.",
             "NextBtn", CoachGesture.Click),
 
         new CoachStep(
-            "Choose the part of each song",
-            "Click a song's block, then drag the bright box on its picture to choose which part plays, or use Beginning, Best part or End with the video.",
-            "SongCard", CoachGesture.DragHorizontal),
+            "Step two: where the song starts",
+            "Your video and the song are drawn to scale. Move the red line to the moment you like, then press MARK START. A long song sticks out past the video's end; that part is not in your video."),
 
         new CoachStep(
-            "Check the mix",
-            "Slide the two volumes until it sounds right: the left one is your game, the right one is the music.",
-            "VideoVolSlider", CoachGesture.DragHorizontal),
-
-        new CoachStep(
-            "Send it back",
-            "When it sounds right, APPLY puts the music on your video. It is mixed in when you save.",
-            "NextBtn", CoachGesture.Click)
+            "Step three: check and finish",
+            "Watch your video with the music, set the two volumes, then press DONE ✓.")
     };
 
     public static readonly IReadOnlyList<CoachStep> VoiceOver = new[]

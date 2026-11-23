@@ -22,11 +22,7 @@ public sealed class ExportViewModel : ViewModelBase
     private string _hardwareStatusColor = "#00783C";
     private bool _isRdpWarningVisible;
     private bool _isRdpGpuBlocked;
-    private bool _isExporting;
-    private int _progressPercentage;
-    private int _phaseCurrent;
     private string _phaseTitle = "";
-    private int _phaseProgress;
     private string _statusText = "Ready";
     private string _estimatedFileSizeText = "—";
     private string _estimatedFileSizeDescription = "Estimated size of the finished video, including sound.";
@@ -85,34 +81,10 @@ public sealed class ExportViewModel : ViewModelBase
         set => SetProperty(ref _isRdpGpuBlocked, value);
     }
 
-    public bool IsExporting
-    {
-        get => _isExporting;
-        set => SetProperty(ref _isExporting, value);
-    }
-
-    public int ProgressPercentage
-    {
-        get => _progressPercentage;
-        set => SetProperty(ref _progressPercentage, value);
-    }
-
-    public int PhaseCurrent
-    {
-        get => _phaseCurrent;
-        set => SetProperty(ref _phaseCurrent, value);
-    }
-
     public string PhaseTitle
     {
         get => _phaseTitle;
         set => SetProperty(ref _phaseTitle, value);
-    }
-
-    public int PhaseProgress
-    {
-        get => _phaseProgress;
-        set => SetProperty(ref _phaseProgress, value);
     }
 
     public string StatusText
@@ -121,11 +93,10 @@ public sealed class ExportViewModel : ViewModelBase
         set => SetProperty(ref _statusText, value);
     }
 
-
     public string ResolveHardwareMode()
     {
         return ExportEncoderStrategy.Resolve(
-            SettingsManager.Instance.VideoEncoderOverride,
+            SettingsManager.Instance.VideoEncoderOverride.ToString(),
             _hardwareMode,
             ResolveFfmpegPath());
     }
@@ -218,20 +189,10 @@ public sealed class ExportViewModel : ViewModelBase
         return false;
     }
 
-    /// <summary>NOPOWERSHELL_02 — the one argument that makes this executable apply the RDP GPU policy and exit.</summary>
     public const string ApplyRdpGpuPolicyArgument = "--apply-rdp-gpu-policy";
 
     private const string RdpPolicyKeyPath = @"SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services";
 
-    /// <summary>
-    /// NOPOWERSHELL_02 — the Auto-Fix starts THIS signed executable elevated (Windows asks the user)
-    /// with <see cref="ApplyRdpGpuPolicyArgument"/>, and that copy writes the two DWORDs through the
-    /// .NET registry API (<see cref="ApplyRdpGpuPolicyElevated"/>). It used to start a hidden
-    /// <c>powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden</c> as administrator to edit
-    /// machine policy — a combination antivirus heuristics treat as an attack (MITRE T1059.001,
-    /// T1112) and one of the reasons new releases were reported as a trojan. Same values, same UAC
-    /// prompt, no script host.
-    /// </summary>
     public async Task<bool> AutoFixRdpGpuPolicyAsync()
     {
         string? self = Environment.ProcessPath;
@@ -256,11 +217,6 @@ public sealed class ExportViewModel : ViewModelBase
         }
     }
 
-    /// <summary>
-    /// NOPOWERSHELL_02 — runs in the elevated copy only (dispatched first thing by <c>Program</c>).
-    /// Fixed action, no parameters: nothing on the command line can choose a different key or value.
-    /// Returns 0 on success, 2 when not elevated, 1 on failure.
-    /// </summary>
     public static int ApplyRdpGpuPolicyElevated()
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return 1;

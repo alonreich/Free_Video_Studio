@@ -1,5 +1,4 @@
-﻿
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using System.Collections.Generic;
 using FreeVideoStudio.Core.Ipc;
 
@@ -16,12 +15,6 @@ public static class HudConfig
     public const string HudCoordinateSpace = "content_1080x1620";
     public const int HudSchemaVersion = CropConfigDefaults.SchemaVersion;
 
-    /// <summary>
-    /// IDEA_1 — optional source-pixel crop rectangles. NOT in <see cref="RequiredSections"/>: the
-    /// exporter never reads it, only the Crop Tool editor does. <see cref="Sanitize"/> deep-clones
-    /// the document, so the section survives untouched; the loop at the end only prunes entries
-    /// whose matching content crop has been cleared, so a deleted layer cannot leave an orphan.
-    /// </summary>
     public const string SourceCropsSection = CropConfigDefaults.SourceCropsSection;
 
     public static readonly Dictionary<string, int> ZDefaults = new()
@@ -33,24 +26,11 @@ public static class HudConfig
         ["spectating"] = 100,
     };
 
-
     public static JsonObject CreateDefault()
     {
         return CropConfigDefaults.Create();
     }
 
-    /// <summary>
-    /// Returns the drift correction type: "left" for stats/map/hp/team/spec, "right" for loot.
-    /// Enforces +1px Left bias for Map, Stats, and Health, and +1px Right bias for Loot.
-    ///
-    /// ISSUE_6 — scope note. "map"/"minimap" are matched here but are NOT in
-    /// <see cref="HudKeys"/> and have no entry in CropConfigDefaults, so no shipped profile
-    /// exercises that branch. It is still live and correct for user-created layers: the Crop Tool
-    /// accepts a free-text element name, <see cref="Sanitize"/> builds its key set from
-    /// <see cref="HudKeys"/> UNION every key present in the config, and the substring fallback
-    /// below catches names such as "minimap_left". Keep both the exact and the substring match —
-    /// removing them would silently drop the +1px LEFT bias from any custom map layer.
-    /// </summary>
     public static string? CropDriftType(string key)
     {
         if (string.IsNullOrWhiteSpace(key)) return null;
@@ -79,20 +59,6 @@ public static class HudConfig
         }
     }
 
-    /// <summary>
-    /// ZEROSCALE_01 — a scale that is not strictly positive is corruption, never intent.
-    ///
-    /// The fallback was declared but only ever returned for a THROWN parse. A value that parsed
-    /// cleanly to zero or to a negative — "0", "0/1", "-1/2", a JSON 0, or anything Frac.FromString
-    /// resolves to zero rather than rejecting — was returned as-is. Sanitize then fed it to
-    /// QuantizeBackendSize, whose Math.Max(factor, ...) floor turned the element into a 32x32
-    /// backend sliver (27x27 in content space), and wrote that back to the file. The element did
-    /// not disappear, which would at least have been legible: it became a permanent postage stamp
-    /// that no amount of resizing in the editor could explain.
-    ///
-    /// "Switched off" is expressed by a zero CROP RECT, never by a zero scale — see NOMASK_01 in
-    /// Validate below — so nothing is lost by refusing one here.
-    /// </summary>
     private static Frac ToScale(JsonNode? value)
     {
         var fallback = Frac.One;
@@ -134,27 +100,6 @@ public static class HudConfig
         return space == HudCoordinateSpace && version >= HudSchemaVersion;
     }
 
-    /// <summary>
-    /// CROPCHK_01 — READ THE VERSION WITHOUT CARING WHICH NUMERIC TYPE IT WAS STORED AS.
-    ///
-    /// This used to be <c>(int)(config["schema_version"]?.GetValue&lt;long&gt;() ?? 0)</c>, and it
-    /// threw on EVERY export: "A value of type 'System.Int32' cannot be converted to a
-    /// 'System.Int64'". <see cref="System.Text.Json"/> will not widen an Int32 node to Int64 —
-    /// <c>GetValue&lt;T&gt;</c> demands the exact stored type — and the config is written with an
-    /// Int32 schema_version (the log line "CROP CONFIG READY - schema=4" is that value).
-    ///
-    /// ⚠️ THE DAMAGE WAS SILENT AND TOTAL. <c>IsCurrentSpace</c> is reached from
-    /// <c>HudConfig.Validate</c>, whose only caller wraps it in a try/catch that logs at INFO and
-    /// carries on (VideoConfig.GetMobileCoordinatesAsync). So the crop-configuration check — added
-    /// specifically because a nonsense crop config used to reach export unnoticed — has never once
-    /// run. Every export logged "Crop configuration check could not run" and nobody read it.
-    ///
-    /// Parsed off the raw text instead, so Int32, Int64 and a quoted "4" all work and a malformed
-    /// value degrades to 0 (treated as out of date) rather than throwing.
-    ///
-    /// ⚠️ DO NOT reintroduce a typed GetValue&lt;T&gt; on a JSON number that other code writes.
-    /// The identical trap was already fixed once in HardwareCapability (GetValue&lt;bool&gt;).
-    /// </summary>
     private static int ReadSchemaVersion(JsonObject config)
     {
         var node = config["schema_version"];
@@ -165,28 +110,9 @@ public static class HudConfig
             : 0;
     }
 
-    /// <summary>
-    /// Whether the crop Y values are already content-relative.
-    ///
-    /// CRITICAL — this deliberately ignores schema_version and looks ONLY at coordinate_space.
-    /// The one-time `y -= 150` migration converts canvas-space Y (0 at the top of the 1920 canvas)
-    /// into content-space Y (0 at the top of the 1620 content area). That is a property of the
-    /// COORDINATE SPACE, not of the schema number.
-    ///
-    /// Sanitize used to gate that subtraction on <see cref="IsCurrentSpace"/>, which also requires
-    /// `version >= HudSchemaVersion`. Bumping the schema to 4 for IDEA_1's crops_source section
-    /// would therefore have made every existing v3 file look un-migrated and subtracted 150px from
-    /// every crop a SECOND time — silently shifting every saved mask up by 150 pixels on first
-    /// load. Any future schema bump would have done the same. Keying on the space string alone
-    /// makes the migration idempotent no matter how many times the version changes.
-    /// </summary>
     private static bool IsContentSpace(JsonObject config)
         => config["coordinate_space"]?.ToString() == HudCoordinateSpace;
 
-    /// <summary>
-    /// Exact port of sanitize_hud_config. Deep-clones, validates, and fixes all sections.
-    /// Migrates legacy coordinates if not in current space.
-    /// </summary>
     public static JsonObject Sanitize(JsonObject? config, bool migrateLegacy = true)
     {
         config ??= new JsonObject();
@@ -323,9 +249,6 @@ public static class HudConfig
         return clean;
     }
 
-    /// <summary>
-    /// Validates config and returns list of issues. Exact port of validate_hud_config().
-    /// </summary>
     public static List<string> Validate(JsonObject config)
     {
         var issues = new List<string>();
@@ -499,11 +422,6 @@ public static class HudConfig
         return issues;
     }
 
-    /// <summary>
-    /// CONFIGVAL_01 — parses a scale WITHOUT ToScale's fallback, so Validate can tell "this value is
-    /// bad" from "this value is fine". ToScale deliberately swallows both cases into 1/1 because its
-    /// caller (Sanitize) has to produce something renderable; Validate has to produce the truth.
-    /// </summary>
     private static Frac ParseScaleStrict(JsonNode value)
     {
         if (value.AsValue().TryGetValue(out string? text) && !string.IsNullOrWhiteSpace(text))
@@ -515,7 +433,6 @@ public static class HudConfig
         return Frac.FromString(value.ToString());
     }
 
-    /// <summary>CONFIGVAL_01 — JsonObject.ContainsKey is ordinal; element keys are not.</summary>
     private static bool HasKeyIgnoreCase(JsonObject section, string key)
     {
         if (section.ContainsKey(key)) return true;

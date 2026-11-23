@@ -3,25 +3,10 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>What the background download produced: a verified installer, and how to run it.</summary>
 internal sealed record PreparedUpdate(string InstallerPath, string? SmartFolder, long DownloadedBytes, string Summary);
 
-/// <summary>
-/// DIST-SMART — GETS AN UPDATE READY, DOWNLOADING AS LITTLE AS POSSIBLE.
-///
-/// <para>Order of preference, each one falling through to the next on ANY doubt:</para>
-/// <list type="number">
-/// <item><b>Smart</b> — read the signed update.json, hash the installed files, download only the files
-///   whose CONTENT is new (a same-named file with a different SHA-256 counts as new), and rebuild the
-///   main program from a binary patch when one exists for the installed version (BINDELTA_01).</item>
-/// <item><b>Full</b> — the complete installer.</item>
-/// </list>
-/// <para>Whatever is chosen, the program that will run elevated is publisher-checked (UPDATEPIN_01)
-/// before this returns, and every downloaded file is hashed (DLRESUME_01).</para>
-/// </summary>
 internal static class UpdatePreparer
 {
-    /// <summary>Text and progress for the update toast: headline, status, fraction (null = busy).</summary>
     internal delegate void Report(string headline, string status, double? fraction);
 
     public static async Task<PreparedUpdate> PrepareAsync(HttpClient http, UpdateService.UpdateRelease release, string folder,
@@ -30,9 +15,10 @@ internal static class UpdatePreparer
         EnsureDiskSpace([(folder, ListScratchBytes)]);
         Directory.CreateDirectory(folder);
         long? unpackedTotal = null;
+        string? listedInstallerSha = null;
         try
         {
-            PreparedUpdate? smart = await TrySmartAsync(http, release, folder, report, total => unpackedTotal = total, cancel).ConfigureAwait(false);
+            PreparedUpdate? smart = await TrySmartAsync(http, release, folder, report, total => unpackedTotal = total, sha => listedInstallerSha = sha, cancel).ConfigureAwait(false);
             if (smart is not null) return smart;
         }
         catch (OperationCanceledException)
@@ -47,22 +33,13 @@ internal static class UpdatePreparer
         {
             RuntimeLog.Info("UPDATE", "Smart update unavailable, using the installer instead: " + ex.Message);
         }
-        return await DownloadInstallerAsync(http, release, folder, report, unpackedTotal, cancel).ConfigureAwait(false);
+        return await DownloadInstallerAsync(http, release, folder, report, unpackedTotal, listedInstallerSha, cancel).ConfigureAwait(false);
     }
 
-    /// <summary>UPDATESPACE_01 — headroom kept free on every drive an update writes to.</summary>
     internal const long SafetyMarginBytes = 128L * 1024 * 1024;
 
-    /// <summary>UPDATESPACE_01 — what the signed list and its signature need before anything is known.</summary>
     internal const long ListScratchBytes = 16L * 1024 * 1024;
 
-    /// <summary>
-    /// UPDATESPACE_01 — "is there room?", answered per DRIVE for every (folder, bytes) pair: two folders on
-    /// one drive add up, each drive must also keep <see cref="SafetyMarginBytes"/> free. It used to demand
-    /// the FULL installer size + 256 MB on the downloads drive for every update — a 9 MB smart update
-    /// failed on a nearly full disk for no reason — and never looked at the drive the full installer
-    /// unpacks itself onto.
-    /// </summary>
     internal static void EnsureDiskSpace(IEnumerable<(string Folder, long Bytes)> needs, Func<string, long?>? freeSpace = null)
     {
         freeSpace ??= FreeBytes;
@@ -106,12 +83,10 @@ internal static class UpdatePreparer
         }
     }
 
-    /// <summary>UPDATESPACE_01 — a disk-space refusal is final for this attempt: no fallback to a BIGGER download.</summary>
     internal sealed class InsufficientDiskSpaceException(string message) : IOException(message);
 
-
     private static async Task<PreparedUpdate?> TrySmartAsync(HttpClient http, UpdateService.UpdateRelease release, string folder,
-        Report report, Action<long> unpackedTotal, CancellationToken cancel)
+        Report report, Action<long> unpackedTotal, Action<string?> listedInstallerSha, CancellationToken cancel)
     {
         if (!release.TryGetAsset(SmartUpdateManifest.FileName, out string? manifestUrl) ||
             !release.TryGetAsset(SmartUpdateManifest.SignatureFileName, out string? signatureUrl)) return null;
@@ -130,6 +105,7 @@ internal static class UpdatePreparer
 
         byte[] json = await File.ReadAllBytesAsync(manifestPath, cancel).ConfigureAwait(false);
         string? self = OperatingSystem.IsWindows() && AuthenticodeVerifier.Inspect(Environment.ProcessPath ?? string.Empty) is { ChainValid: true } own
+                       && !AuthenticodeVerifier.IsSharedPublisher(own.Subject)
             ? own.Thumbprint : null;
         LoadRevokedSigners();
         if (!SmartUpdateManifest.VerifySignature(json, await File.ReadAllBytesAsync(signaturePath, cancel).ConfigureAwait(false), self,
@@ -141,6 +117,7 @@ internal static class UpdatePreparer
             !DeploymentLifecycle.TryParseVersion(release.Tag, out Version tagged) || listed != tagged)
             throw new InvalidDataException("update.json describes a different version than the release.");
         unpackedTotal(manifest.Files.Sum(f => f.Length));
+        listedInstallerSha(manifest.FullInstaller?.Sha256);
 
         var installedByHash = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         string[] files = UpgradeFiles.Files(installed).ToArray();
@@ -212,7 +189,7 @@ internal static class UpdatePreparer
                     BinaryDelta.ApplyFile(exeOnDisk, patchFile, partial, cancel);
                     if (new FileInfo(partial).Length != exe.Length || UpgradeFiles.Hash(partial) != exe.Sha256)
                         throw new IOException("The patched program file did not match the signed update list.");
-                    RequirePublisher(partial);
+                    RequirePublisher(partial, exe.Sha256);
                     File.Move(partial, target, overwrite: true);
                 }
                 finally
@@ -229,15 +206,14 @@ internal static class UpdatePreparer
         Directory.CreateDirectory(Path.GetDirectoryName(installer)!);
         File.Copy(exeSource, installer, overwrite: true);
         report("Checking the update is safe…", "Making sure every file is complete, unchanged and signed by the publisher…", null);
-        RequirePublisher(installer);
+        RequirePublisher(installer, exe.Sha256);
 
         return new PreparedUpdate(installer, smartFolder, downloadTotal,
             $"Smart update: {what}, {sizeText} downloaded instead of {RuntimePayloadManifest.FormatBytes(manifest.FullInstaller?.Length ?? release.Size)}.");
     }
 
-
     private static async Task<PreparedUpdate> DownloadInstallerAsync(HttpClient http, UpdateService.UpdateRelease release, string folder,
-        Report report, long? unpackedTotal, CancellationToken cancel)
+        Report report, long? unpackedTotal, string? listedSha256, CancellationToken cancel)
     {
         string url = release.DownloadUrl;
         string? sha = release.Sha256Hex;
@@ -261,15 +237,14 @@ internal static class UpdatePreparer
 
         report("Checking the update is safe…", "Making sure the file arrived complete, unchanged and signed by the publisher…", null);
         string installer = target;
-        RequirePublisher(installer);
+        RequirePublisher(installer, listedSha256);
         return new PreparedUpdate(installer, null, size, $"Full installer, {sizeText}.");
     }
 
-    /// <summary>UPDATEPIN_01 / UPDATETRUST_02 — nothing runs elevated unless the publisher is proven.</summary>
-    private static void RequirePublisher(string installer)
+    private static void RequirePublisher(string installer, string? listedSha256)
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Updates install on Windows only.");
-        var verdict = AuthenticodeVerifier.EvaluateUpdateCandidate(installer, Environment.ProcessPath, out string detail);
+        var verdict = AuthenticodeVerifier.EvaluateUpdateCandidate(installer, Environment.ProcessPath, out string detail, listedSha256);
         if (verdict == AuthenticodeVerifier.TrustVerdict.Trusted)
         {
             RuntimeLog.Info("UPDATE", "Publisher check passed: " + detail);
@@ -288,10 +263,8 @@ internal static class UpdatePreparer
             + Environment.NewLine + detail);
     }
 
-    /// <summary>REVOKE_01 — per-user memory of withdrawn publisher leaves (one thumbprint per line).</summary>
     internal const string RevokedSignersFile = "update_revoked_signers.txt";
 
-    /// <summary>REVOKE_01 — registers the withdrawn leaves this user's copy has learned so far.</summary>
     internal static void LoadRevokedSigners()
     {
         try
@@ -305,7 +278,6 @@ internal static class UpdatePreparer
         }
     }
 
-    /// <summary>REVOKE_01 — remembers the withdrawn leaves named by a VERIFIED signed list. Never forgets one.</summary>
     internal static void RememberRevokedSigners(IEnumerable<string>? thumbprints)
     {
         if (thumbprints is null) return;
@@ -324,11 +296,6 @@ internal static class UpdatePreparer
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
-    /// <summary>
-    /// ASSETHASH_01 — before a patch is decoded, its header must promise exactly the signed program
-    /// (length and SHA-256) and start from exactly the installed one. The decoder never writes more than
-    /// the header's length, so the result is bounded by the signed size.
-    /// </summary>
     internal static void RequirePatchHeader(string patchFile, string installedSha256, SmartFile program)
     {
         BinaryDelta.Header header;

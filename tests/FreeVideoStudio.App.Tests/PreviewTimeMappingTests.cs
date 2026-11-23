@@ -1,11 +1,9 @@
-﻿
-using FreeVideoStudio.App.ViewModels;
+﻿using FreeVideoStudio.App.ViewModels;
 using FreeVideoStudio.Core.Media;
 using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>MUSICSYNC_01 — the preview's output clock is the export's output clock.</summary>
 public sealed class PreviewTimeMappingTests
 {
     private static TimelineViewModel Timeline()

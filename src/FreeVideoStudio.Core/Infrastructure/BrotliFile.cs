@@ -2,10 +2,6 @@
 
 namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>
-/// DIST-SMART — Brotli with an explicit quality and a 16 MB window. <see cref="BrotliStream"/> only
-/// exposes coarse levels; large binaries compress noticeably better with the big window.
-/// </summary>
 public static class BrotliFile
 {
     public const int Window = 24;
@@ -32,13 +28,6 @@ public static class BrotliFile
         Compress(data, output, quality);
     }
 
-    /// <summary>
-    /// Decompresses <paramref name="source"/> into <paramref name="destination"/>.
-    /// ASSETHASH_01 — when <paramref name="maxBytes"/> is given, decompression stops with
-    /// <see cref="InvalidDataException"/> the moment the output would exceed it, and the partial
-    /// output is deleted. A damaged or hostile asset can therefore never expand past the size the
-    /// signed update list promises (a "decompression bomb" cannot fill the disk).
-    /// </summary>
     public static void DecompressFile(string source, string destination, long maxBytes = long.MaxValue)
     {
         if (maxBytes < 0) throw new ArgumentOutOfRangeException(nameof(maxBytes));

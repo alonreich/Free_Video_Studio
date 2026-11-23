@@ -1,0 +1,14 @@
+namespace FreeVideoStudio.Core.LocalAi;
+
+internal static class LocalAiPackFiles
+{
+    public const bool Released = false;
+
+    public static readonly LocalAiPackFile[] All =
+    [
+        new("onnxruntime.dll", LocalAiPackManifest.ReleaseBaseUrl + "onnxruntime.dll", 16471584, "95366724919F4E95ECC60010912ED538AD9804B6683FBD0AAD389749102834B9"),
+        new("DirectML.dll", LocalAiPackManifest.ReleaseBaseUrl + "DirectML.dll", 18527776, "9C9E6D822561C6C41B90E6994B3E8857CF1D66DBFB1E0C4C799C7C89B4E92DA1"),
+        new("sam2_small_encoder.onnx", LocalAiPackManifest.ReleaseBaseUrl + "sam2_small_encoder.onnx", 69489078, "3F32144D9B13E5E091D565E1EB5B999A1C1C15D09ECB0BC84F66668127910426"),
+        new("sam2_small_decoder.onnx", LocalAiPackManifest.ReleaseBaseUrl + "sam2_small_decoder.onnx", 8722133, "40828B42D92A81ABA9C26BCB312B6D552590B6084BF731D5DD65F55424C2C103"),
+    ];
+}

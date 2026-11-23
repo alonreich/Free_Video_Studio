@@ -38,7 +38,6 @@ public class IpcTests : IDisposable
         catch { }
     }
 
-
     [Fact]
     public void IpcProtocol_RoundtripFrame_EncodesAndDecodesFaithfully()
     {
@@ -140,7 +139,6 @@ public class IpcTests : IDisposable
         Assert.Throws<EndOfStreamException>(() => IpcProtocol.ReadFrame(stream));
     }
 
-
     [Fact]
     public async Task IpcServerAndClient_HandoffRoundtrip_CompletesUnder5Milliseconds()
     {
@@ -160,6 +158,8 @@ public class IpcTests : IDisposable
             ["UploadVideoDirectory"] = "C:\\Videos\\Clips",
             ["MainVolume"] = 80.0
         };
+
+        Assert.NotNull(await NamedPipeStateClient.GetStateAsync(TimeSpan.FromSeconds(5)));
 
         var sw = Stopwatch.StartNew();
         bool updated = await NamedPipeStateClient.UpdatePropertiesAsync(handoff, TimeSpan.FromSeconds(2));
@@ -192,7 +192,6 @@ public class IpcTests : IDisposable
 
         Assert.True(sw.ElapsedMilliseconds < 10, $"50 in-memory operations took {sw.ElapsedMilliseconds} ms.");
     }
-
 
     [Fact]
     public async Task IpcStressTest_RapidConcurrentUpdates_ZeroLockExceptions()
@@ -229,7 +228,6 @@ public class IpcTests : IDisposable
         Assert.NotNull(finalState);
         Assert.True(finalState.ContainsKey("UploadVideoDirectory"));
     }
-
 
     [Fact]
     public async Task StateTransferStore_WhenNoServerRunning_FallsBackToDisk()
@@ -376,7 +374,6 @@ public class IpcTests : IDisposable
         Assert.NotNull(onDisk);
         Assert.Equal(expected, onDisk!["MainVolume"]!.GetValue<double>());
     }
-
 
     private static readonly string[] ChildKeys =
         ["UploadVideoDirectory", "MergerUploadDirectory", "MergerOutputDirectory", "CropToolUploadDirectory"];
@@ -571,8 +568,6 @@ public class IpcTests : IDisposable
         }
     }
 
-
-    /// <summary>A peer that owns the state pipe, accepts every connection and never answers.</summary>
     private sealed class SilentPeer : IDisposable
     {
         private readonly CancellationTokenSource _cts = new();
@@ -665,7 +660,6 @@ public class IpcTests : IDisposable
         Assert.Equal("hung-peer", AtomicJsonFile.ReadObject(_paths.SessionStateFile)!["MergerOutputDirectory"]?.GetValue<string>());
     }
 
-    /// <summary>A commit function that records batches, can be held open, and can be told to fail.</summary>
     private sealed class RecordingCommit
     {
         public readonly List<JsonObject> Batches = new();
@@ -784,6 +778,65 @@ public class IpcTests : IDisposable
         JsonObject last = commit.Last;
         Assert.Equal(2, last["MainWindowBounds"]!["X"]!.GetValue<int>());
         Assert.Equal(1.0, last["MainVolume"]!.GetValue<double>());
+    }
+
+    [Fact]
+    public async Task SessionWriter_RetriedOlderValue_NeverOverwritesANewerOneAlreadyInFlight()
+    {
+        var commit = new RecordingCommit { Fail = true };
+        var writer = new SessionStateWriter(commit.Commit);
+
+        writer.Enqueue(new JsonObject { ["MainWindowBounds"] = new JsonObject { ["X"] = 1 }, ["MainVolume"] = 1.0 });
+        Assert.False(await writer.FlushAsync(TimeSpan.FromSeconds(5)));
+
+        commit.Fail = false;
+        commit.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        writer.Enqueue(new JsonObject { ["MainWindowBounds"] = new JsonObject { ["X"] = 2 } });
+        var deadline = Stopwatch.StartNew();
+        while (Volatile.Read(ref commit.Active) == 0 && deadline.Elapsed < TimeSpan.FromSeconds(5)) await Task.Delay(5);
+        Assert.Equal(1, Volatile.Read(ref commit.Active));
+
+        Task<bool> flush = writer.FlushAsync(TimeSpan.FromSeconds(5));
+        commit.Gate.SetResult();
+
+        Assert.True(await flush);
+        JsonObject last = commit.Last;
+        Assert.Equal(2, last["MainWindowBounds"]!["X"]!.GetValue<int>());
+        Assert.Equal(1.0, last["MainVolume"]!.GetValue<double>());
+    }
+
+    [Fact]
+    public async Task SessionWriter_FailedOlderValue_NeverOverwritesANewerOneAlreadyCommitted()
+    {
+        var commit = new RecordingCommit { Fail = true };
+        var writer = new SessionStateWriter(commit.Commit);
+        writer.Prime(new JsonObject { ["schema_version"] = 1 });
+        int Committed() { lock (commit.Batches) return commit.Batches.Count; }
+
+        writer.Enqueue(new JsonObject { ["MergerOutputDirectory"] = "old" });
+        Assert.False(await writer.FlushAsync(TimeSpan.FromSeconds(5)));
+
+        commit.Fail = false;
+        commit.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        writer.Enqueue(new JsonObject { ["MergerOutputDirectory"] = "new" });
+        var deadline = Stopwatch.StartNew();
+        while (Volatile.Read(ref commit.Active) == 0 && deadline.Elapsed < TimeSpan.FromSeconds(5)) await Task.Delay(5);
+        Assert.Equal(1, Volatile.Read(ref commit.Active));
+        writer.Enqueue(new JsonObject { ["MainVolume"] = 0.5 });
+        commit.Gate.SetResult();
+        while (Committed() < 2 && deadline.Elapsed < TimeSpan.FromSeconds(10)) await Task.Delay(5);
+        Assert.Equal(2, Committed());
+        string? seenBeforeExitFlush = writer.ReadSnapshot()["MergerOutputDirectory"]?.GetValue<string>();
+
+        Assert.True(await writer.FlushAsync(TimeSpan.FromSeconds(5)));
+        var persisted = new JsonObject();
+        lock (commit.Batches)
+            foreach (JsonObject batch in commit.Batches)
+                foreach (var (key, value) in batch) persisted[key] = value?.DeepClone();
+
+        Assert.Equal("new", persisted["MergerOutputDirectory"]?.GetValue<string>());
+        Assert.Equal("new", seenBeforeExitFlush);
+        Assert.Equal("new", writer.ReadSnapshot()["MergerOutputDirectory"]?.GetValue<string>());
     }
 
     [Fact]

@@ -1,14 +1,9 @@
-﻿
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// BGUPDATE_01 — the update card. All state is bound to <c>UpdateToastViewModel</c>; this file only
-/// keeps the card in the bottom-right corner of its owner while the owner moves or resizes.
-/// </summary>
 public partial class UpdateToastWindow : Window
 {
     private Window? _anchor;
@@ -18,7 +13,6 @@ public partial class UpdateToastWindow : Window
         AvaloniaXamlLoader.Load(this);
     }
 
-    /// <summary>Shows the card over <paramref name="owner"/> without taking focus from it.</summary>
     public void ShowOver(Window owner)
     {
         if (!ReferenceEquals(_anchor, owner))

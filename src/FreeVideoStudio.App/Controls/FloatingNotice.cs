@@ -1,5 +1,4 @@
-﻿
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.VisualTree;
 using Avalonia.Layout;
@@ -12,67 +11,40 @@ using System.Threading.Tasks;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>How a floating notice is coloured. Nothing else about it changes.</summary>
 public enum NoticeKind
 {
-    /// <summary>Something happened and it worked. Green.</summary>
     Success,
-    /// <summary>Neutral state change or a hint. Blue.</summary>
     Info,
-    /// <summary>The user tried something that will not work. Amber. This is the historical default.</summary>
     Warning,
-    /// <summary>Something failed. Red.</summary>
     Error
 }
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// ISSUE_09 + ISSUE_14 — ONE NOTIFICATION STYLE FOR THE WHOLE SUITE, AND THE GHOST CANVAS IT USES.
-///
-/// WHAT WAS WRONG (ISSUE_09). Six windows told the user things in five different ways:
-///   Main App        a Popup floating up over the video, fading out   (the one people liked)
-///   Speed Editor    the same Popup, plus a status line at the bottom
-///   Music Wizard    a hand-rolled grey Border sliding in from the top for 2.5s
-///   Video Merger    a text line under the queue
-///   Crop Tools      a text line at the bottom
-///   Voice Over      a status label
-/// So "did that work?" had a different answer, in a different place, on every screen — and the
-/// Music Wizard's version silently showed NOTHING if its host panel could not be found.
-///
-/// WHAT THIS IS. The float-up-and-fade notice, extracted from the Main App and made reusable. Any
-/// window can raise one with a single call and no XAML.
-///
-/// WHY IT IS A CANVAS AND NOT THE OLD Popup (ISSUE_14, ghost 1). The old FloatingFeedback needed
-/// THREE named XAML controls per window (a Popup, its Border, its TextBlock) and an OS-level popup
-/// window, which is exactly why no other screen could reuse it. Meanwhile MainWindow.axaml carried
-/// an element called `OverlayCanvas`, commented "for Pop-up Badges and Custom Floating Animations",
-/// that NOTHING in the entire source tree ever drew into — a sheet of clear glass built for this
-/// job and then never connected. It is connected now: when a window has an `OverlayCanvas` this
-/// draws into it, and when it does not, one is created on the fly. The dead element became the
-/// engine, and the per-window Popups are gone.
-///
-/// HARD RULES.
-///   (F1) NEVER throws into a caller. A missing notification must not break the action it was
-///        reporting on.
-///   (F2) The host canvas is ALWAYS IsHitTestVisible=false. These float over live controls,
-///        including the timeline; one must never eat a click.
-///   (F3) ZIndex sits below CoachOverlay (int.MaxValue) on purpose, so a notice cannot cover the
-///        walkthrough that is teaching the user what the notice means.
-///   (F4) Identical text inside DedupeWindow is dropped. Several callers fire on drag ticks, and
-///        without this a drag would stack forty copies of the same sentence up the screen.
-///   (F5) At most MaxConcurrent are alive at once; the oldest is retired early. A burst must
-///        degrade to "the last few", never to an unreadable pile.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public static class FloatingNotice
 {
-    /// <summary>Identical text inside this window is treated as a repeat and dropped (F4).</summary>
     private static readonly TimeSpan DedupeWindow = TimeSpan.FromMilliseconds(1400);
 
-    /// <summary>How long the notice holds still and fully opaque before it starts to rise.</summary>
     private const int HoldMs = 900;
 
-    /// <summary>Frames of the rise-and-fade. 45 x 16ms ≈ 0.72s, matching the old Popup animation.</summary>
+    internal const string ReadableNoticeTag = "NOTICEREAD_01";
+
+    internal static int HoldMsFor(NoticeKind kind, string text)
+    {
+        int floor = kind switch
+        {
+            NoticeKind.Error => 6000,
+            NoticeKind.Warning => 4500,
+            NoticeKind.Success => 1800,
+            _ => 1500
+        };
+        int reading = 1200 + 60 * Math.Max(0, (text ?? string.Empty).Length);
+        return Math.Clamp(Math.Max(floor, reading), HoldMs, 15000);
+    }
+
+    internal static Avalonia.Automation.AutomationLiveSetting LiveSettingFor(NoticeKind kind)
+        => kind is NoticeKind.Error or NoticeKind.Warning
+            ? Avalonia.Automation.AutomationLiveSetting.Assertive
+            : Avalonia.Automation.AutomationLiveSetting.Polite;
+
     private const int FadeFrames = 45;
 
     private const int MaxConcurrent = 3;
@@ -91,10 +63,6 @@ public static class FloatingNotice
 
     internal static Action<Window, string, NoticeKind>? NoticeHookForTesting { get; set; }
 
-    /// <summary>
-    /// Floats a short message up over the window and fades it out. Safe to call from any thread and
-    /// at any point in a window's life, including before it has been shown.
-    /// </summary>
     public static void Show(Window? window, string text, NoticeKind kind = NoticeKind.Warning)
     {
         if (window == null || string.IsNullOrWhiteSpace(text)) return;
@@ -107,20 +75,6 @@ public static class FloatingNotice
         catch (Exception ex) { SafeLog($"Show failed: {ex.Message}"); }
     }
 
-    /// <summary>
-    /// ANCHOR_01 — floats the message NEXT TO a specific control instead of over the middle of the
-    /// window.
-    ///
-    /// WHY THIS IS OPT-IN AND NOT THE DEFAULT: every screen in the suite shares this component, and
-    /// a centred notice is the right answer for messages about the project as a whole ("export
-    /// finished", "nothing to undo"). It is the WRONG answer for a message about a button the user
-    /// just pressed — the eye is on the button, and the words appear somewhere else entirely. This
-    /// overload is for that second case.
-    ///
-    /// Falls back to the centred placement whenever the anchor cannot be located: not attached to
-    /// a visual tree yet, zero-sized mid-layout, or in a different window. A notice must never be
-    /// lost because the thing it points at moved.
-    /// </summary>
     public static void ShowAt(Window? window, Control? anchor, string text, NoticeKind kind = NoticeKind.Warning)
     {
         if (window == null || string.IsNullOrWhiteSpace(text)) return;
@@ -133,16 +87,11 @@ public static class FloatingNotice
         catch (Exception ex) { SafeLog($"ShowAt failed: {ex.Message}"); }
     }
 
-    /// <summary>Convenience wrappers so call sites read as English rather than as an enum.</summary>
     public static void Success(Window? window, string text) => Show(window, text, NoticeKind.Success);
     public static void Info(Window? window, string text) => Show(window, text, NoticeKind.Info);
     public static void Warn(Window? window, string text) => Show(window, text, NoticeKind.Warning);
     public static void Error(Window? window, string text) => Show(window, text, NoticeKind.Error);
 
-    /// <summary>
-    /// Drops every notice currently on screen for this window and forgets the dedupe state.
-    /// Call from OnClosed so a rising notice cannot outlive its window.
-    /// </summary>
     public static void Clear(Window? window)
     {
         if (window == null) return;
@@ -186,7 +135,6 @@ public static class FloatingNotice
 
             var label = new TextBlock
             {
-                Text = text,
                 Foreground = accent,
                 FontSize = Infrastructure.ThemeManager.ScaledFontSize(anchor != null ? 12 : 24),
                 FontWeight = FontWeight.Bold,
@@ -208,25 +156,18 @@ public static class FloatingNotice
                 Child = label
             };
 
+            Avalonia.Automation.AutomationProperties.SetLiveSetting(label, LiveSettingFor(kind));
+            Avalonia.Automation.AutomationProperties.SetLiveSetting(pill, LiveSettingFor(kind));
             host.Children.Add(pill);
             st.Live.Add(pill);
+            label.Text = text;
+            Avalonia.Automation.AutomationProperties.SetName(pill, text);
             Place(host, pill, anchor);
-            _ = AnimateAsync(st, host, pill, anchor);
+            _ = AnimateAsync(st, host, pill, anchor, HoldMsFor(kind, text));
         }
         catch (Exception ex) { SafeLog($"ShowCore failed: {ex.Message}"); }
     }
 
-    /// <summary>
-    /// Centres the pill horizontally and parks it just below the middle of the host, returning the
-    /// travel it should make on its way out.
-    ///
-    /// ⚠️ WHY THIS IS A SEPARATE METHOD AND IS CALLED TWICE. A pill inside a Canvas gets no layout
-    /// slot, so its Bounds are 0 until it has been arranged — and on the FIRST notice of a session
-    /// the host canvas itself may have been created microseconds ago and still measure 0x0 too.
-    /// Placing once from those zeros parks the very first message the user ever sees in the
-    /// top-left corner. So it is placed immediately (best effort, using fallbacks), and placed
-    /// AGAIN on the first animation frame once real sizes exist. Do not collapse this back inline.
-    /// </summary>
     private static (double StartY, double EndY) Place(Canvas host, Border pill, Control? anchor)
     {
         if (anchor != null)
@@ -283,7 +224,7 @@ public static class FloatingNotice
         return (startY, endY);
     }
 
-    private static async Task AnimateAsync(HostState st, Canvas host, Border pill, Control? anchor)
+    private static async Task AnimateAsync(HostState st, Canvas host, Border pill, Control? anchor, int holdMs)
     {
         try
         {
@@ -293,7 +234,7 @@ public static class FloatingNotice
             if (!st.Live.Contains(pill)) return;
             (double startY, double endY) = Place(host, pill, anchor);
 
-            await Task.Delay(HoldMs);
+            await Task.Delay(holdMs);
 
             for (int i = 1; i <= FadeFrames; i++)
             {
@@ -318,11 +259,6 @@ public static class FloatingNotice
         }
     }
 
-    /// <summary>
-    /// ISSUE_14 — this is where the ghost gets its job. A window that declares an `OverlayCanvas`
-    /// (MainWindow does; it was dead) has its notices drawn there. Any other window gets an
-    /// equivalent canvas created on demand, so no screen needs XAML changes to gain notifications.
-    /// </summary>
     private static Canvas? EnsureHost(Window window, HostState st)
     {
         if (st.Canvas != null && st.Canvas.Parent != null) return st.Canvas;
@@ -354,9 +290,6 @@ public static class FloatingNotice
         return created;
     }
 
-    /// OVERLAYHOST_01 — was a private copy, byte-identical to the one in the sibling overlay
-    /// helper. One implementation now; the private names are kept so no call site changes.
-    /// See <see cref="OverlayHostLayout"/> for why `window.Content as Panel` is not sufficient.
     private static Panel? ResolveHostPanel(Window window) => OverlayHostLayout.ResolveHostPanel(window);
 
     private static void CoverWholeHost(Panel host, Control child) => OverlayHostLayout.CoverWholeHost(host, child);

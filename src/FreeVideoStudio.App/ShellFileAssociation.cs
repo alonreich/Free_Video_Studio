@@ -1,21 +1,10 @@
-﻿
-using System;
+﻿using System;
 using System.IO;
 using System.Runtime.Versioning;
 using Microsoft.Win32;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// Registers the app in Windows Explorer's "Open with" list for video files, so the
-/// user can right-click an .mp4/.mkv/.avi/.mov -> "Open with" -> Free Video Studio,
-/// and the file loads in the Main App exactly like a normal upload (Program.cs already
-/// detects a video path as the first CLI arg and stashes it in OpenWithLaunch).
-///
-/// This uses HKEY_CURRENT_USER only — NO admin/UAC required — and is fully idempotent:
-/// it re-runs cheaply on every launch and only rewrites when the exe path or version
-/// stamp changes. DeploymentLifecycle's uninstall registry purge covers HKCU cleanup.
-/// </summary>
 [SupportedOSPlatform("windows")]
 public static class ShellFileAssociation
 {
@@ -25,10 +14,6 @@ public static class ShellFileAssociation
 
     private const string StampVersion = "1";
 
-    /// <summary>
-    /// Ensures the "Open with" association exists for the current executable. Safe to call
-    /// on every UI launch; swallows all errors (a missing association is never fatal).
-    /// </summary>
     public static void EnsureRegistered()
     {
         if (!OperatingSystem.IsWindows()) return;
@@ -37,6 +22,7 @@ public static class ShellFileAssociation
         {
             string? exePath = Environment.ProcessPath;
             if (string.IsNullOrWhiteSpace(exePath) || !File.Exists(exePath)) return;
+            if (!IsInstalledProgram(exePath)) return;
 
             string command = $"\"{exePath}\" \"%1\"";
             string stamp = $"{StampVersion}|{exePath}";
@@ -81,6 +67,20 @@ public static class ShellFileAssociation
         catch (Exception ex)
         {
             RuntimeLog.Info("OPEN WITH", $"Association registration skipped: {ex.Message}");
+        }
+    }
+
+    internal static bool IsInstalledProgram(string exePath)
+    {
+        try
+        {
+            return string.Equals(Path.GetFullPath(exePath), Path.GetFullPath(DeploymentFootprint.InstallPath),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            RuntimeLog.Swallowed(ex);
+            return false;
         }
     }
 }

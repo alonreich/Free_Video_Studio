@@ -5,7 +5,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>AISCHEMA_01 — Gemini-dialect schemas become valid Claude / OpenAI strict JSON Schema, and answers come back in Gemini shape.</summary>
 public sealed class AiJsonSchemaTests
 {
     [Fact]

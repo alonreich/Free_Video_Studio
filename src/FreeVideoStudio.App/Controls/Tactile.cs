@@ -1,5 +1,4 @@
-﻿
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
@@ -29,10 +28,6 @@ namespace FreeVideoStudio.App.Controls
 
         private static bool _globalRippleInstalled;
 
-        /// <summary>
-        /// Installs the one process-wide press ripple. Idempotent; call once from
-        /// AvaloniaApp.OnFrameworkInitializationCompleted, before any window is shown.
-        /// </summary>
         public static void EnableGlobalRipple()
         {
             if (_globalRippleInstalled) return;
@@ -115,7 +110,7 @@ namespace FreeVideoStudio.App.Controls
 
             AdornerLayer.SetAdornedElement(ripple, c);
             layer.Children.Add(ripple);
-            
+
             Canvas.SetLeft(ripple, pt.X - 10);
             Canvas.SetTop(ripple, pt.Y - 10);
 
@@ -171,7 +166,7 @@ namespace FreeVideoStudio.App.Controls
                 }
             }
         }
-        
+
         private static TransformGroup GetOrCreateTransformGroup(Control c)
         {
             if (c.RenderTransform is TransformGroup group) return group;
@@ -195,19 +190,19 @@ namespace FreeVideoStudio.App.Controls
         {
             if (sender is not Control c) return;
             var pt = e.GetPosition(c);
-            
+
             double centerX = c.Bounds.Width / 2.0;
             double centerY = c.Bounds.Height / 2.0;
-            
+
             double offsetX = pt.X - centerX;
             double offsetY = pt.Y - centerY;
-            
+
             double normX = Math.Clamp(offsetX / centerX, -1.0, 1.0);
             double normY = Math.Clamp(offsetY / centerY, -1.0, 1.0);
 
             var group = GetOrCreateTransformGroup(c);
             var translate = (TranslateTransform)group.Children[1];
-            
+
             translate.X = normX * -1.5;
             translate.Y = normY * -1.5;
         }
@@ -218,7 +213,7 @@ namespace FreeVideoStudio.App.Controls
             var group = GetOrCreateTransformGroup(c);
             var scale = (ScaleTransform)group.Children[0];
             var translate = (TranslateTransform)group.Children[1];
-            
+
             scale.ScaleX = 1.0;
             scale.ScaleY = 1.0;
             translate.X = 0;

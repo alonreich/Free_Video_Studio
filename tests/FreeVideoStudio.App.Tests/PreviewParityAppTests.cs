@@ -1,5 +1,4 @@
-﻿
-using System.IO;
+﻿using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using FreeVideoStudio.App.Infrastructure;
@@ -8,10 +7,8 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>PREVIEWMIX_02 / CORNERPARITY_01 / AUD-MASTERVOL — the App-side halves of preview/export parity.</summary>
 public sealed class PreviewParityAppTests
 {
-    /// <summary>Every file that composes or builds the export (Main App), and the preview-mix path that reuses it.</summary>
     private static readonly string[] ExportPath =
     {
         "src/FreeVideoStudio.App/MainWindow.Export.cs",

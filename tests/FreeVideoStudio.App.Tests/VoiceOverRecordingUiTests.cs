@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -18,13 +17,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// VOREC_01 / VOREC_03 / VOLIVE_01 — the recording state shown to the user is the capture session's truth:
-/// RECORDING only once buffers arrive, the clock is CAPTURED audio, pause freezes everything,
-/// faults and saves are named, Apply shows SAVING single-flight, a closed window ignores late
-/// callbacks, and the live block paints above the thumbnail-loading scrim. Every test drives the
-/// production window, the production VoiceCaptureSession and its UI-dispatcher post target.
-/// </summary>
 public sealed class VoiceOverRecordingUiTests : IDisposable
 {
     [AvaloniaFact]
@@ -525,7 +517,6 @@ public sealed class VoiceOverRecordingUiTests : IDisposable
         Assert.Equal(ConfirmDialogWindow.ConfirmDialogResult.Cancelled, dlg.DialogResult);
     }
 
-    /// <summary>Delegates to the production session and counts the window's event subscriptions.</summary>
     private sealed class CountingCaptureSession(VoiceCaptureSession inner) : IVoiceCaptureSession
     {
         public int HealthSubscribers;

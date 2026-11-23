@@ -8,7 +8,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>AIAUDIT_01 (docs/05 SYS-AISETTINGS §7.3/7.4) — guards for the 2026-10-16 AI audit fixes.</summary>
 public sealed class AiAuditFixTests
 {
     [Theory]
@@ -153,5 +152,23 @@ public sealed class AiAuditFixTests
         Assert.DoesNotContain("visible or audible", silent);
         string withSound = AiCommentaryPrompts.BuildPrompt(CaptionTone.Hype, AiGameProfile.Fortnite, "English", canHearAudio: true);
         Assert.Contains("visible or audible", withSound);
+    }
+
+    [Fact]
+    public void PickReplacement_StripsModelsPrefix_AndExcludesFailingModel()
+    {
+        string? pick = AiVisionProviders.PickReplacement(AiVendor.Google,
+            new[] { "models/gemini-3.8-flash", "models/gemini-3.6-flash" }, "models/gemini-3.8-flash");
+        Assert.Equal("gemini-3.6-flash", pick);
+
+        string? pick2 = AiVisionProviders.PickReplacement(AiVendor.Google,
+            new[] { "gemini-3.8-flash", "gemini-3.6-flash" }, "models/gemini-3.8-flash");
+        Assert.Equal("gemini-3.6-flash", pick2);
+    }
+
+    [Fact]
+    public void CandidateMaxDimension_IsBoundedTo1280()
+    {
+        Assert.Equal(1280, GeminiTrackingService.CandidateMaxDimension);
     }
 }

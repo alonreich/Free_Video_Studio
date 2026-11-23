@@ -3,7 +3,6 @@ using System.Text.Json.Nodes;
 
 namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>UPGRADE_04 — user data is migrated by its owner, never by the elevated install worker.</summary>
 public sealed class UserDataUpgrade
 {
     private readonly List<DirectoryUpgrade> _transactions = [];
@@ -110,7 +109,6 @@ public sealed class UserDataUpgrade
 
 public sealed record UserUpgradeRoot(string Name, string Destination, string[] LegacyRoots, string Store);
 
-/// <summary>UPGRADE_05 — resolve moved media in older project files without modifying those files.</summary>
 public static class MigrationPathResolver
 {
     public static string Resolve(string value, IReadOnlyList<UpgradePathMapping> mappings)
@@ -156,11 +154,6 @@ public static class MigrationPathResolver
         return changed;
     }
 
-    /// <summary>
-    /// MEMEFOLDER_02 / NOSPACE_01 — records one folder move made by the app itself (not by the
-    /// installer), so saved projects and recovery files that name a file by its old full path keep
-    /// resolving. Idempotent: an identical mapping is not added twice. Never throws.
-    /// </summary>
     public static void AppendMapping(string source, string destination)
     {
         if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(ApplicationPaths.ProgramDataRootOverrideEnvironmentVariable)))
@@ -190,11 +183,6 @@ public static class MigrationPathResolver
 
     private static IReadOnlyList<UpgradePathMapping>? _cachedMappings;
 
-    /// <summary>
-    /// MEMEFOLDER_02 — resolves ONE saved path through the recorded mappings, but only when the
-    /// saved path no longer exists. Used by the recovery restore paths, which read file paths
-    /// straight from JSON and drop any that are missing. Never throws.
-    /// </summary>
     public static string ResolveSavedFile(string path)
     {
         if (string.IsNullOrWhiteSpace(path) || File.Exists(path)) return path;

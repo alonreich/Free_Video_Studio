@@ -21,10 +21,6 @@ public partial class AvaloniaApp : Application
             Avalonia.Interactivity.RoutingStrategies.Bubble, true);
     }
 
-    /// <summary>
-    /// Never let a UI sound break a user action: the router and the engine are both
-    /// non-throwing by contract, and this is the final guard around both.
-    /// </summary>
     private static void DispatchUiSound(object? sender)
     {
         try
@@ -35,11 +31,6 @@ public partial class AvaloniaApp : Application
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
-    /// <summary>
-    /// AUD-MASTERVOL / VOLSHARED_01 — seed the suite master from what was saved (level from the
-    /// session state, mute from settings), then start the central persistence and the Windows
-    /// Volume Mixer sync (VOLSYNC_01). Never for the install/cleanup workers.
-    /// </summary>
     private static void StartSharedMasterVolume(IClassicDesktopStyleApplicationLifetime desktop)
     {
         try
@@ -63,8 +54,27 @@ public partial class AvaloniaApp : Application
         desktop.Exit += (_, _) => Infrastructure.WindowsAudioSessionSync.Stop();
     }
 
+    private static void OnDispatcherUnhandledException(object? sender, Avalonia.Threading.DispatcherUnhandledExceptionEventArgs e)
+    {
+        var ex = e.Exception;
+        if (IsProcessCorrupting(ex))
+        {
+            RuntimeLog.Fail("UI", $"Unrecoverable UI-thread fault: {ex.GetType().Name}: {ex.Message}");
+            return;
+        }
+        FreeVideoStudio.Core.Abstractions.Faults.Degraded("UI",
+            "Something went wrong with that action, so it was stopped. Your project and the rest of the app are still fine.", ex);
+        e.Handled = true;
+    }
+
+    internal static bool IsProcessCorrupting(System.Exception ex) =>
+        ex is System.OutOfMemoryException or System.AccessViolationException or System.InvalidProgramException
+           or System.Threading.ThreadAbortException or System.BadImageFormatException;
+
     public override void OnFrameworkInitializationCompleted()
     {
+        Avalonia.Threading.Dispatcher.UIThread.UnhandledException += OnDispatcherUnhandledException;
+
         if (Services.UpgradeBrokerHost.IsActive && ApplicationLifetime is IClassicDesktopStyleApplicationLifetime broker)
         {
             Services.UpgradeBrokerHost.Attach(broker);
@@ -74,13 +84,17 @@ public partial class AvaloniaApp : Application
 
         FreeVideoStudio.Core.Media.VideoRenderMode.Initialize();
         Infrastructure.SettingsManager.Load();
+        FreeVideoStudio.Core.Media.FreezeSoundEffect.SelectedProvider =
+            () => FreeVideoStudio.Core.Media.FreezeSoundEffect.Parse(Infrastructure.SettingsManager.Instance.FreezeSound);
         Infrastructure.ThemeManager.ApplyFromSettings();
+        Infrastructure.UiStallWatchdog.Start();
 
         Controls.Tactile.EnableGlobalRipple();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.Exit += (_, _) => UiSoundEffect.Shutdown();
+            desktop.Exit += (_, _) => Infrastructure.UiStallWatchdog.Stop();
 
             desktop.Exit += (_, _) => TaskbarProgress.Shutdown();
 
@@ -90,19 +104,23 @@ public partial class AvaloniaApp : Application
             bool isCropTool = System.Linq.Enumerable.Any(argsList, a => a.Equals("--crop-tool", System.StringComparison.OrdinalIgnoreCase));
             bool isMerger = System.Linq.Enumerable.Any(argsList, a => a.Equals("--merger", System.StringComparison.OrdinalIgnoreCase));
 
-            if (!isInstallWorker && !isCleanupWorker) StartSharedMasterVolume(desktop);
+            if (!isInstallWorker && !isCleanupWorker)
+            {
+                StartSharedMasterVolume(desktop);
+                _ = Infrastructure.MemeDirectory.StartLegacyMigration();
+            }
 
             if (isInstallWorker || isCleanupWorker)
             {
                 string title = isInstallWorker ? "Free Video Studio Setup" : "Free Video Studio Uninstall";
                 var window = new DeploymentProgressWindow(title, DeploymentFootprint.InstallReportPath);
-                
+
                 void OnProgressHandler(string detail, int? percent)
                 {
                     window.UpdateStatus(detail);
                     if (percent.HasValue) window.UpdateProgress(percent.Value);
                 }
-                
+
                 DeploymentReporter.OnProgress += OnProgressHandler;
                 window.Closed += (s, e) => DeploymentReporter.OnProgress -= OnProgressHandler;
 
@@ -122,7 +140,7 @@ public partial class AvaloniaApp : Application
                         global::FreeVideoStudio.App.RuntimeLog.Swallowed(ex);
                         return;
                     }
-                    
+
                     bool quiet = System.Linq.Enumerable.Any(argsList, a => a.Equals("--quiet", System.StringComparison.OrdinalIgnoreCase));
                     if (quiet)
                     {

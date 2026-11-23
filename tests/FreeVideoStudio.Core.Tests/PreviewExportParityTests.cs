@@ -9,14 +9,8 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// PREVIEWMIX_02 / AIPARITY_01 / CORNERPARITY_01 / VOPREVIEW_02 / PREVIEWFIDELITY_01 — what the preview
-/// shows or plays is derived from the EXPORT's own graph or math. Each test builds the export side with
-/// the export's builders and checks the preview side against it, never against a copied constant.
-/// </summary>
 public class RenderedMixParityTests
 {
-    /// <summary>An export-shaped graph: video chains, the shared music mix, a meme splice, a corner meme, the limiter.</summary>
     private static (string Graph, List<string> AudioChains, string Final) ExportLikeGraph(bool cornerSound)
     {
         var cfg = new JsonObject { ["ducking_enabled"] = true, ["carving_enabled"] = true, ["main_vol"] = 0.8, ["music_vol"] = 0.6 };
@@ -93,7 +87,15 @@ public class RenderedMixParityTests
     public void UnitySpeed_IsANoOp_InExportAndNeedsNoMix()
     {
         Assert.Empty(AudioTempoFilterBuilder.Build(1.0, rubberbandAvailable: true));
-        Assert.False(PreviewMixPolicy.NeedsRenderedMix(false, false, false, false, 1.0, new[] { 1.0, 0.0 }));
+        Assert.False(PreviewMixPolicy.NeedsRenderedMix(false, false, false, false, 1.0, new[] { 1.0 }));
+    }
+
+    [Fact]
+    public void Freeze_NeedsTheRenderedMix_ForItsSound()
+    {
+        Assert.True(PreviewMixPolicy.NeedsRenderedMix(false, false, false, false, 1.0, new[] { 1.0, 0.0 }));
+        Assert.True(PreviewMixPolicy.IsFreeze(0.0));
+        Assert.False(PreviewMixPolicy.IsFreeze(1.0));
     }
 
     [Theory]
@@ -222,7 +224,6 @@ public class RenderedMixGateTests
 
 public class VoiceProtectionPulseTests
 {
-    /// <summary>The export's pulse expression for these takes, built the way ProcessWorker builds it, evaluated at t.</summary>
     private static double ExportExpression(double t, params (double S, double E)[] takes)
     {
         double sum = 0;
@@ -263,7 +264,6 @@ public class ZoomParityTests
         return (P(1), P(2), P(3), P(4));
     }
 
-    /// <summary>The export's visible source region at progress p (BuildConstantZoomFilter → SnapZoomWindow).</summary>
     private static (double W, double H, double X, double Y) ExportRegion(SpeedSegment s, double p)
     {
         var (sw, sh) = CoordinateMath.GetResolutionInts(s.ZoomOrigRes!);
@@ -367,7 +367,6 @@ public class AiTrajectoryParityTests
         return t;
     }
 
-    /// <summary>Evaluates the export's crop filter text (the ffmpeg expressions) at time t on a 1920x1080 input.</summary>
     private static (double X, double Y, double W, double H) EvaluateExportFilter(string filter, double t)
     {
         const double inW = 1920, inH = 1080;
@@ -449,7 +448,58 @@ public class AiTrajectoryParityTests
         Assert.Contains("(t+1.000)", graph);
     }
 
-    /// <summary>A tiny evaluator for the subset of ffmpeg's expression language the crop filters use.</summary>
+    [Fact]
+    public void AFreezeInsideTheGlide_ShowsTheBox_LikeThePreview()
+    {
+        var traj = Trajectory(dynamicScale: false);
+        var zc = new GranularSpeedBuilder.ZoomConfig(2.0, 4.0, 0, 0, 960, 540, "1920x1080", true, traj.ToJson());
+        string glide = GranularSpeedBuilder.BuildConstantZoomFilter("scale=1920:1080", zc, 1920, 1080, 1920, 1080, 0.5, 0.0);
+        string held = GranularSpeedBuilder.BuildConstantZoomFilter("scale=1920:1080", zc, 1920, 1080, 1920, 1080, 1.0, 0.0);
+        Assert.DoesNotContain(traj.ToFfmpegCropFilter(), glide);
+        Assert.Contains("pad=", glide);
+        Assert.Contains(traj.ToFfmpegCropFilter(), held);
+    }
+
+    [Fact]
+    public void SequentialMultiBlockTrajectories_TrimSpeedCutAndFreeze_MaintainPreviewExportParityAndSessionSeed()
+    {
+        var traj1 = Trajectory(dynamicScale: false);
+        var traj2 = Trajectory(dynamicScale: true);
+
+        var parking = new FreeVideoStudio.Core.Editing.GranularHistoryParking();
+        var session = new FreeVideoStudio.Core.Editing.GranularEditSession("C:\\test\\clip.mp4", 5000, 18000, parking);
+        session.Segments.Add(new SpeedSegment(1000, 3000, 2.0, 0, 0, 960, 540, "1920x1080", false, 1000, 3000, traj1.ToJson()));
+        session.Segments.Add(new SpeedSegment(4000, 6200, 1.5, 0, 0, 960, 540, "1920x1080", false, 4000, 6200, traj2.ToJson()));
+        session.Segments.Add(new SpeedSegment(10000, 11200, 0.0));
+        var exported = session.ResultSegments;
+
+        var reloaded = new FreeVideoStudio.Core.Editing.GranularEditSession("C:\\test\\clip.mp4", 5000, 18000, parking);
+        reloaded.SeedSegmentsFromAbsolute(exported);
+        Assert.Equal(traj1.ToJson(), reloaded.Segments[0].AiTrackingTrajectory);
+        Assert.Equal(traj2.ToJson(), reloaded.Segments[1].AiTrackingTrajectory);
+
+        foreach (double trimRelSec in new[] { 1.5, 2.5, 4.5, 5.5, 6.0 })
+        {
+            var innerPreview = ZoomPreviewSimulator.Compute(session.Segments, trimRelSec, 13.0, trimStartSec: 0);
+            var mainPreview = ZoomPreviewSimulator.Compute(exported, trimRelSec, 13.0, trimStartSec: 5.0);
+            Assert.Equal(innerPreview.Crop, mainPreview.Crop);
+        }
+
+        var rSeg1 = ZoomPreviewSimulator.Compute(exported, 2.0, 13.0, trimStartSec: 5.0);
+        var eSeg1 = EvaluateExportFilter(traj1.ToFfmpegCropFilter(), 1.0);
+        Assert.Equal($"{(int)eSeg1.W}x{(int)eSeg1.H}+{(int)eSeg1.X}+{(int)eSeg1.Y}", rSeg1.Crop);
+
+        var rSeg2 = ZoomPreviewSimulator.Compute(exported, 5.5, 13.0, trimStartSec: 5.0);
+        var eSeg2 = EvaluateExportFilter(traj2.ToFfmpegCropFilter(), 1.5);
+        Assert.Equal($"{(int)eSeg2.W}x{(int)eSeg2.H}+{(int)eSeg2.X}+{(int)eSeg2.Y}", rSeg2.Crop);
+
+        var cuts = new List<OutputTimeline.Cut> { new(8.5, 9.0) };
+        var (graph, _, _, _, _, _) = GranularSpeedBuilder.Build(
+            18_000, exported.ToList(), 1.0, sourceCutStartMs: 5000, needHudBranch: false, cuts: cuts);
+        Assert.Contains(traj1.ToFfmpegCropFilter(), graph);
+        Assert.Contains(traj2.ToFfmpegCropFilter(), graph);
+    }
+
     private sealed class Expr
     {
         private readonly string _s; private int _i;
@@ -751,7 +801,7 @@ public class MasterVolumeIsolationTests
 public class AiTrajectoryPortraitTests
 {
     [Fact]
-    public void PortraitMode_CapsScaleAt1_65_ToPreventOvermagnification()
+    public void PortraitMode_CapsScaleAt1_95_ToPreventOvermagnification()
     {
         var waypoints = new List<RawSubjectWaypoint>
         {
@@ -762,8 +812,8 @@ public class AiTrajectoryPortraitTests
         var portraitTraj = AiTrajectorySmoother.SmoothTrajectory(waypoints, 1.0, 2560, 1440, baseScale: 2.5, portraitMode: true);
         var landscapeTraj = AiTrajectorySmoother.SmoothTrajectory(waypoints, 1.0, 2560, 1440, baseScale: 2.5, portraitMode: false);
 
-        Assert.All(portraitTraj.Keyframes, k => Assert.True(k.Scale <= 1.65 + 0.001, $"Expected portrait scale <= 1.65, got {k.Scale}"));
-        Assert.Contains(landscapeTraj.Keyframes, k => k.Scale > 1.65);
+        Assert.All(portraitTraj.Keyframes, k => Assert.True(k.Scale <= AiTrajectorySmoother.PortraitMaxScale + 0.001, $"Expected portrait scale <= {AiTrajectorySmoother.PortraitMaxScale}, got {k.Scale}"));
+        Assert.Contains(landscapeTraj.Keyframes, k => k.Scale > AiTrajectorySmoother.PortraitMaxScale);
     }
 
     [Fact]

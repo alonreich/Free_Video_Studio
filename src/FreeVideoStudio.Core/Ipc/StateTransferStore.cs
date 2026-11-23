@@ -1,5 +1,4 @@
-﻿
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using FreeVideoStudio.Core.Infrastructure;
 
@@ -7,7 +6,6 @@ namespace FreeVideoStudio.Core.Ipc;
 
 public sealed class StateTransferStore
 {
-    /// <summary>USERSCOPE_01 — per Windows user (the data root it guards is per user).</summary>
     public static readonly string MutexName = NamedSystemMutex.UserScopedName("FvsStateTransferMutex");
     public const int SchemaVersion = 1;
     public static readonly TimeSpan DefaultMutexTimeout = TimeSpan.FromSeconds(15);
@@ -110,37 +108,27 @@ public sealed class StateTransferStore
         }, cancellationToken).ConfigureAwait(false);
     }
 
-
-    /// <summary>IPCOWNER_01 — total time a mutation may spend retrying a live-but-silent server.</summary>
     public static readonly TimeSpan DeliveryBudget = TimeSpan.FromSeconds(2);
 
-    /// <summary>IPCOWNER_01 — ceiling for one pipe attempt while backing off.</summary>
     private static readonly TimeSpan MaxPipeAttemptTimeout = TimeSpan.FromMilliseconds(500);
 
-    /// <summary>IPCOWNER_01 test seam — treat this process's own server as if it were in another
-    /// process (forces the pipe / lease path). False in production.</summary>
     internal bool IgnoreInProcessServerForTests { get; init; }
 
-    /// <summary>IPCOWNER_01 test seam — overrides <see cref="DeliveryBudget"/>.</summary>
     internal TimeSpan? DeliveryBudgetForTests { get; init; }
 
     private enum StateMutation { Save, Update, Handoff, Clear }
 
     private enum OwnerCommit { Committed, NotOwner, Failed }
 
-    /// <summary>Returns true only when the state was acknowledged by the server or durably committed.</summary>
     public Task<bool> SaveAsync(JsonObject state, CancellationToken cancellationToken = default)
         => StartCommit(StateMutation.Save, Clone(state), NamedPipeStateClient.DefaultTimeout, null, cancellationToken);
 
-    /// <summary>Returns true only when the update was acknowledged by the server or durably committed.</summary>
     public Task<bool> UpdatePropertiesAsync(JsonObject updates, CancellationToken cancellationToken = default)
         => StartCommit(StateMutation.Update, Clone(updates), NamedPipeStateClient.DefaultTimeout, null, cancellationToken);
-
 
     public Task<bool> SendHandoffAsync(HandoffPayload payload, TimeSpan? timeout = null, CancellationToken ct = default)
         => StartCommit(StateMutation.Handoff, BuildHandoffNode(payload), timeout ?? NamedPipeStateClient.DefaultTimeout, null, ct);
 
-    /// <summary>Returns true only when the clear was acknowledged by the server or durably committed.</summary>
     public Task<bool> ClearAsync(CancellationToken cancellationToken = default)
         => StartCommit(StateMutation.Clear, null, NamedPipeStateClient.DefaultTimeout, null, cancellationToken);
 
@@ -155,9 +143,6 @@ public sealed class StateTransferStore
         return node;
     }
 
-    /// <summary>The commit always runs on the thread pool, so the named mutex is never taken on the UI
-    /// thread and no caller's SynchronizationContext is captured. Nothing may block on the result
-    /// (UIIPC_01): callers await it, or enqueue through <see cref="SessionStateWriter"/>.</summary>
     private Task<bool> StartCommit(StateMutation op, JsonObject? payload, TimeSpan firstAttempt, TimeSpan? budgetOverride, CancellationToken ct)
         => Task.Run(() => CommitAsync(op, payload, firstAttempt, budgetOverride, ct));
 
@@ -232,14 +217,6 @@ public sealed class StateTransferStore
         _ => NamedPipeStateClient.ClearStateAsync(timeout, ct),
     };
 
-    /// <summary>
-    /// IPCOWNER_01 — the ONLY direct writer of SessionStateFile outside the server. Creating the lease
-    /// NEW proves that no server (current or pre-fix build, which OWNS the same name) is alive, and
-    /// holding the handle across the write keeps one from starting and loading the file until the
-    /// atomic replace has finished. Nothing is ever acquired on the lease (IPCLEASE_01).
-    /// Lock order: lease handle → <see cref="MutexName"/> → AtomicJsonFile. Synchronous on purpose:
-    /// the named mutex is thread-affine, so no await may sit between acquire and release.
-    /// </summary>
     private OwnerCommit TryCommitAsPersistenceOwner(StateMutation op, JsonObject? payload, TimeSpan lockWait, CancellationToken ct)
     {
         Mutex lease;

@@ -6,10 +6,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// DUCKMB_01 / VOGATE_01 / PEAKSAFE_01 / CLIPLEVEL_01 — the shared audio mix, pinned. The filter
-/// graphs these produce were also run through a real ffmpeg (see docs/02 §2-3 for the measurements).
-/// </summary>
 public class AudioMixTests
 {
     private static string Graph(JsonObject? cfg, string? voice = null, string? pulse = null)

@@ -7,6 +7,17 @@ using FreeVideoStudio.App.Services;
 
 try
 {
+    DevelopmentEnvironment.InitializeFromRuntimeMarker();
+    if (DevelopmentEnvironment.IsActive && args.Any(a =>
+        a.StartsWith("--upgrade-", StringComparison.OrdinalIgnoreCase) ||
+        a.StartsWith("--install", StringComparison.OrdinalIgnoreCase) ||
+        a.StartsWith("--uninstall", StringComparison.OrdinalIgnoreCase) ||
+        a.Equals("--cleanup-worker", StringComparison.OrdinalIgnoreCase) ||
+        a.Equals("--complete-user-migration", StringComparison.OrdinalIgnoreCase)))
+    {
+        Console.Error.WriteLine("Installation and update workers are disabled for a development copy.");
+        return 1;
+    }
     RuntimeLog.SetDeploymentPhase(true);
     if (args.FirstOrDefault() == "--upgrade-worker")
     {
@@ -23,13 +34,13 @@ try
         await UpgradeCoordinator.CompleteUserAsync();
         return 0;
     }
-    
-    if (DeploymentLifecycle.ShouldHandle(args))
+
+    if (!DevelopmentEnvironment.IsActive && DeploymentLifecycle.ShouldHandle(args))
     {
         return await DeploymentLifecycle.RunAsync(args);
     }
-    
-    if (DeploymentFootprint.IsRunningFromInstallPath() && !args.Contains("--upgrade-health"))
+
+    if (!DevelopmentEnvironment.IsActive && DeploymentFootprint.IsRunningFromInstallPath() && !args.Contains("--upgrade-health"))
     {
         if (UpgradeCoordinator.HasPendingSession || UpgradeCoordinator.HasPendingMachine)
             return await UpgradeCoordinator.LaunchAsync(["--wait-pid", Environment.ProcessId.ToString()], recovery: true);
@@ -39,7 +50,7 @@ try
 catch (Exception ex)
 {
     RuntimeLog.Fail("Startup migration", ex.ToString());
-    NativeDialog.ShowError("Startup or update recovery could not finish. Your saved files have been kept.\n\n" + ex.Message,
+    NativeDialog.ShowError("Startup or update recovery could not finish. Your saved files have been kept.\n\n" + FreeVideoStudio.App.Infrastructure.UserFacingError.Describe(ex),
         "Free Video Studio");
     return 1;
 }
@@ -53,7 +64,6 @@ FreeVideoStudio.Core.Infrastructure.CoreLogger.WarnAction = RuntimeLog.WarnThrot
 FreeVideoStudio.Core.Infrastructure.CoreLogger.AppendAction = RuntimeLog.AppendRaw;
 RuntimeLog.InitializeAppName(args);
 RuntimeLog.ResetForProcess();
-
 
 AppDomain.CurrentDomain.UnhandledException += (s, e) =>
 {
@@ -89,13 +99,31 @@ if (!isSiblingProcess)
     _ = CrashLogDigest.RunAsync();
     if (!args.Contains("--upgrade-health"))
         _ = Task.Run(FreeVideoStudio.Core.Infrastructure.LegacyResidueSweep.RunForCurrentUser);
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(45));
+            var report = FreeVideoStudio.Core.Infrastructure.TempHousekeeper.RunAtStartup(FreeVideoStudio.Core.Infrastructure.ApplicationPaths.CreateDefault());
+            if (!report.Skipped) RuntimeLog.Info("TEMP CLEANUP", $"Startup cleanup removed {report.Files} files and {report.Folders} folders ({report.Bytes / 1048576.0:F1} MB).");
+        }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+    });
 }
 
 string baseDir = System.IO.Path.GetDirectoryName(System.Environment.ProcessPath) ?? AppContext.BaseDirectory;
 NativeHelpers.SetDllDirectory(Path.Combine(baseDir, "frontend"));
 
-
 int exitCode = await RunAsync(args);
+if (!isSiblingProcess)
+{
+    try
+    {
+        var report = FreeVideoStudio.Core.Infrastructure.TempHousekeeper.RunAtShutdown(FreeVideoStudio.Core.Infrastructure.ApplicationPaths.CreateDefault());
+        if (report.Files > 0) RuntimeLog.Info("TEMP CLEANUP", $"Exit cleanup removed {report.Files} files ({report.Bytes / 1048576.0:F1} MB).");
+    }
+    catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+}
 SingleInstanceGuard.Release();
 RuntimeLog.Info("PROCESS EXIT", $"exitCode={exitCode}");
 return exitCode;
@@ -298,9 +326,9 @@ static async Task<int> RunUiAsync(string[] args)
 
     FreeVideoStudio.App.Infrastructure.AppServices.Initialize(ApplicationPaths.CreateDefault());
 
-    if (OperatingSystem.IsWindows())
+    if (OperatingSystem.IsWindows() && !DevelopmentEnvironment.IsActive)
         ShellFileAssociation.EnsureRegistered();
-    
+
     RuntimeLog.Info("RUN UI", "Starting Avalonia App.");
     RuntimeLog.Info("BUILDTAG", "FVS-SWPREVIEW-BUILDCHECK-2026A :: CPU software-preview + frame-gate build ACTIVE");
 
@@ -389,20 +417,13 @@ internal static class NativeHelpers
 
     private const uint LoadLibrarySearchSystem32 = 0x00000800;
 
-    /// <summary>
-    /// WORKERSTAGE_01 — every later LoadLibrary in this process searches System32 only (no application
-    /// folder, no current directory, no PATH). Static imports are already restricted by the linker flag
-    /// /DEPENDENTLOADFLAG:0x800 (FreeVideoStudio.App.csproj). Used by the elevated update worker.
-    /// </summary>
     public static void RestrictDllSearchToSystem32()
     {
         if (!OperatingSystem.IsWindows()) return;
         if (!SetDefaultDllDirectories(LoadLibrarySearchSystem32))
             FreeVideoStudio.App.RuntimeLog.Info("Upgrade", "SetDefaultDllDirectories failed: " + System.Runtime.InteropServices.Marshal.GetLastWin32Error());
     }
-
 }
-
 
 public partial class Program
 {

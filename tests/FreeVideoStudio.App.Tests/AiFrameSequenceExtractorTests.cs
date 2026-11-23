@@ -7,9 +7,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// AIFRAMESEQ_01 — unit tests for AiFrameSequenceExtractor.
-/// </summary>
 public sealed class AiFrameSequenceExtractorTests
 {
     [Fact]
@@ -50,7 +47,7 @@ public sealed class AiFrameSequenceExtractorTests
 
     [Theory]
     [InlineData(AiVendor.Google, 100)]
-    [InlineData(AiVendor.Anthropic, 60)]
+    [InlineData(AiVendor.Anthropic, 20)]
     [InlineData(AiVendor.OpenAI, 50)]
     public void GetMaxImagesPerRequest_MatchesVendorRules(AiVendor vendor, int expected)
     {

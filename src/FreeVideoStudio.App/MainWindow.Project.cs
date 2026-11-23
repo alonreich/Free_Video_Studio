@@ -4,22 +4,8 @@ using FreeVideoStudio.Core.Project;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// PROJSESSION_01 — the main window's half of the document session.
-///
-/// <para>
-/// Kept in its own partial rather than added to the 3,300-line <c>MainWindow.axaml.cs</c>. That
-/// file is co-governed by four specs and is one of the two the view-model extraction phase will
-/// rewrite; new document code lands here so the diff for that rewrite stays legible.
-/// </para>
-/// </summary>
 public partial class MainWindow
 {
-    /// <summary>
-    /// The metrics the document stores so a project opens into a drawn timeline rather than into a
-    /// spinner (PROJ_05). Resolved at call time, not captured, because the detach controller
-    /// (DETACH_01) can swap the video host underneath us.
-    /// </summary>
     private (int Width, int Height, double Fps) ProbeVideoMetricsForProject()
     {
         var ipc = ActiveVideoHost?.IpcClient;
@@ -27,15 +13,6 @@ public partial class MainWindow
         return (ipc.VideoWidth, ipc.VideoHeight, ipc.VideoFps);
     }
 
-    /// <summary>
-    /// PROJSESSION_05 — the title bar is the ONLY continuous signal that unsaved work exists.
-    ///
-    /// <para>
-    /// A dirty marker in the caption is the convention every editor uses, and its absence is why
-    /// closing this window never felt like it was discarding anything. The version string stays,
-    /// because <c>SYS-AUTOUPDATE</c> makes the title the place a user reads their build number.
-    /// </para>
-    /// </summary>
     private void RefreshProjectTitle()
     {
         if (_projectSession is null) return;
@@ -50,22 +27,11 @@ public partial class MainWindow
         Title = $"{name}{dirty} — Free Video Studio v{version}";
     }
 
-    /// <summary>
-    /// Called after a document has been written into the view-models — by Open, Undo or Redo.
-    /// The view-models now hold different segments, cuts and memes than the screen is drawing, so
-    /// everything derived from them has to be rebuilt.
-    ///
-    /// <para>
-    /// ⚠️ UNDO_22 — the PLAYHEAD IS NOT MOVED. 04 §6 (UI-GRANULAR) states it for the granular
-    /// editor's stack and the rule generalises: undo restores the EDIT, not the viewing position.
-    /// Seeking on undo makes a sequence of undos feel like the video is being scrubbed by someone
-    /// else, and it costs an mpv seek per step (SEEKSTORM_01).
-    /// </para>
-    /// </summary>
     private void OnProjectDocumentApplied(Core.Project.ProjectDocument document)
     {
         var services = Infrastructure.AppServices.Current;
 
+        ShowMusicButtonState(_viewModel.IsMusicActive);
         Services.ToolNavigator.RestoreMergeQueue(document.Merge);
         ApplyVoiceOverState(_viewModel.VoiceOverResult, isRestore: true);
 
@@ -90,62 +56,146 @@ public partial class MainWindow
             });
     }
 
-    /// <summary>
-    /// PROJSESSION_06 — starts a fresh undo history for a newly loaded clip.
-    ///
-    /// <para>
-    /// History does NOT survive a video change, deliberately. Every segment, cut and meme in the
-    /// stack is expressed in milliseconds into a specific file; undoing across a load would restore
-    /// positions that index into footage that is no longer open, and the result would be a timeline
-    /// that looks plausible and is wrong. A discarded history is recoverable by the user; a
-    /// silently mis-mapped one is not.
-    /// </para>
-    /// </summary>
+    internal const string ProjectVideoTag = "PROJVIDEO_01";
+
+    private async Task ShowProjectVideoAsync(string path)
+    {
+        var videoHost = _videoHost;
+        if (videoHost?.IpcClient == null) return;
+        RuntimeLog.Info("UI", $"{ProjectVideoTag}: showing the opened project's video {System.IO.Path.GetFileName(path)}.");
+        _isTimelineDrawn = false;
+        double previousDuration = videoHost.IpcClient.Duration;
+        videoHost.IsVisible = true;
+        await videoHost.IpcClient.LoadFileAsync(path);
+        await videoHost.IpcClient.SetPropertyAsync("pause", "yes");
+        if (!await WaitForVideoMetadataAsync(previousDuration))
+        {
+            ShowTacticalFeedback("Video preview failed to load. Your project edits are still open.");
+            return;
+        }
+        _loadedVideoDurationMs = videoHost.IpcClient.Duration * 1000.0;
+        _viewModel.Timeline.LoadedVideoDurationMs = _loadedVideoDurationMs;
+        BeginWholeVideoFilmstrip();
+        UpdateSpeedLabel();
+        UpdateEstimatedQuality();
+        UpdatePortraitOverlay();
+        var uploadOverlay = UploadOverlayCtl;
+        if (uploadOverlay != null) uploadOverlay.IsVisible = false;
+        EnableEditingControls();
+        UpdateTimelineMarkers();
+        QueueTimelineRedrawPass(Avalonia.Threading.DispatcherPriority.Render);
+        _ = RunAudioPeakCheckAsync(path);
+    }
+
+    private void OnMenuOpenProjectClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_projectSession is { } session) _ = RunAfterVoiceTimingAsync(() => session.OpenAsync());
+    }
+
+    private void OnMenuSaveProjectClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_projectSession is { } session) _ = RunAfterVoiceTimingAsync(() => session.SaveAsync());
+    }
+
+    private void OnMenuSaveProjectAsClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_projectSession is { } session) _ = RunAfterVoiceTimingAsync(() => session.SaveAsAsync());
+    }
+
+    private void OnMenuOpenRecentOpened(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not Avalonia.Controls.MenuItem menu || _projectSession is not { } session) return;
+        if (!ReferenceEquals(e.Source, menu)) return;
+        menu.Items.Clear();
+        var recent = session.RecentProjectList();
+        if (recent.Count == 0)
+        {
+            menu.Items.Add(new Avalonia.Controls.MenuItem { Header = "No recent projects yet", IsEnabled = false });
+            return;
+        }
+        foreach (RecentProject project in recent)
+        {
+            var item = new Avalonia.Controls.MenuItem { Header = project.Title, IsEnabled = project.Exists };
+            Avalonia.Controls.ToolTip.SetTip(item, project.Exists ? project.Path : project.Path + " (not found right now)");
+            string path = project.Path;
+            item.Click += (_, _) => _ = RunAfterVoiceTimingAsync(() => session.OpenAsync(path));
+            menu.Items.Add(item);
+        }
+    }
+
     private void BeginProjectHistory()
     {
         _projectSession?.BeginHistory();
         RefreshProjectTitle();
     }
 
-    /// <summary>
-    /// UNDO_20 — records an edit. The single call the rest of the window uses.
-    ///
-    /// <para>
-    /// <paramref name="gestureKey"/> coalesces a continuous gesture into one undo step. Pass the
-    /// same key for every tick of a drag or slider sweep and call <see cref="EndProjectGesture"/>
-    /// on release; without it a single trim drag leaves forty entries on the stack and Ctrl+Z
-    /// appears not to work because each press moves the handle one pixel.
-    /// </para>
-    /// </summary>
     private void PushProjectEdit(string label, string? gestureKey = null)
         => _projectSession?.PushEdit(label, gestureKey);
 
-    /// <summary>Closes the coalescing window opened by a gesture-keyed <see cref="PushProjectEdit"/>.</summary>
     private void EndProjectGesture() => _projectSession?.EndGesture();
 
-    /// <summary>
-    /// PROJSESSION_03 — autosave pulse. Cheap: returns immediately unless the project is dirty,
-    /// has a path, and the interval has elapsed.
-    /// </summary>
     private void ProjectAutosaveTick()
     {
         if (_voiceTimingDecision == null) _projectSession?.AutosaveTick();
     }
 
-    /// <summary>
-    /// The close guard. Returns false to keep the window open.
-    ///
-    /// <para>
-    /// ⚠️ Wired INSIDE the deferred-close contract (05 §3 SYS-WINSTATE): <c>OnClosing</c> already
-    /// sets <c>e.Cancel = true</c> and re-posts <c>Close()</c> on the next dispatcher turn. This
-    /// guard runs before <c>_isSafeToClose</c> is set, so a "cancel" here simply means the re-post
-    /// never happens — the window stays open and stays functional, rather than being hidden with
-    /// its work still in memory.
-    /// </para>
-    /// </summary>
+    internal Func<Task<bool>>? StopExportDecisionSeam;
+
+    private async Task<bool> ConfirmStopExportOnCloseAsync()
+    {
+        if (_exportCoordinator.State != Services.ExportState.Running) return true;
+        return await (StopExportDecisionSeam?.Invoke() ?? Controls.ConfirmDialogWindow.AskAsync(this,
+            "Your video is still being made. If you close now, the export stops and the video will not be finished.",
+            "Stop the export?", "Stop and close", "Keep exporting", destructive: true));
+    }
+
     private async Task<bool> ConfirmProjectDiscardOnCloseAsync()
     {
         await SettleVoiceTimingAsync();
+        if (_exportedCleanSinceLastEdit)
+        {
+            WipeFinishedSessionForExit();
+            return true;
+        }
         return _projectSession == null || await _projectSession.ConfirmDiscardAsync("Close");
+    }
+
+    internal const string DoneCleanTag = "DONECLEAN_01";
+
+    internal void MarkExportedCleanExitForTool()
+    {
+        _exportedCleanSinceLastEdit = true;
+        _videoPipelineShutDown = true;
+        WipeFinishedSessionForExit();
+    }
+
+    private void WipeFinishedSessionForExit()
+    {
+        try { _recovery.ClearState(); }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+        RuntimeLog.Info("RECOVERY", $"{DoneCleanTag}: the video was processed and nothing changed since, so the app closes without asking and the next start is empty.");
+    }
+
+    internal const string ReplaceVideoTag = "NEWVIDEOGUARD_01";
+
+    private bool _replaceVideoPromptOpen;
+
+    private async Task<bool> ConfirmReplaceLoadedVideoAsync(string newPath)
+    {
+        if (string.IsNullOrWhiteSpace(_loadedVideoPath)) return true;
+        if (_replaceVideoPromptOpen) return false;
+        if (_exportedCleanSinceLastEdit || !HasUnsavedWork()) return true;
+
+        _replaceVideoPromptOpen = true;
+        try
+        {
+            await SettleVoiceTimingAsync();
+            bool go = _projectSession == null || await _projectSession.ConfirmDiscardAsync("open another video");
+            RuntimeLog.Info("UI", go
+                ? $"{ReplaceVideoTag}: loading {System.IO.Path.GetFileName(newPath)} after the save/discard question."
+                : $"{ReplaceVideoTag}: the user went back to editing; {System.IO.Path.GetFileName(newPath)} was not loaded.");
+            return go;
+        }
+        finally { _replaceVideoPromptOpen = false; }
     }
 }

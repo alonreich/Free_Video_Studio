@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.IO;
 using FreeVideoStudio.Core.Infrastructure;
 using FreeVideoStudio.Core.Ipc;
@@ -7,7 +6,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>USERSCOPE_01 — mutable state is per Windows user; the legacy machine root is migrated once.</summary>
 public class UserScopeTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "fvs_userscope_" + Guid.NewGuid().ToString("N"));

@@ -8,23 +8,16 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// COLOR_01 — the colour description ffprobe reports for a video stream. Every field is the raw
-/// ffprobe token (e.g. "smpte2084", "bt2020nc", "pc") or null when the file does not say.
-/// </summary>
 public sealed record VideoColorInfo(string? PixelFormat, string? Primaries, string? Transfer, string? Matrix, string? Range)
 {
     public static readonly VideoColorInfo Unknown = new(null, null, null, null, null);
 
-    /// <summary>PQ (HDR10 / HDR10+ / Dolby Vision base layer) or HLG.</summary>
     public bool IsHdr => Transfer is "smpte2084" or "arib-std-b67";
 
-    /// <summary>Full-range ("pc"/JPEG) luma. yuvj* formats are full range by definition.</summary>
     public bool IsFullRange =>
         string.Equals(Range, "pc", StringComparison.OrdinalIgnoreCase)
         || (PixelFormat?.StartsWith("yuvj", StringComparison.OrdinalIgnoreCase) ?? false);
 
-    /// <summary>An SD-era matrix explicitly declared (would be decoded with the wrong matrix if passed as BT.709).</summary>
     public bool IsBt601Matrix => Matrix is "bt470bg" or "smpte170m";
 
     public static VideoColorInfo FromStream(JsonNode? stream)
@@ -47,48 +40,14 @@ public sealed record VideoColorInfo(string? PixelFormat, string? Primaries, stri
         => $"pix_fmt={PixelFormat ?? "?"} primaries={Primaries ?? "?"} transfer={Transfer ?? "?"} matrix={Matrix ?? "?"} range={Range ?? "?"}";
 }
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// COLOR_01 — ONE DELIVERY TARGET: SDR, BT.709, LIMITED (TV) RANGE, AND SAYING SO IN THE FILE.
-///
-/// Before this the export had no colour handling at all. Every route only forced
-/// <c>-pix_fmt yuv420p</c>, so:
-///   • HDR captures (HEVC Main10, BT.2020 + PQ/HLG, which is what NVIDIA/AMD capture produce with
-///     Windows HDR on) were squeezed to 8-bit with NO tone mapping. The result was grey,
-///     washed-out footage or a file still flagged as PQ, while the mpv preview (which tone-maps
-///     automatically) looked right. Preview ≠ export.
-///   • full-range sources (a common OBS setting) kept full-range levels, which most social
-///     platforms decode as limited range, so shadows crush and highlights clip;
-///   • no output was tagged, so each player and platform guessed the matrix.
-///
-/// The policy:
-///   • ALWAYS tag the output bt709 / bt709 / bt709 / tv (<see cref="OutputTagArgs"/>).
-///   • SDR BT.709 limited range (the dominant case): no filter is added, so the GPU-resident route
-///     stays zero-copy.
-///   • Full range or a BT.601 matrix: one <c>colorspace</c> pass converts to BT.709 TV range.
-///   • HDR: zscale → linear light → BT.709 primaries → Hable tone map → BT.709 TV range, when the
-///     bundled FFmpeg has zscale. Without zscale no correct CPU tone map exists, so the export
-///     proceeds and says so (Degraded), rather than failing.
-///   • Any conversion filter is unknown to ExportVideoPipeline's CUDA substitution table, so an
-///     HDR or full-range source automatically takes the CPU filter route. Correct colour beats a
-///     fast wrong export.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public static class ExportColorPolicy
 {
-    /// <summary>Encoder-side colour description for every delivered file.</summary>
     public static readonly string[] OutputTagArgs =
         ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv"];
 
-    /// <summary>HDR → SDR BT.709 via zscale (libzimg) + tonemap. Ends in 8-bit 4:2:0 TV range.</summary>
     public const string HdrToneMapChain =
         "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p";
 
-    /// <summary>
-    /// The filter chain (no pad labels) that brings <paramref name="info"/> to SDR BT.709 TV range,
-    /// or null when the source already is. <paramref name="degradedReason"/> is set when a correct
-    /// conversion was needed but is not possible with this FFmpeg build.
-    /// </summary>
     public static string? BuildConversionChain(VideoColorInfo info, bool hasZscale, out string description, out string? degradedReason)
     {
         degradedReason = null;
@@ -128,7 +87,6 @@ public static class ExportColorPolicy
 
     private static readonly ConcurrentDictionary<string, Task<HashSet<string>>> FilterCache = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>True when the FFmpeg at <paramref name="ffmpegPath"/> was built with <paramref name="filter"/>. Cached per binary.</summary>
     public static async Task<bool> HasFilterAsync(string ffmpegPath, string filter)
     {
         if (string.IsNullOrWhiteSpace(ffmpegPath)) return false;

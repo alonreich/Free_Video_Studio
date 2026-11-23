@@ -4,7 +4,6 @@ using Microsoft.Win32;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>UPGRADE_08 — snapshot shell state, replace owned links, and restore it on rollback.</summary>
 internal sealed class UpgradeRegistration(bool machine, string backupDirectory, string[] installRoots)
 {
     public bool DesktopAvailable => machine ? KnownFolders.GetPublicDesktop() != null : KnownFolders.GetDesktop() != null;
@@ -43,11 +42,6 @@ internal sealed class UpgradeRegistration(bool machine, string backupDirectory, 
         InstallDiscovery.Executables.Append("Uninstall.exe").Any(name =>
             string.Equals(Path.Combine(root, name), target, StringComparison.OrdinalIgnoreCase)));
 
-    /// <summary>
-    /// NOSPACE_01 — rewrites this user's EXISTING shortcuts whose target is inside one of
-    /// <paramref name="movedRoots"/> so they point at the current install. Creates nothing,
-    /// deletes nothing, and leaves unrelated shortcuts alone. Returns how many were rewritten.
-    /// </summary>
     public static async Task<int> RetargetUserLinksAsync(string[] movedRoots)
     {
         var probe = new UpgradeRegistration(false, Path.GetTempPath(), movedRoots);
@@ -131,15 +125,10 @@ internal sealed class UpgradeRegistration(bool machine, string backupDirectory, 
                 key.SetValue("NoModify", 1, RegistryValueKind.DWord);
                 key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
             }
-            using (RegistryKey setup = root.CreateSubKey(ActiveSetupKey))
-            {
-                setup.SetValue("", DeploymentFootprint.DisplayName + " user migration");
-                setup.SetValue("Version", DeploymentLifecycle.GetCurrentVersion().Replace('.', ','));
-                setup.SetValue("StubPath", $"\"{DeploymentFootprint.InstallPath}\" --complete-user-migration");
-            }
+            root.DeleteSubKeyTree(ActiveSetupKey, throwOnMissingSubKey: false);
             await ReplaceAsync(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), "Free Video Studio.lnk")).ConfigureAwait(false);
             string? publicDesktop = KnownFolders.GetPublicDesktop();
-            if (publicDesktop != null && SavedLinks().Any(p => Path.GetDirectoryName(p) == publicDesktop))
+            if (publicDesktop != null && SavedLinks().Any(p => Path.GetDirectoryName(p) == publicDesktop) && DesktopWritable(publicDesktop))
                 await ReplaceAsync(Path.Combine(publicDesktop, "Free Video Studio.lnk")).ConfigureAwait(false);
         }
         else
@@ -148,11 +137,18 @@ internal sealed class UpgradeRegistration(bool machine, string backupDirectory, 
             string? desktop = KnownFolders.GetDesktop();
             string? shared = KnownFolders.GetPublicDesktop();
             bool publicIcon = shared != null && File.Exists(Path.Combine(shared, "Free Video Studio.lnk"));
-            if (desktop != null && !publicIcon)
+            if (desktop != null && !publicIcon && DesktopWritable(desktop))
                 await ReplaceAsync(Path.Combine(desktop, "Free Video Studio.lnk")).ConfigureAwait(false);
             if (!File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), "Free Video Studio.lnk")))
                 await ReplaceAsync(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "Free Video Studio.lnk")).ConfigureAwait(false);
         }
+    }
+
+    private static bool DesktopWritable(string desktop)
+    {
+        if (Infrastructure.ProtectedFolderGate.CanWriteNow(desktop)) return true;
+        RuntimeLog.Info("Upgrade", "The Desktop icon was skipped: Windows 'Controlled folder access' is protecting the Desktop. The Start menu entry is used.");
+        return false;
     }
 
     public async Task RemoveLegacyAsync()
@@ -339,6 +335,5 @@ internal sealed class UpgradeRegistration(bool machine, string backupDirectory, 
         }
     }
 
-    /// <summary>NOPOWERSHELL_01 — read through the Shell's own COM object, never powershell.exe.</summary>
     internal static Task<string> ReadTargetAsync(string path) => ShellLinkWriter.ReadTargetAsync(path);
 }

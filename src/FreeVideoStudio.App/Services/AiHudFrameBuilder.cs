@@ -8,22 +8,6 @@ using SkiaSharp;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AIHUD_01 — turns the Crop Tool's ONE frozen snapshot into the <see cref="AiHudFrame"/> an AI
-/// provider is allowed to see. No UI types; call it off the UI thread.
-///
-/// <para><b>Only this frame.</b> The input is the snapshot file the user is looking at — the same
-/// pixels the source canvas shows. The video file is touched only for its size and timestamp, to
-/// fingerprint it; its contents are never read here and never sent.</para>
-///
-/// <para><b>Size.</b> The JPEG is downscaled so its long edge is at most <see cref="MaxLongEdge"/>.
-/// The AI answers in normalized 0..1 coordinates, so downscaling cannot shift a box; the mapping
-/// back to pixels uses the SOURCE dimensions, never the JPEG's.</para>
-///
-/// <para><b>Identity.</b> <see cref="AiHudFrame.FrameKey"/> is a hash of the snapshot's own bytes,
-/// so two different frames can never share a cached answer. <see cref="AiHudFrame.SourceFingerprint"/>
-/// is a hash of the clip's full path, length and write time — opaque, no path text.</para>
-/// </summary>
 public static class AiHudFrameBuilder
 {
     public const int MaxLongEdge = 1600;
@@ -75,7 +59,6 @@ public static class AiHudFrameBuilder
         }
     }
 
-    /// <summary>Opaque clip identity: hash of full path + length + last write (UTC ticks). No path text leaves.</summary>
     public static string SourceFingerprint(string? videoPath)
     {
         if (string.IsNullOrWhiteSpace(videoPath)) return "unknown";

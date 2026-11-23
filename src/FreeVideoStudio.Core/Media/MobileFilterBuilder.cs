@@ -5,30 +5,8 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>
-/// Builds the FFmpeg filter_complex graph for portrait (9:16) mobile conversion.
-/// 
-/// Pipeline:
-/// 1. Source video → scale to 1280x1920 internal space (center crop)
-/// 2. Split into N+1 streams (1 base + N HUD layers)
-/// 3. For each HUD layer: crop from source, scale, overlay at computed position
-/// 4. Scale composed result from 1280x1920 → 1080x1620 (content area)
-/// 5. Pad onto 1080x1920 black canvas with 150px top offset
-/// 6. Overlay optional text PNG at y=0 (the 150px text strip)
-/// 7. Force yuv420p format
-///
-/// ZERO-LAYER CASE (NOMASK_01): when no crop rectangle is active — every rect is [0,0,0,0], which
-/// is what the reserved "No Mask Profile" ships — steps 2 and 3 are skipped entirely, the HUD pad
-/// is terminated with nullsink, and the result is the Portrait Canvas Trick plus the optional text
-/// strip and nothing else. Steps 1, 4, 5, 6 and 7 are byte-for-byte identical to a masked profile,
-/// so the framing of a no-mask export matches a HUD export exactly.
-/// </summary>
 public class MobileFilterBuilder
 {
-    /// <summary>
-    /// Builds the full mobile filter chain. Returns (filterString, outputPadLabel).
-    /// Exact port of build_mobile_filter_chain().
-    /// </summary>
     public static (string filterChain, string outputLabel) Build(
         string inputMainPad,
         string inputHudPad,
@@ -52,7 +30,7 @@ public class MobileFilterBuilder
             foreach (var kvp in crops1080p)
             {
                 string key = kvp.Key;
-                
+
                 if (HudConfig.IsRetiredRole(key)) continue;
                 if (key == "spectating" && !showSpectating) continue;
                 else if (key == "team" && !showTeammates) continue;
@@ -165,13 +143,6 @@ public class MobileFilterBuilder
         return (string.Join(";", parts), "[v_final]");
     }
 
-    /// <summary>
-    /// AICAPTION_LAYOUT_02 — where each HUD piece of the user's Crop Tool layout lands on the FINISHED 1080x1920
-    /// portrait canvas, as (X, Y, W, H) pixels, for the caption layout to stay clear of. The layout's overlay
-    /// positions are already in that space (UI y includes the 150 px top strip and the 1280→1080 / 1920→1620
-    /// scale pair cancels out), and a piece's size is its 1080p crop × its scale. Same layer filter as
-    /// <see cref="Build"/>: retired roles, hidden teammates / spectating are skipped.
-    /// </summary>
     public static IReadOnlyList<(double X, double Y, double W, double H)> HudCanvasRects(JsonObject? mobileCoords, bool showTeammates, bool showSpectating)
     {
         var rects = new List<(double, double, double, double)>();
@@ -264,12 +235,6 @@ internal static class MobileFilterBuilderExtensions
         }
     }
 
-    /// <summary>
-    /// KEYCASE_01 — JsonObject indexes ordinally, but every element-key comparison in the Crop Tool
-    /// editor is OrdinalIgnoreCase. A config whose "scales" says "Loot" while "crops_1080p" says
-    /// "loot" therefore exported the layer at scale 1/1 with a default z, silently, with the user's
-    /// real values sitting untouched in the file. Look the key up exactly first, then ignoring case.
-    /// </summary>
     private static JsonNode? LookupHelper(JsonObject section, string key)
     {
         if (section.TryGetPropertyValue(key, out JsonNode? exact)) return exact;

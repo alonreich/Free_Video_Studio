@@ -5,13 +5,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// EDITSTATE_01 — the durable edit state of the Granular editor and the Crop Tool lives in
-/// <c>Core/Editing</c>, not in the windows. The behaviour is unit-tested in Core
-/// (<c>GranularEditSessionTests</c>, <c>CropEditSessionTests</c>); these pin the WINDOW side, which a
-/// compiler is happy to let drift back: a private field holding the segment list or the dirty flag
-/// compiles exactly as well as the session does.
-/// </summary>
 public sealed class EditStateExtractionTests
 {
     private static string Src(string file) =>

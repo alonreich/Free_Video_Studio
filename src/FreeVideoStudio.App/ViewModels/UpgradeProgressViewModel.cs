@@ -1,11 +1,9 @@
-﻿
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Windows.Input;
 using FreeVideoStudio.App.Services;
 
 namespace FreeVideoStudio.App.ViewModels;
 
-/// <summary>One line of the install/update checklist (UPGRADEUX_01).</summary>
 public sealed class UpgradeStepItem : ViewModelBase
 {
     private string _mark = "○";
@@ -20,7 +18,6 @@ public sealed class UpgradeStepItem : ViewModelBase
     internal UpgradeStep Step { get; }
     public string Title { get; }
 
-    /// <summary>○ waiting, ▶ now, ✓ done, ✕ stopped here.</summary>
     public string Mark { get => _mark; private set => SetProperty(ref _mark, value); }
     public bool IsActive { get => _isActive; private set => SetProperty(ref _isActive, value); }
     public bool IsDone { get => _isDone; private set => SetProperty(ref _isDone, value); }
@@ -37,10 +34,6 @@ public sealed class UpgradeStepItem : ViewModelBase
     }
 }
 
-/// <summary>
-/// UPGRADEUX_01 — the state behind <c>UpgradeProgressWindow</c>. Bound, not looked up (MVVM_01).
-/// Every mutation happens on the UI thread; <c>UpgradeBrokerHost</c> marshals to it.
-/// </summary>
 public sealed class UpgradeProgressViewModel : ViewModelBase
 {
     private string _title = "Updating Free Video Studio";
@@ -59,7 +52,6 @@ public sealed class UpgradeProgressViewModel : ViewModelBase
         CloseCommand = new RelayCommand(() => CloseRequested?.Invoke());
     }
 
-    /// <summary>Public mirror of the internal choice enum so the window can stay public.</summary>
     public enum RunningAppChoiceValue { Continue, Cancel }
 
     public ObservableCollection<UpgradeStepItem> Steps { get; } = new();
@@ -70,7 +62,6 @@ public sealed class UpgradeProgressViewModel : ViewModelBase
     public bool IsIndeterminate { get => _isIndeterminate; set => SetProperty(ref _isIndeterminate, value); }
     public string PercentText { get => _percentText; set => SetProperty(ref _percentText, value); }
 
-    /// <summary>Work is running: progress bar visible, no buttons, the window cannot be closed.</summary>
     public bool IsWorking { get => _isWorking; set => SetProperty(ref _isWorking, value); }
     public bool IsAsking { get => _isAsking; set => SetProperty(ref _isAsking, value); }
     public bool IsFinished { get => _isFinished; set => SetProperty(ref _isFinished, value); }

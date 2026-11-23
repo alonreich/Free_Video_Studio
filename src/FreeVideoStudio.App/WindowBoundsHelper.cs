@@ -1,4 +1,3 @@
-﻿
 using System;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -11,30 +10,20 @@ namespace FreeVideoStudio.App;
 
 public static class WindowBoundsHelper
 {
-    /// <summary>
-    /// Full window-state persistence: loads saved bounds at construction, re-applies
-    /// the position right after the window opens (the OS/per-monitor DPI handshake can
-    /// silently move a freshly shown window — the main cause of "my window keeps
-    /// resetting"), and saves continuously (debounced) on every move/resize/state
-    /// change so bounds survive crashes and force-kills, not just clean closes.
-    /// Positions spanning multiple displays (e.g. 70% on display 1, 30% on display 2)
-    /// are preserved as-is: bounds are only reset when the window would be COMPLETELY
-    /// off every connected screen (e.g. a monitor was unplugged).
-    /// </summary>
-    /// <param name="seedFromKey">
-    /// WINSEED_01 — optional. When this window has NO saved bounds of its own, borrow the geometry
-    /// stored under this other key for the first open (size and position only; WindowState is
-    /// deliberately NOT copied, so a maximized donor does not force a maximized window). Saving
-    /// always targets <paramref name="key"/>, so the borrow happens exactly once.
-    /// </param>
-    /// <param name="fitDisplayOnFirstRun">
-    /// FIRSTFIT_01 — opt in to the 16:9 display fit described on <see cref="ApplyFirstRunDisplayFit"/>
-    /// for the very first open of this window on this machine. Opt-IN on purpose: a window that is
-    /// meant to open small or over its parent (the detached preview console, per UI-DETACH; the
-    /// Settings dialog) must not be sized to most of the screen.
-    /// </param>
-    public static void Track(Window window, string key, string? seedFromKey = null, bool fitDisplayOnFirstRun = false)
+    public sealed class BoundsTracker
     {
+        internal BoundsTracker(string key) => Key = key;
+
+        public string Key { get; internal set; }
+
+        internal Action<string>? SwitchImpl;
+
+        public void SwitchTo(string key) => SwitchImpl?.Invoke(key);
+    }
+
+    public static BoundsTracker Track(Window window, string key, string? seedFromKey = null, bool fitDisplayOnFirstRun = false, double capFraction = WindowPlacement.EditorCap, double firstRunMaxWidthDip = double.PositiveInfinity)
+    {
+        var tracker = new BoundsTracker(key);
         PixelPoint? appliedPosition = null;
         try
         {
@@ -43,13 +32,15 @@ public static class WindowBoundsHelper
 
             bool applied;
             if (!hasOwnBounds && seedFromKey != null)
-                applied = ApplyBounds(window, state, seedFromKey, sizeAndPositionOnly: true);
+                applied = ApplyBounds(window, state, seedFromKey, key, capFraction, sizeAndPositionOnly: true);
             else
-                applied = ApplyBounds(window, state, key);
+                applied = ApplyBounds(window, state, key, key, capFraction);
 
-            if (!applied && fitDisplayOnFirstRun)
+            if (!applied)
             {
-                ApplyFirstRunDisplayFit(window, key);
+                var home = WindowPlacement.HomeDisplay(window, null, state);
+                if (fitDisplayOnFirstRun && home.HasValue) ApplyFirstRunDisplayFit(window, key, home.Value, capFraction, firstRunMaxWidthDip);
+                else if (home.HasValue) WindowPlacement.LowerMinimumsToFit(window, home.Value, capFraction);
             }
 
             if (window.WindowStartupLocation == WindowStartupLocation.Manual)
@@ -80,7 +71,7 @@ public static class WindowBoundsHelper
                         return;
                     }
 
-                    SaveSnapshot(snapshot, key);
+                    SaveSnapshot(snapshot, tracker.Key);
                 };
             }
             debounce.Stop();
@@ -110,199 +101,188 @@ public static class WindowBoundsHelper
         window.Closing += (_, _) =>
         {
             try { debounce?.Stop(); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
-            SaveBoundsOnClose(window, key);
+            SaveBoundsOnClose(window, tracker.Key);
         };
+
+        var sessionBounds = new System.Collections.Generic.Dictionary<string, JsonObject>(StringComparer.Ordinal);
+        tracker.SwitchImpl = newKey =>
+        {
+            if (string.Equals(newKey, tracker.Key, StringComparison.Ordinal)) return;
+            try { debounce?.Stop(); } catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+            bool wasOpened = opened;
+            if (wasOpened)
+            {
+                try
+                {
+                    var writer = Core.Ipc.SessionStateWriter.For();
+                    var bounds = BuildBoundsObj(WindowSnapshot.Capture(window), writer.ReadSnapshot(), tracker.Key);
+                    sessionBounds[tracker.Key] = (JsonObject)bounds.DeepClone();
+                    writer.Enqueue(new JsonObject { [tracker.Key] = bounds });
+                }
+                catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+            }
+            string oldKey = tracker.Key;
+            tracker.Key = newKey;
+            opened = false;
+            try
+            {
+                var state = Core.Ipc.SessionStateWriter.For().ReadSnapshot();
+                if (sessionBounds.TryGetValue(newKey, out var remembered)) state[newKey] = remembered.DeepClone();
+                bool applied = ApplyBounds(window, state, newKey, newKey, capFraction);
+                if (!applied)
+                {
+                    if (window.WindowState != WindowState.Normal) window.WindowState = WindowState.Normal;
+                    var display = WindowPlacement.DisplayOf(window) ?? WindowPlacement.HomeDisplay(window, null, state);
+                    if (fitDisplayOnFirstRun && display.HasValue) ApplyFirstRunDisplayFit(window, newKey, display.Value, capFraction, firstRunMaxWidthDip);
+                }
+                if (!wasOpened && window.WindowStartupLocation == WindowStartupLocation.Manual) appliedPosition = window.Position;
+                RuntimeLog.Info("UI", $"Window bounds switched '{oldKey}' -> '{newKey}' ({(applied ? "remembered" : "first time")}).");
+            }
+            catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+            finally { opened = wasOpened; }
+        };
+
+        return tracker;
     }
 
-    /// <returns>
-    /// FIRSTFIT_01 — true when saved geometry was found and applied. False means "nothing was
-    /// remembered for this key", which is the signal the caller needs to decide whether to compute
-    /// a first-run default instead.
-    /// </returns>
-    private static bool ApplyBounds(Window window, JsonObject state, string key, bool sizeAndPositionOnly = false)
+    private static bool ApplyBounds(Window window, JsonObject state, string key, string saveKey, double capFraction, bool sizeAndPositionOnly = false)
     {
-        if (state.TryGetPropertyValue(key, out var boundsNode) && boundsNode is JsonObject boundsObj)
+        if (!(state.TryGetPropertyValue(key, out var boundsNode) && boundsNode is JsonObject boundsObj))
         {
-            window.WindowStartupLocation = WindowStartupLocation.Manual;
-
-            double savedWidth = window.Width;
-            double savedHeight = window.Height;
-            bool hasSavedSize = false;
-
-            if (boundsObj.TryGetPropertyValue("Width", out var w) && w != null && boundsObj.TryGetPropertyValue("Height", out var h) && h != null)
-            {
-                savedWidth = Math.Max(window.MinWidth > 0 ? window.MinWidth : 320, (double)w);
-                savedHeight = Math.Max(window.MinHeight > 0 ? window.MinHeight : 240, (double)h);
-                hasSavedSize = true;
-            }
-
-            if (hasSavedSize)
-            {
-                window.Width = savedWidth;
-                window.Height = savedHeight;
-                window.SizeToContent = SizeToContent.Manual;
-            }
-
-            if (boundsObj.TryGetPropertyValue("X", out var x) && x != null && boundsObj.TryGetPropertyValue("Y", out var y) && y != null)
-            {
-                int px = (int)x;
-                int py = (int)y;
-
-                var screens = window.Screens.All;
-                double scaling = screens.FirstOrDefault()?.Scaling ?? 1.0;
-                int pixelWidth = Math.Max(1, (int)(savedWidth * scaling));
-                int pixelHeight = Math.Max(1, (int)(savedHeight * scaling));
-
-                bool isVisible = screens.Any(s => s.Bounds.Intersects(new PixelRect(px, py, pixelWidth, pixelHeight)));
-
-                if (!isVisible)
-                {
-                    var primary = window.Screens.Primary ?? screens.FirstOrDefault();
-                    if (primary != null)
-                    {
-                        px = primary.Bounds.X + Math.Max(0, (primary.Bounds.Width - pixelWidth) / 2);
-                        py = primary.Bounds.Y + Math.Max(0, (primary.Bounds.Height - pixelHeight) / 2);
-                    }
-                }
-
-                window.Position = new PixelPoint(px, py);
-            }
-
-            if (!sizeAndPositionOnly && boundsObj.TryGetPropertyValue("WindowState", out var stateNode) && stateNode != null)
-            {
-                var savedState = (WindowState)(int)stateNode;
-                window.WindowState = savedState == WindowState.Maximized
-                    ? WindowState.Maximized
-                    : WindowState.Normal;
-            }
-
-            return true;
+            if (window.WindowStartupLocation == WindowStartupLocation.Manual)
+                window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            return false;
         }
 
-        window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        return false;
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+        var displays = WindowPlacement.Displays(window);
+
+        double width = window.Width;
+        double height = window.Height;
+        bool hasSize = false;
+        if (boundsObj["Width"] is JsonNode w && boundsObj["Height"] is JsonNode h)
+        {
+            width = Math.Max(window.MinWidth > 0 ? window.MinWidth : 320, (double)w);
+            height = Math.Max(window.MinHeight > 0 ? window.MinHeight : 240, (double)h);
+            hasSize = true;
+        }
+
+        if (boundsObj["X"] is JsonNode xn && boundsObj["Y"] is JsonNode yn)
+        {
+            int px = (int)xn;
+            int py = (int)yn;
+            double sizeW = double.IsNaN(width) ? 640 : width;
+            double sizeH = double.IsNaN(height) ? 480 : height;
+
+            if (!sizeAndPositionOnly && boundsObj["Return"] is JsonObject ret
+                && ret["X"] is JsonNode rx && ret["Y"] is JsonNode ry
+                && WindowPlacement.IndexOf(displays, (string?)ret["Display"]) >= 0
+                && WindowPlacement.GrabbableDisplay(displays, (int)rx, (int)ry, sizeW) >= 0)
+            {
+                px = (int)rx;
+                py = (int)ry;
+                EnqueueReturn(saveKey, boundsObj, null);
+                RuntimeLog.Info("UI", $"'{saveKey}': its display is back; returning the window there.");
+            }
+
+            int grab = WindowPlacement.GrabbableDisplay(displays, px, py, sizeW);
+            if (grab >= 0)
+            {
+                var d = displays[grab];
+                var pixelRect = new PixelRect(px, py, Math.Max(1, (int)(sizeW * d.Scale)), Math.Max(1, (int)(sizeH * d.Scale)));
+                if (!WindowPlacement.InsideDesktop(displays, pixelRect))
+                {
+                    WindowPlacement.LowerMinimumsToFit(window, d, capFraction);
+                    var fit = WindowPlacement.FitInside(d, sizeW, sizeH, capFraction);
+                    if (fit.Width < sizeW || fit.Height < sizeH)
+                    {
+                        sizeW = Math.Max(fit.Width, window.MinWidth);
+                        sizeH = Math.Max(fit.Height, window.MinHeight);
+                        width = sizeW; height = sizeH; hasSize = true;
+                    }
+                    var inside = WindowPlacement.KeepInside(d, new PixelPoint(px, py), sizeW, sizeH);
+                    px = inside.X; py = inside.Y;
+                }
+            }
+            else
+            {
+                var home = WindowPlacement.HomeDisplay(window, null, state);
+                if (home.HasValue)
+                {
+                    var d = home.Value;
+                    WindowPlacement.LowerMinimumsToFit(window, d, capFraction);
+                    var fit = WindowPlacement.FitInside(d, sizeW, sizeH, capFraction);
+                    sizeW = Math.Max(fit.Width, window.MinWidth);
+                    sizeH = Math.Max(fit.Height, window.MinHeight);
+                    width = sizeW; height = sizeH; hasSize = true;
+                    var c = WindowPlacement.Center(d, sizeW, sizeH);
+                    if (!sizeAndPositionOnly && boundsObj["Return"] is null && boundsObj["Display"] is JsonNode lost)
+                        EnqueueReturn(saveKey, boundsObj, new JsonObject { ["X"] = px, ["Y"] = py, ["Display"] = lost.DeepClone() });
+                    RuntimeLog.Info("UI", $"'{saveKey}': saved spot ({px},{py}) has no reachable title bar on any display; moved to the centre of {d.Fingerprint} at {sizeW:0}x{sizeH:0}.");
+                    px = c.X; py = c.Y;
+                }
+            }
+
+            window.Position = new PixelPoint(px, py);
+        }
+        else
+        {
+            var home = WindowPlacement.HomeDisplay(window, null, state);
+            if (home.HasValue) WindowPlacement.LowerMinimumsToFit(window, home.Value, capFraction);
+        }
+
+        if (hasSize)
+        {
+            window.Width = width;
+            window.Height = height;
+            window.SizeToContent = SizeToContent.Manual;
+        }
+
+        if (!sizeAndPositionOnly && boundsObj["WindowState"] is JsonNode stateNode)
+        {
+            var savedState = (WindowState)(int)stateNode;
+            window.WindowState = savedState == WindowState.Maximized
+                ? WindowState.Maximized
+                : WindowState.Normal;
+        }
+
+        return true;
     }
 
-    /// <summary>FIRSTFIT_01 — how much of the display's usable area a first open should cover.</summary>
-    private const double FirstRunCoverage = 0.80;
-
-    /// <summary>FIRSTFIT_01 — the shape every editing window opens in: landscape 16:9.</summary>
-    private const double FirstRunAspect = 16.0 / 9.0;
-
-    /// <summary>
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// FIRSTFIT_01 — THE FIRST-RUN SIZE IS DERIVED FROM THE DISPLAY, NOT GUESSED IN XAML.
-    ///
-    /// With nothing saved, a window opened at whatever its content and MinWidth/MinHeight happened
-    /// to add up to — a number chosen years ago against one developer's monitor. On a 1080p laptop
-    /// that can fill the screen; on a 4K display it opens as a small box in the middle of a very
-    /// large desktop, and every user's first impression of every window is that it is the wrong
-    /// size.
-    ///
-    /// THE RULE: cover ~80% of the display's WORKING AREA (its usable space, so the taskbar is
-    /// already excluded), in a landscape 16:9 rectangle, centred on that area.
-    ///
-    ///     bound  = (0.8 x usableW, 0.8 x usableH)
-    ///     w = bound.W ; h = w / (16/9)         -- start width-led
-    ///     if h > bound.H : h = bound.H ; w = h x (16/9)   -- otherwise height-led
-    ///
-    /// Fitting INSIDE the 80% box rather than scaling a full-screen 16:9 fit is what keeps the
-    /// promise on both shapes of monitor: on a 16:9 display the height binds and the window is
-    /// exactly 80% tall; on an ultrawide the width binds long before the height does, and the
-    /// window stays 16:9 instead of becoming a letterbox slot the user has to fix by hand.
-    ///
-    /// WORKING AREA, NOT BOUNDS. `Bounds` includes the taskbar, so 80% of it can still put a
-    /// window edge underneath the taskbar. `WorkingArea` is what the user can actually use.
-    ///
-    /// DIPs, NOT PIXELS. `Width`/`Height` are device-independent units and `WorkingArea` is
-    /// physical pixels, so the area is divided by the screen's scaling on the way in and the
-    /// result multiplied back on the way out to centre it. Skipping that step makes the window
-    /// come out 150% too large on a 150%-scaled display — the exact machines this fix is for.
-    ///
-    /// MinWidth/MinHeight still win. A window whose floor is larger than the computed rectangle
-    /// (the Music Wizard's 1100x760 on a small laptop) is clamped up and stops being 16:9. That is
-    /// correct: a usable window in the wrong ratio beats a correctly-shaped window that cannot lay
-    /// its own contents out.
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
-    private static void ApplyFirstRunDisplayFit(Window window, string key)
+    private static void EnqueueReturn(string key, JsonObject bounds, JsonObject? ret)
     {
         try
         {
-            var screen = window.Screens.Primary ?? window.Screens.All.FirstOrDefault();
-            if (screen == null) return;
-
-            double scaling = screen.Scaling > 0 ? screen.Scaling : 1.0;
-            var area = screen.WorkingArea;
-
-            double usableWidth = area.Width / scaling;
-            double usableHeight = area.Height / scaling;
-            if (usableWidth <= 0 || usableHeight <= 0) return;
-
-            double boundWidth = usableWidth * FirstRunCoverage;
-            double boundHeight = usableHeight * FirstRunCoverage;
-
-            double width = boundWidth;
-            double height = width / FirstRunAspect;
-            if (height > boundHeight)
-            {
-                height = boundHeight;
-                width = height * FirstRunAspect;
-            }
-
-            double minWidth = window.MinWidth > 0 ? window.MinWidth : 320;
-            double minHeight = window.MinHeight > 0 ? window.MinHeight : 240;
-            width = Math.Clamp(Math.Round(width), minWidth, Math.Max(minWidth, usableWidth));
-            height = Math.Clamp(Math.Round(height), minHeight, Math.Max(minHeight, usableHeight));
-
-            window.SizeToContent = SizeToContent.Manual;
-            window.Width = width;
-            window.Height = height;
-
-            int pixelWidth = Math.Max(1, (int)Math.Round(width * scaling));
-            int pixelHeight = Math.Max(1, (int)Math.Round(height * scaling));
-
-            window.WindowStartupLocation = WindowStartupLocation.Manual;
-            window.Position = new PixelPoint(
-                area.X + Math.Max(0, (area.Width - pixelWidth) / 2),
-                area.Y + Math.Max(0, (area.Height - pixelHeight) / 2));
-
-            RuntimeLog.Info("UI",
-                $"First run for '{key}': sized {width:0}x{height:0} DIP ({width / height:0.00}:1) to cover " +
-                $"{FirstRunCoverage:P0} of a {usableWidth:0}x{usableHeight:0} DIP working area at {scaling:0.##}x scaling.");
+            var copy = (JsonObject)bounds.DeepClone();
+            copy.Remove("Return");
+            if (ret != null) copy["Return"] = ret;
+            Core.Ipc.SessionStateWriter.For().Enqueue(new JsonObject { [key] = copy });
         }
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
-    /// <summary>
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// ⚠️ BOUNDS_01 — THE SNAPSHOT IS TAKEN **BEFORE** THE FIRST await. DO NOT MOVE IT DOWN.
-    ///
-    /// This method used to read the window AFTER `await store.LoadAsync().ConfigureAwait(false)`.
-    /// `ConfigureAwait(false)` deliberately abandons the UI SynchronizationContext, so everything
-    /// past that line runs on a thread-pool thread — and `WindowSnapshot.Capture` reads
-    /// `window.Width`, `window.Position` and `window.WindowState`, all of which are UI-thread-only.
-    /// The result was a guaranteed, every-single-time:
-    ///     InvalidOperationException: Call from invalid thread
-    ///        at Avalonia.Layout.Layoutable.get_Width()
-    ///        at WindowBoundsHelper.WindowSnapshot.Capture(Window)
-    ///
-    /// WHY NOBODY NOTICED FOR SO LONG. The throw was swallowed by a catch whose only body was a
-    /// `Debug.WriteLine`, which the compiler DELETES from Release builds — so in the shipped app
-    /// this failed in complete silence (see ISSUE_13). It only became visible once those catches
-    /// started reporting through `RuntimeLog.Swallowed`.
-    ///
-    /// WHAT IT ACTUALLY COST. Only the two windows that save asynchronously on close — the Main App
-    /// and the Video Merger — and only the CLOSE-time save. The 700ms debounced save (SaveSnapshot,
-    /// which correctly captures on the UI thread and only then hands a plain struct to Task.Run)
-    /// was unaffected, which is why positions mostly stuck and this looked like nothing was wrong.
-    /// What was lost is any change made in the final moments before closing: maximise, un-maximise,
-    /// or a nudge inside the last debounce window.
-    ///
-    /// The fix is one line in a new place, not a redesign: capture while we are still on the UI
-    /// thread, then hand the immutable struct to the same thread-safe builder every other path uses.
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
+    private static void ApplyFirstRunDisplayFit(Window window, string key, DisplayArea display, double capFraction, double maxWidthDip)
+    {
+        try
+        {
+            if (display.UsableWidthDip <= 0 || display.UsableHeightDip <= 0) return;
+            WindowPlacement.LowerMinimumsToFit(window, display, capFraction);
+            var size = WindowPlacement.FirstRunSize(display, window.MinWidth, window.MinHeight, capFraction);
+            if (size.Width > maxWidthDip) size = new Size(Math.Max(window.MinWidth, maxWidthDip), size.Height);
+
+            window.SizeToContent = SizeToContent.Manual;
+            window.Width = size.Width;
+            window.Height = size.Height;
+            window.WindowStartupLocation = WindowStartupLocation.Manual;
+            window.Position = WindowPlacement.Center(display, size.Width, size.Height);
+
+            RuntimeLog.Info("UI",
+                $"First run for '{key}': sized {size.Width:0}x{size.Height:0} DIP ({size.Width / size.Height:0.00}:1) to cover " +
+                $"{WindowPlacement.FirstRunCoverage:P0} of a {display.UsableWidthDip:0}x{display.UsableHeightDip:0} DIP working area at {display.Scale:0.##}x scaling on {display.Fingerprint}.");
+        }
+        catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+    }
+
     public static async Task SaveBoundsAsync(Window window, string key)
     {
         try
@@ -319,40 +299,17 @@ public static class WindowBoundsHelper
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
-    /// <summary>UIIPC_01 — how long a close-time save may wait (in the background) for its ACK.</summary>
     public static readonly TimeSpan CloseFlushBudget = TimeSpan.FromSeconds(3);
 
-    /// <summary>UIIPC_01 — re-entrancy guard: the deferred-close contract fires Closing twice.</summary>
     [ThreadStatic] private static bool t_inCloseSave;
 
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Window, CloseSaveMark> s_lastCloseSave = new();
 
     private sealed class CloseSaveMark { public string? Value; }
 
-    /// <summary>
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// UIIPC_01 — CLOSE-TIME BOUNDS SAVE THAT NEVER BLOCKS THE DISPATCHER.
-    ///
-    /// This replaced <c>SaveBoundsSync</c>, which ran from <c>Window.Closing</c> and called
-    /// <c>StateTransferStore.UpdatePropertiesSync</c> → <c>StartCommit(...).GetAwaiter().GetResult()</c>:
-    /// the commit itself ran on the pool, but the UI thread still WAITED for the pipe ACK / lease / disk
-    /// for up to the whole delivery budget, on every window close.
-    ///
-    /// Now, on the UI thread: capture an immutable <see cref="WindowSnapshot"/> → build the bounds
-    /// object against the MEMORY snapshot → <see cref="Core.Ipc.SessionStateWriter.Enqueue"/> (returns
-    /// immediately) → a bounded background flush whose failure is logged with
-    /// <see cref="RuntimeLog.Fail"/> (the values stay queued and are retried by the next flush, and by the
-    /// process-exit final flush in <c>Program.RunUiAsync</c>).
-    ///
-    /// Re-entrancy: the deferred-close contract fires Closing twice (cancel + re-posted Close) and a
-    /// close handler can be re-entered from inside itself; a nested call is ignored and an identical
-    /// second snapshot is not enqueued again. A CHANGED second snapshot is enqueued (latest wins).
-    /// ══════════════════════════════════════════════════════════════════════════════════════════
-    /// </summary>
     public static void SaveBoundsOnClose(Window window, string key)
         => SaveBoundsOnClose(window, key, Core.Ipc.SessionStateWriter.For());
 
-    /// <summary>UIIPC_01 — <see cref="SaveBoundsOnClose(Window, string)"/> against an explicit writer.</summary>
     internal static void SaveBoundsOnClose(Window window, string key, Core.Ipc.SessionStateWriter writer)
     {
         if (t_inCloseSave) return;
@@ -384,37 +341,29 @@ public static class WindowBoundsHelper
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
-    /// <summary>
-    /// ISSUE_10 — a plain value copy of everything the persistence layer needs from a Window.
-    ///
-    /// Window properties may only be touched on the UI thread, so they are captured there and
-    /// this snapshot is what crosses onto the background thread that performs the file work. It
-    /// also means the values saved are the ones that were true when the debounce fired, not
-    /// whatever the window happens to be doing when the write finally reaches disk.
-    /// </summary>
     private readonly struct WindowSnapshot
     {
         public readonly int X, Y;
         public readonly double Width, Height;
         public readonly WindowState State;
+        public readonly string? Display;
 
-        private WindowSnapshot(int x, int y, double w, double h, WindowState state)
+        private WindowSnapshot(int x, int y, double w, double h, WindowState state, string? display)
         {
-            X = x; Y = y; Width = w; Height = h; State = state;
+            X = x; Y = y; Width = w; Height = h; State = state; Display = display;
         }
 
         public static WindowSnapshot Capture(Window window)
         {
             double w = double.IsNaN(window.Width) ? window.Bounds.Width : window.Width;
             double h = double.IsNaN(window.Height) ? window.Bounds.Height : window.Height;
-            return new WindowSnapshot(window.Position.X, window.Position.Y, w, h, window.WindowState);
+            string? display = null;
+            try { display = WindowPlacement.DisplayOf(window)?.Fingerprint; }
+            catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
+            return new WindowSnapshot(window.Position.X, window.Position.Y, w, h, window.WindowState, display);
         }
     }
 
-    /// <summary>
-    /// ISSUE_10 — builds the bounds entry for a captured snapshot against the MEMORY state and
-    /// enqueues it (UIIPC_01). Never touches the Window, the pipe or the disk; used by the debounce.
-    /// </summary>
     private static void SaveSnapshot(WindowSnapshot snapshot, string key)
     {
         try
@@ -425,10 +374,6 @@ public static class WindowBoundsHelper
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }
 
-    /// <summary>
-    /// ISSUE_08/ISSUE_10 — the single place that decides what a persisted bounds entry contains,
-    /// shared by the debounced save, the close-time save and SaveBoundsAsync.
-    /// </summary>
     private static JsonObject BuildBoundsObj(WindowSnapshot snapshot, JsonObject state, string key)
     {
         JsonObject boundsObj = new JsonObject();
@@ -439,6 +384,8 @@ public static class WindowBoundsHelper
             if (existingObj.TryGetPropertyValue("Y", out var y)) boundsObj["Y"] = y?.DeepClone();
             if (existingObj.TryGetPropertyValue("Width", out var w)) boundsObj["Width"] = w?.DeepClone();
             if (existingObj.TryGetPropertyValue("Height", out var h)) boundsObj["Height"] = h?.DeepClone();
+            if (existingObj.TryGetPropertyValue("Display", out var d)) boundsObj["Display"] = d?.DeepClone();
+            if (existingObj.TryGetPropertyValue("Return", out var r)) boundsObj["Return"] = r?.DeepClone();
         }
 
         WindowState persistedState = snapshot.State == WindowState.Minimized
@@ -452,6 +399,7 @@ public static class WindowBoundsHelper
             boundsObj["Y"] = snapshot.Y;
             boundsObj["Width"] = snapshot.Width;
             boundsObj["Height"] = snapshot.Height;
+            if (snapshot.Display != null) boundsObj["Display"] = snapshot.Display;
         }
 
         return boundsObj;

@@ -6,7 +6,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>AOTCLEAN_02 — WavAudioReader behaves like NAudio's AudioFileReader for the WAVs the app writes.</summary>
 public sealed class WavAudioReaderTests : IDisposable
 {
     private readonly string _path = Path.Combine(Path.GetTempPath(), $"fvs_wav_{Guid.NewGuid():N}.wav");

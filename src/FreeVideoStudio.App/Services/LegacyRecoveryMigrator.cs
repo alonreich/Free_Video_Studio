@@ -6,38 +6,8 @@ using FreeVideoStudio.Core.Project;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// RECOVERYDOC_08 - ONE-WAY legacy recovery migration: old recovery_v2 payload - canonical
-/// <see cref="ProjectDocument"/>.
-/// </summary>
-/// <remarks>
-/// WHY A READER AND NOT A WRITER: users arriving from a crash written by an older build have a
-/// legacy <c>schemaVersion:1</c> payload on disk. It is parsed ONCE, reconstructed into a real
-/// document, applied through the normal restore path, and the very next autosave overwrites the
-/// file in the canonical envelope format. The legacy shape is never written again - maintaining
-/// two writers is precisely the defect this mission removes.
-/// <para>
-/// DOCUMENTED LIMITATIONS (the legacy schema genuinely never carried these): Mask (the legacy
-/// payload recorded HUD toggle positions but not the mask snapshot, so a migrated session falls
-/// back to whatever mask is machine-active now, exactly as the old restore did); Merge/EDL (the
-/// merger queue lived in the merger window and was never in the legacy payload); and the source
-/// fingerprint (size/mtime/fps/width/height were never recorded - the migrated document records
-/// the path and the measured duration only, so source-integrity checks report Unknown instead of
-/// nagging). Everything the legacy payload DID carry - trims, base speed, speed segments with
-/// zoom boxes, cuts, meme placements, music bed and voice-over placement, export quality and
-/// portrait mode - is reconstructed faithfully.
-/// </para>
-/// <para>
-/// NO REFLECTION: JsonNode only (PROJ_02 / AOTSAFETY_01).
-/// </para>
-/// </remarks>
 public static class LegacyRecoveryMigrator
 {
-    /// <summary>
-    /// Converts a legacy payload. Returns a document plus the crash-only transient metadata that
-    /// sat beside the project fields in the old file. False with <paramref name="error"/> set
-    /// means the payload carried no project worth restoring.
-    /// </summary>
     public static bool TryMigrate(
         JsonObject legacy,
         out ProjectDocument? document,
@@ -130,10 +100,6 @@ public static class LegacyRecoveryMigrator
         return segments;
     }
 
-    /// <summary>
-    /// Legacy cuts are ABSOLUTE source milliseconds; the document stores CLIP-RELATIVE seconds
-    /// (OutputTimeline.Cut) - the same conversion ProjectSession.Capture performs.
-    /// </summary>
     private static List<OutputTimeline.Cut> ReadCuts(JsonObject legacy, double cutStartMs)
     {
         var cuts = new List<OutputTimeline.Cut>();
@@ -188,10 +154,6 @@ public static class LegacyRecoveryMigrator
         };
     }
 
-
-    /// is reconstructed into the ProjectDocument instead - this list is the inventory of what
-    /// stayed transient, never a second project schema.
-    /// </summary>
     private static readonly string[] LegacyTransientKeys =
     {
         "thumbnailPosMs", "thumbnailSet", "freezeTimeMs", "freezeDurationS",

@@ -8,10 +8,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// EDITSTATE_01 — the Granular editor's durable edit state, constructed and driven with no window,
-/// no dispatcher and no mpv. Numbers in the names follow the task's required-test list.
-/// </summary>
 public class GranularEditSessionTests
 {
     private const string Clip = "clipA.mp4";
@@ -45,7 +41,6 @@ public class GranularEditSessionTests
         OutputTimeline.Create((s.TrimEndMs - s.TrimStartMs), s.Segments, 1.0, 0,
             MemePlacement.ToInsertions(s.Memes), s.CutsForTimeline()).TotalOutputSeconds;
 
-
     [Fact]
     public void T01_ConstructibleWithoutAWindow()
     {
@@ -59,7 +54,6 @@ public class GranularEditSessionTests
         s.MarkOpened();
         Assert.False(s.IsDirty);
     }
-
 
     [Fact]
     public void T02_CaptureApplyRoundtrip()
@@ -93,7 +87,6 @@ public class GranularEditSessionTests
         Assert.Equal(-1, s.SelectedSegmentIndex);
         Assert.Null(s.SelectedMemeId);
     }
-
 
     [Fact]
     public void T03_SpeedCutMemeFreezeZoom_SurviveRecoveryAndReachTheMainAppAbsolute()
@@ -133,7 +126,6 @@ public class GranularEditSessionTests
         Assert.Equal(new[] { (0.0, 1000.0), (3500.0, 4000.0) }, s.Segments.Select(x => (x.StartMs, x.EndMs)));
     }
 
-
     [Fact]
     public void T04_InlineAndCornerMemeSemanticsAreNotCollapsed()
     {
@@ -170,7 +162,6 @@ public class GranularEditSessionTests
         Assert.False(s.ResolveNewMemeAnchor(live, 5.0, MemePresentationMode.InlineFullScreen, out _).Ok);
         Assert.True(s.ResolveNewMemeAnchor(live, 5.0, MemePresentationMode.CornerOverlay, out _).Ok);
     }
-
 
     [Fact]
     public void T05_CommandsRecordOneLabelledStepEach_AndUndoRestoresThem()
@@ -258,7 +249,6 @@ public class GranularEditSessionTests
         Assert.Equal(1, s.History.UndoCount);
     }
 
-
     [Fact]
     public void T06_ParkedHistoryNeverLeaksIntoAnotherClipOrRevision()
     {
@@ -323,7 +313,6 @@ public class GranularEditSessionTests
         s.BaseSpeed = 3.0;
         Assert.True(s.IsDirty);
     }
-
 
     [Fact]
     public void MarkEndInfersTheStartAndRefusesInsideABlock()
@@ -434,4 +423,3 @@ public class GranularEditSessionTests
         Assert.True(s.Segments[1].ZoomSlow);
     }
 }
-

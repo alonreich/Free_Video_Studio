@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -13,11 +12,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// LIBAVFRAME_04/05 — the two migrated callers keep their observable contracts on BOTH backends:
-/// MemeThumbnailCache (0.5 s → 0 retry, 160 px wide, even height, null on failure) and the Gemini
-/// candidate JPEG (decodable, full size).
-/// </summary>
 public sealed class NativeFrameCallerTests : IDisposable
 {
     private readonly string _work = Path.Combine(Path.GetTempPath(), $"fvs-framecallers-{Guid.NewGuid():N}");
@@ -60,8 +54,13 @@ public sealed class NativeFrameCallerTests : IDisposable
         {
             Environment.SetEnvironmentVariable(VideoFrameGrabber.BackendEnvironmentVariable, backend);
             long nativeBefore = VideoFrameGrabber.NativeCount, fallbackBefore = VideoFrameGrabber.FallbackCount;
-            var tall = await MemeThumbnailCache.GrabVideoFrameAsync(Ffmpeg, clip, CancellationToken.None);
-            Assert.NotNull(tall);
+            using var tall = await MemeThumbnailCache.GrabVideoFrameAsync(Ffmpeg, clip, CancellationToken.None);
+            if (tall == null)
+            {
+                var diagnosis = await VideoFrameGrabber.DecodeNativeAsync(Ffmpeg, clip,
+                    VideoFrameRequest.AtFfmpegSeek("0.5", 160, evenHeight: true), TimeSpan.FromSeconds(10));
+                Assert.Fail($"Thumbnail backend={backend}; native diagnosis={diagnosis.Status}: {diagnosis.Detail}");
+            }
             Assert.NotNull(await MemeThumbnailCache.GrabVideoFrameAsync(Ffmpeg, shortClip, CancellationToken.None));
             Assert.Null(await MemeThumbnailCache.GrabVideoFrameAsync(Ffmpeg, garbage, CancellationToken.None));
             if (backend == "native")
@@ -92,14 +91,12 @@ public sealed class NativeFrameCallerTests : IDisposable
         Assert.InRange(c.Blue, 20, 40);
     }
 
-    /// <summary>The timestamps Gemini receives are a pure function of the segment and did not change.</summary>
     [Fact]
     public void GeminiCandidateTimestampRuleIsUnchanged()
     {
         string src = File.ReadAllText(Path.Combine(RepoRoot.Path, "src", "FreeVideoStudio.App", "Services", "GeminiTrackingService.cs"));
-        Assert.Contains("double t1 = sourceStartSec + Math.Max(0.05, 0.15 * sourceDurationSec);", src);
-        Assert.Contains("double t2 = sourceStartSec + 0.50 * sourceDurationSec;", src);
-        Assert.Contains("double t3 = sourceStartSec + Math.Min(sourceDurationSec - 0.05, 0.85 * sourceDurationSec);", src);
+        Assert.Contains("CandidateFrameTimes(sourceStartSec, sourceDurationSec);", src);
+        Assert.Contains("start + duration * 0.15, start + duration * 0.50, start + duration * 0.85", src);
         Assert.Contains("sec.ToString(\"0.000\", CultureInfo.InvariantCulture)", src);
     }
 }

@@ -1,4 +1,4 @@
-# REBRAND RECORD: Fortnite Video Software → Free Video Studio  {#REBRAND}
+﻿# REBRAND RECORD: Fortnite Video Software → Free Video Studio  {#REBRAND}
 
 > **STATUS: COMPLETE.** The product, every project, folder, file, namespace, installer, storage
 > root, release asset and automatic file name is **Free Video Studio / `FreeVideoStudio`**.
@@ -21,16 +21,16 @@
 | :--- | :--- | :--- |
 | Display name | Fortnite Video Software | Free Video Studio |
 | Solution / projects | `FortniteVideoSoftware.*` | `FreeVideoStudio.sln`, `FreeVideoStudio.App`, `FreeVideoStudio.Core` (+ `.Tests`) |
-| Installed executable | `FortniteVideoSoftware.exe` | `FreeVideoStudio.exe` (installed by `compiled/FreeVideoStudio-Setup.exe`, NODROPPER_01) |
-| Release download | `FortniteVideoSoftware.exe` (kept as an alias asset, REBRAND_03) | `FreeVideoStudio-Setup.exe`; `FreeVideoStudio.exe` is an alias asset with the same bytes for pre-2026-10-12 updaters (`09` DIST-SPLIT) |
+| Installed executable | `FortniteVideoSoftware.exe` | `FreeVideoStudio.exe` (installed by `compiled/FreeVideoStudio.exe`, NODROPPER_01) |
+| Release download | `FortniteVideoSoftware.exe` | `FreeVideoStudio.exe` (the single installer) |
 | Install folder | `%ProgramFiles%\Fortnite Video Software` | `%ProgramFiles%\FreeVideoStudio` (was `%ProgramFiles%\Free Video Studio` until NOSPACE_01, `05` SYS-NOSPACE) |
 | Per-user state | `%LOCALAPPDATA%` / `%APPDATA%` `\Fortnite Video Software`, `\FortniteVideoSoftware` | `%LOCALAPPDATA%\FreeVideoStudio`, `%APPDATA%\FreeVideoStudio` |
 | Machine state (pre USERSCOPE_01) | `%ProgramData%\Fortnite Video Software` | none (per-user only) |
-| Temp root | `%TEMP%\Fortnite_Video_Software` | `%TEMP%\FreeVideoStudio` |
+| Temp root | `%TEMP%\FreeVideoStudio` | `%TEMP%\FreeVideoStudio` |
 | Main App export name | `Fortnite-Video-N.mp4` | `FreeVideoStudio-N.mp4` (editable, OUTNAME_01) |
-| Video Merger export name | `Merged-Videos-N.mp4` | `Merged-Videos-N.mp4` (editable, OUTNAME_01) |
+| Video Merger export name | `Merged-Videos-N.mp4` | `FreeVideoStudio-merged-N.mp4` (the one editable name + "-merged", SETNAMEONE_01) |
 | Rescued render prefix | `Fortnite-Video-RECOVERED-` | `FreeVideoStudio-RECOVERED-` |
-| GitHub repository | `alonreich/Fortnite_Video_Software_C-` | `alonreich/Free_Video_Studio` (GitHub redirects the old address) |
+| GitHub repository | `alonreich/FreeVideoStudio_C-` | `alonreich/Free_Video_Studio` (GitHub redirects the old address) |
 | Diagnostic report header | FORTNITE VIDEO SOFTWARE — DIAGNOSTIC REPORT | FREE VIDEO STUDIO — DIAGNOSTIC REPORT |
 
 Internal tool names `FvsBuild`, `FvsVerify`, `.fvsproj` and `FVS_*` variables are abbreviations of
@@ -45,23 +45,23 @@ Old-brand clients poll `releases/latest` of the old repository address. GitHub r
    full installer under the previous download name. `GitHubReleasePublisher` creates that alias in
    a private temp folder only for the upload and deletes it afterwards; it is never kept in `obj/`
    or the repository. The old client downloads it and starts it.
-2. **Transactional install (`05` SYS-UPGRADE, UPGRADE_02…10).** `InstallDiscovery` finds the old
+2. **Transactional install (`09` SYS-UPGRADE, UPGRADE_02…10).** `InstallDiscovery` finds the old
    Program Files folder by verified signature, `UpgradeInstallWorker` installs Free Video Studio,
    moves the old folder into a 30-day backup, and `UpgradeRegistration` replaces shortcuts, uninstall
    keys, Open-With and file-type registrations. Any failure rolls back to the old app intact.
-3. **User data (`05` SYS-UPGRADE UPGRADE_04, SYS-REBRAND REBRAND_01).** Local and Roaming state is
+3. **User data (`09` SYS-UPGRADE UPGRADE_04, SYS-REBRAND REBRAND_01).** Local and Roaming state is
    moved into `FreeVideoStudio` folders (settings, crop profiles, presets, recovery, UI state).
    If the transactional path did not run (manual install), `AppDataPaths` copies the legacy roots
    on first start. The machine root is copied once per user (USERSCOPE_01).
 4. **Settings (`SettingsManager` schema 11).** Older settings files receive
-   `MainOutputBaseName = "FreeVideoStudio"` and `MergerOutputBaseName = "Merged-Videos"`, so the
+   `MainOutputBaseName = "FreeVideoStudio"` (the Video Merger appends `-merged`, SETNAMEONE_01), so the
    first export after the update is `FreeVideoStudio-1.mp4`. Output folders are preserved.
 5. **Residue removal (REBRAND_02, `LegacyResidueSweep`).** On every normal launch, once no
    old-brand install or process exists and no upgrade transaction is open:
-   * legacy temp folders are deleted after their rescued renders (`*-RECOVERED-*.mp4`) are moved
-     into `%TEMP%\FreeVideoStudio` and renamed `FreeVideoStudio-RECOVERED-…`;
-   * a legacy per-user root is deleted only when every one of its files already exists in the new
-     root; otherwise it is kept and retried next launch.
+   * rescued renders (`*-RECOVERED-*.mp4`) move into `%TEMP%\FreeVideoStudio` and are renamed
+     `FreeVideoStudio-RECOVERED-…`; other legacy temp contents are retained (LEGACYKEEP_01);
+   * legacy per-user roots remain intact, including conflicting same-name files and media referenced
+     by saved projects. Repeated launches never treat matching filenames as proof of preservation.
    The shared `%ProgramData%` legacy root is never deleted per user (other accounts may still need
    it); the uninstaller removes it together with all legacy user roots when the user chooses to
    remove data (`DeploymentFootprint.GetDirectoryPurgeTargets`).
@@ -70,12 +70,12 @@ Old-brand clients poll `releases/latest` of the old repository address. GitHub r
 
 ## 3. Automatic file naming and save folders  {#REBRAND-OUTNAME}
 
-Settings › **Output Files** edits, per tool:
+Settings › **Files & Folders** sets one save folder and one file name for both tools:
 
-* **Save folder** — `MainOutputDirectory` / `MergerOutputDirectory`. Empty = Windows Downloads
-  (`OutputFolderResolver`, ISSUE_04).
-* **File name** — `MainOutputBaseName` (default `FreeVideoStudio`) / `MergerOutputBaseName`
-  (default `Merged-Videos`). Files are `<name>-1.mp4`, `<name>-2.mp4`, … using the first free
+* **Save folder** — `MainOutputDirectory` = `MergerOutputDirectory` (one folder for both tools since
+  SETFOLDERONE_01). Empty = Windows Downloads (`OutputFolderResolver`, ISSUE_04).
+* **File name** — `MainOutputBaseName` (default `FreeVideoStudio`); the Video Merger uses that name +
+  `-merged` (SETNAMEONE_01; `MergerOutputBaseName` removed). Files are `<name>-1.mp4`, `<name>-2.mp4`, … using the first free
   number. `OutputFileNaming.Sanitize` removes path separators and invalid characters, reserved
   device names and trailing dots/spaces, and clamps to 80 characters; invalid input reverts to the
   default. Spec: `03` FFM-OUTNAME.
@@ -91,8 +91,9 @@ root `*.log` files, and root `ctx_*.txt` scratch files.
 
 ```powershell
 dotnet test tests/FreeVideoStudio.Core.Tests/FreeVideoStudio.Core.Tests.csproj --filter RebrandTests
-dotnet run --project build/FvsVerify/FvsVerify.csproj -v q
 ```
+
+Other gates: README §0.4.
 
 Sentinels: `REBRAND_01` (AppDataPaths.cs), `REBRAND_02` (LegacyResidueSweep.cs),
 `REBRAND_03` (GitHubReleasePublisher.cs), `OUTNAME_01` (OutputFileNaming.cs).

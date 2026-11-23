@@ -1,5 +1,4 @@
-﻿
-using FreeVideoStudio.Core.Media;
+﻿using FreeVideoStudio.Core.Media;
 using System.Text.Json.Nodes;
 
 namespace FreeVideoStudio.App;

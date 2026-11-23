@@ -13,33 +13,8 @@ using static FreeVideoStudio.App.Infrastructure.AudioPeakMath;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// PLAYLIST_01 — THE WIZARD'S SONG LIST ("Your songs").
-///
-/// One ordered list of songs, each with the part of it that plays (<see cref="MusicPlaylistEntry"/>),
-/// replaces the old "one song + auto-fill queue of whole files". Everything the wizard shows about
-/// the music — the "Your songs" panel, the coverage bar and line, the coloured song blocks under
-/// the film, the song card — is drawn from this list and from ONE layout of it
-/// (<see cref="CurrentPlan"/>), the same layout the export and both previews use.
-///
-/// HOW SONGS GET IN:
-///   • + on a row adds that song (✓ on a row that is already in removes it again).
-///   • Main App, nothing added with +: the selected row IS the song, exactly as before — the panel
-///     stays hidden until the user adds a second song.
-///   • Video Merger: the panel is always shown; a selected row with no songs added is used as the
-///     first song when NEXT is pressed.
-///   • "Fill the rest automatically" adds songs from the visible list, in its order, until the video
-///     is covered.
-///
-/// SILENCETRIM_01 — each added song is analysed in the background and, unless the user already
-/// moved its edges, its silent intro and outro are trimmed off, so two songs never leave dead air
-/// between them.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class MusicWizardWindow
 {
-    /// <summary>WIZ2STEP_01 — the two screens the user sees. Fit &amp; Mix keeps its old internal number.</summary>
     private const int StepChoose = 1;
     private const int StepFit = 3;
 
@@ -47,9 +22,7 @@ public partial class MusicWizardWindow
 
     private readonly List<MusicPlaylistEntry> _playlist = new();
     private int _selectedSongIndex;
-    /// <summary>True once the user built the list on purpose (+, Fill, "Add a song", a resumed multi-song setup, or any merger session).</summary>
     private bool _playlistExplicit;
-    /// <summary>True once Fit &amp; Mix has been opened: the song(s) there are the user's, not just a selection.</summary>
     private bool _visitedFit;
     private MusicTrackItem? _highlightedTrack;
     private MusicTrackItem? _rowPreviewTrack;
@@ -58,11 +31,6 @@ public partial class MusicWizardWindow
     private readonly HashSet<string> _silenceQueued = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<MusicBedSegment>? _planCache;
 
-    /// <summary>
-    /// The first song's start inside its file — the value every pre-playlist path called "the song
-    /// start". Kept as a property so the many places that read it keep working, and so it can never
-    /// disagree with the list.
-    /// </summary>
     private double _songStartFallback;
     private double _songStartSeconds
     {
@@ -79,7 +47,6 @@ public partial class MusicWizardWindow
     private MusicPlaylistEntry? SelectedEntry =>
         _playlist.Count == 0 ? null : _playlist[Math.Clamp(_selectedSongIndex, 0, _playlist.Count - 1)];
 
-    /// <summary>Short clock for labels: 3:41, 1:02:07.</summary>
     private static string Clock(double seconds)
     {
         var ts = TimeSpan.FromSeconds(Math.Max(0, Math.Round(seconds)));
@@ -94,6 +61,7 @@ public partial class MusicWizardWindow
         Vm.MoveLaterCommand = new RelayCommand(() => MoveQueuedTrack(_selectedSongIndex, 1));
         Vm.RemoveSongCommand = new RelayCommand(() => RemoveSelectedQueuedTrack(_selectedSongIndex));
         Vm.StartAtBeginningCommand = new RelayCommand(StartSelectedSongAtBeginning);
+        WireSteps();
         DataContext = Vm;
 
         AddHandler(Button.ClickEvent, OnTemplateButtonClick, RoutingStrategies.Bubble);
@@ -104,6 +72,10 @@ public partial class MusicWizardWindow
         if (e.Source is not Button button || button.Tag is not string tag) return;
         switch (button.DataContext)
         {
+            case MusicTrackItem track when tag == "proceed":
+                ProceedWithSong(track);
+                e.Handled = true;
+                break;
             case MusicTrackItem track when tag == "play":
                 ToggleRowPreview(track);
                 e.Handled = true;
@@ -135,7 +107,6 @@ public partial class MusicWizardWindow
         }
     }
 
-
     private int IndexOfPath(string? path)
     {
         if (string.IsNullOrWhiteSpace(path)) return -1;
@@ -144,7 +115,6 @@ public partial class MusicWizardWindow
         return -1;
     }
 
-    /// <summary>The list item for a song, or a synthesised one when the folder scan has not found it (RESUME_01).</summary>
     private MusicTrackItem TrackFor(string path)
     {
         var item = FindTrackByPath(path);
@@ -166,7 +136,6 @@ public partial class MusicWizardWindow
         return new MusicPlaylistEntry(track.FilePath, full, 0.0, full);
     }
 
-    /// <summary>Moves a song's start, coping with a length that is not known yet.</summary>
     private void SetSongIn(int index, double inSec)
     {
         if (index < 0 || index >= _playlist.Count) return;
@@ -177,28 +146,23 @@ public partial class MusicWizardWindow
         _planCache = null;
     }
 
-    /// <summary>The bed as the export will lay it, cached until the list, the loop switch or the video length changes.</summary>
     private IReadOnlyList<MusicBedSegment> CurrentPlan()
         => _planCache ??= MusicPlaylistMath.Layout(_playlist, GetPhase3VideoDurationSeconds(), IsPhase3LoopMusicEnabled());
 
     private MusicCoverage CurrentCoverage()
         => MusicPlaylistMath.Coverage(CurrentPlan(), GetPhase3VideoDurationSeconds(), IsPhase3LoopMusicEnabled(), _playlist.Count);
 
-    /// <summary>The first (non-repeat) segment a song plays as, or null when it is not heard at all.</summary>
     private MusicBedSegment? FirstSegmentOf(int index)
     {
         if (index < 0 || index >= _playlist.Count) return null;
-        string path = _playlist[index].Path;
-        foreach (var seg in CurrentPlan())
-            if (string.Equals(seg.Path, path, StringComparison.OrdinalIgnoreCase)) return seg;
-        return null;
+        var plan = CurrentPlan();
+        int at = MusicBedPlan.FirstSegmentOfTrack(plan, index);
+        return at < 0 ? null : plan[at];
     }
 
+    private int OccurrenceIndex(int index, string path)
+        => index >= 0 && index < _playlist.Count && string.Equals(_playlist[index].Path, path, StringComparison.OrdinalIgnoreCase) ? index : -1;
 
-    /// <summary>
-    /// PLAYLIST_01 — adds a song. <paramref name="explicitAdd"/> is false only when NEXT turns the
-    /// selected row into the song (the Main App's one-song flow).
-    /// </summary>
     private bool AddToPlaylist(MusicTrackItem track, bool explicitAdd)
     {
         if (track == null || string.IsNullOrWhiteSpace(track.FilePath)) return false;
@@ -235,10 +199,6 @@ public partial class MusicWizardWindow
         return true;
     }
 
-    /// <summary>
-    /// PLAYLIST_01 — "Fill the rest automatically": adds songs from the visible list, in its order,
-    /// until the video is covered. Songs whose length is still being read are skipped.
-    /// </summary>
     private void BuildAutoFillQueue()
     {
         if (_playlist.Count == 0)
@@ -272,7 +232,6 @@ public partial class MusicWizardWindow
         RecordWizardEdit();
     }
 
-    /// <summary>PLAYLIST_01 — moves song <paramref name="index"/> one place earlier (-1) or later (+1).</summary>
     private void MoveQueuedTrack(int index, int direction)
     {
         int target = index + direction;
@@ -285,7 +244,6 @@ public partial class MusicWizardWindow
         RecordWizardEdit();
     }
 
-    /// <summary>PLAYLIST_01 — takes song <paramref name="index"/> out of the list.</summary>
     private void RemoveSelectedQueuedTrack(int index)
     {
         if (index < 0 || index >= _playlist.Count) return;
@@ -302,9 +260,6 @@ public partial class MusicWizardWindow
         RecordWizardEdit();
     }
 
-    /// <summary>
-    /// The ONE refresh after any change to the list: derived state, both screens, the preview.
-    /// </summary>
     private void OnPlaylistChanged()
     {
         _planCache = null;
@@ -325,10 +280,18 @@ public partial class MusicWizardWindow
             EnsureSongStripWaveform();
             QueuePhase3MusicLaneRefresh();
             ResyncPreviewMusic();
+            if (_editIndex >= _playlist.Count) _editIndex = _playlist.Count - 1;
+            if (_pendingNewIndex >= _playlist.Count) _pendingNewIndex = -1;
+            if (Vm.IsPartView)
+            {
+                RefreshPart();
+                SyncPartAxis();
+            }
+            else if (Vm.IsReviewView) RefreshReview();
+            OnSoundSettingChanged();
         }
     }
 
-    /// <summary>The first song is what every single-song path (history, problem flags, phase-3 loaders) calls "the track".</summary>
     private void SyncSelectedTrack()
     {
         if (_playlist.Count == 0)
@@ -345,7 +308,6 @@ public partial class MusicWizardWindow
         }
     }
 
-    /// <summary>"Your songs" rows, header and coverage — all bound (MVVM_01).</summary>
     private void RefreshPlaylistViews()
     {
         Vm.PlaylistRows.Clear();
@@ -369,7 +331,7 @@ public partial class MusicWizardWindow
             });
         }
         Vm.PlaylistEmpty = _playlist.Count == 0;
-        Vm.PlaylistVisible = _isMergerMode || _playlist.Count > 1 || (_playlistExplicit && _playlist.Count > 0);
+        Vm.PlaylistVisible = false;
         Vm.PlaylistHeader = _playlist.Count == 0 ? "YOUR SONGS" : $"YOUR SONGS ({_playlist.Count})";
         double songs = 0;
         foreach (var e in _playlist) songs += e.WindowSec;
@@ -378,17 +340,12 @@ public partial class MusicWizardWindow
             : $"Songs: {Clock(songs)}  ·  Video: {Clock(GetPhase3VideoDurationSeconds())}";
     }
 
-    /// <summary>The + column turns into ✓ for songs already in the list.</summary>
     private void RefreshAddButtons()
     {
         bool listShown = _isMergerMode || _playlistExplicit;
         foreach (var t in _allTracks) t.IsInPlaylist = listShown && IndexOfPath(t.FilePath) >= 0;
     }
 
-    /// <summary>
-    /// Fit &amp; Mix keeps the paused playhead on the same moment of the VIDEO when the first song's
-    /// start moves (the preview offset is stored as "song start + video time").
-    /// </summary>
     private double _playheadAnchorSongStart;
     private void KeepPlayheadAnchored()
     {
@@ -398,11 +355,6 @@ public partial class MusicWizardWindow
         _playheadAnchorSongStart = start;
     }
 
-    /// <summary>
-    /// COVERBAR_01 / COVERSTRIP_01 — the coverage bar under "Your songs" and the coverage line on
-    /// Fit &amp; Mix, from one <see cref="MusicCoverage"/> and one sentence
-    /// (<see cref="MusicPlaylistMath.Describe"/>).
-    /// </summary>
     private void UpdateCoverageBar()
     {
         var c = CurrentCoverage();
@@ -426,21 +378,18 @@ public partial class MusicWizardWindow
         if (_currentStep == StepFit) DrawSongLane();
     }
 
-    /// <summary>Seconds of the finished video covered by music (the end of the laid-out bed).</summary>
     private double GetQueuedMusicCoverageSeconds()
         => Math.Min(GetPhase3VideoDurationSeconds(), MusicBedPlan.EndSec(CurrentPlan(), 0.0));
 
-    /// <summary>PLAYLIST_01 — the song list as the result the Main App / Merger saves and exports.</summary>
     private MusicWizardResult BuildResultFromPlaylist()
     {
         var first = _playlist[0];
         double timelineStartSec = _trimStartMs / 1000.0;
         bool loop = LoopMusicCheckBoxCtl?.IsChecked ?? false;
-        double videoDurationSec = GetPhase3SourceDurationSeconds();
         double coverageSec = GetQueuedMusicCoverageSeconds();
-        double timelineEndSec = loop
-            ? (timelineStartSec + videoDurationSec)
-            : (timelineStartSec + Math.Min(videoDurationSec, coverageSec));
+        double timelineEndSec = timelineStartSec + (loop || coverageSec >= GetPhase3VideoDurationSeconds()
+            ? GetPhase3SourceDurationSeconds()
+            : MapPhase3OutputToSourceRelativeSeconds(coverageSec));
         var mixDefaults = Infrastructure.SettingsManager.Instance.Defaults;
         return new MusicWizardResult
         {
@@ -461,10 +410,6 @@ public partial class MusicWizardWindow
         };
     }
 
-    /// <summary>
-    /// RESUME_01 / MERGERMUSIC_01 — rebuilds the song list from a saved result: every song, every
-    /// song's chosen part. Missing files are left out (and reported) rather than failing the reopen.
-    /// </summary>
     private async Task RestorePlaylistFromResultAsync(MusicWizardResult state)
     {
         _playlist.Clear();
@@ -500,7 +445,6 @@ public partial class MusicWizardWindow
         OnPlaylistChanged();
     }
 
-    /// <summary>Makes sure every song's length is known before Fit &amp; Mix lays them out.</summary>
     private async Task EnsurePlaylistDurationsAsync()
     {
         for (int i = 0; i < _playlist.Count; i++)
@@ -514,30 +458,29 @@ public partial class MusicWizardWindow
                 catch (Exception ex) { RuntimeLog.Swallowed(ex); }
             }
             if (full <= 0) continue;
-            int at = IndexOfPath(e.Path);
+            int at = OccurrenceIndex(i, e.Path);
             if (at < 0) continue;
             _playlist[at] = e with { FullSec = full, OutSec = e.OutSec > e.InSec ? Math.Min(e.OutSec, full) : full };
         }
         _planCache = null;
     }
 
-    /// <summary>A song's length arrived from the folder probe: fill it into the list.</summary>
     private void OnTrackDurationKnown(MusicTrackItem item)
     {
-        int at = IndexOfPath(item.FilePath);
-        if (at < 0 || item.DurationSec <= 0) return;
-        var e = _playlist[at];
-        if (e.FullSec > 0) return;
-        _playlist[at] = e with { FullSec = item.DurationSec, OutSec = e.OutSec > e.InSec ? Math.Min(e.OutSec, item.DurationSec) : item.DurationSec };
+        if (item.DurationSec <= 0) return;
+        bool changed = false;
+        for (int at = 0; at < _playlist.Count; at++)
+        {
+            var e = _playlist[at];
+            if (e.FullSec > 0 || !string.Equals(e.Path, item.FilePath, StringComparison.OrdinalIgnoreCase)) continue;
+            _playlist[at] = e with { FullSec = item.DurationSec, OutSec = e.OutSec > e.InSec ? Math.Min(e.OutSec, item.DurationSec) : item.DurationSec };
+            changed = true;
+        }
+        if (!changed) return;
         OnPlaylistChanged();
         SyncWizardHistoryBaseline();
     }
 
-    /// <summary>
-    /// SILENCETRIM_01 — analyses every song not analysed yet, one at a time, in the background, and
-    /// trims its silent intro and outro unless the user already moved its edges. Derived, not an
-    /// edit: it moves the undo baseline instead of adding a step.
-    /// </summary>
     private void QueueSilenceAnalysis()
     {
         var pending = _playlist.Where(e => !e.UserTrimmed && !_silenceQueued.Contains(e.Path)).Select(e => e.Path).ToList();
@@ -557,14 +500,19 @@ public partial class MusicWizardWindow
             {
                 var analysis = await GetTrackEnergyAsync(path, token);
                 if (analysis == null || token.IsCancellationRequested) continue;
-                int at = IndexOfPath(path);
-                if (at < 0) continue;
-                var e = _playlist[at];
-                if (e.UserTrimmed) continue;
-                double full = e.FullSec > 0 ? e.FullSec : analysis.DurationSeconds;
-                var (inSec, outSec) = MusicPlaylistMath.AudibleWindow(analysis.Energy, analysis.BucketSeconds, full);
-                if (Math.Abs(inSec - e.InSec) < 0.05 && Math.Abs(outSec - e.OutSec) < 0.05 && Math.Abs(full - e.FullSec) < 0.05) continue;
-                _playlist[at] = e with { FullSec = full, InSec = inSec, OutSec = outSec };
+                bool trimmedAny = false;
+                double full = 0, inSec = 0, outSec = 0;
+                for (int at = 0; at < _playlist.Count; at++)
+                {
+                    var e = _playlist[at];
+                    if (e.UserTrimmed || !string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase)) continue;
+                    full = e.FullSec > 0 ? e.FullSec : analysis.DurationSeconds;
+                    (inSec, outSec) = MusicPlaylistMath.AudibleWindow(analysis.Energy, analysis.BucketSeconds, full);
+                    if (Math.Abs(inSec - e.InSec) < 0.05 && Math.Abs(outSec - e.OutSec) < 0.05 && Math.Abs(full - e.FullSec) < 0.05) continue;
+                    _playlist[at] = e with { FullSec = full, InSec = inSec, OutSec = outSec };
+                    trimmedAny = true;
+                }
+                if (!trimmedAny) continue;
                 RuntimeLog.Info("MUSIC_WIZARD", $"Silence trimmed: '{Path.GetFileName(path)}' plays {inSec:F2}s → {outSec:F2}s of {full:F2}s.");
                 OnPlaylistChanged();
                 SyncWizardHistoryBaseline();
@@ -588,27 +536,18 @@ public partial class MusicWizardWindow
         _silenceQueued.Clear();
     }
 
-
-    /// <summary>
-    /// The list's selection. Selecting never plays anything (PREVIEW1_03). In the Main App's
-    /// one-song flow the selected row is the song; otherwise it is just the row NEXT will use when
-    /// no song was added.
-    /// </summary>
     private void OnListHighlight(MusicTrackItem? track)
     {
-        if (_suppressTrackSelectionSideEffects) return;
+        if (_suppressTrackSelectionSideEffects || _choosingSongToProceed) return;
         _highlightedTrack = track;
-        if (track != null && !_isMergerMode && !_playlistExplicit)
-            OnTrackSelected(track);
+        if (track != null && _currentStep == StepChoose) ToggleRowPreview(track);
         UpdateNextButtonState();
+        UpdatePreviewControlsState();
     }
 
-    /// <summary>PREVIEW1_03 — ▶ on a row: hear that song's best part; ▶ again (now ■) stops it.</summary>
     private void ToggleRowPreview(MusicTrackItem track)
     {
-        bool same = ReferenceEquals(_rowPreviewTrack, track) && _isPreviewPlaying;
         StopPreview();
-        if (same) return;
         if (!File.Exists(track.FilePath))
         {
             ShowToast("That song file is missing.");
@@ -619,13 +558,76 @@ public partial class MusicWizardWindow
         StartAutoPreview(track);
     }
 
-    /// <summary>"+ Add a song" on Fit &amp; Mix: back to the list with the songs panel open.</summary>
+    private int _songPreviewVersion;
+    private bool _songPreviewReady;
+    private bool _choosingSongToProceed;
+    private readonly SemaphoreSlim _songPreviewGate = new(1, 1);
+    private void ProceedWithSong(MusicTrackItem track)
+    {
+        if (_currentStep != StepChoose || _choosingSongToProceed) return;
+        _highlightedTrack = track;
+        OnNextClicked(this, new RoutedEventArgs());
+    }
+    private async Task PlayChosenSongAsync(MusicTrackItem? track, double startAt)
+    {
+        int version = ++_songPreviewVersion;
+        _songPreviewReady = false;
+        bool Current() => version == _songPreviewVersion && _currentStep == StepChoose && _isPreviewPlaying;
+        if (track == null) return;
+        try
+        {
+            if (track.DurationSec <= 0)
+            {
+                double duration = await new MediaProber(ResolveFfprobePath(), track.FilePath).GetDurationAsync();
+                if (!Current()) return;
+                if (duration <= 0) throw new InvalidOperationException("Song duration is unavailable.");
+                track.DurationSec = duration;
+            }
+            if (double.IsNaN(startAt)) startAt = track.DurationSec / 2;
+            await _songPreviewGate.WaitAsync();
+            try
+            {
+                if (!Current()) return;
+                await EnsureAudioPreviewClientAsync();
+                if (!Current() || _audioIpcClient == null) return;
+                var player = _audioIpcClient;
+                await player.SetPropertyAsync("pause", "yes");
+                if (!Current()) return;
+                await player.SetPropertyAsync("start", startAt.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                if (!Current()) return;
+                string path = track.FilePath.Replace("\\", "/");
+                var loaded = await player.SendCommandAsync("loadfile", path, "replace");
+                if (!loaded.Succeeded) throw new InvalidOperationException("Song could not be loaded.");
+                _lastLoadedTrackPath = path;
+                if (!Current()) return;
+                await player.SetPropertyAsync("speed", "1");
+                if (!Current()) return;
+                await player.ApplyPreviewGainAsync(1.0);
+                if (!Current()) return;
+                await player.SetPropertyAsync("af", "");
+                if (!Current()) return;
+                await player.SendCommandAsync("set", "pause", "no");
+                if (!Current()) return;
+                _previewCurrentOffset = startAt;
+                _previewStartTime = DateTime.UtcNow;
+                _songPreviewReady = true;
+            }
+            finally { _songPreviewGate.Release(); }
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Swallowed(ex);
+            if (!Current()) return;
+            StopPreview();
+            ShowToast("Cannot play this song. Try another song.");
+        }
+    }
     private async Task GoBackToAddSongAsync()
     {
         _playlistExplicit = true;
         await OnBackClickedAsync(this, new RoutedEventArgs());
         RefreshPlaylistViews();
-        ShowToast("Press + on a song to add it. Your songs are kept.");
+        ShowToast("Choose the next song. Your songs are kept.");
         Dispatcher.UIThread.Post(() => this.FindControl<TextBox>("MusicSearchBox")?.Focus(), DispatcherPriority.Input);
     }
 }

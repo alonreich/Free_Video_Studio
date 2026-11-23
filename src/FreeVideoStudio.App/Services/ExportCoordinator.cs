@@ -5,27 +5,6 @@ using FreeVideoStudio.Core.Abstractions;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// EXPORTSESSION_02 — the export lifecycle, moved out of MainWindow so it can be tested without a
-/// window (EXPORTSESSION_01's guarantees, unchanged, now owned here).
-///
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// THE RULES CARRIED OVER FROM EXPORTSESSION_01, AND WHERE EACH ONE LIVES NOW:
-///
-///   • One export at a time. <see cref="StartAsync"/> rejects while Running OR Cancelling — the
-///     Cancelling window is the one the old processButton.IsEnabled "lock" let a second pipeline in.
-///   • Cancel is a STATE TRANSITION (Running -> Cancelling), not a UI reset. Idle is reached in
-///     exactly one place: <see cref="FinishAsync"/>, after the runner's Task has completed.
-///   • The CancellationTokenSource is created in <see cref="StartAsync"/> and disposed ONLY in
-///     <see cref="FinishAsync"/>, after the runner's Task has completed. ProcessWorker holds live
-///     registrations on it until then; disposing earlier is the CANCELREG_01 hang.
-///   • Shutdown requests cancellation and waits, bounded. A session that outlives the bound stays
-///     Cancelling — the state never claims Idle on the pipeline's behalf.
-///
-/// Cancel signals the token UNDER the gate, and Finish clears the source under the same gate before
-/// disposing it, so a cancel can never land on a disposed source (no ObjectDisposedException race).
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public sealed class ExportCoordinator : IExportCoordinator
 {
     private const string Area = "EXPORT";
@@ -149,10 +128,6 @@ public sealed class ExportCoordinator : IExportCoordinator
         settled.TrySetResult(Finish(cts, outcome, error));
     }
 
-    /// <summary>
-    /// EXPORTSESSION_02 — THE ONE COMPLETION TRANSITION. Runs once per accepted session, strictly
-    /// after the runner's Task has completed: Idle, then dispose the source, then notify.
-    /// </summary>
     private ExportCompletion Finish(CancellationTokenSource cts, ExportOutcome outcome, Exception? error)
     {
         bool cancelRequested;

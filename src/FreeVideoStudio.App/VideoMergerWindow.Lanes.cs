@@ -1,4 +1,3 @@
-﻿
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -13,73 +12,20 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// LANES_01 — THE MERGER'S FILMSTRIP AND WAVEFORM (Video-Merger-Migration.md P5.1/P5.2, D9).
-///
-/// Two thin lanes under the merged timeline. Every clip gets one tile spanning its slice of the
-/// merge; tiles are planned left→right (<see cref="LanePlanner"/>) and produced in that order by a
-/// <see cref="ProgressiveLaneRunner"/> per lane (two ffmpeg processes at most per lane). Nothing waits
-/// on them: the preview plays, the queue edits, and each tile paints itself when it lands. Filmstrip
-/// tiles even paint frame by frame (<see cref="ThumbnailStripGenerator.StreamAsync"/>).
-///
-/// LANECACHE_02 (P11, user report 2026-09-27) — a clip is decoded ONCE, EVER. Its filmstrip is a fixed
-/// grid of frames in source time (<see cref="ThumbGrid"/>) and its waveform a fixed list of peaks
-/// (<see cref="WaveformPeaks"/>), both cached in memory and on disk (<see cref="Infrastructure.LaneDiskCache"/>)
-/// under a key that ignores the lane width and the clip's position. A resize or a reorder therefore only
-/// RE-PLACES cached pieces: each on-screen frame slot shows the nearest grid frame (a cropped view of the
-/// strip, no pixel work) and the waveform is a vector shape stretched to the clip's width. ffmpeg runs
-/// only for a clip it has never seen (keyframe-only decode, tiny frames, 2 at a time).
-///
-/// WAVEPIXEL_01 (2026-10-11) — the waveform lane is RECONCILED, never cleared on a layout change
-/// (<see cref="Infrastructure.WaveformLanePresenter"/>): unchanged tiles keep their Path, peaks are
-/// reduced OFF the dispatcher to one level per device pixel (<see cref="WaveformEnvelope"/>), off-lane
-/// clips are culled and slivers share one path. A clip's peak fetch is shared across runs
-/// (<see cref="Infrastructure.WaveformPeakSource"/>), so a resize or reorder never restarts its ffmpeg.
-///
-/// FILMPIXEL_01 (2026-10-11) — the filmstrip lane follows the same rules: reconciled by clip key
-/// (<see cref="Infrastructure.FilmLanePresenter"/>; unchanged tiles keep their images, moved ones re-lay
-/// from the same strip and lease), and a clip's streamed strip is ONE shared job
-/// (<see cref="Infrastructure.FilmStripSource"/>) that a superseded run never kills.
-///
-/// LANEINSTANCE_01 (2026-10-11) — a clip queued more than once (same file, same trim) is drawn once PER
-/// OCCURRENCE: the presenters key tiles by <see cref="LaneTile.Occurrence"/> and fan every source result
-/// (streamed frame, cached strip, peaks) out to all occurrences; the decode itself stays keyed by
-/// <see cref="LaneTile.CacheKey"/>, so the duplicate costs no second ffmpeg run. Each displayed strip tile
-/// holds its own cache lease.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class VideoMergerWindow
 {
     private const int LaneParallelism = 2;
     private const int LaneCacheSize = 128;
-    /// <summary>
-    /// CACHEBOUND_04 — pixels kept for filmstrip strips NOT on the lane. A strip is
-    /// <c>FrameWidthPx × frames × StripHeightPx × 4</c> (≤ 107 × 90 × 60 × 4 ≈ 2.3 MB), so this holds ~40
-    /// off-screen clips; strips on the lane are leased and never evicted.
-    /// </summary>
     private const long FilmCacheBudgetBytes = 96L * 1024 * 1024;
 
     private readonly ProgressiveLaneRunner _filmRunner = new();
     private readonly ProgressiveLaneRunner _waveRunner = new();
-    /// <summary>
-    /// CACHEBOUND_04 — the ONE owner of every finished filmstrip bitmap (was a 128-entry
-    /// <c>LaneCache&lt;IImage&gt;</c> that dropped bitmaps without disposing them and had no byte budget).
-    /// </summary>
     private readonly Infrastructure.OwnedLruCache<Bitmap> _filmCache = new(FilmCacheBudgetBytes, LaneCacheSize);
-    /// <summary>
-    /// CACHEBOUND_04 / FILMPIXEL_01 — owns the film lane's images and the ONE lease per tile showing a cached
-    /// strip; a lease is closed one Background turn after its images leave the lane.
-    /// </summary>
     private Infrastructure.FilmLanePresenter? _filmLane;
-    /// <summary>FILMPIXEL_01 — one streamed strip per clip, shared by every run of <see cref="_filmRunner"/>.</summary>
     private Infrastructure.FilmStripSource? _filmJobs;
     private readonly LaneCache<float[]> _waveCache = new(LaneCacheSize);
-    /// <summary>WAVEPIXEL_01 — one fetch per clip (disk → ffmpeg → disk), shared by every run of <see cref="_waveRunner"/>.</summary>
     private Infrastructure.WaveformPeakSource? _wavePeaks;
-    /// <summary>WAVEPIXEL_01 — owns the waveform lane's children; reconciles instead of clearing.</summary>
     private Infrastructure.WaveformLanePresenter? _waveLane;
-    /// <summary>WAVEPIXEL_01 — the lane's device-pixel scale, read on the UI thread for the workers' reductions.</summary>
     private double _waveScaling = 1;
     private DispatcherTimer? _laneTimer;
     private string? _laneKey;
@@ -107,12 +53,6 @@ public partial class VideoMergerWindow
         };
     }
 
-    /// <summary>
-    /// CACHEBOUND_04 — empties the film lane and hands its strips back to the cache. The presenter closes
-    /// the leases one dispatcher turn later (Background), after the lane has dropped the
-    /// <c>CroppedBitmap</c>s, so an evicted strip is never disposed under an image still on screen; the
-    /// cache clear (window closed) is queued behind them.
-    /// </summary>
     private void ReleaseFilmLeases(bool thenClearCache = false)
     {
         _filmLane?.Clear();
@@ -121,7 +61,6 @@ public partial class VideoMergerWindow
 
     private static long StripCost(Bitmap b) => Math.Max(1L, (long)b.PixelSize.Width * b.PixelSize.Height * 4);
 
-    /// <summary>The merged layout or the lane width may have changed: replan soon (debounced).</summary>
     private void ScheduleLaneRefresh()
     {
         if (_laneTimer == null || _lanesClosed) return;
@@ -181,26 +120,19 @@ public partial class VideoMergerWindow
             RuntimeLog.Info("MERGER", $"Lanes: {filmTiles.Count - filmTodo.Count}/{filmTiles.Count} filmstrip and {waveTiles.Count - waveTodo.Count}/{waveTiles.Count} waveform tiles from memory; the rest from the disk cache or ffmpeg, in the background.");
         _ = _filmRunner.RunAsync(filmTodo, BuildFilmTileAsync, LaneParallelism);
         _ = _waveRunner.RunAsync(waveTodo, BuildWaveTileAsync, LaneParallelism);
+        RedrawTimelineSelection();
     }
 
-    /// <summary>WAVEPIXEL_01 — the waveform lane's presenter (created with the lane).</summary>
     private Infrastructure.WaveformLanePresenter WaveLane(Canvas wave) => _waveLane ??= new Infrastructure.WaveformLanePresenter(wave);
 
-    /// <summary>WAVEPIXEL_01 — the shared per-clip peak fetch; ffmpeg only on a disk miss, at most <see cref="LaneParallelism"/> at once.</summary>
     private Infrastructure.WaveformPeakSource WavePeaks => _wavePeaks ??= new Infrastructure.WaveformPeakSource(
         (t, ct) => WaveformPeaks.ExtractAsync(_laneFfmpeg ?? "ffmpeg", t.Path, t.StartSec, t.DurationSec, ct),
         key => Infrastructure.LaneDiskCache.TryRead(key, ".peaks"),
         (key, bytes) => Infrastructure.LaneDiskCache.Write(key, ".peaks", bytes),
         LaneParallelism);
 
-    /// <summary>FILMPIXEL_01 — the film lane's presenter (created with the lane).</summary>
     private Infrastructure.FilmLanePresenter FilmLane(Canvas film) => _filmLane ??= new Infrastructure.FilmLanePresenter(film, _filmCache);
 
-    /// <summary>
-    /// FILMPIXEL_01 — the shared per-clip strip stream (keyframes only, painted frame by frame), at most
-    /// <see cref="LaneParallelism"/> ffmpeg at once. Its callbacks run on the UI thread and paint only a clip
-    /// in the CURRENT plan (the presenter's layout guard), so a superseded layout never paints.
-    /// </summary>
     private Infrastructure.FilmStripSource FilmJobs => _filmJobs ??= new Infrastructure.FilmStripSource(
         (t, ct, onReady, onFrame) => ThumbnailStripGenerator.StreamAsync(
             _laneFfmpeg ?? "ffmpeg", t.Path, t.StartSec, t.DurationSec, ct,
@@ -210,7 +142,6 @@ public partial class VideoMergerWindow
         OnFilmStripDoneAsync,
         LaneParallelism);
 
-    /// <summary>Runs on the thread pool: disk cache first, else the clip's shared ffmpeg stream (joined, never restarted).</summary>
     private async Task BuildFilmTileAsync(LaneTile t, int generation, CancellationToken ct)
     {
         if (_filmCache.TryAcquire(t.CacheKey, out var ready) != Infrastructure.OwnedLruCache<Bitmap>.Lookup.Miss)
@@ -252,10 +183,6 @@ public partial class VideoMergerWindow
         await FilmJobs.GetAsync(t, ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// A clip's stream ended (once per clip, not per run): cache the finished strip and pin it on the lane,
-    /// write it to disk. CACHEBOUND_04 — a strip still shown is never disposed under its images.
-    /// </summary>
     private async Task OnFilmStripDoneAsync(Infrastructure.FilmStripSource.Job job)
     {
         byte[]? bytes = null;
@@ -292,11 +219,6 @@ public partial class VideoMergerWindow
         if (bytes != null) await Task.Run(() => Infrastructure.LaneDiskCache.Write(job.Key, ".png", bytes)).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Runs on the thread pool: the clip's shared peak fetch (disk cache, else ffmpeg once), then — still
-    /// off the dispatcher — the reduction to this tile's device-pixel columns (WAVEPIXEL_01). The UI thread
-    /// only caches the peaks and hands O(columns) levels to the presenter; a superseded run never paints.
-    /// </summary>
     private async Task BuildWaveTileAsync(LaneTile t, int generation, CancellationToken ct)
     {
         var peaks = await WavePeaks.GetAsync(t, ct).ConfigureAwait(false);

@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,12 +12,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AIFFMPEG_01 (docs/05 SYS-AISETTINGS) — the small FFmpeg jobs the AI helpers need (one still, a duration
-/// probe, a mono PCM dump), all through <see cref="AsyncProcessRunner"/>: both output pipes are drained (an
-/// unread stderr pipe can fill and freeze FFmpeg forever), every job has a time limit, and cancelling kills the
-/// process. Arguments go through <see cref="ProcessStartInfo.ArgumentList"/>, so no path is ever re-quoted.
-/// </summary>
 public static class AiFfmpeg
 {
     public static readonly TimeSpan StillTimeout = TimeSpan.FromSeconds(20);
@@ -35,7 +31,6 @@ public static class AiFfmpeg
         return psi;
     }
 
-    /// <summary>One 640-px-wide JPEG at <paramref name="timeSec"/>. False (never throws) when no frame came out; cancellation propagates.</summary>
     public static async Task<bool> ExtractFrameJpegAsync(string ffmpegPath, string videoPath, double timeSec, string destinationJpeg, CancellationToken ct, int width = 640)
     {
         try
@@ -57,7 +52,48 @@ public static class AiFfmpeg
         }
     }
 
-    /// <summary>Container duration in seconds from FFmpeg's banner, or 0 when it cannot be read.</summary>
+    public const string BatchFramesTag = "AIFRAMESBATCH_01";
+
+    public static async Task<bool[]> ExtractFramesJpegAsync(string ffmpegPath, string videoPath, IReadOnlyList<double> timesSec,
+        IReadOnlyList<string> destinations, CancellationToken ct, int width = 640)
+    {
+        int n = Math.Min(timesSec.Count, destinations.Count);
+        var ok = new bool[n];
+        if (n == 0) return ok;
+        var args = new List<string> { "-y", "-hide_banner", "-loglevel", "error" };
+        for (int i = 0; i < n; i++)
+        {
+            args.Add("-ss"); args.Add(Math.Max(0, timesSec[i]).ToString("0.000", CultureInfo.InvariantCulture));
+            args.Add("-i"); args.Add(videoPath);
+        }
+        for (int i = 0; i < n; i++)
+        {
+            args.Add("-map"); args.Add($"{i}:v:0");
+            args.Add("-frames:v"); args.Add("1");
+            args.Add("-vf"); args.Add($"scale={width}:-2");
+            args.Add("-q:v"); args.Add("3");
+            args.Add(destinations[i]);
+        }
+        try
+        {
+            var (exit, _, _) = await AsyncProcessRunner.RunAsync(Psi(ffmpegPath, args.ToArray()), StillTimeout + TimeSpan.FromSeconds(2 * n), ct).ConfigureAwait(false);
+            for (int i = 0; i < n; i++)
+                ok[i] = File.Exists(destinations[i]) && new FileInfo(destinations[i]).Length > 0;
+            if (exit != 0) RuntimeLog.Info("AIFFMPEG", $"Batch still extraction exited {exit}; {ok.Count(x => x)} of {n} pictures came out.");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Swallowed(ex);
+        }
+        for (int i = 0; i < n; i++)
+            if (!ok[i]) ok[i] = await ExtractFrameJpegAsync(ffmpegPath, videoPath, timesSec[i], destinations[i], ct, width).ConfigureAwait(false);
+        return ok;
+    }
+
     public static async Task<double> ProbeDurationSecAsync(string ffmpegPath, string videoPath, CancellationToken ct)
     {
         try
@@ -77,7 +113,6 @@ public static class AiFfmpeg
         }
     }
 
-    /// <summary>AIELIM_03 — true when FFmpeg's banner lists an audio stream (false also when it cannot be read).</summary>
     public static async Task<bool> HasAudioStreamAsync(string ffmpegPath, string videoPath, CancellationToken ct)
     {
         try
@@ -109,10 +144,6 @@ public static class AiFfmpeg
              + double.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture);
     }
 
-    /// <summary>
-    /// Mono 16-bit PCM at <paramref name="sampleRate"/> Hz into <paramref name="destinationRaw"/>. The time limit
-    /// grows with the video (a minute of budget per hour of footage, at least 60 s). False when it fails.
-    /// </summary>
     public static async Task<bool> DumpMonoPcmAsync(string ffmpegPath, string videoPath, double durationSec, int sampleRate, string destinationRaw, CancellationToken ct)
     {
         try

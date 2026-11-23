@@ -1,5 +1,4 @@
-﻿
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace FreeVideoStudio.App;
 
@@ -43,10 +42,6 @@ public static partial class NativeDialog
         Show(message, title, Ok | IconError | Topmost | SetForeground);
     }
 
-    /// <summary>
-    /// Shows a Yes/No question dialog. Returns true if the user clicks "Yes".
-    /// Used for crash recovery prompts before the Avalonia UI is fully loaded.
-    /// </summary>
     public static bool ShowQuestion(string message, string title = "Free Video Studio")
     {
         try

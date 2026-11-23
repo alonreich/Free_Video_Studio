@@ -5,14 +5,8 @@ using System.Text;
 
 namespace FreeVideoStudio.Core.Media;
 
-/// <summary>One queued clip as the analysis saw it. Seconds are SOURCE seconds of that file.</summary>
 public sealed record MergeClipSource(string Path, double DurationSec, double TaggedIntroSec, double TrimStartSec = 0, double TrimEndSec = 0);
 
-/// <summary>
-/// One clip's slice of the merged timeline. <see cref="MergedLengthSec"/> (COMPOSITE_01) is the
-/// clip's length on the merged clock: its frame count at 60 fps, which can differ from the source
-/// length (<see cref="LengthSec"/>) by up to half a frame. Negative = not given (source length).
-/// </summary>
 public readonly record struct MergedClip(
     int Index,
     string Path,
@@ -26,52 +20,17 @@ public readonly record struct MergedClip(
     public double MergedEndSec => MergedStartSec + (MergedLengthSec >= 0 ? MergedLengthSec : LengthSec);
 }
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// SCRAPER_02 — ONE MERGED TIMELINE FOR PREVIEW, MUSIC AND EXPORT.
-///
-/// The Video Merger's clock is "merged seconds": the clips' kept content laid end to end, at 1.0x,
-/// BEFORE the merge speed is applied and WITHOUT the synthetic thumbnail intro that a custom
-/// thumbnail prepends (that intro is added after the music mix, exactly as the Main App adds its
-/// own, so it never moves the music).
-///
-/// Which thumbnail intros are removed (all of them are tagged by <see cref="IntroTag"/>):
-///   • Clips 2..N: removed while the Thumbnail Scraper is on.
-///   • Clip 1: kept, because it becomes the merged video's own share thumbnail, UNLESS a custom
-///     thumbnail is chosen. Then it is removed whether or not the scraper is on, and a new 0.1 s
-///     still built from the chosen frame takes its place.
-///   • Fades are never touched. Only the intro is removed.
-///
-/// The merger preview (playhead, dividers, thumbnail marker), the Music Wizard (clip lanes and the
-/// music window), and MergerWorker (trim windows, music delays) all read THIS object. That is why a
-/// song placed at 0:42 starts at 0:42 in the preview and in the file.
-///
-/// <see cref="Remap"/> moves a merged-time position (a music start, a thumbnail) from the timeline
-/// it was chosen on to a new one by going through (clip, source second). A song the user started on
-/// a particular moment of clip 3 therefore still starts on that moment after intros are removed or
-/// restored.
-///
-/// COMPOSITE_01 (Video-Merger-Migration.md P2.4) — this class is now a SECONDS ADAPTER over
-/// <see cref="CompositeTimeline"/>. The kept windows, intro removal and the integer merged-frame
-/// boundaries all come from there; only the continuous in-clip playhead maths stays here. Callers
-/// move to <see cref="Composite"/> as the merger migrates; delete this adapter when none are left.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public sealed class MergedTimeline
 {
-
     public IReadOnlyList<MergedClip> Clips { get; }
     public double TotalSec { get; }
     public bool ScraperEnabled { get; }
     public bool CustomThumbnail { get; }
 
-    /// <summary>Output seconds of the still intro prepended for a custom thumbnail (0 when none).</summary>
     public double SyntheticIntroSec => CustomThumbnail ? IntroTag.StandardIntroSec : 0;
 
-    /// <summary>Identity of the layout. Equal signatures mean identical clip windows.</summary>
     public string Signature { get; }
 
-    /// <summary>The frame-exact timeline this adapter reads (clip ids are derived from the queue index).</summary>
     public CompositeTimeline Composite { get; }
 
     public static readonly MergedTimeline Empty = new(Array.Empty<MergedClip>(), false, false, CompositeTimeline.Build(MergeEdl.Empty));
@@ -134,10 +93,8 @@ public sealed class MergedTimeline
         return new MergedTimeline(clips, scraperEnabled, customThumbnail, composite);
     }
 
-    /// <summary>Stable clip id for queue index <paramref name="index"/> (the adapter has no real ids).</summary>
     private static Guid IndexId(int index) => new(index, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
-    /// <summary>The clip under <paramref name="mergedSec"/> and the matching SOURCE second of that clip.</summary>
     public (int ClipIndex, double SourceSec) Locate(double mergedSec)
     {
         if (Clips.Count == 0) return (-1, 0);
@@ -153,7 +110,6 @@ public sealed class MergedTimeline
         return (tail.Index, tail.ContentEndSec);
     }
 
-    /// <summary>Merged seconds of a source position. A position inside a removed intro lands on the clip's first kept frame.</summary>
     public double ToMerged(int clipIndex, double sourceSec)
     {
         if (clipIndex < 0 || clipIndex >= Clips.Count) return clipIndex < 0 ? 0 : TotalSec;
@@ -161,11 +117,6 @@ public sealed class MergedTimeline
         return Math.Min(c.MergedEndSec, c.MergedStartSec + (Math.Clamp(sourceSec, c.ContentStartSec, c.ContentEndSec) - c.ContentStartSec));
     }
 
-    /// <summary>
-    /// Moves a merged-time position chosen on <paramref name="from"/> onto this timeline through
-    /// (clip, source second). Returns the position unchanged when the two timelines do not describe
-    /// the same queue (different clip count or paths).
-    /// </summary>
     public double Remap(MergedTimeline from, double mergedSec)
     {
         if (!SameQueue(from)) return Math.Clamp(mergedSec, 0, TotalSec);
@@ -181,7 +132,6 @@ public sealed class MergedTimeline
         return true;
     }
 
-    /// <summary>Per-clip source second where the kept content starts (index-aligned with the queue).</summary>
     public List<double> ContentStarts()
     {
         var list = new List<double>(Clips.Count);

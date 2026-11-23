@@ -6,7 +6,6 @@ namespace FreeVideoStudio.Core.Tests;
 
 public class CoordinateMathTests
 {
-
     [Fact]
     public void Frac_ConstructAndNormalize_SimplifiesCorrectly()
     {
@@ -126,7 +125,6 @@ public class CoordinateMathTests
         Assert.Equal(0.75, f2.ToDouble());
     }
 
-
     [Theory]
     [InlineData(0, 0)]
     [InlineData(1, 0)]
@@ -185,7 +183,6 @@ public class CoordinateMathTests
         Assert.Equal(-1, CoordinateMath.ScaleRound(new Frac(-14, 10)));
     }
 
-
     [Theory]
     [InlineData("1920x1080", 1920, 1080)]
     [InlineData("2560X1440", 2560, 1440)]
@@ -214,7 +211,6 @@ public class CoordinateMathTests
         Assert.Equal(1920, w);
         Assert.Equal(1080, h);
     }
-
 
     [Fact]
     public void ScalePlan_1080p_ScalesToCover1280x1920()
@@ -278,7 +274,6 @@ public class CoordinateMathTests
         Assert.Equal(0, plan.cropY);
     }
 
-
     [Theory]
     [InlineData(64, 64, 1, 1)]
     [InlineData(134, 202, 1, 1)]
@@ -314,7 +309,6 @@ public class CoordinateMathTests
         Assert.InRange(Math.Abs(width - rw / backendScale), 0, 0.500001);
         Assert.InRange(Math.Abs(height - rh / backendScale), 0, 0.500001);
     }
-
 
     [Fact]
     public void ZoomPadMargin_MeetsMinimumFormulaAndEvenAlignment()
@@ -369,7 +363,6 @@ public class CoordinateMathTests
         Assert.True(Math.Abs(zwin.CropW - cropWRaw) <= 2.5);
         Assert.True(Math.Abs(zwin.CropH - cropHRaw) <= 2.5);
     }
-
 
     [Fact]
     public void TransformToContentArea_ExactRational_IsSymmetric()

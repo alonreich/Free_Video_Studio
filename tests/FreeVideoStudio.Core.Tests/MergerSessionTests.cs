@@ -9,7 +9,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>MERGESESSION_01 — Video-Merger-Migration.md P3.2 (T3.2a–c).</summary>
 public class MergerSessionTests
 {
     private static readonly Dictionary<string, (long, long)> Files = new(StringComparer.OrdinalIgnoreCase)
@@ -167,7 +166,7 @@ public class MergerSessionTests
     public void RestoreDialog_NamesEveryMissingFileAndItsFolder()
     {
         string text = MergerSession.DescribeRestoreProblems(
-            new[] { @"C:\Users\user\Videos\a.mp4", @"D:\clips\b.mp4" }, new[] { @"C:\x\c.mp4" }, keptCount: 5);
+            new[] { @"C:\media\a.mp4", @"D:\clips\b.mp4" }, new[] { @"C:\x\c.mp4" }, keptCount: 5);
         Assert.Contains("2 clips from your last session are no longer on disk", text);
         Assert.Contains("a.mp4", text);
         Assert.Contains("b.mp4", text);
@@ -188,8 +187,8 @@ public class MergerSessionTests
         (long, long)? Changed(string p) => p switch
         {
             @"C:\c\a.mp4" => (1000, 11),
-            @"C:\c\b.mp4" => null,          // gone
-            @"C:\c\c.mp4" => (3001, 34),    // re-encoded
+            @"C:\c\b.mp4" => null,
+            @"C:\c\c.mp4" => (3001, 34),
             _ => null,
         };
         var plan = MergerSession.Plan(edl, Changed);
@@ -310,5 +309,41 @@ public class MergerSessionTests
         Assert.Equal(1, ids.IndexOf(id3));
         Assert.Equal(-1, ids.IndexOf(id2));
     }
-}
 
+    [Fact]
+    public void MergerSession_Captions_PreservedInCapture_AndTrackedInDescribeChange()
+    {
+        var ids = new ClipIdList();
+        ids.Insert(0, 1);
+        var state = new MergerUiState { Paths = new[] { @"C:\c\a.mp4" }, Ids = ids.Ids };
+        var initialEdl = MergerSession.Capture(state, Analysis, FileId, timeline: null, previous: null);
+        Assert.Null(initialEdl.Captions);
+
+        var track = new CaptionTrack(
+            CaptionStyle.PopIn, CaptionPosition.Top, CaptionTone.Hype, "en",
+            new[] { new CaptionLine(1, 0.0, 2.0, "Intro narration") });
+
+        var stateWithCaptions = state with { Captions = track };
+        var edlWithCaptions = MergerSession.Capture(stateWithCaptions, Analysis, FileId, timeline: null, previous: initialEdl);
+        Assert.NotNull(edlWithCaptions.Captions);
+        Assert.Equal(track, edlWithCaptions.Captions);
+
+        var (labelAdd, _) = MergerSession.DescribeChange(initialEdl, edlWithCaptions);
+        Assert.Equal("add captions", labelAdd);
+
+        var (labelRemove, _) = MergerSession.DescribeChange(edlWithCaptions, initialEdl);
+        Assert.Equal("remove captions", labelRemove);
+
+        var modifiedTrack = track with { Tone = CaptionTone.Chill };
+        var edlWithModifiedCaptions = edlWithCaptions with { Captions = modifiedTrack };
+        var (labelEdit, _) = MergerSession.DescribeChange(edlWithCaptions, edlWithModifiedCaptions);
+        Assert.Equal("edit captions", labelEdit);
+
+        var nextEdl = MergerSession.Capture(state, Analysis, FileId, timeline: null, previous: edlWithCaptions);
+        Assert.NotNull(nextEdl.Captions);
+        Assert.Equal(track, nextEdl.Captions);
+
+        var cleared = MergerSession.Capture(state with { ClearCaptions = true }, Analysis, FileId, timeline: null, previous: edlWithCaptions);
+        Assert.Null(cleared.Captions);
+    }
+}

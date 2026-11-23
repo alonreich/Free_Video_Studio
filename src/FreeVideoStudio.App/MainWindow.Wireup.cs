@@ -20,6 +20,25 @@ namespace FreeVideoStudio.App;
 
 public partial class MainWindow
 {
+    private SettingsWindowServices? _settingsServices;
+
+    private SettingsWindowServices SettingsServices => _settingsServices ??= SettingsWindowServices.CreateDefault(_paths);
+
+    private async Task OpenSettingsAsync(Func<Window, Task<bool>> show)
+    {
+        try
+        {
+            if (!await show(this)) return;
+            UpdateTooltips();
+            RefreshTransportKeyBindings();
+            ApplyMaskProfileToOverlayUi();
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Fail("SETTINGS", $"The Settings window failed: {ex.Message}");
+        }
+    }
+
     private void WireComponents()
     {
         this.AddHandler(DragDrop.DragEnterEvent, OnVideoDragEnter);
@@ -82,7 +101,6 @@ public partial class MainWindow
 
         this.Loaded += (s, e) => Controls.CoachOverlay.Register(this, Controls.CoachTours.MainAppKey, Controls.CoachTours.MainApp);
 
-
         SettingsManager.Load();
         ThemeManager.ApplyFromSettings();
         FreeVideoStudio.App.Infrastructure.MaskOverlayManager.ApplyProfile(FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.ActiveMaskOverlay);
@@ -91,17 +109,10 @@ public partial class MainWindow
         var settingsBtn = this.FindControl<MenuItem>("MenuSettingsBtn");
         if (settingsBtn != null)
         {
-            settingsBtn.Click += async (s, e) =>
+            settingsBtn.Click += (s, e) =>
             {
                 RuntimeLog.Info("UI", "User clicked Settings menu button.");
-                var settingsWin = new FreeVideoStudio.App.Controls.SettingsWindow();
-                bool changed = await settingsWin.ShowDialog<bool>(this);
-                if (changed)
-                {
-                    UpdateTooltips();
-                    RefreshTransportKeyBindings();
-                    ApplyMaskProfileToOverlayUi();
-                }
+                _ = OpenSettingsAsync(owner => new FreeVideoStudio.App.Controls.SettingsWindow(SettingsServices).ShowDialog<bool>(owner));
             };
         }
 
@@ -123,10 +134,18 @@ public partial class MainWindow
         };
 
         var menuExportConfig = this.FindControl<MenuItem>("MenuExportConfig");
-        if (menuExportConfig != null) menuExportConfig.Click += OnExportConfigClicked;
+        if (menuExportConfig != null) menuExportConfig.Click += (s, e) =>
+        {
+            RuntimeLog.Info("UI", "User clicked File -> Backup Settings.");
+            _ = OpenSettingsAsync(owner => FreeVideoStudio.App.Controls.SettingsWindow.ShowBackupAsync(owner, import: false, SettingsServices));
+        };
 
         var menuImportConfig = this.FindControl<MenuItem>("MenuImportConfig");
-        if (menuImportConfig != null) menuImportConfig.Click += OnImportConfigClicked;
+        if (menuImportConfig != null) menuImportConfig.Click += (s, e) =>
+        {
+            RuntimeLog.Info("UI", "User clicked File -> Restore Settings.");
+            _ = OpenSettingsAsync(owner => FreeVideoStudio.App.Controls.SettingsWindow.ShowBackupAsync(owner, import: true, SettingsServices));
+        };
 
         var menuExit = this.FindControl<MenuItem>("MenuExit");
         if (menuExit != null) menuExit.Click += (s, e) => Close();
@@ -139,36 +158,13 @@ public partial class MainWindow
         if (menuVideoMerger != null) menuVideoMerger.Click += async (s, e) =>
             await SwitchToCompanionAppAsync("--merger", "Video Merger");
 
-        var menuShowShortcuts = this.FindControl<MenuItem>("MenuShowShortcuts");
-        if (menuShowShortcuts != null) menuShowShortcuts.Click += (s, e) =>
-        {
-            var sheet = ShortcutSheetOverlayCtl;
-            if (sheet == null) return;
-            if (!sheet.IsVisible) BuildShortcutSheetRows();
-            sheet.IsVisible = !sheet.IsVisible;
-            RuntimeLog.Info("UI", $"Keyboard shortcut sheet {(sheet.IsVisible ? "opened" : "closed")} from the View menu.");
-        };
-
-        var menuShowHelp = this.FindControl<MenuItem>("MenuShowHelp");
-        if (menuShowHelp != null) menuShowHelp.Click += (s, e) => CoachOverlay.Replay(this);
-
-        var menuAboutBtn = this.FindControl<MenuItem>("MenuAboutBtn");
-        if (menuAboutBtn != null)
-        {
-            menuAboutBtn.Click += async (s, e) =>
-            {
-                RuntimeLog.Info("UI", "User clicked File -> About.");
-                await FreeVideoStudio.App.Controls.SettingsWindow.ShowAboutAsync(this);
-            };
-        }
-
         var menuHelpAbout = this.FindControl<MenuItem>("MenuHelpAbout");
         if (menuHelpAbout != null)
         {
             menuHelpAbout.Click += async (s, e) =>
             {
                 RuntimeLog.Info("UI", "User clicked Help -> About.");
-                await FreeVideoStudio.App.Controls.SettingsWindow.ShowAboutAsync(this);
+                await OpenSettingsAsync(owner => FreeVideoStudio.App.Controls.SettingsWindow.ShowAboutAsync(owner, SettingsServices));
             };
         }
 
@@ -209,7 +205,6 @@ public partial class MainWindow
         RefreshTransportKeyBindings();
 
         FreeVideoStudio.App.WindowBoundsHelper.Track(this, "MainWindowBounds", fitDisplayOnFirstRun: true);
-
 
         InitializeUxInnovations();
 
@@ -276,6 +271,7 @@ public partial class MainWindow
         var cancelButton = CancelButtonCtl;
         if (cancelButton != null)
         {
+            Infrastructure.ConfirmFlyoutGate.Attach(cancelButton, () => SettingsManager.Instance.ConfirmMainAppCancel);
             cancelButton.Click += (s, e) =>
             {
                 if (!SettingsManager.Instance.ConfirmMainAppCancel)
@@ -319,7 +315,6 @@ public partial class MainWindow
             };
         }
 
-
         var granularButton = GranularButtonCtl;
         if (granularButton != null)
         {
@@ -347,10 +342,7 @@ public partial class MainWindow
                         _speedSegments.Clear();
                         _freezeTimeMs = -1;
                         SetGranularButtonActive(false);
-                        _lastAppliedSpeed = _baseSpeed;
-                        if (ActiveVideoHost?.IpcClient != null)
-                            _ = ActiveVideoHost.IpcClient.SetPropertyAsync("speed",
-                                _baseSpeed.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
+                        ForcePreviewSpeed();
                         InvalidateVoiceOverRecordingForTimingChange();
                         UpdateEstimatedQuality();
                         ShowTacticalFeedback("Speed segments removed");
@@ -398,6 +390,7 @@ public partial class MainWindow
                     _memePlacements,
                     existingCaptions: _viewModel.CaptionTrack);
 
+                editor.PreviewLayers = CurrentEditorPreviewLayers();
                 editor.AvailableMemes = _memeItems;
                 if (focusMemeId != null) editor.FocusMemeOnOpen(focusMemeId);
                 editor.SetAiEliminations(_aiEliminationTimestamps);
@@ -421,6 +414,7 @@ public partial class MainWindow
                     _speedSegments.Clear();
                     _speedSegments.AddRange(editor.ResultSegments);
                     _baseSpeed = editor.ResultBaseSpeed;
+                    ForcePreviewSpeed();
                     _freezeTimeMs = editor.ResultFreezeTimeMs;
                     _freezeDurationS = editor.ResultFreezeDurationS;
 
@@ -488,7 +482,6 @@ public partial class MainWindow
                 await SwitchToCompanionAppAsync("--crop-tool", "Crop Tools");
             };
         }
-
 
         var setThumbnailButton = SetThumbnailButtonCtl;
         if (setThumbnailButton != null)
@@ -574,6 +567,7 @@ public partial class MainWindow
                 };
                 dialog.IsPortraitPreview =
                     PortraitModeCheckboxCtl?.IsChecked == true;
+                dialog.PreviewLayers = CurrentEditorPreviewLayers();
                 try
                 {
                     await dialog.ShowDialog(this);
@@ -595,7 +589,6 @@ public partial class MainWindow
                 }
             };
         }
-
 
         var timelineSlider = TimelineSliderCtl;
         if (timelineSlider != null)
@@ -653,8 +646,7 @@ public partial class MainWindow
             {
                 double previousSpeed = _baseSpeed;
                 _baseSpeed = e / 10.0;
-                if (ActiveVideoHost?.IpcClient != null)
-                    _ = ActiveVideoHost?.IpcClient?.SetPropertyAsync("speed", _baseSpeed.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
+                ForcePreviewSpeed();
                 if (Math.Abs(previousSpeed - _baseSpeed) > 0.001)
                     InvalidateVoiceOverRecordingForTimingChange();
                 UpdateEstimatedQuality();
@@ -683,7 +675,7 @@ public partial class MainWindow
             foreach (var tier in FreeVideoStudio.App.ViewModels.QualityLadder.Tiers)
                 labels.Add(tier.Name.ToUpperInvariant());
             qualitySlider.SetLabels(labels);
-            qualitySlider.Value = FreeVideoStudio.App.ViewModels.QualityLadder.DefaultIndex;
+            qualitySlider.Value = FreeVideoStudio.App.ViewModels.QualityLadder.ClampIndex(SettingsManager.Instance.Defaults.StartQualityIndex);
             qualitySlider.ValueChanged += (s, v) =>
             {
                 UpdateEstimatedQuality();
@@ -692,12 +684,16 @@ public partial class MainWindow
             qualitySlider.ValueChangeCompleted += (s, v) =>
             {
                 EndProjectGesture();
+                SettingsManager.Update(st =>
+                {
+                    st.Defaults.LastQualityIndex = v;
+                    st.Defaults.QualityIndex = v;
+                });
                 RuntimeLog.Info("UI", $"Quality dial resting on '{FreeVideoStudio.App.ViewModels.QualityLadder.NameOf(v)}' (tier {v}).");
             };
 
             UpdateEstimatedQuality();
         }
-
 
         var addMusicButton = AddMusicButtonCtl;
         if (addMusicButton != null)
@@ -752,6 +748,7 @@ public partial class MainWindow
                     _cuts,
                     _memePlacements);
                 wizard.IsPortraitPreview = PortraitModeCheckboxCtl?.IsChecked == true;
+                wizard.RenderSoundPreview = RenderWizardSoundPreviewAsync;
 
                 if (resumeExistingMusic) wizard.InitialState = _musicWizardResult;
 
@@ -815,7 +812,7 @@ public partial class MainWindow
                 UpdateTimelineMarkers();
             };
         }
-        
+
         var memeCb = MemeComboBoxCtl;
         WireMemePlacementCombo();
 
@@ -853,6 +850,8 @@ public partial class MainWindow
 
         Infrastructure.MemeDirectory.Changed += PopulateMemeComboBox;
         this.Closed += (_, _) => Infrastructure.MemeDirectory.Changed -= PopulateMemeComboBox;
+        HookAiEliminationSettings();
+        WireEmptyStateControls();
 
         this.Loaded += async (s, e) => {
             _ = PushAssetsAsync();
@@ -911,7 +910,6 @@ public partial class MainWindow
 
             var store = new FreeVideoStudio.Core.Ipc.StateTransferStore();
             var state = await store.LoadAsync();
-
 
             var newObj = new System.Text.Json.Nodes.JsonObject();
             var preserveKeys = new[] { "schema_version", "MainWindowBounds", "PreviewMonitorWindowBounds", "GranularPreviewMonitorBounds", "MusicWizardPreviewMonitorBounds", "VoiceOverPreviewMonitorBounds", "MergerPreviewMonitorBounds", "VideoMergerBounds", "CropToolBounds", "GranularBounds", "MusicWizardBounds", "SettingsBounds", "VoiceOverWindowBounds", "UploadVideoDirectory", "MergerUploadDirectory", "MergerOutputDirectory", "CropToolUploadDirectory", "CustomMusicDirectory", "WizardVideoVolume", "WizardMusicVolume", "MainVolume" };
@@ -994,10 +992,6 @@ public partial class MainWindow
         };
     }
 
-    /// <summary>
-    /// MEMEMUSIC_01 — themed replacement for the old NativeDialog question (DIALOG_01). A dialog
-    /// that cannot be shown leaves the previous answer untouched rather than guessing one.
-    /// </summary>
     private bool _askingKeepMusic;
     private async Task AskKeepMusicDuringMemeAsync()
     {

@@ -7,29 +7,12 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AISCHEMA_01 (docs/05 SYS-AISETTINGS) — one translator from the app's response schemas (written in
-/// Google's OpenAPI dialect: upper-case types, <c>nullable</c>, array roots) to the JSON Schema the other
-/// vendors accept, and back again for the answer.
-/// <list type="bullet">
-/// <item>Types are lower-cased; <c>nullable: true</c> becomes a <c>[type, "null"]</c> union.</item>
-/// <item>Claude tools and OpenAI structured outputs both require an OBJECT root, so an array root is
-/// wrapped as <c>{ "items": [...] }</c> and unwrapped from the answer (<see cref="Normalize"/>).</item>
-/// <item>OpenAI strict mode (<paramref name="strict"/>) also requires <c>additionalProperties: false</c>
-/// on every object and every property listed in <c>required</c>; optional properties become nullable,
-/// and <see cref="Normalize"/> drops the resulting <c>null</c> values so callers see "missing" exactly
-/// as they do from Gemini.</item>
-/// </list>
-/// </summary>
 public static class AiJsonSchema
 {
-    /// <summary>The property an array-root schema is wrapped in.</summary>
     public const string WrapProperty = "items";
 
     public readonly record struct Translated(string Schema, bool Wrapped);
 
-    /// <summary>Translates <paramref name="schema"/> for Claude (<paramref name="strict"/> = false) or OpenAI (true).
-    /// Empty or unreadable input is returned unchanged.</summary>
     public static Translated Translate(string? schema, bool strict)
     {
         if (string.IsNullOrWhiteSpace(schema)) return new Translated(schema ?? string.Empty, false);
@@ -70,12 +53,6 @@ public static class AiJsonSchema
         }
     }
 
-    /// <summary>
-    /// Turns a vendor's answer back into what the Gemini path would have produced: strips a code fence,
-    /// unwraps <see cref="WrapProperty"/> when the schema was wrapped (a bare array is accepted too), and
-    /// removes <c>null</c>-valued object properties. Unreadable text is returned fence-stripped, unchanged,
-    /// so the caller's own parser reports it.
-    /// </summary>
     public static string Normalize(string? answer, bool wrapped)
     {
         string text = GeminiClient.StripCodeFence(answer);
@@ -99,12 +76,6 @@ public static class AiJsonSchema
         }
     }
 
-    /// <summary>
-    /// AISCHEMA_02 — the reverse direction for Gemini: features written in standard JSON Schema (lower-case
-    /// types, e.g. Music Auto-Fit, Viral Post, Kill Tracker) are sent to Gemini with UPPER-CASE type names,
-    /// the dialect its <c>responseSchema</c> documents. Already-Gemini schemas pass through unchanged.
-    /// Unreadable input is returned unchanged.
-    /// </summary>
     public static string ToGeminiDialect(string? schema)
     {
         if (string.IsNullOrWhiteSpace(schema)) return schema ?? string.Empty;

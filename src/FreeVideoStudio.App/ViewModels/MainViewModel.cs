@@ -33,7 +33,6 @@ public sealed class MainViewModel : ViewModelBase
     private bool _isEnableFade = true;
     private bool _isAddMeme;
     private MemeItem? _selectedMemeItem;
-    private int _memePlacementIndex;
     private bool _keepMusicDuringMeme;
 
     private bool _isInGameOverlaysVisible = true;
@@ -51,8 +50,6 @@ public sealed class MainViewModel : ViewModelBase
 
     public TimelineViewModel Timeline { get; }
     public ExportViewModel Export { get; }
-
-    public ObservableCollection<MemeItem> MemeItems { get; } = new();
 
     public ICommand ToggleMuteCommand { get; }
 
@@ -218,16 +215,6 @@ public sealed class MainViewModel : ViewModelBase
         set
         {
             if (SetProperty(ref _selectedMemeItem, value))
-                NotifyStateDirty();
-        }
-    }
-
-    public int MemePlacementIndex
-    {
-        get => _memePlacementIndex;
-        set
-        {
-            if (SetProperty(ref _memePlacementIndex, value))
                 NotifyStateDirty();
         }
     }
@@ -400,6 +387,7 @@ public sealed class MainViewModel : ViewModelBase
     public void ResetEditingStateForNewVideo()
     {
         Timeline.Reset();
+        CaptionTrack = null;
         MusicWizardResult = null;
         VoiceOverResult = null;
         IsAddMeme = false;
@@ -420,7 +408,6 @@ public sealed class MainViewModel : ViewModelBase
     {
         return _recoveryService.HasUnsavedWork(this, Timeline, Export);
     }
-
 
     private void NotifyStateDirty()
     {

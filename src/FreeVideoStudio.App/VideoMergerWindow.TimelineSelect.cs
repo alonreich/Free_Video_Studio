@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Controls;
@@ -9,23 +9,6 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// ANTS_01 — ONE SELECTION, ONE ORDER, TWO VIEWS (Video-Merger-Migration.md P5.3, D14).
-///
-/// The right-hand list and the merged timeline show the SAME queue. Selection lives in the list;
-/// the timeline draws the selected clip(s) with the list's yellow marching ants. A reorder from
-/// either view is a <c>VideoQueue.Move</c>, so the other view, the clip ids, the autosave and undo
-/// all follow.
-///
-/// MERGERUX_01 — P10 (user decisions D22–D24, 2026-09-27) — ONE JOB PER AREA:
-///   • the UPPER timeline (time scale + scrub row) only SEEKS; its clip labels are not handles;
-///   • the thumbnail BLOCKS only select and move clips: hover = glow + open hand, press = closed
-///     hand, a plain click SELECTS WITHOUT SEEKING, press + 6 px = drag (the block follows the
-///     pointer, the gold bar shows where it lands). After a move the playhead stays on the same
-///     frame of the same clip (D22, EnsureEdlLoaded remaps it).
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class VideoMergerWindow
 {
     private const double ChipDragThresholdPx = 6;
@@ -56,13 +39,8 @@ public partial class VideoMergerWindow
         return result;
     }
 
-    /// <summary>A press or drag on a queue row or a block is in progress: nothing may move the selection or rebuild the blocks under it.</summary>
     private bool QueueGestureActive => _chipPressed || _draggingClipChip || _videoDragStartPoint.HasValue || _isVideoDragging || _isRubberbanding;
 
-    /// <summary>
-    /// D23 / MERGERPLAYHEAD_01 — the upper timeline (time scale + scrub row) AND the waveform lane seek; only the
-    /// thumbnail blocks between them do not (they select and reorder clips, and handle their own presses first).
-    /// </summary>
     private bool IsOnSeekRows(PointerEventArgs e, Canvas seekRow)
     {
         double y = e.GetPosition(seekRow).Y;
@@ -78,7 +56,7 @@ public partial class VideoMergerWindow
         if (_draggingClipChip || _chipPressed) return;
         InvalidateMergedTimelineDrawing();
         var markers = MarkersCanvasCtl;
-        if (markers != null && TimelineMatchesQueue()) DrawMergedTimeline(markers, null);
+        if (markers != null && TimelineMatchesQueue()) DrawMergedTimeline(markers, ScaleCanvasCtl);
     }
 
     private void DrawTimelineSelection(Canvas markers, double w, double h, double total)
@@ -110,16 +88,12 @@ public partial class VideoMergerWindow
         DrawClipBlocks(w, total);
     }
 
-    /// <summary>
-    /// D20 — the filmstrip lane as the clip strip: one outlined block per clip over its thumbnails.
-    /// Click selects, drag reorders, right-click opens the clip menu. Selected blocks get the ants.
-    /// </summary>
     private void DrawClipBlocks(double w, double total)
     {
         var lane = BlocksLaneCtl;
         if (lane == null) return;
         lane.Children.Clear();
-        bool show = FilmLaneCtl?.IsVisible == true && total > 0 && w > 0;
+        bool show = TimelineMatchesQueue() && total > 0 && w > 0;
         lane.IsVisible = show;
         if (!show) return;
 
@@ -146,6 +120,7 @@ public partial class VideoMergerWindow
             };
             Canvas.SetLeft(block, x0);
             Canvas.SetTop(block, 0);
+            block.Tag = c.Path;
             block.PointerEntered += (_, _) => { if (!_draggingClipChip) { block.BoxShadow = glow; block.BorderBrush = hoverOutline; } };
             block.PointerExited += (_, _) => { if (!_draggingClipChip) { block.BoxShadow = default; block.BorderBrush = outline; } };
             AttachClipChip(block, i, lane);
@@ -210,7 +185,7 @@ public partial class VideoMergerWindow
         chip.PointerMoved += (_, e) =>
         {
             if (!_chipPressed) return;
-            if (!e.GetCurrentPoint(chip).Properties.IsLeftButtonPressed) { EndClipChip(markers, commitX: null); return; }
+            if (!e.GetCurrentPoint(chip).Properties.IsLeftButtonPressed) { EndClipChip(markers, commitX: null); e.Pointer.Capture(null); return; }
             double x = e.GetPosition(markers).X;
             if (!_draggingClipChip && Math.Abs(x - _chipPressX) < ChipDragThresholdPx) return;
             if (!_draggingClipChip)
@@ -227,9 +202,9 @@ public partial class VideoMergerWindow
         {
             if (!_chipPressed) return;
             double x = e.GetPosition(markers).X;
-            e.Pointer.Capture(null);
             chip.Cursor = Infrastructure.GrabCursors.Open;
             EndClipChip(markers, commitX: x);
+            e.Pointer.Capture(null);
             e.Handled = true;
         };
         chip.PointerCaptureLost += (_, _) =>
@@ -241,7 +216,9 @@ public partial class VideoMergerWindow
 
     private void ShowInsertBar(Canvas markers, double x)
     {
-        double w = markers.Bounds.Width;
+        double w = markers.Bounds.Width > 0 ? markers.Bounds.Width : markers.Width;
+        if (w <= 0 && BlocksLaneCtl != null) w = BlocksLaneCtl.Bounds.Width > 0 ? BlocksLaneCtl.Bounds.Width : BlocksLaneCtl.Width;
+        if (w <= 0 && MarkersCanvasCtl != null) w = MarkersCanvasCtl.Bounds.Width > 0 ? MarkersCanvasCtl.Bounds.Width : MarkersCanvasCtl.Width;
         var blocks = TimelineBlocks(w);
         int target = TimelineReorder.TargetIndex(blocks, _chipFrom, x);
         double bx = TimelineReorder.InsertionX(blocks, _chipFrom, target);
@@ -260,7 +237,6 @@ public partial class VideoMergerWindow
         Canvas.SetTop(_chipInsertBar, 0);
     }
 
-    /// <summary>Ends a chip gesture. <paramref name="commitX"/> null = abandoned (capture lost): no reorder.</summary>
     private void EndClipChip(Canvas markers, double? commitX)
     {
         bool wasDrag = _draggingClipChip;
@@ -283,12 +259,16 @@ public partial class VideoMergerWindow
         }
         if (commitX is not double x) { RedrawTimelineSelection(); return; }
 
-        int to = TimelineReorder.TargetIndex(TimelineBlocks(markers.Bounds.Width), from, x);
+        double w = markers.Bounds.Width > 0 ? markers.Bounds.Width : markers.Width;
+        if (w <= 0 && BlocksLaneCtl != null) w = BlocksLaneCtl.Bounds.Width > 0 ? BlocksLaneCtl.Bounds.Width : BlocksLaneCtl.Width;
+        if (w <= 0 && MarkersCanvasCtl != null) w = MarkersCanvasCtl.Bounds.Width > 0 ? MarkersCanvasCtl.Bounds.Width : MarkersCanvasCtl.Width;
+        int to = TimelineReorder.TargetIndex(TimelineBlocks(w), from, x);
         if (to != from)
         {
             RuntimeLog.Info("MERGER", $"Timeline drag: clip {from + 1} moved to position {to + 1}.");
             VideoQueue.Move(from, to);
             SelectQueueRow(to, preview: false);
+            VideoListCtl?.InvalidateVisual();
         }
         RedrawTimelineSelection();
     }

@@ -8,9 +8,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// MEMEAUDIT_01 — the meme audit (2026-10-17): every Core rule it changed, pinned.
-/// </summary>
 public sealed class MemeAuditTests
 {
     private static GranularEditSession New() => new(@"C:\v\clip.mp4", 0, 60000, new GranularHistoryParking());

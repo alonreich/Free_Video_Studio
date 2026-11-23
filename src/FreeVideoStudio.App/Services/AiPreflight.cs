@@ -1,0 +1,72 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace FreeVideoStudio.App.Services;
+
+internal static class AiPreflight
+{
+    private static readonly byte[] TestImage = CreateImage();
+    private static byte[] CreateImage()
+    {
+        using var bitmap = new SkiaSharp.SKBitmap(64, 64);
+        bitmap.Erase(SkiaSharp.SKColors.White);
+        using var image = SkiaSharp.SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
+    }
+
+    private static string Identity(AiVendor vendor, string key, string model)
+        => AiResultCache.Key("preflight-image-json-v1", vendor.ToString(), key, AiVisionProviders.EffectiveModel(vendor, model, key));
+
+    internal const string SessionReuseTag = "AIPREFLIGHTSESSION_01";
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> PassedThisSession = new(StringComparer.Ordinal);
+
+    internal static void ForgetSessionPasses() => PassedThisSession.Clear();
+
+    internal static bool WillCheck(AiVendor vendor, string key, string model)
+        => !string.IsNullOrWhiteSpace(key) && !PassedThisSession.ContainsKey(Identity(vendor, key, model)) && !AiResultCache.Has<bool>(Identity(vendor, key, model));
+
+    internal static AiEstimatedUsage WithCheck(AiEstimatedUsage estimate, AiVendor vendor, string key, string model)
+        => AiCostEstimator.WithConnectionCheck(estimate, vendor, model, WillCheck(vendor, key, model));
+
+    internal static Task<bool> EnsureAsync(AiVendor vendor, string key, string model,
+        CancellationToken ct, Action<string>? progress = null, IAiVisionProvider? provider = null)
+    {
+        AiKeyHealth.ThrowIfBlocked(vendor, key);
+        string effective = AiVisionProviders.EffectiveModel(vendor, model, key);
+        string identity = Identity(vendor, key, model);
+        if (PassedThisSession.ContainsKey(identity)) return Task.FromResult(true);
+        return RunAndRememberAsync(identity, vendor, key, effective, ct, progress, provider);
+    }
+
+    private static async Task<bool> RunAndRememberAsync(string identity, AiVendor vendor, string key, string effective,
+        CancellationToken ct, Action<string>? progress, IAiVisionProvider? provider)
+    {
+        bool ok = await RunCheckAsync(identity, vendor, key, effective, ct, progress, provider).ConfigureAwait(false);
+        if (ok) PassedThisSession[identity] = true;
+        return ok;
+    }
+
+    private static Task<bool> RunCheckAsync(string identity, AiVendor vendor, string key, string effective,
+        CancellationToken ct, Action<string>? progress, IAiVisionProvider? provider)
+    {
+        return AiResultCache.RunAsync(identity, async () =>
+        {
+            progress?.Invoke("Checking your AI connection…");
+            using var usage = AiUsageMeter.BeginTask("Connection check", vendor);
+            string result = await (provider ?? AiVisionProviders.Get(vendor)).GenerateJsonAsync(key, effective,
+                "Check that the image can be read. Return {\"ok\":true}.",
+                new[] { new AiImageInput(TestImage, "image/png") }, null,
+                "{\"type\":\"object\",\"properties\":{\"ok\":{\"type\":\"boolean\"}},\"required\":[\"ok\"]}",
+                reasoning: AiReasoningPolicy.ConnectionCheck, options: GeminiCallOptions.Quick, userLog: progress, ct: ct).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(result);
+            if (!doc.RootElement.TryGetProperty("ok", out var ok) || ok.ValueKind != JsonValueKind.True)
+                throw new AiProviderException(vendor, AiProviderErrorKind.MalformedResponse,
+                    "This model could not read a test picture. Choose another model in Settings › AI.");
+            return true;
+        }, success => success, ct, null);
+    }
+}

@@ -1,5 +1,4 @@
-﻿
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.RegularExpressions;
 using FreeVideoStudio.Core.Infrastructure;
 
@@ -79,25 +78,18 @@ public class EncoderManager
         }
     }
 
-    /// <summary>
-    /// Per-video-input decoder options, chosen together with the filter graph.
-    /// Software effects decode to RAM directly, avoiding GPU download followed by
-    /// encoder upload. Resident CUDA graphs share one device across all inputs.
-    /// </summary>
     public static List<string> GetDecodeFlags(string encoderName, bool keepFramesOnGpu = false) => (encoderName, keepFramesOnGpu) switch
     {
         ("h264_nvenc", true) => ["-hwaccel", "cuda", "-hwaccel_device", "exportgpu", "-hwaccel_output_format", "cuda"],
         _ => [],
     };
 
-    /// <summary>G09: human-readable name of the chip doing the DECODING for a given encoder.</summary>
     public static string DescribeDecoder(string encoderName, bool keepFramesOnGpu = false) => (encoderName, keepFramesOnGpu) switch
     {
         ("h264_nvenc", true) => "GPU (NVDEC/cuda, VRAM frames)",
         _ => "CPU (software)",
     };
 
-    /// <summary>G09: human-readable name of the chip doing the ENCODING.</summary>
     public static string DescribeEncoder(string encoderName) => encoderName switch
     {
         "h264_nvenc" => "GPU (NVENC)",
@@ -109,26 +101,6 @@ public class EncoderManager
 
     private static int VbvBufKbps(int kbps) => Math.Min(MaxBitrateKbps, Math.Max(kbps, kbps * 2));
 
-    /// <summary>
-    /// DEDUPE_02 — THE ONE COPY OF THE HARDWARE VBV / PEAK-BITRATE ARITHMETIC.
-    ///
-    /// `h264_nvenc`, `h264_amf` and `h264_qsv` each carried a byte-identical three-line block:
-    /// clamp the requested rate into [300, MaxBitrateKbps], derive the peak (equal to the average
-    /// when the export is size-locked, otherwise 1.5x capped at the same ceiling), and size the VBV
-    /// buffer from THE PEAK — never from the average, or a size-locked CBR export overshoots its
-    /// target. Three copies meant three places to forget when the ceiling or the 1.5x headroom
-    /// changes; there is now one.
-    ///
-    /// ⚠️ SILICON-SPECIFIC FLAGS DO NOT BELONG HERE. `-rc`, `-cq`/`-qp_*`/`-global_quality`,
-    /// presets, AQ and the `rcLabel` string differ per vendor and stay at their call sites. This
-    /// helper emits ONLY `-b:v` / `-maxrate` / `-bufsize`, which is exactly the part that was
-    /// identical. Adding a vendor branch in here re-creates the duplication in a worse place.
-    ///
-    /// `VbvBufKbps` was made static for this; it reads no instance state (its only capture is the
-    /// `MaxBitrateKbps` const), so the change is behaviour-neutral.
-    ///
-    /// No-ops on a null rate so the guard can stay at the call site and read naturally.
-    /// </summary>
     private static void AppendHardwareBitrateFlags(List<string> vcodec, int? videoBitrateKbps, bool sizeLocked)
     {
         if (!videoBitrateKbps.HasValue) return;
@@ -241,10 +213,6 @@ public class EncoderManager
         return options;
     }
 
-    /// <summary>
-    /// Returns (codecArgs, rcLabel) — exact port of get_codec_flags().
-    /// codecArgs is a list of ffmpeg command-line arguments starting with "-c:v".
-    /// </summary>
     public (List<string> codecArgs, string rcLabel) GetCodecFlags(
         string encoderName, int? videoBitrateKbps, double effectiveDurationSec,
         string fpsExpr = "60", int qualityLevel = 2, bool sizeLocked = true)

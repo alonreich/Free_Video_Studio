@@ -10,8 +10,6 @@ public sealed record EstimateMedia(string Path, double Duration, double VideoKbp
 public sealed record MainSizeRequest(string? Path, double DurationMs, double StartMs, double EndMs,
     double Speed, SpeedSegment[] Segments, CutRange[] Cuts, MemePlacement[] Memes,
     string? LegacyMeme, bool Portrait, int Quality);
-/// <param name="OutputSeconds">MERGESIZE_01 — the finished length from the Merger's edit list (speed ramps, freezes, memes,
-/// cuts, removed intros, custom thumbnail) when it describes the queue; null = sum of the files ÷ speed.</param>
 public sealed record MergerSizeRequest(string[] Paths, double Speed, int Quality, EstimateMedia[]? KnownSources = null, double? OutputSeconds = null);
 public sealed record OutputSizeEstimate(double? Megabytes, double DurationSeconds, double? TargetMegabytes = null,
     IReadOnlyList<EstimateMedia>? Sources = null, double VideoKbps = 0)
@@ -20,7 +18,6 @@ public sealed record OutputSizeEstimate(double? Megabytes, double DurationSecond
     public static OutputSizeEstimate Empty { get; } = new(null, 0);
 }
 
-/// <summary>Metadata is bounded, cached by file identity, and read only by the background worker.</summary>
 public sealed class OutputSizeEstimator
 {
     private readonly Func<string> _probePath;
@@ -38,7 +35,7 @@ public sealed class OutputSizeEstimator
         var timeline = OutputTimeline.Create(Math.Max(0, request.EndMs - request.StartMs), request.Segments,
             request.Speed, request.StartMs, cuts: CutRange.ToClipRelative(request.Cuts, request.StartMs));
         double freezeSeconds = timeline.Chunks.Where(c => c.IsFreeze).Sum(c => c.OutputLengthSec);
-        double totalSeconds = timeline.TotalOutputSeconds + request.Memes.Sum(m => m.OutputDurationSec)   /* MEMEMODE_01 — corner overlays add 0 s */ + 0.1;
+        double totalSeconds = timeline.TotalOutputSeconds + request.Memes.Sum(m => m.OutputDurationSec)    + 0.1;
         double? target = QualityLadder.TargetMbFor(request.Quality, totalSeconds,
             request.Portrait ? CoordinateConstants.ContentW : 1920,
             request.Portrait ? CoordinateConstants.ContentH : 1080, request.Portrait, freezeSeconds);

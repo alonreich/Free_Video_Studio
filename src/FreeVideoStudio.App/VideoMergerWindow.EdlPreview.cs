@@ -1,32 +1,10 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App;
 
-/// <summary>
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// MERGEPREVIEW_EDL_01 — THE MERGE PLAYS AS ONE FILE (Video-Merger-Migration.md P4.2, D2).
-///
-/// Once the queue is analysed, mpv holds ONE inline EDL of every clip's kept window
-/// (<see cref="MergeEditorSource.MpvUrl"/> over the merged timeline's composite): mpv's time-pos IS
-/// the merged clock, boundaries are seamless (P4.1 PASS), removed intros are never shown. The URL is
-/// compared every tick; a new layout (reorder, remove, scraper, thumbnail) reloads it at the SAME
-/// moment of the SAME file. Loading is mpv's own asynchronous loadfile — nothing here waits.
-///
-/// MERGEPREVIEW_01 — PREVIEW PARITY (P8.1). The effects are played the way the Main App previews
-/// them, from <see cref="MergerPreviewPlan"/> (the export's own chunk list): mpv <c>speed</c> per
-/// stretch (absolute segment speed, else the base speed — D19), a jump over deleted footage, a timed
-/// pause for a freeze (consumed once per pass, re-armed by a seek — the FREEZE_01 rule). P8.2: a
-/// meme is played by the Main App's own <see cref="Infrastructure.MemePreviewDirector"/> (MEME_07):
-/// forward playback crossing it parks the EDL, plays the meme file in the one mpv host behind the
-/// "Loading the meme…" veil, then reloads the SAME EDL at the anchor. The music preview runs on the
-/// BODY OUTPUT clock (<see cref="PreviewOutputSec"/>), so it keeps playing through a freeze exactly
-/// as it does in the file, and never changes speed.
-/// ══════════════════════════════════════════════════════════════════════════════════════════════
-/// </summary>
 public partial class VideoMergerWindow
 {
     private const int EdlLoadGraceTicks = 8;
@@ -46,10 +24,6 @@ public partial class VideoMergerWindow
     private double _prevTickPos = -1;
     private Infrastructure.MemePreviewDirector? _memePreview;
 
-    /// <summary>
-    /// EMPTYQUEUE_01 — the last clip left the queue: stop mpv, forget the EDL and hide the video surface,
-    /// so the NO VIDEO LOADED screen is not drawn over a ghost of the last frame (it is semi-transparent).
-    /// </summary>
     private void ClearPreviewSurface()
     {
         var ipc = _videoHost?.IpcClient;
@@ -70,7 +44,6 @@ public partial class VideoMergerWindow
         RuntimeLog.Info("MERGER", "Queue empty: preview stopped and the video surface hidden.");
     }
 
-    /// <summary>The legacy per-file preview took mpv over.</summary>
     private void ForgetLoadedEdl()
     {
         _edlUrl = null;
@@ -78,15 +51,11 @@ public partial class VideoMergerWindow
         EndHold(resume: false);
     }
 
-    /// <summary>
-    /// Makes mpv hold the EDL of the current layout. <paramref name="target"/> null = keep the current
-    /// moment (remapped through the clip it is on). Returns true when a load was issued.
-    /// </summary>
     private bool EnsureEdlLoaded(double? target, bool? play)
     {
         var ipc = _videoHost?.IpcClient;
         if (ipc == null || _timeline.Clips.Count == 0) return false;
-        string url = MergeEditorSource.Build(_timeline.Composite).MpvUrl;
+        var (url, audioStream) = MergeEditorSource.PreviewUrl(_timeline.Composite, ClipHasAudio, PreviewSilencePath());
         if (url == _edlUrl) return false;
 
         bool hadEdl = _edlUrl != null;
@@ -106,18 +75,20 @@ public partial class VideoMergerWindow
         _pendingMiddleSeekPath = null;
         _autoAdvanceArmed = false;
 
-        _ = LoadEdlAsync(ipc, url, at, playNow);
+        _ = LoadEdlAsync(ipc, url, at, playNow, audioStream);
         RuntimeLog.Info("MERGER", $"Preview: merge loaded as one EDL ({_timeline.Clips.Count} clip(s), {_timeline.TotalSec:F3}s) at {at:F3}s, {(playNow ? "playing" : "paused")}.");
         return true;
     }
 
-    private async System.Threading.Tasks.Task LoadEdlAsync(MpvIpcClient ipc, string url, double at, bool play)
+    private async System.Threading.Tasks.Task LoadEdlAsync(MpvIpcClient ipc, string url, double at, bool play, bool audioStream)
     {
         try
         {
+            await ipc.SetPropertyAsync("gapless-audio", "yes");
             await ipc.SetPropertyAsync("hr-seek", "yes");
             await ipc.SetPropertyAsync("mute", _previewMuted ? "yes" : "no");
             await ipc.LoadFileAsync(url, at);
+            if (audioStream) await SelectAudioStreamAsync(ipc, url);
             await ipc.SetPropertyAsync("pause", play ? "no" : "yes");
         }
         catch (Exception ex)
@@ -127,7 +98,33 @@ public partial class VideoMergerWindow
         }
     }
 
-    /// <summary>Where the playhead is, expressed on the NEW layout (same file, same source second).</summary>
+    private static bool ClipHasAudio(string path) => !MergeClipAnalyzer.TryGetCompleted(path, out var info) || info.HasAudio;
+
+    private static System.Threading.Tasks.Task<string?>? _silenceTask;
+
+    private string? PreviewSilencePath()
+    {
+        if (_timeline.Clips.All(c => ClipHasAudio(c.Path))) return null;
+        _silenceTask ??= MergeEditorSource.EnsureSilenceFileAsync(
+            FreeVideoStudio.Core.Infrastructure.BinaryPathResolver.Resolve("ffmpeg.exe", "backend", "binaries"),
+            System.IO.Path.Combine(FreeVideoStudio.Core.Infrastructure.ApplicationPaths.CreateDefault().TempDirectory, "preview-silence"));
+        return _silenceTask.IsCompletedSuccessfully ? _silenceTask.Result : null;
+    }
+
+    private async System.Threading.Tasks.Task SelectAudioStreamAsync(MpvIpcClient ipc, string url)
+    {
+        for (int i = 0; i < 40 && url == _edlUrl; i++)
+        {
+            if (MergeEditorSource.SilentStreamAudioTrack(await ipc.ReadPropertyAsync("track-list")) is int aid)
+            {
+                if (aid > 1) await ipc.SetPropertyAsync("aid", aid.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                return;
+            }
+            await System.Threading.Tasks.Task.Delay(50);
+        }
+        RuntimeLog.WarnThrottled("MERGER", "Preview: the audio-only stream for soundless clips did not appear; playing the first stream's audio.");
+    }
+
     private double CurrentMomentOnNewLayout(MpvIpcClient ipc)
     {
         if (_edlTimeline is { } old && old.Clips.Count > 0)
@@ -144,7 +141,6 @@ public partial class VideoMergerWindow
         return sel >= 0 && sel < _timeline.Clips.Count ? _timeline.ToMerged(sel, ipc.CurrentTime) : 0;
     }
 
-    /// <summary>mpv's time-pos on the merged clock (the load target while mpv still reports the previous file).</summary>
     private double EdlPositionSec(MpvIpcClient ipc)
     {
         double t = ipc.CurrentTime;
@@ -157,8 +153,6 @@ public partial class VideoMergerWindow
         return Math.Clamp(t, 0, _timeline.TotalSec);
     }
 
-
-    /// <summary>Rebuilds the schedule when the edit list changes. No schedule while it does not describe the queue.</summary>
     private void EnsurePreviewPlan()
     {
         var edl = _lastEdl;
@@ -181,7 +175,6 @@ public partial class VideoMergerWindow
         _appliedSpeed = double.NaN;
     }
 
-    /// <summary>A seek or a load starts a new pass: holds before the target are behind us, the one AT it plays.</summary>
     private void RearmPreviewEffects(double mergedSec)
     {
         EndHold(resume: false);
@@ -190,7 +183,6 @@ public partial class VideoMergerWindow
         _memePreview?.NotifySeek();
     }
 
-    /// <summary>True while a freeze (or, until P8.2, a meme) is being held.</summary>
     private bool TickPreviewEffects(MpvIpcClient ipc, ref double merged)
     {
         var plan = _plan;
@@ -246,6 +238,9 @@ public partial class VideoMergerWindow
             _ = ipc.SetPropertyAsync("pause", "yes");
             _ = SeekInternal(step.MergedStartSec);
             merged = step.MergedStartSec;
+            if (step.Kind == PreviewStepKind.Freeze)
+                _freezeSound.PlayHold(step.HoldSec, MergerFreezeLoudnessPath, MergerGameBalance(),
+                    plan.ClipBodyOutputEndSec(step.ClipIndex) - (step.OutputStartSec + step.HoldSec));
             RuntimeLog.Debug("MERGER", $"Preview hold: {step.Kind} at {step.MergedStartSec:F3}s for {step.HoldSec:F2}s.");
             return true;
         }
@@ -260,11 +255,6 @@ public partial class VideoMergerWindow
         return false;
     }
 
-
-    /// <summary>
-    /// MEME_07 in the Merger. True while mpv is NOT showing the merge (a meme is loading, playing or
-    /// handing back): the tick must then touch nothing that reads mpv's clock — the caret holds.
-    /// </summary>
     private bool TickMergerMemes()
     {
         IReadOnlyList<MemePlacement> memes = _plan?.MemePlacements ?? Array.Empty<MemePlacement>();
@@ -292,13 +282,16 @@ public partial class VideoMergerWindow
     {
         if (_holdStep < 0) return;
         _holdStep = -1;
+        if (!resume) _freezeSound.Stop();
         if (resume) _ = _videoHost?.IpcClient?.SetPropertyAsync("pause", "no");
     }
 
-    /// <summary>
-    /// The body OUTPUT second on screen (the music preview's clock): through the schedule when the edit
-    /// list describes the queue, else merged ÷ base speed (the rule before effects).
-    /// </summary>
+    private readonly Services.FreezeSoundPreview _freezeSound = new();
+
+    internal const string? MergerFreezeLoudnessPath = null;
+
+    private double MergerGameBalance() => _musicResult?.VideoVolume ?? 1.0;
+
     private double PreviewOutputSec(double merged)
     {
         var plan = _plan;

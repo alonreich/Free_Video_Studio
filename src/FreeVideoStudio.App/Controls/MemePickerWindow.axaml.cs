@@ -14,12 +14,6 @@ using System.Windows.Input;
 
 namespace FreeVideoStudio.App.Controls;
 
-/// <summary>
-/// MEMEPICK_01 — one row of the meme picker: the scanned <see cref="MemeItem"/> plus its preview
-/// picture, which arrives later (<see cref="MemeThumbnailCache"/>), its ★ (MEMEFAV_01) and its shape
-/// warning, which depends on the chosen mode (MEMEWARN_02: the letterbox warning matters only for
-/// FULL SCREEN; a corner box fits any shape).
-/// </summary>
 public sealed class MemePickerRow : ViewModelBase
 {
     private readonly bool _portrait;
@@ -47,7 +41,6 @@ public sealed class MemePickerRow : ViewModelBase
     public string FileName => IsMissing ? $"{Item.FileName}  (file missing)" : Item.FileName;
     public string KindIcon => Item.IsImage ? "🖼" : "🎬";
 
-    /// <summary>Raised after ★ was pressed (the window re-sorts).</summary>
     public event Action<MemePickerRow>? FavoriteToggled;
 
     public ICommand ToggleFavoriteCommand { get; }
@@ -60,7 +53,6 @@ public sealed class MemePickerRow : ViewModelBase
 
     public string StarText => _isFavorite ? "★" : "☆";
 
-    /// <summary>MEMEWARN_02 — the shape warnings apply to FULL SCREEN only.</summary>
     public void SetFullScreen(bool fullScreen)
     {
         if (_fullScreen == fullScreen) return;
@@ -71,10 +63,8 @@ public sealed class MemePickerRow : ViewModelBase
         OnPropertyChanged(nameof(Tip));
     }
 
-    /// <summary>UI-MEMESELECT — wide meme on a portrait video (full screen): letterboxed.</summary>
     public bool RatioWarning => _fullScreen && _portrait && Item.AspectRatio > 0.85f;
 
-    /// <summary>MEMEWARN_02 — tall meme on a landscape video (full screen): pillarboxed.</summary>
     public bool TallWarning => _fullScreen && !_portrait && Item.AspectRatio > 0 && Item.AspectRatio < 0.85f;
 
     public bool HasWarning => RatioWarning || TallWarning;
@@ -101,11 +91,6 @@ public sealed class MemePickerRow : ViewModelBase
     public bool HasThumbnail => _thumbnail != null;
 }
 
-/// <summary>
-/// MEMEMODE_01 — what the popup returns: the meme, how it plays and which part of it is used.
-/// <see cref="DurationSec"/> is the length that plays (a picture's chosen 1–10 s, a video's chosen
-/// part), or null when a video's length could not be read (the caller probes it).
-/// </summary>
 public sealed record MemePickResult(
     MemeItem Item,
     double? DurationSec,
@@ -119,58 +104,26 @@ public sealed record MemePickResult(
     FreeVideoStudio.Core.Media.MemeOverlayAnimation Animation = FreeVideoStudio.Core.Media.MemeOverlayAnimation.None,
     FreeVideoStudio.Core.Media.MemeTransition Transition = FreeVideoStudio.Core.Media.MemeTransition.Cut)
 {
-    /// <summary>The placement this choice describes, at <paramref name="at"/> (clip-relative source seconds).</summary>
     public FreeVideoStudio.Core.Media.MemePlacement ToPlacement(double at, double durationSec) =>
         new(Item.FullPath, at, durationSec, "", Mode, Corner, Size, PlaySound,
             Item.IsImage ? 0 : Math.Max(0, ClipInSec), PosX, PosY, Animation, Transition);
 }
 
-/// <summary>
-/// MEME_06 — "which meme goes here?", asked at the moment ADD MEME is pressed.
-///
-/// <para>
-/// Deliberately a themed Avalonia window and not a Win32 file dialog. The memes a user actually
-/// wants live in the app's own meme folder, already scanned and dimension-probed by
-/// <see cref="MemeCatalog"/>; a file browser would drop them somewhere on their disk with no
-/// guarantee the file is even a video, and would look like a different program interrupting the
-/// editor — the same complaint DIALOG_01 records about NativeDialog.
-/// </para>
-/// <para>
-/// MEMEPICK_01 — preview pictures, a name search, the shape warnings (UI-MEMESELECT) and the two
-/// "download more" buttons live here too, so the editor never has to be closed to find or fetch a
-/// meme. MEMEPICK_02 — the list handed over is shown at once, then RE-SCANNED in the background.
-/// MEMEPICK_03 — a live preview shows the meme playing where it will play (and lets a corner meme be
-/// dragged anywhere, MEMEPOS_01). MEMEFAV_01 — favourites first, then recently used.
-/// MEMEPICK_05 — a double-click only SELECTS; the meme is used with USE THIS MEME (a double-click used
-/// to place it straight away as FULL SCREEN, skipping every choice below the list).
-/// </para>
-/// <para>
-/// Returns the chosen <see cref="MemeItem"/> in <see cref="Result"/>, or null for cancel, and the
-/// newest scan in <see cref="LatestItems"/> so the owner can keep its own copy current.
-/// </para>
-/// </summary>
 public partial class MemePickerWindow : Window
 {
     public MemeItem? Result { get; private set; }
 
-    /// <summary>MEMEMODE_01 — the "how should it play?" half, bound (MVVM_01).</summary>
     public MemeChoiceViewModel Choice { get; } = new();
 
     private string? _preselectPath;
     private FreeVideoStudio.Core.Media.MemePlacement? _existing;
     private int _durationGeneration;
 
-    /// <summary>MEMEPICK_02 — the newest list this window knows about (real memes only).</summary>
     public IReadOnlyList<MemeItem> LatestItems { get; private set; } = Array.Empty<MemeItem>();
 
     private readonly CancellationTokenSource _cts = new();
     private List<MemePickerRow> _rows = new();
 
-    /// <summary>
-    /// CACHEBOUND_03 — pictures for the realized (on-screen) rows plus a few either side only; a row
-    /// scrolled far away, filtered out or replaced by a re-scan cancels its request and gives its
-    /// picture back to <see cref="MemeThumbnailCache"/> (CACHEBOUND_02), which disposes it when evicted.
-    /// </summary>
     private readonly ViewportThumbnailLoader<MemePickerRow, Bitmap> _thumbs = new(
         (row, ct) => Task.Run(() => MemeThumbnailCache.AcquireAsync(row.Item.FullPath, row.Item.IsImage, ct), ct),
         (row, bitmap) => row.Thumbnail = bitmap,
@@ -184,6 +137,7 @@ public partial class MemePickerWindow : Window
     public MemePickerWindow()
     {
         InitializeComponent();
+        DialogFit.Apply(this, capFraction: 0.80, drag: true, sizeKey: "MemePickerSize");
         DataContext = Choice;
 
         var list = this.FindControl<ListBox>("MemeList");
@@ -247,11 +201,6 @@ public partial class MemePickerWindow : Window
         ApplyItems(items);
     }
 
-    /// <summary>
-    /// MEME_06 — fills the list. Download-action rows are filtered out: they are a main-screen
-    /// affordance, and picking one here would place a meme with no file behind it. MEMEPICK_04 — a meme
-    /// being EDITED whose file is gone keeps a "(file missing)" row, so its mode can still change.
-    /// </summary>
     private void ApplyItems(IEnumerable<MemeItem> items)
     {
         var real = items.Where(i => !i.IsDownloadAction && !string.IsNullOrWhiteSpace(i.FullPath)).ToList();
@@ -289,7 +238,6 @@ public partial class MemePickerWindow : Window
         }
     }
 
-    /// <summary>MEMEFAV_01 — ★ first, then the most recently used, then by name.</summary>
     private void SortRows()
     {
         _rows = _rows
@@ -322,7 +270,6 @@ public partial class MemePickerWindow : Window
         if (empty != null) empty.IsVisible = shown.Count == 0;
     }
 
-    /// <summary>MEMEPICK_02 — re-scan the meme folder; only the newest scan may write.</summary>
     private async Task RescanAsync()
     {
         int generation = Interlocked.Increment(ref _scanGeneration);
@@ -361,11 +308,6 @@ public partial class MemePickerWindow : Window
         finally { _downloading = false; }
     }
 
-    /// <summary>
-    /// MEMEMODE_01 / MEMETRIM_01 — a meme was chosen: show the cards and the preview, and read a
-    /// video's length (off the UI thread, newest selection wins) for the part controls and
-    /// "+X.X sec longer". Re-selecting the meme being edited keeps its chosen part.
-    /// </summary>
     private void OnMemeSelected(MemePickerRow? row)
     {
         var item = row?.Item;
@@ -396,7 +338,6 @@ public partial class MemePickerWindow : Window
         });
     }
 
-    /// <summary>MEMEPICK_03 — the preview is silent; this opens the meme in the computer's own player to hear it.</summary>
     private void OpenWithSound()
     {
         string? path = Choice.MemePath;
@@ -420,12 +361,6 @@ public partial class MemePickerWindow : Window
         status.IsVisible = true;
     }
 
-    /// <summary>
-    /// MEMEMODE_01 — shows the popup and returns the chosen meme with how it plays, or null for
-    /// cancel. <paramref name="existing"/> reopens it for a placed meme (MEMEPICK_04): that meme is
-    /// preselected, its properties loaded, and the result describes the change. A NEW meme starts from
-    /// the last choice used (MEMELAST_01).
-    /// </summary>
     public static async Task<MemePickResult?> PickAsync(Window owner, IEnumerable<MemeItem> items,
         bool portrait = false, Action<IReadOnlyList<MemeItem>>? onLatest = null,
         FreeVideoStudio.Core.Media.MemePlacement? existing = null)

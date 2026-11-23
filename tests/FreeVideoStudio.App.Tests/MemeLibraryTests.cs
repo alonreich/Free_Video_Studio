@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -8,17 +7,8 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>
-/// MEMEFOLDER_01/02, STARTERLIST_01, NOSPACE_01 — the meme library consolidation and the
-/// space-free folder names.
-/// </summary>
 public sealed class MemeLibraryTests
 {
-    /// <summary>
-    /// STARTERLIST_01 — the installer's staging list and the app's delivery list must name the
-    /// same files. They drifted once (the De Niro clip was split into Landscape/Portrait and both
-    /// lists kept the old name), which made staging refuse to build.
-    /// </summary>
     [Fact]
     public void StarterListsMatchTheStagingLists()
     {
@@ -34,18 +24,17 @@ public sealed class MemeLibraryTests
         Assert.Equal(staged, delivered);
     }
 
-    /// <summary>STARTERLIST_01 — every shipped starter meme exists in the repository's meme folder.</summary>
     [Fact]
     public void EveryStarterMemeExistsInTheRepository()
     {
-        string folder = Path.Combine(RepoRoot.Path, "meme");
-        if (!Directory.Exists(folder)) return;
+        string starterFolder = Path.Combine(RepoRoot.Path, "build", "starter_meme");
+        string fallbackFolder = Path.Combine(RepoRoot.Path, "meme");
+        if (!Directory.Exists(starterFolder) && !Directory.Exists(fallbackFolder)) return;
         string[] missing = MemeAssets.StarterFiles[MemeAssets.MemeCategoryFolder]
-            .Where(n => !File.Exists(Path.Combine(folder, n))).ToArray();
+            .Where(n => !File.Exists(Path.Combine(starterFolder, n)) && !File.Exists(Path.Combine(fallbackFolder, n))).ToArray();
         Assert.True(missing.Length == 0, "Missing starter memes: " + string.Join(", ", missing));
     }
 
-    /// <summary>MEMEFOLDER_01 — the per-kind repository folders are gone for good.</summary>
     [Fact]
     public void TheOldPerKindMemeFoldersAreGone()
     {
@@ -53,7 +42,6 @@ public sealed class MemeLibraryTests
         Assert.False(Directory.Exists(Path.Combine(RepoRoot.Path, "jpeg")), "jpeg\\ was merged into meme\\");
     }
 
-    /// <summary>NOSPACE_01 — no folder the app creates has a space in its own name.</summary>
     [Fact]
     public void AppFoldersHaveNoSpaces()
     {
@@ -72,7 +60,6 @@ public sealed class MemeLibraryTests
         }
     }
 
-    /// <summary>MEMEFOLDER_02 — files move, nothing is overwritten, empty old folders go away.</summary>
     [Fact]
     public void MoveFolderContentsMovesWithoutOverwriting()
     {
@@ -106,11 +93,10 @@ public sealed class MemeLibraryTests
         }
         finally
         {
-            try { Directory.Delete(root, true); } catch { /* best-effort temp cleanup */ }
+            try { Directory.Delete(root, true); } catch {  }
         }
     }
 
-    /// <summary>MEMECAT_01 — each category filters the single folder by extension.</summary>
     [Fact]
     public void CategoriesSplitTheSingleFolderByExtension()
     {

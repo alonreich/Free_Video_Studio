@@ -1,6 +1,5 @@
 ﻿namespace FreeVideoStudio.Core.Infrastructure;
 
-/// <summary>REBRAND_01 — copy legacy user data before any new state root is created.</summary>
 public static class AppDataPaths
 {
     internal static readonly string[] LegacyDirectoryNames = ReadLegacyNames();
@@ -8,13 +7,15 @@ public static class AppDataPaths
     private static readonly Lazy<string> RoamingDirectory = new(() => MigrateDirectory(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), LegacyDirectoryNames));
 
-    public static string AppDataDir => RoamingDirectory.Value;
+    public static string AppDataDir => DevelopmentEnvironment.ShareUserMedia
+        ? Path.Combine(DevelopmentEnvironment.TemporaryDataRoot, "roaming")
+        : DevelopmentEnvironment.DirectoryFor("roaming") ?? RoamingDirectory.Value;
 
     private static readonly Lazy<string> LocalDirectory = new(() => MigrateDirectory(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         [LegacyDirectoryNames[1], LegacyDirectoryNames[0]]));
 
-    public static string LocalCacheDir => LocalDirectory.Value;
+    public static string LocalCacheDir => DevelopmentEnvironment.DataRoot ?? LocalDirectory.Value;
 
     private static string[] ReadLegacyNames()
     {

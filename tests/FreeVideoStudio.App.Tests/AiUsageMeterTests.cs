@@ -5,7 +5,6 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-/// <summary>AIUSAGE_01 (docs/05 SYS-AISETTINGS §7.5) — per-task token counts and the allowance before → after.</summary>
 public sealed class AiUsageMeterTests
 {
     [Fact]

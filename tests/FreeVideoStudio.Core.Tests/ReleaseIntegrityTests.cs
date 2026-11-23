@@ -4,11 +4,6 @@ using Xunit;
 
 namespace FreeVideoStudio.Core.Tests;
 
-/// <summary>
-/// RELQA_01, RELRECORD_01/02, REVOKE_01 — the release quality gate, the release records and signer
-/// revocation (09 DIST-RELEASEGATE, DIST-RETENTION; 05 SYS-SIGNING). The git/GitHub calls around these
-/// pure decisions need a real repository and are verified by running Build.cmd (human only).
-/// </summary>
 public sealed class ReleaseIntegrityTests
 {
     private static readonly string[] Required = ["Fix sentinels", "Build + test (Windows)"];

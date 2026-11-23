@@ -2,15 +2,14 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
         x:Class="FreeVideoStudio.App.DeploymentProgressWindow"
         Title="Free Video Studio Setup"
-        MinWidth="560" MinHeight="360"
+        Width="560" Height="360" MinWidth="560" MinHeight="360"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaTitleBarHeightHint="0"
         Background="{DynamicResource AppSurfaceBrush}"
         Topmost="True"
         ShowInTaskbar="True"
         WindowStartupLocation="Manual"
-        CanResize="True">
-    <!-- ISSUE_01: window has no OS title bar; the background surface is the drag handle -->
+        CanResize="False">
     <Border Background="{DynamicResource AppSurfaceBrush}" CornerRadius="8" BorderBrush="{DynamicResource AppInfoBrush}" BorderThickness="2" Margin="8" Cursor="SizeAll" PointerPressed="OnRootPointerPressed">
         <Grid Margin="20" RowDefinitions="Auto,Auto,*,Auto,Auto,Auto">
             <TextBlock Name="TitleText"

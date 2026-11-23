@@ -9,11 +9,6 @@ using FreeVideoStudio.Core.Infrastructure;
 
 namespace FreeVideoStudio.App.Services;
 
-/// <summary>
-/// AIPROVIDER_01 (docs/05 SYS-AISETTINGS) — Google Gemini implementation of <see cref="IAiVisionProvider"/>.
-/// Wraps <see cref="GeminiClient"/> preserving all GEMINICLIENT_01 security and reliability invariants:
-/// key strictly in headers, classified errors, per-attempt timeout ≠ cancel, retry hints, and key redaction.
-/// </summary>
 public sealed class GeminiProvider : IAiVisionProvider
 {
     private readonly GeminiClient _client;
@@ -43,10 +38,11 @@ public sealed class GeminiProvider : IAiVisionProvider
         CancellationToken ct = default)
     {
         options ??= GeminiCallOptions.Tracking;
+        using var calibration = AiThinkingCalibration.Use(reasoning, ReferenceEquals(_client, GeminiClient.Shared));
         string configured = GeminiClient.ResolveModel(model);
         string geminiSchema = AiJsonSchema.ToGeminiDialect(jsonSchema);
 
-        string resolvedModel = AiVisionProviders.EffectiveModel(AiVendor.Google, configured);
+        string resolvedModel = AiVisionProviders.EffectiveModel(AiVendor.Google, configured, apiKey);
         try
         {
             return await GenerateWithFpsFallbackAsync(apiKey, resolvedModel, prompt, images, video, geminiSchema, reasoning, options, userLog, ct).ConfigureAwait(false);
@@ -57,6 +53,24 @@ public sealed class GeminiProvider : IAiVisionProvider
             if (live == null) throw;
             return await GenerateWithFpsFallbackAsync(apiKey, live, prompt, images, video, geminiSchema, reasoning, options, userLog, ct).ConfigureAwait(false);
         }
+        catch (GeminiException ex) when (ex.Kind == GeminiErrorKind.Overloaded && BusyFallbackModel(resolvedModel) is { } lighter)
+        {
+            string line = $"Google's '{resolvedModel}' is too busy right now — trying the lighter '{lighter}' once for this request.";
+            userLog?.Invoke(line);
+            CoreLogger.Info("AI", line);
+            return await GenerateWithFpsFallbackAsync(apiKey, lighter, prompt, images, video, geminiSchema, reasoning, options, userLog, ct).ConfigureAwait(false);
+        }
+    }
+
+    internal const string BusyFallbackTag = "AIBUSYFALLBACK_01";
+    internal static readonly string[] BusyFallbacks = { "gemini-3.6-flash", "gemini-3.5-flash-lite" };
+
+    internal static string? BusyFallbackModel(string current)
+    {
+        foreach (string m in BusyFallbacks)
+            if (!string.Equals(m, current?.Trim(), StringComparison.OrdinalIgnoreCase)
+                && !AiVisionProviders.IsRetiredModel(AiVendor.Google, m)) return m;
+        return null;
     }
 
     private async Task<string> GenerateWithFpsFallbackAsync(
@@ -64,16 +78,27 @@ public sealed class GeminiProvider : IAiVisionProvider
         string jsonSchema, AiReasoningConfig? reasoning, GeminiCallOptions options, Action<string>? userLog, CancellationToken ct)
     {
         double? temperature = options.Temperature ?? (GeminiClient.PrefersDefaultTemperature(model) ? null : 0);
-        byte[] requestBody = BuildGeminiRequestBody(prompt, images, video, jsonSchema, reasoning, includeVideoFps: true, temperature);
-        try
+        bool includeFps = true;
+        AiReasoningConfig? effectiveReasoning = AiReasoningPolicy.IsRejectedBy(AiVendor.Google, model) ? null : reasoning;
+        for (int pass = 0; ; pass++)
         {
-            return await _client.GenerateAsync(apiKey, model, requestBody, options, userLog, ct).ConfigureAwait(false);
-        }
-        catch (GeminiException ex) when (video != null && ex.Kind == GeminiErrorKind.BadRequest)
-        {
-            CoreLogger.Info("GEMINI", "Retrying generateContent without videoMetadata.fps...");
-            byte[] retryBody = BuildGeminiRequestBody(prompt, images, video, jsonSchema, reasoning, includeVideoFps: false, temperature);
-            return await _client.GenerateAsync(apiKey, model, retryBody, options, userLog, ct).ConfigureAwait(false);
+            byte[] requestBody = BuildGeminiRequestBody(prompt, images, video, jsonSchema, effectiveReasoning, includeFps, temperature, model);
+            try
+            {
+                return await _client.GenerateAsync(apiKey, model, requestBody, options, userLog, ct).ConfigureAwait(false);
+            }
+            catch (GeminiException ex) when (pass < 2 && effectiveReasoning != null && AiAnswerGuard.IsReasoningRejection(ex))
+            {
+                AiReasoningPolicy.MarkRejected(AiVendor.Google, model);
+                effectiveReasoning = null;
+                CoreLogger.Info("GEMINI", $"Model '{model}' refused the thinking setting; retrying with its default.");
+            }
+            catch (GeminiException ex) when (pass < 2 && video is { AllowFpsFallback: true } && includeFps && AiAnswerGuard.IsFpsRejection(ex))
+            {
+                userLog?.Invoke($"Google Gemini ({model}) rejected custom FPS metadata — retrying clip with default sampling…");
+                CoreLogger.Info("GEMINI", "Retrying generateContent without videoMetadata.fps...");
+                includeFps = false;
+            }
         }
     }
 
@@ -84,7 +109,8 @@ public sealed class GeminiProvider : IAiVisionProvider
         string jsonSchema,
         AiReasoningConfig? reasoning,
         bool includeVideoFps,
-        double? temperature = null)
+        double? temperature = null,
+        string? model = null)
     {
         int estimatedSize = 4096 + prompt.Length * 2;
         if (video != null) estimatedSize += video.Data.Length * 4 / 3 + 128;
@@ -144,6 +170,7 @@ public sealed class GeminiProvider : IAiVisionProvider
             w.WriteStartObject("generationConfig");
             if (temperature is double t) w.WriteNumber("temperature", Math.Clamp(t, 0, 2));
             w.WriteString("responseMimeType", "application/json");
+            if (video?.MediaResolution is { Length: > 0 } mediaResolution) w.WriteString("mediaResolution", mediaResolution);
 
             if (!string.IsNullOrWhiteSpace(jsonSchema))
             {
@@ -174,6 +201,13 @@ public sealed class GeminiProvider : IAiVisionProvider
                 {
                     w.WriteStartObject("thinkingConfig");
                     w.WriteNumber("thinkingBudget", 0);
+                    w.WriteEndObject();
+                }
+                else if (reasoning.Level == AiReasoningLevel.Low)
+                {
+                    w.WriteStartObject("thinkingConfig");
+                    if (GeminiClient.PrefersDefaultTemperature(model)) w.WriteString("thinkingLevel", "low");
+                    else w.WriteNumber("thinkingBudget", 512);
                     w.WriteEndObject();
                 }
             }
