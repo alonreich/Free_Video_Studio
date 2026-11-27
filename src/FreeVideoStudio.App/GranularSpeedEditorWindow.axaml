@@ -291,7 +291,7 @@
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="20">
                         <StackPanel Orientation="Vertical" Spacing="2" Margin="0,0,0,0" VerticalAlignment="Center">
                             <TextBlock Text="SPEED" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" />
-                            <controls:SpinningWheelSlider Name="PendingSpeedSlider" Value="10" Width="160" MinHeight="{DynamicResource AppButtonMinHeight}" HorizontalAlignment="Center" ToolTip.Tip="Precise speed for the active segment" />
+                            <controls:SpinningWheelSlider Name="PendingSpeedSlider" AutomationProperties.Name="Selected segment speed" Value="10" Width="160" MinHeight="{DynamicResource AppButtonMinHeight}" HorizontalAlignment="Center" ToolTip.Tip="Precise speed for the active segment" />
                             <TextBlock Name="PendingSpeedLabel" Text="1.1x" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,-2,0,0" />
                         </StackPanel>
                         <StackPanel Name="SpeedPresetsPanel" Classes="SpeedPresetRows" Orientation="Vertical" VerticalAlignment="Center" Margin="0,0,0,0">

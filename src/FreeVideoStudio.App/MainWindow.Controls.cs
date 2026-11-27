@@ -11,8 +11,6 @@ public partial class MainWindow
 {
     private ToggleSwitch? _cPortraitModeCheckbox;
     private ToggleSwitch? PortraitModeCheckboxCtl => _cPortraitModeCheckbox ??= this.FindControl<ToggleSwitch>("PortraitModeCheckbox");
-    private ComboBox? _cMemeComboBox;
-    private ComboBox? MemeComboBoxCtl => _cMemeComboBox ??= this.FindControl<ComboBox>("MemeComboBox");
     private FreeVideoStudio.App.Controls.PhaseOverlayControl? _cOverlayLayer;
     private FreeVideoStudio.App.Controls.PhaseOverlayControl? OverlayLayerCtl => _cOverlayLayer ??= this.FindControl<FreeVideoStudio.App.Controls.PhaseOverlayControl>("OverlayLayer");
     private Button? _cMarkStartButton;

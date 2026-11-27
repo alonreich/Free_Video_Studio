@@ -14,6 +14,19 @@ public static class AtomicJsonFile
 
     public static JsonObject? ReadObject(string path)
     {
+        try
+        {
+            return ReadObjectOrThrowOnAccess(path);
+        }
+        catch (Exception ex)
+        {
+            CoreLogger.Swallowed(ex);
+            return null;
+        }
+    }
+
+    public static JsonObject? ReadObjectOrThrowOnAccess(string path)
+    {
         if (!File.Exists(path)) return null;
 
         try
@@ -50,7 +63,7 @@ public static class AtomicJsonFile
             global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);
             return null;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not (IOException or UnauthorizedAccessException))
         {
             CoreLogger.Swallowed(ex);
             return null;

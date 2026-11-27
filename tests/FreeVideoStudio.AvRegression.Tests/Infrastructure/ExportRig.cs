@@ -65,7 +65,7 @@ internal static class ExportRig
             if (await Task.WhenAny(job, Task.Delay(TimeSpan.FromMinutes(4))) != job) throw new AvDefect("HANG: export did not finish within 4 minutes");
             await job;
         }
-        finally { CoreLogger.InfoAction = oldInfo; CoreLogger.FailAction = oldFail; await File.WriteAllLinesAsync(Path.Combine(work, "export.log"), logs); }
+        finally { CoreLogger.InfoAction = oldInfo; CoreLogger.FailAction = oldFail; FreeVideoStudio.Core.Infrastructure.BoundedLogFile.WriteLines(Path.Combine(work, "export.log"), logs); }
         if (!ok || !File.Exists(result))
         {
             string cause = logs.FirstOrDefault(l => l.Contains("exception", StringComparison.OrdinalIgnoreCase))

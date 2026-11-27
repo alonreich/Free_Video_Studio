@@ -17,7 +17,7 @@ public static class OutputFileNaming
     {
         string main = Sanitize(name, MainDefaultBaseName);
         int room = MaxBaseNameLength - MergerSuffix.Length;
-        if (main.Length > room) main = main[..room].TrimEnd('.', ' ', '-', '_');
+        if (main.Length > room) main = Clip(main, room).TrimEnd('.', ' ', '-', '_');
         return main + MergerSuffix;
     }
 
@@ -52,7 +52,7 @@ public static class OutputFileNaming
         }
 
         string cleaned = sb.ToString();
-        if (cleaned.Length > MaxBaseNameLength) cleaned = cleaned[..MaxBaseNameLength];
+        if (cleaned.Length > MaxBaseNameLength) cleaned = Clip(cleaned, MaxBaseNameLength);
         cleaned = cleaned.TrimEnd('.', ' ', '-', '_').TrimStart(' ', '.');
 
         if (cleaned.Length == 0 || cleaned.All(c => c == '_')) return fallback;
@@ -61,6 +61,13 @@ public static class OutputFileNaming
         if (ReservedDeviceNames.Any(r => string.Equals(r, stem, StringComparison.OrdinalIgnoreCase))) return fallback;
 
         return cleaned;
+    }
+
+    private static string Clip(string value, int maxLength)
+    {
+        if (value.Length <= maxLength) return value;
+        int end = char.IsHighSurrogate(value[maxLength - 1]) ? maxLength - 1 : maxLength;
+        return value[..end];
     }
 
     public static string NumberedFileName(string baseName, int index) =>

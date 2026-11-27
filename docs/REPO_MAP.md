@@ -11,6 +11,10 @@ Session lifecycle:    new video over unsaved edits -> three-way question (NEWVID
                       a new video starts clean: no captions, cuts or memes survive (NEWVIDEOCLEAN_01, tests NewVideoCleanTests.cs).
                       Spec: docs/05 SYS-RECOVERY, docs/06 NEWVIDEOGUARD_01, docs/08 COMP-ROOT.
 
+GPU preview texture lifetime: `MpvVideoView.cs` and `PreviewShutdownTests.cs` cover live texture rebuilds ([GPU presentation](04_UI_UX_AVALONIA_SPEC.md#UI-GPUPRESENT2)).
+
+Diagnostic logs: `src/FreeVideoStudio.Core/Infrastructure/BoundedLogFile.cs` handles runtime, build and test writes. `src/FreeVideoStudio.App/Infrastructure/MpvLogCap.cs` batches native player events. See [write limits and retention](05_SYSTEM_LIFECYCLE_STORAGE.md#SYS-LOGGING) (MPVLOGCAP_01, LOGCAP_02).
+
 ```text
 Solution:             .\FreeVideoStudio.sln
 Application project:  .\src\FreeVideoStudio.App\FreeVideoStudio.App.csproj
@@ -37,6 +41,7 @@ Test output:          .\logs\<Suite>_Results\ ONLY (console.log, <Suite>.trx, wo
                       Helpers: .\tests\TestArtifactDirectory.cs (C#), Enter-SuiteOutput in .\tests\TestHarness.ps1.
 All-suite runner:     .\tests\run-all-tests.cmd adds MediaPipelineChecks exports/decoder soak and DesktopPreviewSmoke.
 Desktop preview:      .\tests\DesktopPreviewSmoke (real WGL/D3D pixels, seek/resize/detach/shutdown;
+                      --speed-editor verifies paused and playing pixels with the main preview open, then verifies return to main playback;
                       --merger runs the actual VideoMergerWindow across three clips added during playback;
                       --silent-middle also covers a clip without audio). Requires an unobscured interactive Windows desktop.
                       Output: logs\DesktopPreview_Results, logs\MergerDesktop_Results, logs\MergerSilentDesktop_Results.
@@ -65,8 +70,10 @@ Comment removal:      .\developer_tools\CommentRemover\CommentRemover.csproj (fo
                       .\tests\FreeVideoStudio.App.Tests\FvsCommentsToolTests.cs)
 Developer helpers:    .\developer_tools\ holds EVERY developer-only tool (DEVTOOLS_01; there is no tools\ folder):
                       BuildLog.ps1, Manual_UnInstall.bat, Redundant_Code_Finder.py, SetConsoleFont.ps1,
-                      Pull_Code_files.py, AiBakeOff\, Find_and_Remove_Comments.cmd -> CommentRemover\, local_ai_pack\
-                      (developer-only; not shipped; no spec)
+                      Pull_Code_files.py, AiBakeOff\, Find_and_Remove_Comments.cmd -> CommentRemover\, local_ai_pack\,
+                      Sanitize.cmd -> Sanitize\ (Sanitize.ps1 + allowlist.txt around a git-ignored copy of
+                      ai-sanitize.exe; SANITIZE_01 docs/05 SYS-SETTINGSSCHEMA; also run by the release gate)
+                      (developer-only; not shipped; no spec unless named)
 Verification tool:    .\build\FvsVerify\FvsVerify.csproj; .\dev.cmd verify checks without launch cleanup (DEVVERIFY_01)
 Sentinel registry:     .\build\sentinels.txt
 AI source exporter:   .\developer_tools\Pull_Code_files.py (CODEEXPORT_01; docs/05 SYS-CODEEXPORT).
@@ -128,6 +135,13 @@ Project persistence:  ProjectSession.cs ordered background save/load queue;
                       tests\FreeVideoStudio.App.Tests\AutosaveBackgroundTests.cs (06 PROJECTIO_01).
                       tests\FreeVideoStudio.App.Tests\ProjectSafetyQaTests.cs (QAREG_01: save/open/undo/recovery regression
                       tests from the 2026-11-22 QA audit) + UiQaFixTests.cs (SHAREFAIL_01, ESCDIALOG_01, FONTMIN_01, MENUDEDUPE_01, OPENVIDEO_01).
+UI accessibility:     tests/FreeVideoStudio.App.Tests/UiAccessibilityAuditTests.cs checks dial automation, tour focus/keys and action names (04 UI-SAFEGUARDS / UI-COACH).
+Editor helpers:       src\FreeVideoStudio.App\Infrastructure\ZoomBoxSnap.cs (zoom-box centre guides/snap, 01 TL-ZOOM),
+                      src\FreeVideoStudio.App\Infrastructure\PreviewKeySeek.cs (arrow-key step, 04 UI-GRANULAR),
+                      src\FreeVideoStudio.App\Infrastructure\FinalLayoutPreview.cs + MainWindow.FinalLayout.cs (final-layout boxes, FINALLAYOUT_01),
+                      src\FreeVideoStudio.Core\Media\ShareCover.cs (92% chat-safe cover frame, SHARECOVER_01; tests in Core ShareCoverTests.cs);
+                      tests\FreeVideoStudio.App.Tests\OwnerRequestBatchTests.cs covers the zoom snap, arrow step, final layout, AI picker closer view,
+                      the Finished dialog VIDEO MERGER offer and the music wizard's merged preview.
 UI/UX audit tests:    tests\FreeVideoStudio.App.Tests\UxAuditTests.cs (04 EXPORTCLOSE_01, CROPSAVEERR_01, SEGROWTHEME_01/SEGROWA11Y_01).
                       tests\FreeVideoStudio.App.Tests\UiAuditFixTests.cs (04 THEMETOKENS_01, FONTTOKENS_01, CAPTIONEDIT_01, ERRPLAIN_01; 02 VOFAST_01).
                       Plain-English errors: src\FreeVideoStudio.App\Infrastructure\UserFacingError.cs (04 UI-SAFEGUARDS).
@@ -145,9 +159,9 @@ Output file names:    docs/03_FFMPEG_EXPORT_PIPELINE.md, FFM-OUTNAME (OUTNAME_01
 Settings › Files & Folders: ONE save folder + ONE file name for both tools (SETFOLDERONE_01,
                       SETNAMEONE_01; MainOutputBaseName), docs/04_UI_UX_AVALONIA_SPEC.md,
                       UI-SETTINGS-ABOUT (.\src\FreeVideoStudio.App\Controls\SettingsWindow.Output.cs)
-Meme library:         .\meme\ holds ALL memes (videos + pictures); .\mp4\ and .\jpeg\ are gone
+Meme library:         .\meme\ holds the cloud catalog of videos and pictures; the former .\mp4\ and .\jpeg\ folders are retired
                       (MEMEFOLDER_01). Cloud sync lists repo meme/ via git/trees (MEMESYNC_01..03);
-                      synthetic repo starter meme fixtures live in .\build\starter_meme\ (separate from user .\meme\)
+                      synthetic repo starter meme fixtures are staged from .\build\starter_meme\ to starter\meme
                       and match .\src\FreeVideoStudio.App\Infrastructure\MemeAssets.cs StarterFiles
                       == .\build\FvsBuild\Staging.cs StarterMeme (STARTERLIST_01, MemeLibraryTests).
                       Spec: docs/03_FFMPEG_EXPORT_PIPELINE.md, FFM-MEMELIB.
@@ -167,7 +181,6 @@ Add Music wizard:     .\src\FreeVideoStudio.App\MusicWizardWindow.axaml(.cs) + .
                       + .Guide.cs (gap warning overlay, first-time start-point demo, GAPWARN_01 / PARTDEMO_01)
 Background filmstrip: .\src\FreeVideoStudio.App\Services\WholeVideoFilmstrip.cs (whole-video quick + fine takes, WHOLESTRIP_01).
 Review timeline:      .\src\FreeVideoStudio.App\Controls\ReviewTimelineRuler.cs (Check & finish time ruler + song blocks).
-Dev player log cap:   .\src\FreeVideoStudio.App\Infrastructure\MpvLogCap.cs stops mpv_debug_*.log at 64 MB (MPVLOGCAP_01).
                       + .AiAutoFit.cs (cloud AI song auto-fit: AI picks a song by NUMBER, start point measured
                       locally from the song's loudness, visible steps + seconds counter + cancel, 45 s / 120 s
                       limits — AIMUSIC_HONEST_01 / AIMUSIC_START_01 / AIMUSIC_PROGRESS_01) + .Scan.cs (folder scan & probes) +
@@ -183,17 +196,21 @@ Dev player log cap:   .\src\FreeVideoStudio.App\Infrastructure\MpvLogCap.cs stop
 Window placement:     .\src\FreeVideoStudio.App\WindowPlacement.cs (maths), WindowBoundsHelper.cs (remembered windows),
                       Controls\DialogFit.cs (every dialog); defaults table 04 UI-WINPLACE (WINPLACE_01);
                       tests\FreeVideoStudio.App.Tests\WindowPlacementTests.cs.
-Meme picker:          .\src\FreeVideoStudio.App\Controls\MemePickerWindow.axaml(.cs) (MEMEPICK_01..05)
+Meme picker:          .\src\FreeVideoStudio.App\Controls\MemePickerWindow.axaml(.cs) (MEMEPICK_01..07, MEMEFLOW_01)
                       + Controls\MemePlacementPreview.cs (live preview, drag position) + ViewModels\MemeChoiceViewModel.cs
-                      + Infrastructure\MemePickerPrefsStore.cs (favourites, recent, last choice); docs/04 UI-MEMESELECT.
+                      + Infrastructure\MemePickerPrefsStore.cs (favourites, recent, separate mode defaults); docs/04 UI-MEMESELECT / UI-MEMEFLOW.
+                      + Controls\MemePartRange.cs (two trim handles), MemePickerContext.cs (pending landing/render contract),
+                      + Controls\MemePickerWindow.Preview.cs (embedded result rendered via existing export workers; owned temporary files),
+                      + VideoMergerWindow.MemePreview.cs (candidate merged EDL/music render). Tests: MemeWorkflowTests.cs (picker cancellation and cleanup), ProjectSafetyQaTests.cs (picker, editor history and project reload), MemeResultRenderTests.cs (real single and merged picture/audio).
+                      + ProjectSafetyQaTests.MemeExport.cs drives Main Add meme and Speed Editor Change through save/reopen, then checks full-screen and corner export durations, frame regions and audio tones.
 Memes (MEMEAUDIT_01): Core\Media\MemeTransitions.cs (full-screen cut/fade/zoom, corner fade/slide),
-                      GranularSpeedEditorWindow.Memes.cs / .MemeBands.cs (editor memes, corner drag, list, keys),
-                      MainWindow.Memes.cs (main-screen meme as a placement, markers, music question);
+                      GranularSpeedEditorWindow.Memes.cs / .MemeBands.cs (editor memes, corner drag, list, keys, selected thumbnail + Preview/Change/Remove),
+                      MainWindow.Memes.cs (ordinary placements from the main Add meme button, legacy markers, candidate payload);
                       MainWindow.QuickStart.cs (start screen: drop-card click, AI Kill Tracker switch, AI setup tip; docs/04 UI-AIEASE);
-                      tests: Core MemeAuditTests.cs, App MemeAuditAppTests.cs. Specs: docs/01 TL-MEME, docs/03 FFM-MEMECONCAT /
+                      tests: Core MemeAuditTests.cs, App MemeAuditAppTests.cs. Specs: docs/01 TL-MEME, docs/04 UI-MEMEFLOW (click/action guide + validation), docs/03 FFM-MEMECONCAT /
                       FFM-MEMECORNER / FFM-MEMEPREVIEW, docs/04 UI-MEMESELECT, docs/06 PROJ-SCHEMA (schema 7).
-Speed Editor desktop: tests/DesktopPreviewSmoke/SpeedEditorSmokeApp.cs (--speed-editor; real GPU preview of the Speed Editor: plays, closes, main plays after; PREVIEWSPEED_02).
-Freeze sound:         Core/Media/FreezeSoundEffect.cs + Core/Assets/FreezeSounds/*.wav (Church_Bell with ring-out, default; Cinematic_Dramatic_Slow-Down
+Speed Editor desktop: tests/DesktopPreviewSmoke/SpeedEditorSmokeApp.cs (--speed-editor; real GPU preview of the Speed Editor: startup pixels, live zoom move/resize, repeated play/pause, shutdown, main preview resumes; PREVIEWSPEED_02).
+Freeze sound:         Core/Media/FreezeSoundEffect.cs + Core/Assets/FreezeSounds/*.wav (Church_Bell with ring-out, default, plus Church_Bell_Mid / Church_Bell_Late; Cinematic_Dramatic_Slow-Down
                       spliced to the hold; picked in Settings › Sound & Music; one render for export and preview; music duck/carve/underwater,
                       FREEZESFX_05 / FREEZEMUSIC_01, docs/02 AUD-FREEZESFX; gate AV S44-S45);
                       Services/FreezeSoundPreview.cs plays it in the Speed Editor, the Voice-Over Studio live hold and the Settings Play button (FREEZESFX_02/05, FREEZEPARITY_01);

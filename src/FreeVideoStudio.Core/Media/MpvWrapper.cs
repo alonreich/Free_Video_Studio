@@ -11,6 +11,21 @@ public static partial class MpvWrapper
 
     [LibraryImport(LibraryName)]
     public static partial nint mpv_create();
+    [LibraryImport(LibraryName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int mpv_request_log_messages(nint ctx, string level);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeLogMessage
+    {
+        public nint Prefix;
+        public nint Level;
+        public nint Text;
+        public int LogLevel;
+    }
+    public static string ReadLogMessage(nint data)
+    {
+        var msg = Marshal.PtrToStructure<NativeLogMessage>(data);
+        return $"[{Marshal.PtrToStringUTF8(msg.Level)}][{Marshal.PtrToStringUTF8(msg.Prefix)}] {Marshal.PtrToStringUTF8(msg.Text)}";
+    }
 
     [LibraryImport(LibraryName)]
     public static partial int mpv_initialize(nint ctx);

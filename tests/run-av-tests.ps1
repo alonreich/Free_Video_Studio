@@ -3,6 +3,9 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'TestHarness.ps1')
 $root = Split-Path -Parent $PSScriptRoot
+if (-not ('FreeVideoStudio.Core.Infrastructure.BoundedLogFile' -as [type])) {
+    Add-Type -Path (Join-Path $root 'src/FreeVideoStudio.Core/Infrastructure/BoundedLogFile.cs')
+}
 $gateDir = Get-TestSuiteRoot $root 'Gate'
 $started = Get-Date
 $lease = $null
@@ -24,7 +27,7 @@ function Invoke-Suite([string]$name, [string]$project, [string]$filter, [string[
         '--logger', "trx;LogFileName=$name.trx", '--results-directory', $suiteDir)
     if ($filter) { $dargs += @('--filter', $filter) }
     $ErrorActionPreference = 'Continue'
-    & dotnet @dargs *>> $runLog
+    & dotnet @dargs 2>&1 | ForEach-Object { [FreeVideoStudio.Core.Infrastructure.BoundedLogFile]::Append($runLog, $_.ToString() + [Environment]::NewLine) }
     $code = $LASTEXITCODE
     $ErrorActionPreference = 'Stop'
     Read-TestResults $trx $name $code $required
@@ -32,7 +35,7 @@ function Invoke-Suite([string]$name, [string]$project, [string]$filter, [string[
 function Invoke-Check([string]$name, [string]$exe, [string[]]$arguments) {
     $runLog = Join-Path (Enter-Suite $name) 'console.log'
     $ErrorActionPreference = 'Continue'
-    & $exe @arguments *>> $runLog
+    & $exe @arguments 2>&1 | ForEach-Object { [FreeVideoStudio.Core.Infrastructure.BoundedLogFile]::Append($runLog, $_.ToString() + [Environment]::NewLine) }
     $code = $LASTEXITCODE
     $ErrorActionPreference = 'Stop'
     [pscustomobject]@{ Suite = $name; Name = $name; Outcome = $(if ($code -eq 0) { 'Passed' } else { 'Failed' });

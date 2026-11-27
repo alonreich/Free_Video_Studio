@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:CompileBindings="True"
         xmlns:local="clr-namespace:FreeVideoStudio.App"
         x:Class="FreeVideoStudio.App.VideoMergerWindow"
@@ -271,7 +271,7 @@
                                 <StackPanel Grid.Column="2" Orientation="Vertical" Spacing="2" VerticalAlignment="Center">
                                     <TextBlock Text="OUTPUT QUALITY" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" TextWrapping="Wrap"
                                                ToolTip.Tip="How good you want the finished video to look. Pick it once and leave it — the size it works out to is shown to its left." />
-                                    <controls:SpinningWheelSlider Name="QualitySlider" Value="19" HorizontalAlignment="Center" Width="160" MinHeight="44" Cursor="Hand" ToolTip.Tip="Slide left for a smaller file size, or right for higher video quality." />
+                                    <controls:SpinningWheelSlider Name="QualitySlider" AutomationProperties.Name="Video quality" Value="19" HorizontalAlignment="Center" Width="160" MinHeight="44" Cursor="Hand" ToolTip.Tip="Slide left for a smaller file size, or right for higher video quality." />
                                     <TextBlock Name="QualityLabel" Text="100% — Lossless" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Top" TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
 
@@ -280,7 +280,7 @@
                                 <Grid Grid.Column="6" VerticalAlignment="Center" ColumnDefinitions="Auto,8,Auto">
                                     <StackPanel Grid.Column="0" Orientation="Vertical" Spacing="2" VerticalAlignment="Center">
                                         <TextBlock Text="SPEED" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" TextWrapping="Wrap" />
-                                        <controls:SpinningWheelSlider Name="MainSpeedSlider" Value="10" HorizontalAlignment="Center" Width="160" MinHeight="44" Cursor="Hand" ToolTip.Tip="Slide left to make the video slow motion, or right to speed it up." />
+                                        <controls:SpinningWheelSlider Name="MainSpeedSlider" AutomationProperties.Name="Video speed" Value="10" HorizontalAlignment="Center" Width="160" MinHeight="44" Cursor="Hand" ToolTip.Tip="Slide left to make the video slow motion, or right to speed it up." />
                                         <TextBlock Name="MainSpeedLabel" Text="1.0x — Normal" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,2,0,0" VerticalAlignment="Top" TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
                                     <Grid Grid.Column="2" Name="MainSpeedPresetsPanel" RowDefinitions="Auto,8,Auto" ColumnDefinitions="Auto,8,Auto,8,Auto" VerticalAlignment="Center">

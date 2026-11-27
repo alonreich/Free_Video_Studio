@@ -601,7 +601,9 @@ public class MergerWorker : IDisposable
                     int introFrames = Math.Max(1, (int)Math.Round(thumbIntroSec * 60.0));
                     filters.Add($"[{thumbInputIndex}:v]trim=duration=0.3000,setpts=PTS-STARTPTS,select='eq(n\\,0)',{clipCanvasChains[ThumbnailClipIndex]}," +
                                 $"loop=loop={Math.Max(0, introFrames - 1)}:size=1:start=0,fps=60:round=near," +
-                                $"trim=duration={introF},setpts=PTS-STARTPTS[v_thumb_intro]");
+                                $"trim=duration={introF},setpts=PTS-STARTPTS[{(OutputRatio == TargetAspectRatio.Portrait9x16 ? "v_thumb_raw" : "v_thumb_intro")}]");
+                    if (OutputRatio == TargetAspectRatio.Portrait9x16)
+                        filters.Add(ShareCover.ShrinkFrames("[v_thumb_raw]", "[v_thumb_intro]", "mc"));
                     filters.Add($"{vOutputLabel}setsar=1[v_thumb_body]");
                     filters.Add("[v_thumb_intro][v_thumb_body]concat=n=2:v=1:a=0[v_with_thumb]");
                     vOutputLabel = "[v_with_thumb]";

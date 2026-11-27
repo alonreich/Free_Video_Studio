@@ -18,7 +18,7 @@ using Xunit;
 
 namespace FreeVideoStudio.App.Tests;
 
-public sealed class ProjectSafetyQaTests : IDisposable
+public sealed partial class ProjectSafetyQaTests : IDisposable
 {
     private readonly string _root;
     private readonly IDisposable _programData;
@@ -351,18 +351,73 @@ public sealed class ProjectSafetyQaTests : IDisposable
         return (session, vm);
     }
 
-    private async Task<Editor> EditorWithVideoAsync()
+    [AvaloniaTheory]
+    [InlineData(false, 12)]
+    [InlineData(true, 4)]
+    public async Task MainPickerEndPlacementSurvivesPreviewEditorHistoryAndProjectReload(bool corner, double expectedAnchor)
+    {
+        var editor = await EditorWithVideoAsync();
+        var owner = new Window();
+        try
+        {
+            MarkEndAt(editor, 12);
+            Call(editor.Window, "ApplyMainSpeedPreset", 2.0);
+            owner.Show();
+            var context = (MemePickerContext)Call(editor.Window, "CreateMainMemePickerContext")!;
+            var picture = new MemeItem { FileName = "reaction.png", FullPath = Path.Combine(_root, "reaction.png"), IsImage = true };
+            File.WriteAllBytes(picture.FullPath, Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"));
+            var picking = MemePickerWindow.PickAsync(owner, [picture], context: context);
+            var popup = Assert.IsType<MemePickerWindow>(Assert.Single(owner.OwnedWindows));
+            var gallery = popup.FindControl<ListBox>("MemeList")!;
+            Assert.Single(gallery.Items.OfType<MemeGalleryTiles>().SelectMany(line => line.Tiles)).SelectCommand.Execute(null);
+            (corner ? popup.Choice.CornerCommand : popup.Choice.FullScreenCommand).Execute(null);
+            popup.Choice.AtEndCommand.Execute(null);
+            var landing = context.Locate(popup.Choice);
+            Assert.True(landing.Ok, landing.Message);
+            Assert.Equal(expectedAnchor, landing.SourceSeconds, 4);
+            var add = popup.FindControl<Button>("UseBtn")!;
+            Assert.True(add.IsEnabled);
+            add.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            var pick = Assert.IsType<MemePickResult>(await picking.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.Equal(expectedAnchor, pick.AnchorSec);
+            Assert.Equal(4, pick.DurationSec);
+            var candidate = pick.ToPlacement(pick.AnchorSec!.Value, pick.DurationSec!.Value);
+            Assert.Equal(corner, candidate.IsCornerOverlay);
+            var preview = await context.ComposePreview!(candidate, CancellationToken.None);
+            Assert.Equal(candidate, Assert.Single(preview.MemePlacements!));
+            var export = await (Task<ExportPayload>)Call(editor.Window, "ComposeExportPayloadAsync", _root, null, 3, null, null)!;
+            Assert.Empty(export.MemePlacements ?? []);
+            var edit = new FreeVideoStudio.Core.Editing.GranularEditSession(editor.Video, 0, 12000, new FreeVideoStudio.Core.Editing.GranularHistoryParking());
+            var placed = edit.AddMeme(candidate);
+            edit.EndGesture();
+            Assert.Equal(placed, edit.RemoveSelectedMeme());
+            Assert.Empty(edit.Memes);
+            edit.Undo();
+            Assert.Equal(placed, Assert.Single(edit.Memes));
+            var document = new ProjectDocument { Source = new SourceClip { FilePath = editor.Video, DurationMs = 20000 }, TrimmedDurationMs = 12000, Memes = edit.Memes };
+            string path = Path.Combine(_root, "reaction.fvsproj");
+            var saved = ProjectStore.Save(document, path);
+            Assert.True(saved.Success, saved.Error);
+            Assert.Equal(placed, Assert.Single(ProjectStore.Load(path, out _, out _)!.Memes));
+        }
+        finally
+        {
+            owner.Close();
+            await SettleAsync(editor);
+        }
+    }
+    private async Task<Editor> EditorWithVideoAsync(string? video = null, double duration = 20)
     {
         AppServices.InitializeForTests(_paths, _clock, new NoActiveWindow(), _notifier, _faults, FileProjectStore.Instance, _picker);
         _servicesInstalled = true;
         VideoRenderMode.Initialize();
-        var window = new MainWindow();
+        var window = new MainWindow(_ => { });
         var ipc = new MpvIpcClient();
-        ipc.SetStateForTesting(0, 20, isPaused: true, isEof: false);
+        ipc.SetStateForTesting(0, duration, isPaused: true, isEof: false);
         var host = new MpvVideoView();
         host.SetIpcClientForTesting(ipc);
         window.SetActiveVideoHostForTesting(host);
-        string video = NewFile("clip.mp4");
+        video ??= NewFile("clip.mp4");
         await (Task)Call(window, "LoadVideoIntoEditorAsync", video, "uploaded")!;
         return new Editor(window, (MainViewModel)window.DataContext!, ipc, video);
     }

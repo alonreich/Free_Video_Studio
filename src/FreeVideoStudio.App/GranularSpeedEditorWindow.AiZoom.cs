@@ -1337,6 +1337,7 @@ public partial class GranularSpeedEditorWindow
                         }
                         if (picker.Choice == AiPickerChoice.Track && picker.SelectedSubject != null)
                         {
+                            (baseScale, minScale) = AdoptPickerZoomStrength(picker, baseScale, minScale);
                             target = picker.SelectedSubject;
                             int idx = Math.Clamp(target.FrameIndex, 1, 3);
                             referenceFrame = idx switch { 1 => discovery.F1, 3 => discovery.F3, _ => discovery.F2 };
@@ -2020,6 +2021,7 @@ public partial class GranularSpeedEditorWindow
                             return;
                         }
 
+                        (baseScale, minScale) = AdoptPickerZoomStrength(picker, baseScale, minScale);
                         var target = picker.SelectedSubject;
                         int idx = Math.Clamp(target.FrameIndex, 1, 3);
                         string refFrame = idx switch { 1 => disc.F1, 3 => disc.F3, _ => disc.F2 };
@@ -2238,5 +2240,14 @@ public partial class GranularSpeedEditorWindow
                 RuntimeLog.Swallowed(ex);
             }
         }
+    }
+
+    private static (double BaseScale, double MinScale) AdoptPickerZoomStrength(AiSubjectPickerWindow picker, double baseScale, double minScale)
+    {
+        double chosen = Math.Clamp(picker.ChosenZoomStrength, ViewModels.AiZoomTuning.MinStrength, ViewModels.AiZoomTuning.MaxStrength);
+        if (Math.Abs(chosen - baseScale) < 1e-6) return (baseScale, minScale);
+        Infrastructure.SettingsManager.Update(st => st.AiZoomBaseScale = chosen);
+        RuntimeLog.Info("AI", $"{AiSubjectPickerWindow.FocusViewTag}: zoom strength {baseScale:0.0} -> {chosen:0.0} chosen in the picker.");
+        return (chosen, ViewModels.AiZoomTuning.MinScaleFor(chosen));
     }
 }

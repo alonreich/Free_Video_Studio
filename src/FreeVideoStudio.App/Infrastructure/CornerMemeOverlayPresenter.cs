@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -347,7 +347,7 @@ public static class CornerMemeFrames
     public static int WindowIndexForTime(double memeTimeSec)
     {
         if (memeTimeSec <= 0) return 0;
-        double clamped = Math.Min(memeTimeSec, MaxSeconds - 0.001);
+        double clamped = double.IsFinite(memeTimeSec) ? memeTimeSec : 0;
         return (int)Math.Floor(clamped / WindowDurationSeconds);
     }
 

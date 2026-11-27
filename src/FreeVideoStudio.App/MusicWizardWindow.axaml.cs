@@ -1770,7 +1770,7 @@ public partial class MusicWizardWindow : Window
         StopPhase3FreezeSound();
 
         double sourceRelativeSec = MapPhase3OutputToSourceRelativeSeconds(outputRelativeSec);
-        double sourceAbsSec = (_trimStartMs / 1000.0) + sourceRelativeSec;
+        double sourceAbsSec = ClampToPhase3Player(wizardVideoHost.IpcClient, (_trimStartMs / 1000.0) + sourceRelativeSec);
         double speed = GetPhase3PreviewSpeedAtSourceRelativeSeconds(sourceRelativeSec);
 
         try
@@ -1787,6 +1787,9 @@ public partial class MusicWizardWindow : Window
         }
     }
 
+    private static double ClampToPhase3Player(FreeVideoStudio.Core.Media.MpvIpcClient client, double sec)
+        => client.Duration > 0.1 ? Math.Clamp(sec, 0, client.Duration - 0.05) : Math.Max(0, sec);
+
     private void SyncPhase3VideoPreviewClock()
     {
         if (_currentStep != 3 || !_isPreviewPlaying) return;
@@ -1796,7 +1799,7 @@ public partial class MusicWizardWindow : Window
 
         double outputRelativeSec = GetCurrentPhase3VideoRelativeSeconds();
         double sourceRelativeSec = MapPhase3OutputToSourceRelativeSeconds(outputRelativeSec);
-        double sourceAbsSec = (_trimStartMs / 1000.0) + sourceRelativeSec;
+        double sourceAbsSec = ClampToPhase3Player(wizardVideoHost.IpcClient, (_trimStartMs / 1000.0) + sourceRelativeSec);
         double speed = GetPhase3PreviewSpeedAtSourceRelativeSeconds(sourceRelativeSec);
 
         UpdatePhase3FreezeSound(outputRelativeSec);
@@ -2148,7 +2151,10 @@ public partial class MusicWizardWindow : Window
 
                 wizardVideoHost.IpcClient.SeekCompleted += OnPhase3SeekCompleted;
 
-                await wizardVideoHost.IpcClient.LoadFileAsync(_videoPath, _trimStartMs / 1000.0);
+                string previewUrl = Phase3PreviewUrl();
+                if (_isMergerMode)
+                    RuntimeLog.Info("MUSIC_WIZARD", $"{MergerPreviewTag}: preview plays all {_mergerVideos?.Count ?? 0} merged clip(s) on one clock.");
+                await wizardVideoHost.IpcClient.LoadFileAsync(previewUrl, _trimStartMs / 1000.0);
                 await wizardVideoHost.IpcClient.SetPropertyAsync("time-pos", (_trimStartMs / 1000.0).ToString(System.Globalization.CultureInfo.InvariantCulture));
                 await wizardVideoHost.IpcClient.SetPropertyAsync("pause", "yes");
                 RuntimeLog.Info("MUSIC_WIZARD", "Phase 3 MPV preview video loaded.");

@@ -7,6 +7,12 @@ using FreeVideoStudio.Core.Ipc;
 using FreeVideoStudio.Core.Media;
 using FreeVideoStudio.Testing;
 
+[DllImport("kernel32.dll")]
+static extern uint SetErrorMode(uint mode);
+
+const uint NoGpFaultErrorBox = 0x0002;
+if (OperatingSystem.IsWindows()) SetErrorMode(NoGpFaultErrorBox);
+
 if (args.Length == 5 && args[0] == "--libavframe-cold")
 {
     var coldFrameWatch = Stopwatch.StartNew();
@@ -770,7 +776,7 @@ await Check("GPU: complete Merger scales and joins multiple clips in VRAM", asyn
     var previous = CoreLogger.InfoAction;
     CoreLogger.InfoAction = (topic, message) => logs.Enqueue($"{topic}: {message}");
     try { await worker.RunAsync(); }
-    finally { CoreLogger.InfoAction = previous; File.WriteAllLines(Path.Combine(work, "gpu-merge.log"), logs); }
+    finally { CoreLogger.InfoAction = previous; FreeVideoStudio.Core.Infrastructure.BoundedLogFile.WriteLines(Path.Combine(work, "gpu-merge.log"), logs); }
     Require(success, worker.FailureDetail ?? output);
     Require(worker.UsedGpuVideoProcessing, "Merger fell back from its resident graph. See gpu-merge.log.");
     Require(await AudioRms(output) > 0.01, "GPU merge lost audio.");
@@ -1067,7 +1073,7 @@ await Check("A/V sync drift: cut and speed seams keep audio packets flush with v
     var previousSyncInfo = CoreLogger.InfoAction;
     CoreLogger.InfoAction = (topic, message) => syncLogs.Enqueue($"{topic}: {message}");
     try { await worker.RunAsync(); }
-    finally { CoreLogger.InfoAction = previousSyncInfo; File.WriteAllLines(Path.Combine(work, "sync.log"), syncLogs); }
+    finally { CoreLogger.InfoAction = previousSyncInfo; FreeVideoStudio.Core.Infrastructure.BoundedLogFile.WriteLines(Path.Combine(work, "sync.log"), syncLogs); }
     Require(success, worker.FailureDetail ?? output);
 
     var timeline = OutputTimeline.Create(10000, [new SpeedSegment(5000, 6000, 0.5)], 1.0, 0, null,
@@ -1343,7 +1349,7 @@ async Task<(string path, bool gpu, string description, ProcessWorker worker)> Ma
     {
         CoreLogger.InfoAction = previousInfo;
         CoreLogger.FailAction = previousFail;
-        File.WriteAllLines(Path.Combine(work, name + ".log"), logs);
+        FreeVideoStudio.Core.Infrastructure.BoundedLogFile.WriteLines(Path.Combine(work, name + ".log"), logs);
     }
     Require(success, worker.FailureDetail ?? output);
     return (output, worker.UsedGpuVideoProcessing, worker.LastVideoPipeline, worker);

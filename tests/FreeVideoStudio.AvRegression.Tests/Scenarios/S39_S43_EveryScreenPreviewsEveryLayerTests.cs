@@ -44,8 +44,14 @@ public sealed class S39_S43_EveryScreenPreviewsEveryLayerTests
         Av.True("Add Music is opened with the edit's voice-over, speed blocks, cuts and memes",
             Regex.IsMatch(wireup, @"new MusicWizardWindow\(\s*_loadedVideoPath,[^;]*BuildExportSpeedSegments\(\),\s*_voiceOverResult,\s*_cuts,\s*_memePlacements\)"));
         string layers = Src("MainWindow.PreviewAudio.cs");
-        Av.True("the layers handed to every screen carry music, keep-music and voice-over",
-            layers.Contains("new(_musicWizardResult, _keepMusicDuringMeme ?? false, _voiceOverResult)"));
+        Av.True("the layers handed to every screen carry music and voice-over",
+            layers.Contains("new(_musicWizardResult, _voiceOverResult)"));
+        foreach (string screen in new[] { "MainWindow.PreviewAudio.cs", "GranularSpeedEditorWindow.axaml.cs", "VoiceOverWindow.axaml.cs" })
+        {
+            string code = Src(screen);
+            Av.True($"{screen} takes the music-under-meme choice from each meme (MEMEMUSIC_03)",
+                code.Contains("AnyInlineKeepsMusic(") && code.Contains("MemeMusicPreview.ActiveMemeStopsMusic("));
+        }
 
         var rawSpeed = new Regex(@"SetProperty(Double)?Async\(\s*""speed""");
         foreach (string prefix in new[] { "MainWindow", "GranularSpeedEditorWindow" })
@@ -229,7 +235,7 @@ public sealed class S39_S43_EveryScreenPreviewsEveryLayerTests
         }
         p.Probe.Check($"{screen} picture while music and voice follow it", from, p.Probe.NowMs, speed: double.NaN);
         string file = Path.Combine(work, $"follow-{screen}.txt");
-        File.WriteAllLines(file, trace.Concat(voice.Log));
+        FreeVideoStudio.Core.Infrastructure.BoundedLogFile.WriteLines(file, trace.Concat(voice.Log));
         return new FollowResult(bed.Follower.Starts, bed.Follower.Corrections, WorstSmoothed(errs), worstJump, voice.Seeks, voice.Starts, samples, ExportRig.Rel(file));
     }
 
@@ -333,7 +339,7 @@ public sealed class S39_S43_EveryScreenPreviewsEveryLayerTests
             await Task.Delay(50);
         }
         string file = Path.Combine(work, "meme-follow.txt");
-        File.WriteAllLines(file, trace.Concat(voice.Log));
+        FreeVideoStudio.Core.Infrastructure.BoundedLogFile.WriteLines(file, trace.Concat(voice.Log));
         string where = ExportRig.Rel(file);
         Av.True($"{screen}: the full-screen meme played", sawMeme && !double.IsNaN(returnedAt), "the cutaway never happened / never returned");
         Av.True($"{screen}: VOICE-OVER pauses under a full-screen meme (the export places it after the meme)", !voiceUnderMeme, where);

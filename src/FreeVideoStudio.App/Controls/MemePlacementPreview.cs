@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
@@ -21,7 +21,7 @@ public sealed class MemePlacementPreview : Canvas
     public static readonly StyledProperty<bool> IsCornerProperty =
         AvaloniaProperty.Register<MemePlacementPreview, bool>(nameof(IsCorner));
     public static readonly StyledProperty<MemeOverlayCorner> CornerProperty =
-        AvaloniaProperty.Register<MemePlacementPreview, MemeOverlayCorner>(nameof(Corner), MemeOverlayCorner.BottomRight);
+        AvaloniaProperty.Register<MemePlacementPreview, MemeOverlayCorner>(nameof(Corner), MemeOverlayCorner.BottomRight, defaultBindingMode: BindingMode.TwoWay);
     public static readonly StyledProperty<MemeOverlaySize> SizeProperty =
         AvaloniaProperty.Register<MemePlacementPreview, MemeOverlaySize>(nameof(Size), MemeOverlaySize.Medium);
     public static readonly StyledProperty<double> PosXProperty =
@@ -59,6 +59,7 @@ public sealed class MemePlacementPreview : Canvas
         VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
     };
     private readonly Image _image = new() { Stretch = Stretch.Fill, Cursor = new Cursor(StandardCursorType.SizeAll) };
+    private readonly Cursor _hand = new(StandardCursorType.Hand);
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1.0 / Fps) };
     private OwnedLruCache<CornerMemeFrameWindow>.Lease? _lease;
     private double _t;
@@ -81,6 +82,26 @@ public sealed class MemePlacementPreview : Canvas
         _image.PointerReleased += (_, e) => EndDrag(e.Pointer);
         _image.PointerCaptureLost += (_, e) => EndDrag(e.Pointer);
         ToolTip.SetTip(_image, "Corner mode: drag the meme to place it anywhere.");
+        _frame.PointerPressed += OnFramePressed;
+    }
+
+    public static MemeOverlayCorner CornerAt(double x, double y, double width, double height) =>
+        (x >= width / 2, y >= height / 2) switch
+        {
+            (false, false) => MemeOverlayCorner.TopLeft,
+            (true, false) => MemeOverlayCorner.TopRight,
+            (false, true) => MemeOverlayCorner.BottomLeft,
+            _ => MemeOverlayCorner.BottomRight,
+        };
+
+    private void OnFramePressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!IsCorner || !e.GetCurrentPoint(_frame).Properties.IsLeftButtonPressed) return;
+        var p = e.GetPosition(_frame);
+        SetCurrentValue(PosXProperty, -1.0);
+        SetCurrentValue(PosYProperty, -1.0);
+        SetCurrentValue(CornerProperty, CornerAt(p.X, p.Y, _frame.Bounds.Width, _frame.Bounds.Height));
+        e.Handled = true;
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -122,7 +143,7 @@ public sealed class MemePlacementPreview : Canvas
     }
 
     private double LoopLength => Math.Clamp(LengthSec > 0.05 ? LengthSec : MemePlacement.StillImageDurationSec, 0.1,
-        Math.Max(0.1, CornerMemeFrames.MaxSeconds - Math.Max(0, ClipInSec)));
+        CornerMemeFrames.MaxSeconds);
 
     private void Advance()
     {
@@ -176,6 +197,7 @@ public sealed class MemePlacementPreview : Canvas
         SetLeft(_frame, _frameRect.X); SetTop(_frame, _frameRect.Y);
 
         var bmp = CurrentFrame();
+        _frame.Cursor = IsCorner ? _hand : null;
         if (bmp == null) { _image.IsVisible = false; return; }
         int mw = bmp.PixelSize.Width, mh = bmp.PixelSize.Height;
 

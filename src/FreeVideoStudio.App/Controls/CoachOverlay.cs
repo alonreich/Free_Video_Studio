@@ -50,6 +50,7 @@ public static class CoachOverlay
         public TextBlock StepCounter, TitleText, BodyText;
         public Button BackBtn, NextBtn, SkipBtn;
         public EventHandler<KeyEventArgs>? KeyHandler;
+        public IInputElement? PreviousFocus;
 
         public Session(Panel root, Grid overlay, Border fullDim, Border dimTop, Border dimLeft,
                        Border dimRight, Border dimBottom, Border highlight, Border card,
@@ -152,6 +153,7 @@ public static class CoachOverlay
         if (Active.TryGetValue(window, out Session? running) && running != null) return;
 
         Session s = BuildSession(window, root, screenKey, steps);
+        s.PreviousFocus = window.FocusManager?.GetFocusedElement();
 
         CoverWholeHost(root, s.Overlay);
         root.Children.Add(s.Overlay);
@@ -161,7 +163,19 @@ public static class CoachOverlay
         s.KeyHandler = (_, e) =>
         {
             if (e.Key == Key.Escape) { Finish(window, markSeen: true); e.Handled = true; }
-            else if (e.Key is Key.Enter or Key.Space or Key.Right) { Advance(window, +1); e.Handled = true; }
+            else if (e.Key == Key.Tab)
+            {
+                var buttons = new List<Button>();
+                if (s.SkipBtn.IsVisible) buttons.Add(s.SkipBtn);
+                if (s.BackBtn.IsVisible) buttons.Add(s.BackBtn);
+                buttons.Add(s.NextBtn);
+                int current = buttons.FindIndex(b => b.IsFocused);
+                int direction = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? -1 : 1;
+                int next = current < 0 ? (direction > 0 ? 0 : buttons.Count - 1) : (current + direction + buttons.Count) % buttons.Count;
+                buttons[next].Focus(NavigationMethod.Tab);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Right) { Advance(window, +1); e.Handled = true; }
             else if (e.Key == Key.Left) { Advance(window, -1); e.Handled = true; }
         };
         window.AddHandler(InputElement.KeyDownEvent, s.KeyHandler, Avalonia.Interactivity.RoutingStrategies.Tunnel);
@@ -171,6 +185,7 @@ public static class CoachOverlay
         s.Timer.Start();
 
         ApplyStep(window, s);
+        s.NextBtn.Focus(NavigationMethod.Tab);
         SafeLog($"Walkthrough started for '{screenKey}' ({(isAutomatic ? "automatic" : "replay")}), {steps.Count} step(s).");
     }
 
@@ -328,12 +343,15 @@ public static class CoachOverlay
         if (s.Index >= s.Steps.Count) { Finish(window, markSeen: true); return; }
 
         CoachStep step = s.Steps[s.Index];
+        bool moveFocus = (s.BackBtn.IsFocused && s.Index == 0) || (s.SkipBtn.IsFocused && s.Index == s.Steps.Count - 1);
         s.StepCounter.Text = $"STEP {s.Index + 1} OF {s.Steps.Count}";
         s.TitleText.Text = step.Title;
         s.BodyText.Text = step.Body;
         s.BackBtn.IsVisible = s.Index > 0;
         s.NextBtn.Content = s.Index == s.Steps.Count - 1 ? "GOT IT" : "NEXT";
         s.SkipBtn.IsVisible = s.Index < s.Steps.Count - 1;
+        if (moveFocus)
+            s.NextBtn.Focus(NavigationMethod.Tab);
         s.Phase = 0;
     }
 
@@ -566,6 +584,7 @@ public static class CoachOverlay
             }
 
             s.Root.Children.Remove(s.Overlay);
+            s.PreviousFocus?.Focus(NavigationMethod.Tab);
 
             if (markSeen && !string.IsNullOrWhiteSpace(s.ScreenKey))
                 UiStateStore.WriteInt(CounterFile(s.ScreenKey), int.MaxValue / 2);

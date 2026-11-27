@@ -7,7 +7,9 @@ namespace FreeVideoStudio.Core.Media;
 public enum FreezeSound
 {
     Church_Bell,
-    Cinematic_Dramatic_Slow_Down
+    Cinematic_Dramatic_Slow_Down,
+    Church_Bell_Mid,
+    Church_Bell_Late
 }
 
 public static class FreezeSoundEffect
@@ -26,7 +28,7 @@ public static class FreezeSoundEffect
 
     public const double EndFadeMaxSec = 0.03;
 
-    public const int AssetVersion = 1;
+    public const int AssetVersion = 2;
 
     public const double LevelBelowVideo = 0.83;
 
@@ -36,7 +38,11 @@ public static class FreezeSoundEffect
 
     public const double MaxGainDb = 6.0;
 
-    public const double ChurchBellLufs = -16.0;
+    public const double ChurchBellLufs = -15.3;
+
+    public const double ChurchBellMidLufs = -15.7;
+
+    public const double ChurchBellLateLufs = -16.6;
 
     public const double CinematicDramaticSlowDownLufs = -17.3;
 
@@ -57,6 +63,8 @@ public static class FreezeSoundEffect
     public static readonly IReadOnlyList<(FreezeSound Sound, string Name, string Label)> Choices =
     [
         (FreezeSound.Church_Bell, "Church_Bell", "Church Bell"),
+        (FreezeSound.Church_Bell_Mid, "Church_Bell_Mid", "Church Bell (Mid Start)"),
+        (FreezeSound.Church_Bell_Late, "Church_Bell_Late", "Church Bell (Late Start)"),
         (FreezeSound.Cinematic_Dramatic_Slow_Down, "Cinematic_Dramatic_Slow-Down", "Cinematic Dramatic Slow-Down"),
     ];
 
@@ -94,8 +102,16 @@ public static class FreezeSoundEffect
 
     public static string LabelOf(FreezeSound sound) => Choices.First(c => c.Sound == sound).Label;
 
-    public static double ReferenceLufs(FreezeSound sound) =>
-        sound == FreezeSound.Church_Bell ? ChurchBellLufs : CinematicDramaticSlowDownLufs;
+    public static bool IsBell(FreezeSound sound) =>
+        sound is FreezeSound.Church_Bell or FreezeSound.Church_Bell_Mid or FreezeSound.Church_Bell_Late;
+
+    public static double ReferenceLufs(FreezeSound sound) => sound switch
+    {
+        FreezeSound.Church_Bell_Mid => ChurchBellMidLufs,
+        FreezeSound.Church_Bell_Late => ChurchBellLateLufs,
+        FreezeSound.Cinematic_Dramatic_Slow_Down => CinematicDramaticSlowDownLufs,
+        _ => ChurchBellLufs,
+    };
 
     public static double GainDbFor(double? videoLufs, FreezeSound? sound = null)
     {
@@ -105,11 +121,13 @@ public static class FreezeSoundEffect
         return Math.Round(Math.Clamp(target - ReferenceLufs(s), MinGainDb, MaxGainDb), 1);
     }
 
-    public static double TailSec(FreezeSound sound) => sound == FreezeSound.Church_Bell ? BellRingOutSec : 0;
+    public static double TailSec(FreezeSound sound) => IsBell(sound) ? BellRingOutSec : 0;
 
     private static string ResourceName(FreezeSound sound) => sound switch
     {
         FreezeSound.Cinematic_Dramatic_Slow_Down => "FreezeSound.Cinematic_Dramatic_Slow-Down.wav",
+        FreezeSound.Church_Bell_Mid => "FreezeSound.Church_Bell_Mid.wav",
+        FreezeSound.Church_Bell_Late => "FreezeSound.Church_Bell_Late.wav",
         _ => "FreezeSound.Church_Bell.wav",
     };
 
@@ -169,7 +187,7 @@ public static class FreezeSoundEffect
                 float k = (float)Math.Pow(10, g / 20.0);
                 src = src.Select(v => v * k).ToArray();
             }
-            return s == FreezeSound.Church_Bell ? RingOut(src, d) : Splice(src, d);
+            return IsBell(s) ? RingOut(src, d) : Splice(src, d);
         });
     }
 
@@ -252,7 +270,7 @@ public static class FreezeSoundEffect
         float[] samples = Render(durationSec, s, gainDb);
         int gainTenths = (int)Math.Round(Math.Clamp(double.IsFinite(gainDb) ? gainDb : 0, MinGainDb, MaxGainDb) * 10);
         string dir = CacheDirectoryProvider();
-        string path = Path.Combine(dir, $"freeze_{NameOf(s)}_v{AssetVersion}_{samples.Length}_g{gainTenths}.wav");
+        string path = Path.Combine(dir, FormattableString.Invariant($"freeze_{NameOf(s)}_v{AssetVersion}_{samples.Length}_g{gainTenths}.wav"));
         lock (FileLock)
         {
             if (File.Exists(path) && new FileInfo(path).Length == 46 + samples.Length * 4L) return path;

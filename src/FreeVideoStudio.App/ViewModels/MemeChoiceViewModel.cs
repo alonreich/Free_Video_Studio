@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.Windows.Input;
 using FreeVideoStudio.Core.Media;
@@ -25,6 +25,11 @@ public sealed class MemeChoiceViewModel : ViewModelBase
     private bool _fileMissing;
     private bool _isPlaying = true;
 
+    protected override void OnPropertyChanged(string? propertyName = null)
+    {
+        base.OnPropertyChanged(propertyName);
+        if (propertyName is nameof(Mode) or nameof(PlaySound) or nameof(LengthSec) or nameof(IsVideo)) base.OnPropertyChanged(nameof(Summary));
+    }
     public MemeChoiceViewModel()
     {
         FullScreenCommand = new RelayCommand(() => Mode = MemePresentationMode.InlineFullScreen);
@@ -44,10 +49,19 @@ public sealed class MemeChoiceViewModel : ViewModelBase
         TransZoomCommand = new RelayCommand(() => Transition = MemeTransition.Zoom);
         ResetPartCommand = new RelayCommand(ResetPart);
         TogglePlayCommand = new RelayCommand(() => IsPlaying = !IsPlaying);
+        DownloadCommand = new RelayCommand(() => DownloadRequested?.Invoke());
+        ToggleMusicCommand = new RelayCommand(() => MusicContinues = !MusicContinues);
+        MusicContinueCommand = new RelayCommand(() => MusicContinues = true);
+        MusicStopCommand = new RelayCommand(() => MusicContinues = false);
+        AtStartCommand = new RelayCommand(() => Placement = MemePlacementPoint.Start);
+        AtEndCommand = new RelayCommand(() => Placement = MemePlacementPoint.End);
+        AtHereCommand = new RelayCommand(() => Placement = MemePlacementPoint.Here);
     }
 
     public void LoadFrom(MemePlacement existing)
     {
+        IsEditing = true;
+        MusicContinues = existing.MusicKeepsPlaying;
         Mode = existing.Mode;
         Corner = existing.Corner;
         Size = existing.Size;
@@ -76,6 +90,11 @@ public sealed class MemeChoiceViewModel : ViewModelBase
     {
         MemePath = path;
         _isImage = isImage;
+        if (isImage) IsPlaying = true;
+        if (!keepPart)
+            MusicContinues = path != null
+                ? Infrastructure.MemePickerPrefsStore.MusicContinuesFor(path)
+                : isImage;
         _fileDurationSec = isImage ? null : fileDurationSec;
         if (!keepPart)
         {
@@ -139,6 +158,10 @@ public sealed class MemeChoiceViewModel : ViewModelBase
         OnPropertyChanged(nameof(PartText));
         OnPropertyChanged(nameof(ClipInSeconds));
         OnPropertyChanged(nameof(LengthSeconds));
+        OnPropertyChanged(nameof(MoreOptionsHeader));
+        OnPropertyChanged(nameof(Summary));
+        OnPropertyChanged(nameof(FileDuration));
+        OnPropertyChanged(nameof(PartEnd));
     }
 
     public MemePresentationMode Mode
@@ -147,8 +170,12 @@ public sealed class MemeChoiceViewModel : ViewModelBase
         set
         {
             if (!SetProperty(ref _mode, value)) return;
+            if (!IsEditing) LoadModeDefaults();
             OnPropertyChanged(nameof(IsFullScreen));
             OnPropertyChanged(nameof(IsCorner));
+            OnPropertyChanged(nameof(MoreOptionsHeader));
+            OnPropertyChanged(nameof(ShowMusicChoice));
+            OnPropertyChanged(nameof(EndPlacementText));
             ModeChanged?.Invoke();
         }
     }
@@ -193,6 +220,7 @@ public sealed class MemeChoiceViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsAnimNone));
             OnPropertyChanged(nameof(IsAnimFade));
             OnPropertyChanged(nameof(IsAnimSlide));
+            OnPropertyChanged(nameof(MoreOptionsHeader));
         }
     }
 
@@ -205,6 +233,7 @@ public sealed class MemeChoiceViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsTransCut));
             OnPropertyChanged(nameof(IsTransFade));
             OnPropertyChanged(nameof(IsTransZoom));
+            OnPropertyChanged(nameof(MoreOptionsHeader));
         }
     }
 
@@ -244,9 +273,16 @@ public sealed class MemeChoiceViewModel : ViewModelBase
         OnPropertyChanged(nameof(PositionText));
     }
 
-    public string PositionText => HasCustomPosition
-        ? "Own position — drag the meme in the preview, or press a corner to snap back"
-        : "Tip: drag the meme in the preview to place it anywhere";
+    private bool _isResultPreview;
+    public bool IsResultPreview
+    {
+        get => _isResultPreview;
+        set { if (SetProperty(ref _isResultPreview, value)) OnPropertyChanged(nameof(PositionText)); }
+    }
+    public string PositionText => IsResultPreview ? "Click the preview to adjust the meme's position."
+        : HasCustomPosition
+        ? "Own position — click a corner of the preview to snap it back"
+        : "Click a corner of the preview to move the meme there, or drag it anywhere";
 
     public bool HasMeme { get => _hasMeme; set => SetProperty(ref _hasMeme, value); }
 
@@ -331,6 +367,103 @@ public sealed class MemeChoiceViewModel : ViewModelBase
 
     public string FullScreenLengthText => FormatLonger(_durationSec);
 
+    private bool _isEditing;
+    public bool IsEditing
+    {
+        get => _isEditing;
+        private set { if (SetProperty(ref _isEditing, value)) OnPropertyChanged(nameof(AddButtonText)); }
+    }
+
+    public string AddButtonText => _isEditing ? "SAVE" : "ADD";
+
+    public string MoreOptionsHeader =>
+        $"More options  ·  {(_lengthSec > 0 ? _lengthSec.ToString("0.0", CultureInfo.InvariantCulture) + " s" : "whole meme")}  ·  {EffectLabel}";
+
+    private string EffectLabel => IsFullScreen
+        ? _transition switch { MemeTransition.Fade => "Fade", MemeTransition.Zoom => "Zoom punch", _ => "Cut" }
+        : _animation switch { MemeOverlayAnimation.Fade => "Fade", MemeOverlayAnimation.Slide => "Slide", _ => "Pop" };
+
+    public event Action? DownloadRequested;
+
+    private bool _musicContinues;
+    public bool MusicContinues
+    {
+        get => _musicContinues;
+        set
+        {
+            if (!SetProperty(ref _musicContinues, value)) return;
+            OnPropertyChanged(nameof(MusicText));
+            OnPropertyChanged(nameof(MusicStops));
+        }
+    }
+
+    public bool MusicStops => !_musicContinues;
+
+    public string MusicText => _musicContinues ? "🎵 Music continues to play" : "🔇 Music stops!";
+
+    public bool ShowMusicChoice => IsFullScreen;
+
+    private bool _isMainScreen;
+    public bool IsMainScreen
+    {
+        get => _isMainScreen;
+        set
+        {
+            if (!SetProperty(ref _isMainScreen, value)) return;
+
+            OnPropertyChanged(nameof(ShowModeCards));
+        }
+    }
+
+    public bool ShowModeCards => true;
+
+    private MemePlacementPoint _placement = MemePlacementPoint.Here;
+    public MemePlacementPoint Placement
+    {
+        get => _placement;
+        set
+        {
+            if (!SetProperty(ref _placement, value)) return;
+            OnPropertyChanged(nameof(IsAtStart));
+            OnPropertyChanged(nameof(IsAtEnd));
+            OnPropertyChanged(nameof(IsAtHere));
+        }
+    }
+    public bool IsAtStart { get => Placement == MemePlacementPoint.Start; set => Placement = value ? MemePlacementPoint.Start : MemePlacementPoint.End; }
+    public string EndPlacementText => IsCorner ? "Ends with video" : "After the video";
+    public bool IsAtEnd => Placement == MemePlacementPoint.End;
+    public bool IsAtHere => Placement == MemePlacementPoint.Here;
+    public string LandingText { get => _landingText; set => SetProperty(ref _landingText, value); }
+    private string _landingText = "";
+    public string Summary => $"{(IsCorner ? "Corner" : "Full screen")} · {LengthSeconds:0.0} seconds · Sound {(PlaySound && IsVideo ? "on" : "off")}";
+    public double FileDuration => _fileDurationSec ?? 0;
+    public double PartEnd
+    {
+        get => ClipInSeconds + LengthSeconds;
+        set
+        {
+            _lengthSec = (decimal)Math.Max(0.1, value - ClipInSeconds);
+            ClampPart();
+            OnPartChanged();
+        }
+    }
+    public void SetPartStart(double start)
+    {
+        double end = PartEnd;
+        _clipInSec = (decimal)Math.Clamp(start, 0, Math.Max(0, end - (double)MinLengthSec));
+        _lengthSec = (decimal)(end - ClipInSeconds);
+        ClampPart();
+        OnPartChanged();
+    }
+    private void LoadModeDefaults()
+    {
+        var last = Infrastructure.MemePickerPrefsStore.ForMode(_mode);
+        Corner = last?.Corner ?? MemeOverlayCorner.BottomRight;
+        Size = last?.Size ?? MemeOverlaySize.Medium;
+        PlaySound = last?.PlaySound ?? true;
+        Animation = last?.Animation ?? MemeOverlayAnimation.None;
+        Transition = last?.Transition ?? MemeTransition.Cut;
+    }
     public static string FormatLonger(double? seconds) => seconds is double d && d > 0
         ? $"Video becomes +{d.ToString("0.0", CultureInfo.InvariantCulture)} sec longer"
         : "Video becomes longer by the meme's length";
@@ -352,12 +485,20 @@ public sealed class MemeChoiceViewModel : ViewModelBase
     public ICommand TransZoomCommand { get; }
     public ICommand ResetPartCommand { get; }
     public ICommand TogglePlayCommand { get; }
+    public ICommand DownloadCommand { get; }
+    public ICommand ToggleMusicCommand { get; }
+    public ICommand MusicContinueCommand { get; }
+    public ICommand MusicStopCommand { get; }
+    public ICommand AtStartCommand { get; }
+    public ICommand AtEndCommand { get; }
+    public ICommand AtHereCommand { get; }
 
     public MemePlacement ApplyTo(MemePlacement placement) =>
         placement with
         {
             Mode = _mode, Corner = _corner, Size = _size, PlaySound = _playSound,
             PosX = _posX, PosY = _posY, Animation = _animation, Transition = _transition,
+            MusicContinues = _musicContinues,
             ClipInSec = _isImage ? 0 : (double)_clipInSec,
             DurationSec = _lengthSec > 0 ? (double)_lengthSec : placement.DurationSec,
         };
@@ -365,3 +506,5 @@ public sealed class MemeChoiceViewModel : ViewModelBase
     public Infrastructure.MemePickerPrefsStore.LastChoice ToLastChoice() =>
         new(_mode, _corner, _size, _playSound, _animation, _transition);
 }
+
+public enum MemePlacementPoint { Start, Here, End }

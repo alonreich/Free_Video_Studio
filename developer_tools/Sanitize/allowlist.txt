@@ -1,0 +1,7 @@
+value=alon.reich@gmail.com
+value=/home/claude
+category=Public IP address;path=developer_tools/generate_proof.py
+category=Public IP address;path=dev_log_snapshot.txt
+category=File too large to scan;path=binaries/*
+path=logs/Python_Results/work/*
+value=fixture-value-9;path=tests/DeveloperTools.Tests/*

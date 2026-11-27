@@ -39,6 +39,8 @@
   <ItemGroup>
     <EmbeddedResource Include="Infrastructure\LegacyAppDataNames.txt" LogicalName="LegacyAppDataNames.txt" />
     <EmbeddedResource Include="Assets\FreezeSounds\Church_Bell.wav" LogicalName="FreezeSound.Church_Bell.wav" />
+    <EmbeddedResource Include="Assets\FreezeSounds\Church_Bell_Mid.wav" LogicalName="FreezeSound.Church_Bell_Mid.wav" />
+    <EmbeddedResource Include="Assets\FreezeSounds\Church_Bell_Late.wav" LogicalName="FreezeSound.Church_Bell_Late.wav" />
     <EmbeddedResource Include="Assets\FreezeSounds\Cinematic_Dramatic_Slow-Down.wav" LogicalName="FreezeSound.Cinematic_Dramatic_Slow-Down.wav" />
   </ItemGroup>
 </Project>

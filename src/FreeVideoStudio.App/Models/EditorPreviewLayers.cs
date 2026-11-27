@@ -2,10 +2,11 @@ namespace FreeVideoStudio.App.Models;
 
 public sealed record EditorPreviewLayers(
     MusicWizardResult? Music,
-    bool KeepMusicDuringMeme,
-    VoiceOverWindow.VoiceOverResult? VoiceOver)
+    VoiceOverWindow.VoiceOverResult? VoiceOver,
+    bool ShowTeammates = false,
+    bool ShowSpectating = true)
 {
-    public static readonly EditorPreviewLayers None = new(null, false, null);
+    public static readonly EditorPreviewLayers None = new(null, null);
 
     public bool HasMusic => Music != null && !string.IsNullOrEmpty(Music.MusicFilePath);
 

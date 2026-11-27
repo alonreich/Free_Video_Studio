@@ -198,6 +198,23 @@ public partial class FinishedDialogWindow : Window
         _ = ShareAsync("TikTok", "https://www.tiktok.com/creator-center/upload", withCredit: true);
     }
 
+    internal const int MergerOfferMinimum = 2;
+
+    public void SetMergerOffer(int sessionVideoCount)
+    {
+        if (this.FindNameScope()?.Find("FinishedMergerBtn") is Button btn)
+        {
+            btn.IsVisible = sessionVideoCount >= MergerOfferMinimum;
+            if (btn.IsVisible) ToolTip.SetTip(btn, $"Close the editor and open the Video Merger with the {sessionVideoCount} videos you made this session, in order.");
+        }
+    }
+
+    private void OnVideoMergerClicked(object? sender, RoutedEventArgs e)
+    {
+        DialogResult = 3;
+        Close();
+    }
+
     private void OnOpenFolderClicked(object? sender, RoutedEventArgs e)
     {
         if (!OpenOutputFolder()) return;

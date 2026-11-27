@@ -35,7 +35,11 @@ public partial class MainWindow
     }
 
     internal Models.EditorPreviewLayers CurrentEditorPreviewLayers() =>
-        new(_musicWizardResult, _keepMusicDuringMeme ?? false, _voiceOverResult);
+        new(_musicWizardResult, _voiceOverResult)
+        {
+            ShowTeammates = TeammatesCheckboxCtl?.IsChecked == true,
+            ShowSpectating = SpectatingCheckboxCtl?.IsChecked == true
+        };
 
     private double PreviewVideoEndMs() => _trimEndMs > 0 ? _trimEndMs : _loadedVideoDurationMs;
 
@@ -62,7 +66,7 @@ public partial class MainWindow
     {
         var bed = MusicBed;
         bed.Result = _musicWizardResult;
-        bed.KeepMusicDuringMeme = _keepMusicDuringMeme ?? false;
+        bed.KeepMusicDuringMeme = MemePlacement.AnyInlineKeepsMusic(EffectiveMemePlacements());
         return bed.Bed(_trimStartMs, PreviewVideoEndMs(), PreviewSourceMsToOutputSec, PreviewInlineMemes()).Plan;
     }
 
@@ -71,7 +75,7 @@ public partial class MainWindow
         RefreshPreviewMixState();
         var bed = MusicBed;
         bed.Result = _musicWizardResult;
-        bed.KeepMusicDuringMeme = _keepMusicDuringMeme ?? false;
+        bed.KeepMusicDuringMeme = MemePlacement.AnyInlineKeepsMusic(EffectiveMemePlacements());
         if (PreviewMixActive)
         {
             bed.Stop();
@@ -95,12 +99,13 @@ public partial class MainWindow
         if (_musicBed == null || PreviewMixActive) return;
         _musicBed.Update(new Controls.MusicPreviewFrame(_trimStartMs, PreviewVideoEndMs(), PreviewSourceMsToOutputSec,
             0, true, false, false, true, null,
-            _memePreview?.CurrentPhase == Infrastructure.MemePreviewDirector.Phase.PlayingMeme));
+            _memePreview?.CurrentPhase == Infrastructure.MemePreviewDirector.Phase.PlayingMeme,
+            null, Infrastructure.MemeMusicPreview.ActiveMemeStopsMusic(EffectiveMemePlacements(), _memePreview?.ActiveMemeId)));
     }
 
     private void OnMainMemeCutawayStarted()
     {
-        if (!BedPreviewFollower.PlaysDuringMeme(_keepMusicDuringMeme ?? false)) StopMusicPreview();
+        if (!BedPreviewFollower.PlaysDuringMeme(MemePlacement.AnyInlineKeepsMusic(EffectiveMemePlacements()))) StopMusicPreview();
         PauseLiveVoiceTakes();
     }
 

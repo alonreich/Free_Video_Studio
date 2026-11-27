@@ -168,12 +168,12 @@ public partial class MainWindow
         }
         else if (seekFwd.Matches(e))
         {
-            _ = ActiveVideoHost?.IpcClient?.SendCommandAsync("seek", 5);
+            _ = ActiveVideoHost?.IpcClient?.SendCommandAsync("seek", Infrastructure.PreviewKeySeek.StepSeconds, "relative+exact");
             e.Handled = true;
         }
         else if (seekBack.Matches(e))
         {
-            _ = ActiveVideoHost?.IpcClient?.SendCommandAsync("seek", -5);
+            _ = ActiveVideoHost?.IpcClient?.SendCommandAsync("seek", -Infrastructure.PreviewKeySeek.StepSeconds, "relative+exact");
             e.Handled = true;
         }
         else if (aggVolUpCtrl.Matches(e))

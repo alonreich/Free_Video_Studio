@@ -1,4 +1,4 @@
-﻿using Avalonia.Platform.Storage;
+using Avalonia.Platform.Storage;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -173,7 +173,6 @@ public partial class MainWindow : Window
         _isDraggingThumbnailMarker;
     private Avalonia.Controls.Shapes.Rectangle? _thumbnailMarkerIconAntsRef;
     private Avalonia.Controls.Shapes.Rectangle? _thumbnailMarkerLineAntsRef;
-    private bool? _keepMusicDuringMeme;
 
     private bool _isTimelineDrawn = false;
     private string _loadedVideoPath
@@ -192,8 +191,11 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
     private KineticScrubController? _kineticScrub;
 
-    public MainWindow()
+    private readonly Action<int> _exitProcess;
+    public MainWindow() : this(Environment.Exit) { }
+    internal MainWindow(Action<int> exitProcess)
     {
+        _exitProcess = exitProcess;
         RuntimeLog.Info("UI", "Initializing MainWindow");
         InitializeComponent();
         Title = $"Free Video Studio v{DeploymentLifecycle.GetCurrentVersion()}";
@@ -254,7 +256,6 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
     }
 
     private List<MemeItem> _memeItems = new();
-    private string? _pendingMemeRestorePath;
 
     private Task<double> ProbeMusicDurationSecondsAsync(string musicPath)
         => MemeManagementService.ProbeMusicDurationSecondsAsync(ResolveFfmpegPath(), musicPath);
@@ -263,89 +264,59 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
     private void PopulateMemeComboBox()
     {
-        _ = PopulateMemeComboBoxAsync().ContinueWith(
-            t => RuntimeLog.Fail("Memes", $"Meme combo refresh failed: {t.Exception?.GetBaseException().Message}"),
+        _ = RefreshMemeLibraryAsync().ContinueWith(
+            t => RuntimeLog.Fail("Memes", $"Meme library refresh failed: {t.Exception?.GetBaseException().Message}"),
             System.Threading.CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
     }
 
-    private async Task PopulateMemeComboBoxAsync()
+    private async Task RefreshMemeLibraryAsync()
     {
-        var cb = MemeComboBoxCtl;
-        if (cb == null) return;
-
         int generation = Interlocked.Increment(ref _memeScanGeneration);
-
         var scanned = await MemeManagementService.ScanMemesAsync();
-
         if (Volatile.Read(ref _memeScanGeneration) != generation)
         {
             RuntimeLog.Info("Memes",
                 $"Discarding superseded meme scan (generation {generation}, current {Volatile.Read(ref _memeScanGeneration)}).");
             return;
         }
-
         _memeItems = scanned;
-        ApplyMemeItemsToCombo(preserveSelection: true);
-
-        if (_pendingMemeRestorePath != null)
+        if (_viewModel.SelectedMemeItem is { } sel)
         {
-            string p = _pendingMemeRestorePath;
-            _pendingMemeRestorePath = null;
-            var match = _memeItems.FirstOrDefault(m => string.Equals(m.FullPath, p, StringComparison.OrdinalIgnoreCase)
-                                                    || string.Equals(m.FileName, Path.GetFileName(p), StringComparison.OrdinalIgnoreCase));
-            if (match != null) cb.SelectedItem = match;
+            var fresh = _memeItems.FirstOrDefault(m => string.Equals(m.FullPath, sel.FullPath, StringComparison.OrdinalIgnoreCase));
+            if (fresh != null && !ReferenceEquals(fresh, sel)) _viewModel.SelectedMemeItem = fresh;
         }
     }
 
-    private void ApplyMemeItemsToCombo(bool preserveSelection)
+    private void OnChooseMainMemeClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _ = ChooseMainMemeAsync();
+
+    private bool _choosingMainMeme;
+
+    private async Task ChooseMainMemeAsync()
     {
-        if (!Dispatcher.UIThread.CheckAccess())
+        if (_choosingMainMeme) return;
+        _choosingMainMeme = true;
+        try
         {
-            Dispatcher.UIThread.Post(() => ApplyMemeItemsToCombo(preserveSelection));
-            return;
-        }
+            var context = CreateMainMemePickerContext();
+            if (ActiveVideoHost?.IpcClient is { } player) await player.SetPropertyAsync("pause", "yes");
+            var pick = await Controls.MemePickerWindow.PickAsync(this, _memeItems, IsPortraitMode,
+                latest => _memeItems = latest.ToList(), context: context);
+            if (pick == null || !(pick.DurationSec > 0)) return;
+            var placed = pick.ToPlacement(pick.AnchorSec ?? 0, pick.DurationSec.Value) with { Id = Guid.NewGuid().ToString("N") };
+            _memePlacements.Add(placed);
+            _viewModel.Timeline.MarkMemesAnchored();
+            SaveRecoveryState(label: "add meme");
+            UpdateTimelineMarkers();
+            _memePreview?.SetMemes(EffectiveMemePlacements());
 
-        var cb = MemeComboBoxCtl;
-        if (cb == null) return;
-
-        cb.ItemTemplate = MemeManagementService.CreateMemeItemTemplate(this, () => IsPortraitMode);
-
-        var prev = preserveSelection ? cb.SelectedItem as MemeItem : null;
-        var list = new List<MemeItem>(_memeItems)
-        {
-            new MemeItem { IsDownloadAction = true, DownloadCategory = MemeCategory.Video, FileName = "Download more meme videos..." },
-            new MemeItem { IsDownloadAction = true, DownloadCategory = MemeCategory.Image, FileName = "Download more meme pictures..." },
-        };
-        cb.ItemsSource = list;
-        if (prev != null && !prev.IsDownloadAction)
-        {
-            var again = list.FirstOrDefault(m => !m.IsDownloadAction &&
-                string.Equals(m.FullPath, prev.FullPath, StringComparison.OrdinalIgnoreCase));
-            if (again != null) cb.SelectedItem = again;
         }
-    }
-
-    private async Task RunCloudMemeSyncAsync(MemeCategory category)
-    {
-        string label = MemeCatalog.LabelFor(category);
-        var (count, error) = await MemeManagementService.DownloadCloudMemesAsync(this, category);
-
-        if (error != null)
+        catch (Exception ex)
         {
-            ShowTacticalFeedback($"⚠ Could not finish downloading {label}");
-            await ErrorReporter.ShowAsync(this, $"Problem downloading {label}", error,
-                "See the log entries tagged [Memes] for the per-file detail.");
+            RuntimeLog.Fail("Memes", $"Choosing the main-screen meme failed: {ex.Message}");
         }
-        else if (count > 0)
-        {
-            ShowTacticalFeedback($"✓ Downloaded {count} new {label}");
-        }
-        else
-        {
-            ShowTacticalFeedback($"You already have all available {label}");
-        }
+        finally { _choosingMainMeme = false; }
     }
 
     private async Task PushAssetsAsync()
@@ -1108,6 +1079,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         {
             phoneFrame.IsVisible = isPortrait && !IsPreviewDetached && isVideoLoaded;
         }
+        _ = RefreshFinalLayoutPreviewAsync();
 
         if (_videoHost != null)
         {
@@ -1721,7 +1693,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         }
 
         ShutdownVideoPipelineForProcessExit();
-        Environment.Exit(0);
+        _exitProcess(0);
     }
 
     private bool _isSafeToClose = false;
@@ -1866,7 +1838,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
 
             _isSafeToClose = true;
             ShutdownVideoPipelineForProcessExit();
-            Environment.Exit(0);
+            _exitProcess(0);
         }
     }
 
@@ -1901,7 +1873,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         DisposeVoiceOverPreviewTakes();
         TeardownCornerMemes();
         ShutdownVideoPipelineForProcessExit();
-        Environment.Exit(0);
+        _exitProcess(0);
     }
 
     private void AttachTitleBarDrag()
@@ -2152,9 +2124,9 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             return true;
         }
 
-        if (!HasUnsavedWork())
+        if (_exportedCleanSinceLastEdit || !HasUnsavedWork())
         {
-            RuntimeLog.Info("UI", $"{toolDisplayName} switch: nothing to lose, no prompt shown.");
+            RuntimeLog.Info("UI", $"{toolDisplayName} switch: {(_exportedCleanSinceLastEdit ? "the video is already processed" : "nothing to lose")}, no prompt shown ({DoneCleanTag}).");
             return true;
         }
 
@@ -2171,7 +2143,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         return go;
     }
 
-    private async Task SwitchToCompanionAppAsync(string argument, string toolDisplayName)
+    private async Task SwitchToCompanionAppAsync(string argument, string toolDisplayName, IReadOnlyList<string>? mergerClips = null)
     {
         if (!await ConfirmToolSwitchAsync(toolDisplayName)) return;
 
@@ -2181,7 +2153,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         Services.ToolLaunchContext context =
             argument.Equals("--crop-tool", StringComparison.OrdinalIgnoreCase)
                 ? new Services.CropToolLaunchContext(_loadedVideoPath, _trimStartMs, _trimEndMs)
-                : new Services.MergerLaunchContext();
+                : new Services.MergerLaunchContext { InitialClips = mergerClips ?? Array.Empty<string>() };
 
         var navigator = new Services.ToolNavigator(Infrastructure.AppServices.Current.Faults);
 

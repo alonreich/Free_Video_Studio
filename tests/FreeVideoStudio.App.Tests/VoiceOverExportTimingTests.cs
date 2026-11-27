@@ -107,7 +107,7 @@ public class VoiceOverExportTimingTests(ITestOutputHelper log)
         CoreLogger.InfoAction = (topic, message) => { lock (logs) logs.Add(topic + ": " + message); };
         CoreLogger.FailAction = CoreLogger.InfoAction;
         try { await worker.RunAsync(); }
-        finally { CoreLogger.InfoAction = oldInfo; CoreLogger.FailAction = oldFail; await File.WriteAllLinesAsync(Path.Combine(work, "export.log"), logs); }
+        finally { CoreLogger.InfoAction = oldInfo; CoreLogger.FailAction = oldFail; FreeVideoStudio.Core.Infrastructure.BoundedLogFile.WriteLines(Path.Combine(work, "export.log"), logs); }
         Assert.True(success, worker.FailureDetail ?? exported);
         double[] pictureEvents = await PictureEvents(exported, "export");
         string rawAudio = Path.Combine(work, "export.f32");

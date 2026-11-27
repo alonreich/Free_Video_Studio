@@ -18,7 +18,8 @@ public readonly record struct MusicPreviewFrame(
     bool MemeActive,
     IReadOnlyList<(double AnchorOutputSec, double DurationSec)>? InlineMemes,
     bool MemePlaying = false,
-    IReadOnlyList<(double StartOutputSec, double EndOutputSec)>? FreezeWindows = null);
+    IReadOnlyList<(double StartOutputSec, double EndOutputSec)>? FreezeWindows = null,
+    bool MemeStopsMusic = false);
 
 public sealed class MusicBedPreviewPlayer : IDisposable
 {
@@ -134,9 +135,14 @@ public sealed class MusicBedPreviewPlayer : IDisposable
         if (frame.MemeActive)
         {
             if (!BedPreviewFollower.PlaysDuringMeme(KeepMusicDuringMeme)) { if (_follower.IsPlaying) Stop(); }
-            else if (_follower.IsPlaying) HoldForMeme(!frame.MemePlaying);
+            else
+            {
+                SetMemeMuted(frame.MemeStopsMusic);
+                if (_follower.IsPlaying) HoldForMeme(!frame.MemePlaying);
+            }
             return;
         }
+        SetMemeMuted(false);
         if (_heldForMeme)
         {
             _heldForMeme = false;
@@ -253,7 +259,18 @@ public sealed class MusicBedPreviewPlayer : IDisposable
         if (wasPlaying) _ = StopPlaybackAsync();
     }
 
-    private double CurrentGain() => GainSource?.Invoke() ?? _result?.MusicVolume ?? 1.0;
+    private bool _memeMuted;
+
+    public bool IsMutedForMeme => _memeMuted;
+
+    private void SetMemeMuted(bool muted)
+    {
+        if (muted == _memeMuted) return;
+        _memeMuted = muted;
+        ApplyGain();
+    }
+
+    private double CurrentGain() => _memeMuted ? 0.0 : GainSource?.Invoke() ?? _result?.MusicVolume ?? 1.0;
 
     public void ApplyGain() => _ = _client?.ApplyPreviewGainAsync(CurrentGain());
 

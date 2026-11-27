@@ -29,6 +29,8 @@ public sealed record MergerLaunchContext : ToolLaunchContext
     public MergerLaunchContext() : base((string?)null)
     {
     }
+
+    public System.Collections.Generic.IReadOnlyList<string> InitialClips { get; init; } = System.Array.Empty<string>();
 }
 
 public sealed record ToolNavigationResult(string ToolName, bool ReturnedToOwner, string? SelectedClipPath, bool ExitApplication = false)

@@ -141,8 +141,12 @@ public class MpvIpcClient : IDisposable
 
     public event Action<bool>? PauseChanged;
 
-    public MpvIpcClient(nint mpvHandle) : this()
+    private readonly Action<string>? _logMessage;
+    public MpvIpcClient(nint mpvHandle) : this(mpvHandle, null) { }
+    public MpvIpcClient(nint mpvHandle, Action<string>? logMessage) : this()
     {
+        _logMessage = logMessage;
+        if (logMessage != null) MpvWrapper.mpv_request_log_messages(mpvHandle, "v");
         _mpvHandle = mpvHandle;
         _ownsHandle = false;
         StartEventLoop();
@@ -233,6 +237,9 @@ public class MpvIpcClient : IDisposable
 
                     switch (ev.EventId)
                     {
+                        case MpvWrapper.MpvEventId.LogMessage:
+                            if (ev.Data != nint.Zero) _logMessage?.Invoke(MpvWrapper.ReadLogMessage(ev.Data));
+                            break;
                         case MpvWrapper.MpvEventId.PropertyChange:
                             HandlePropertyChange(ev);
                             break;

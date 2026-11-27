@@ -20,6 +20,7 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
 ```
   AVREG_01 · tests/run-av-tests.cmd · tests/FreeVideoStudio.AvRegression.Tests/ (PlayerRig, PlaybackProbe, ExportRig, Verify, MergerRig, MainEdit, TestMedia, Budget)  ->  README.md GOV-AVGATE (§0.3a)
   developer_tools/Find_and_Remove_Comments.cmd, developer_tools/CommentRemover/ (CommentRemover.csproj, Runner, TextRewriter, Languages, CommentScanner, YamlLanguage, ExternalTokenizers), docs/CODE_NOTES_*.md, NOCOMMENTS_01, NOCOMMENTS_02, NOCOMMENTS_03, NOCOMMENTS_04, DataFilesWithHashComments, NoCSharpFileContainsAComment, tests/FreeVideoStudio.App.Tests/FvsCommentsToolTests.cs  ->  README.md GOV-START; 05 SYS-VERIFYTOOL (TAG=path#Symbol)
+  developer_tools/Sanitize.cmd, developer_tools/Sanitize/ (Sanitize.ps1, allowlist.txt; ai-sanitize.exe git-ignored), SANITIZE_01, ReleaseGate.RequireNoLeaks  ->  05 SYS-SETTINGSSCHEMA (SANITIZE_01); 09 DIST-RELEASEGATE
   developer_tools/Pull_Code_files.py, tests/DeveloperTools.Tests/test_pull_code_files.py, CODEEXPORT_01, CODEEXPORT_02  ->  05 SYS-CODEEXPORT; offline ten-attachment AI export, coverage, secrets, encoding, snapshot/index and preservation
   Core/Media/VoiceOverPlaybackPlan.cs  ->  01 TL-OUTPUTTIMELINE; 03 FFM-TEMPO; VOCLOCK_01; 02 AUD-FREEZESFX (FREEZEPARITY_01, FreezeVideoLufs)
   Core/Media/VoiceCaptureBudget.cs, VOSAMPLE_01  ->  01 TL-OUTPUTTIMELINE; 02 AUD-VOICEOVER; sample-frame endpoint and immutable opening anchor
@@ -42,7 +43,7 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   AiCameraSmoothnessTests.cs                 01 TL-AITRACKING (AICAMSMOOTH_01)
   AiSetup.cs                                 04 UI-AIMODE | 10 SYS-AICAPABILITY (AICAPABILITY_01)
   AiModeTests.cs                             04 UI-AIMODE
-  AiSubjectPickerWindow.axaml(.cs/.Correction.cs) 04 UI-AIZOOM (AIPICKERELLIPSE_01, AIZOOMWIZARD_01) | 10
+  AiSubjectPickerWindow.axaml(.cs/.Correction.cs) 04 UI-AIZOOM (AIPICKERELLIPSE_01, AIZOOMWIZARD_01, AIPICKFOCUS_01) | 10
   AiZoomPreviewModalWindow.cs                04 UI-AIZOOM (AIPREVIEW_01)
 ⚠ AiTrajectorySmoother.cs                    01 03
   AGENTS.md                                  GOV | README.md §0 (pointer only, ONBOARD_01)
@@ -82,7 +83,8 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   AiQaAudit8Tests.cs                         10 SYS-AIQA8 (AIQA_08)
   AiIntegrationFixTests.cs                   10 SYS-AIINTEG (AIINTEG_01)
   NewVideoCleanTests.cs                      05 SYS-RECOVERY (NEWVIDEOCLEAN_01)
-  ProjectSafetyQaTests.cs                    06 PROJ-DISK | 06 PROJ-CLOSEGUARD | 06 PROJ-INTEGRITY | 06 PROJ-RECENT | 07 | 05 SYS-RECOVERY (QAREG_01)
+  ProjectSafetyQaTests.cs                    06 PROJ-DISK | 06 PROJ-CLOSEGUARD | 06 PROJ-INTEGRITY | 06 PROJ-RECENT | 07 | 05 SYS-RECOVERY | 04 UI-MEMEFLOW (QAREG_01, picker through project reload)
+  ProjectSafetyQaTests.MemeExport.cs         04 UI-MEMEFLOW | 06 PROJ-DISK | 03 FFM-MEMECONCAT / FFM-MEMECORNER / FFM-FADES (Add, Change, Apply, reopen and final export)
   UiQaFixTests.cs                            04 UI-SAFEGUARDS (SHAREFAIL_01, ESCDIALOG_01, FONTMIN_01, MENUDEDUPE_01, OPENVIDEO_01)
   AiFrameCrop.cs                             10 SYS-AIAUDIT6 (AIKILLCROP_01) | 01 TL-AITRACKING
   AiUsageReport.cs                           10 SYS-AIAUDIT6 (AIUSAGEREPORT_01)
@@ -107,6 +109,7 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   ApplicationPaths.cs                        05
 ⚠ AtomicJsonFile.cs                          05 06
   AudioFilterChain.cs                        02
+  MemeMusicStop.cs                           02 AUD-MUSICFADE (MEMEMUSIC_03)
   AudioLoudnessProbe.cs                      02
   AudioTempoFilterBuilder.cs                 03
   CornerMemeOverlayGraph.cs                  03
@@ -114,7 +117,8 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
 ⚠ Build.cmd                                  05 09 GOV
   dev_build.cmd                              05 09 GOV
   CanvasMath.cs                              01
-  CoachOverlay.cs                            04
+  UiAccessibilityAuditTests.cs               04 UI-SAFEGUARDS / UI-COACH (DIALA11Y_01, COACHFOCUS_01, ACTIONNAME_01)
+  CoachOverlay.cs                            04 UI-COACH (COACHFOCUS_01)
 ⚠ CompositeTimeline.cs                       01 03
   ConfirmDialogWindow.axaml.cs               04
   CoordinateMath.cs                          01
@@ -143,7 +147,7 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   LatestEstimateWorker.cs                    05
   MainMediaController.cs                     03
   MainWindow.Canvas.cs                       01
-  MainWindow.Export.cs                       03
+  MainWindow.Export.cs                       03 | 05 SYS-RECOVERY (MERGESESSIONVIDEOS_01)
   MainWindow.SizeEstimate.cs                 03
   MainWindow.Shortcuts.cs                    01
 ⚠ MainWindow.ToolReturn.cs                   05 08
@@ -160,7 +164,7 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   RenderedMixGate.cs                         02
 ⚠ FreezeSoundEffect.cs                       02 AUD-FREEZESFX (FREEZESFX_05) | 03
   FreezeSoundPreview.cs                      02
-  MpvLogCap.cs                               05 SYS-STORAGE-TABLE
+  MpvLogCap.cs                               05 SYS-LOGGING | 05 SYS-STORAGE-TABLE
   ReviewTimelineRuler.cs                     04 UI-MUSICWIZARD
   UiStallWatchdog.cs                         05 (UIWATCHDOG_01)
   BlockingCallTracker.cs                     05 (UIWATCHDOG_01) | 02 AUD-IPCSTATE
@@ -178,7 +182,7 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   MemePresentationJson.cs                    06
 ⚠ MemeChoiceViewModel.cs                     04 01
 ⚠ CornerMemeOverlayPresenter.cs              04 03
-⚠ GranularSpeedEditorWindow.Memes.cs          01 04 07 (MEMEMODE_01, MEMESTRIP_02, CORNERPARITY_02, MERGEMEME_02, MEMELIST_01)
+⚠ GranularSpeedEditorWindow.Memes.cs          01 03 04 07 (MEMEMODE_01, MEMESTRIP_02, CORNERPARITY_02, MERGEMEME_02, MEMELIST_01)
 ⚠ MainWindow.CornerMemes.cs                  01 04
 ⚠ VideoMergerWindow.CornerMemes.cs           01 04
 ⚠ MergeClipGraph.cs                          01 03
@@ -187,14 +191,14 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   MergerAutosaveStore.cs                     05
 ⚠ MergerPreviewPlan.cs                       01 03
 ⚠ MergerSession.cs                           01 05
-  MergerWorker.cs                            03
+  MergerWorker.cs                            03 (SHARECOVER_01 portrait custom-thumbnail cover)
   MicLevelMonitor.cs                         02
   MicrophoneSpectrumAnalyzer.cs              02 AUD-VOICEOVER (SPECTRUM_01)
 ⚠ MicrophoneSpectrumControl.cs               02 04 (SPECTRUM_03)
-  MobileFilterBuilder.cs                     03
+  MobileFilterBuilder.cs                     03 | 04 UI-GRANULAR (FINALLAYOUT_01 HudCanvasLayers)
   IpcProtocol.cs                             05
   MpvIpcClient.cs                            02
-⚠ MpvVideoView.cs                            04 05
+⚠ MpvVideoView.cs                            04 05 (GPUPRESENT_04 live texture rebuild)
   NamedPipeStateServer.cs                    05
   IpcTests.cs                                05 SYS-IPCLIFETIME | 05 SYS-WRITEORDER
   IpcChildProcess.cs                         05 SYS-IPCLIFETIME
@@ -257,6 +261,7 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   AiUsageMeterTests.cs                       10 SYS-AISETTINGS (AIUSAGE_01)
   CaptionAuditFixTests.cs                    01 TL-CAPTIONS | 03 FFM-CAPTIONS (AIAUDIT_01)
   QaAuditRegressionTests.cs                  01 TL-CAPTIONS | 03 FFM-CAPTIONS | 06 (recent projects) | 03 RESCUE_02 (CAPTIONEMPH_02, CAPTIONFIT_02, PROJ_09B)
+  QaChaosRegressionTests.cs                  03 RESCUE_01 | 06 (backup fallback) | 03 OUTNAME_01 (QAAUDIT_03)
 ⚠ MusicWizardResult.Plan.cs                  02 AUD-PREVIEWSYNC | 03 (mini-map only)
 ⚠ MusicWizardViewModel.cs                    04 UI-MUSICWIZARD | 02 AUD-MUSICWIN
 ⚠ VideoMergerWindow.MusicButton.cs           02 AUD-DIALOGS | 04 UI-MUSICWIZARD
@@ -282,35 +287,36 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   LibAvFrameDecoder.cs                       03 FFM-LIBAVFRAME
   LibAvFrameDecodeTests.cs                   03 FFM-LIBAVFRAME (FRAMECANCELISO_01)
   NativeFrameCallerTests.cs                  03 04
-⚠ PhoneFrameMockup.axaml.cs                  01 04
+⚠ PhoneFrameMockup.axaml.cs                  01 04 (FINALLAYOUT_01 SetFinalLayout)
   ExportViewModel.cs                         03
-  ProcessWorker.cs                           03
+  ProcessWorker.cs                           03 (SHARECOVER_01 cover applied last)
   ProgressiveLanes.cs                        04
   QualityLadder.cs                           03
   ProjectRecoveryService.cs                  05
   RecoveryManager.cs                         05
   RuntimeLog.cs                              05
+  BoundedLogFile.cs                          05 SYS-LOGGING (LOGCAP_02, shared runtime/build/test byte ceiling)
   SettingsWindow.axaml.cs                    04
   SettingsWindow.AiTracking.cs               04
   SettingsWindow.Behavior.cs                 04 UI-SETTINGS-ABOUT (SETCHIPS_01, SETREVEAL_01, FILEBACKUP_01)
   SettingsWindow.Save.cs                     04 UI-SETTINGS-ABOUT; 05 SETTX_01
   FreezeSoundEffectTests.cs                  02 AUD-FREEZESFX
-  Church_Bell.wav, Cinematic_Dramatic_Slow-Down.wav      02 AUD-FREEZESFX (FREEZESFX_05)
+  Church_Bell.wav, Church_Bell_Mid.wav, Church_Bell_Late.wav, Cinematic_Dramatic_Slow-Down.wav      02 AUD-FREEZESFX (FREEZESFX_05, FREEZEBELL_01)
   VideoLoudnessCache.cs                      02 AUD-FREEZESFX (FREEZELEVEL_01)
   S44_S45_FreezeSoundAndMusicDipTests.cs     README GOV-AVGATE | 02 AUD-FREEZESFX
-  SpeedEditorSmokeApp.cs                     README GOV-AVGATE | 02 AUD-PREVIEWSYNC (PREVIEWSPEED_02)
+  SpeedEditorSmokeApp.cs                     README GOV-AVGATE | 02 AUD-PREVIEWSYNC | 04 UI-GPUPRESENT2 (PREVIEWSPEED_02, live zoom and play/pause)
   SettingsWindow.Help.cs                     04 UI-SETTINGS-ABOUT (SETHELP_01)
   SettingsMusicFolderTests.cs                04 UI-SETTINGS-ABOUT | 05 SYS-IPCLIFETIME
   SettingsWindow.Output.cs                   04 UI-SETTINGS-ABOUT | 03 FFM-OUTNAME
   SettingsWindow.Tools.cs                    04 UI-SETTINGS-ABOUT
-⚠ SettingsViewModel.cs                       04 05 UI-SETTINGS-ABOUT
-⚠ SettingsViewModel.Services.cs              04 08 UI-SETTINGS-ABOUT (SETTINGSDI_01, AIKEYCANCEL_01, SETBACKUPIO_01)
+⚠ SettingsViewModel.cs                       04 UI-SETTINGS-ABOUT | 05
+⚠ SettingsViewModel.Services.cs              04 UI-SETTINGS-ABOUT | 08 (SETTINGSDI_01, AIKEYCANCEL_01, SETBACKUPIO_01)
 ⚠ SettingsWindowServices.cs                  04 08 COMP-ROOT (SETTINGSDI_01, SETBACKUPIO_01)
   SettingsTypes.cs                           05 (SETTINGSTYPES_01)
   ViralPostViewModel.cs                      04 08 (VIRALVM_01)
   SettingsAuditTests.cs                      04 UI-SETTINGS-ABOUT
   ArchitectureAuditFixTests.cs               05 08 04 (architecture audit 2026-11-11)
-  SpinningWheelSlider.cs                     04
+  SpinningWheelSlider.cs                     04 UI-SAFEGUARDS (DIALA11Y_01)
   TextOverlayGenerator.cs                    03
   TimelineKnob.cs                            01
   TimelineLanesControl.axaml.cs              01
@@ -367,10 +373,10 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
 ⚠ GranularEditSession.Segments.cs            01 04 07
 ⚠ GranularEditSession.Memes.cs               01 04 07 (MEMEMODE_01, MEMESNAP_02/03, MEMESEP_02, MEMECUT_02, MEMEDRAG_02/03)
 ⚠ GranularSpeedEditorWindow.MemeBands.cs      01 03 04 (MEME_06..09, MEMEDRAG_02, MEMEDRAG_03)
-⚠ MainWindow.Memes.cs                         01 02 04 (MEMEMAIN_02, MEMEMARK_02, MEMEMUSIC_02)
+⚠ MainWindow.Memes.cs                         01 02 03 04 (MEMEMAIN_02, MEMEMARK_02, MEMEMUSIC_03)
   MemeTransitions.cs                          03 FFM-MEMECONCAT | 03 FFM-MEMECORNER (MEMETRANS_01, MEMEANIM_01)
-⚠ MemePlacementPreview.cs                     03 FFM-MEMECORNER | 04 UI-MEMESELECT (MEMEPICK_03, MEMEPOS_01)
-  MemePickerPrefsStore.cs                     04 UI-MEMESELECT | 05 (MEMEFAV_01, MEMELAST_01)
+⚠ MemePlacementPreview.cs                     03 FFM-MEMECORNER | 04 UI-MEMESELECT (MEMEPICK_03, MEMEPICK_06, MEMEPOS_01)
+⚠ MemePickerPrefsStore.cs                     04 UI-MEMESELECT | 05 (MEMEFAV_01, MEMELAST_01)
   GranularRecoveryCodec.cs                   05 (RECOVERY_03)
   GranularJsonRead.cs                        05 (GRANJSON_01)
 ⚠ CropEditSession.cs                         01 04 05 07 | 08 COMP-MVVM (EDITSTATE_01)
@@ -383,7 +389,7 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
 ⚠ ProjectSession.cs                          06 07 08
 ⚠ MainWindow.Project.cs                      06 07 08
 ⚠ ToolNavigator.cs                           05 08
-  ToolLaunchContracts.cs                     08 COMP-ROOT | 05 SYS-RECOVERY (DONECLEAN_01)
+  ToolLaunchContracts.cs                     08 COMP-ROOT | 05 SYS-RECOVERY (DONECLEAN_01, MERGESESSIONVIDEOS_01 InitialClips)
 ⚠ FfmpegJobLifetime.cs                       03 08
   AppServices.cs                             08
   CtsSlot.cs                                 08 (CTSSLOT_01)
@@ -533,8 +539,23 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
 ⚠ CropToolWindow.MagicWand.cs                04 01 08
   MainViewModel.cs                           04 08
   MemeAssets.cs                              03
+  ZoomBoxSnap.cs                             01 TL-ZOOM (ZOOMSNAP_01)
+  PreviewKeySeek.cs                          04 UI-GRANULAR (ARROWSTEP_01)
+  FinalLayoutPreview.cs                      04 UI-GRANULAR (FINALLAYOUT_01)
+  ShareCover.cs                              03 FFM-SCRAPER (SHARECOVER_01)
+  ShareCoverTests.cs                         03 FFM-SCRAPER (SHARECOVER_01)
+  MainWindow.FinalLayout.cs                  04 UI-GRANULAR (FINALLAYOUT_01)
+  OwnerRequestBatchTests.cs                  01 TL-ZOOM | 04 UI-AIZOOM / UI-GRANULAR | 05 SYS-RECOVERY | 02 AUD-MUSICWIN
   MemeCatalog.cs                             03
   MemePickerWindow.axaml                     04
+  MemePickerWindow.axaml.cs                  04 UI-MEMEFLOW
+  MemePartRange.cs                           04 UI-MEMEFLOW (MEMEPART_02)
+⚠ MemePickerContext.cs                       03 FFM-MEMEPREVIEW | 04 UI-MEMEFLOW
+⚠ MemePickerWindow.Preview.cs                 03 FFM-MEMEPREVIEW | 04 UI-MEMEFLOW | 05 SYS-STORAGE-TABLE
+⚠ VideoMergerWindow.MemePreview.cs            01 TL-COMPOSITE | 02 AUD-PREVIEWSYNC | 03 FFM-MEMEPREVIEW | 04 UI-MEMEFLOW
+  MemeWorkflowTests.cs                       04 UI-MEMEFLOW
+⚠ MemeResultRenderTests.cs                   04 UI-MEMEFLOW | 03 FFM-MEMEPREVIEW
+  MemeMusicPreview.cs                        02 AUD-MUSICFADE (MEMEMUSIC_03)
   MemeThumbnailCache.cs                      04
   OwnedLruCache.cs                           04
   ViewportThumbnailLoader.cs                 04
@@ -561,7 +582,7 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   App/Services/EditorRecoveryWriter.cs       05 SYS-RECOVERY; GRANULARPERF_01
   App/OpenWithLaunch.cs                      08 COMP-ROOT | 05 SYS-AVCLEAN (Open With launch argument; registration is OPENWITHHOME_01)
   App/Infrastructure/OutputFolderResolver.cs 04 UI-SETTINGS-ABOUT (SETFOLDERONE_01 save folder; ISSUE_04 order: saved folder -> real Downloads -> ask once)
-  App/MusicWizardWindow.Merger.cs            02 AUD-MUSICWIN
+  App/MusicWizardWindow.Merger.cs            02 AUD-MUSICWIN (WIZMERGEPREVIEW_01)
   Core/Infrastructure/BinaryPathResolver.cs  03 FFM-BINPATH
 ⚠ Core/Media/ExportVideoPipeline.cs          03 FFM-HWENC (resident CUDA route, CUDATAG_01) | 02 AUD-FREEZESFX (audio filter table)
   Core/Infrastructure/UserDataUpgrade.cs     09 SYS-UPGRADE
@@ -582,6 +603,25 @@ Full paths: see each spec's Code Mini-Map.
 ## 2. Symbol / Constant / Tag -> Spec Section
 
 ```
+ZOOMSNAP_01                                  01 TL-ZOOM
+AIPICKFOCUS_01                               04 UI-AIZOOM
+NODRAGCREATE_01                              04 UI-GRANULAR
+ARROWSTEP_01                                 04 UI-GRANULAR
+MERGESESSIONVIDEOS_01                        05 SYS-RECOVERY
+DONECLEAN_02                                 05 SYS-RECOVERY | 04 UI-SAFEGUARDS
+WIZMERGEPREVIEW_01                           02 AUD-MUSICWIN
+FINALLAYOUT_01                               04 UI-GRANULAR | 03 (HudCanvasLayers)
+SHARECOVER_01                                03 FFM-SCRAPER
+MEMEFLOW_01                                 04 UI-MEMEFLOW | 06 PROJ-SCHEMA | 07 UNDO-MIGRATION
+MEMEMODEPREF_01                             04 UI-MEMEFLOW | 05 SYS-STORAGE-TABLE
+MEMEPART_02                                 04 UI-MEMEFLOW | 03 FFM-MEMECORNER
+MEMELANDING_01                              01 TL-MEME | 04 UI-MEMEFLOW | 07 UNDO-MIGRATION
+MEMERESULT_01                               03 FFM-MEMEPREVIEW | 04 UI-MEMEFLOW | 05 SYS-STORAGE-TABLE | 02 AUD-PREVIEWMIX
+MEMEACTIONS_01                              04 UI-MEMEFLOW
+MemePartRange                               04 UI-MEMEFLOW
+MemePickerContext                           04 UI-MEMEFLOW | 03 FFM-MEMEPREVIEW
+MemeLanding                                 04 UI-MEMEFLOW
+MemePlacementPoint                          04 UI-MEMEFLOW
 _isSafeToClose                               05 SYS-WINSTATE
 SIZEESTIMATE_01                              03 FFM-SIZEESTIMATE | 04 UI-THEME | 05 SYS-SIZEESTIMATE
 MERGEQUALITY_01                              03 FFM-SIZEESTIMATE
@@ -671,7 +711,11 @@ MEMETRIM_02                                  01 TL-MEME
 MEMERULER_01                                 01 TL-MEME
 MEMEMAIN_02                                  01 TL-MEME
 MEMEMARK_02                                  01 TL-MEME | 04 UI-MEMESELECT
-MEMEMUSIC_02                                 02 AUD-MUSICFADE | 04 UI-MEMESELECT
+MEMEMUSIC_02                                 02 AUD-MUSICFADE | 04 UI-MEMESELECT (retired)
+MEMEMUSIC_03                                 02 AUD-MUSICFADE | 04 UI-MEMESELECT
+MEMEGALLERY_01                               04 UI-MEMESELECT
+MEMEGET_01                                   04 UI-MEMESELECT
+MEMERECOVER_01                               05 SYS-RECOVERY
 MEMECUT_02                                   01 TL-MEME
 MEMESNAP_02                                  01 TL-MEME
 MEMESNAP_03                                  01 TL-MEME
@@ -693,6 +737,8 @@ MEMETRANS_01                                 03 FFM-MEMECONCAT | 04 UI-MEMESELEC
 MEMEPICK_03                                  04 UI-MEMESELECT
 MEMEPICK_04                                  04 UI-MEMESELECT
 MEMEPICK_05                                  04 UI-MEMESELECT
+MEMEPICK_06                                  04 UI-MEMESELECT
+MEMEPICK_07                                  04 UI-MEMESELECT
 MEMEFAV_01                                   04 UI-MEMESELECT
 MEMELAST_01                                  04 UI-MEMESELECT
 MEMEWARN_02                                  04 UI-MEMESELECT
@@ -827,6 +873,7 @@ AiFrameSequenceExtractor                     10 SYS-AISETTINGS
 AiUsageConfig                                10 SYS-AISETTINGS
 KEYPROTECT_01                                10 SYS-AISETTINGS
 SECRETSCAN_01                                05 SYS-SETTINGSSCHEMA
+SANITIZE_01                                  05 SYS-SETTINGSSCHEMA | 09 DIST-RELEASEGATE   (developer_tools\Sanitize.cmd; release refuses a leak)
 WANDPROGRESSIVE_01                           01 TL-AIHUD | 04 UI-AIHUDWAND
 WANDCOLOR_01                                 04 UI-AIHUDWAND
 AiGameProfile                                01 TL-AITRACKING
@@ -1311,6 +1358,7 @@ SIGNLOCAL_02                                 09 SYS-SIGNING
 ILCCRASH_01                                  06 PROJ-AOTPOLICY
 RELEASEASSETS_01                             09 DIST-SPLIT
 GPUPRESENT_02                                04 UI-GPUPRESENT2
+GPUPRESENT_03                                04 UI-GPUPRESENT2 | 05 SYS-WINSTATE (WGL startup handoff and skipped frames)
 TryAcquireProducerKey                        04 UI-GPUPRESENT2
 EDITHOT_01                                   05 SYS-EDITHOT
 EDITHOT_02                                   05 SYS-EDITHOT
@@ -1384,6 +1432,7 @@ MusicWizardViewModel                         04 UI-MUSICWIZARD
 PreviewAudioSync                             02 AUD-PREVIEWSYNC
 PREVIEWLAYERS_01                             02 AUD-PREVIEWSYNC
 FREEZESFX_05                                 02 AUD-FREEZESFX
+FREEZEBELL_01                                02 AUD-FREEZESFX
 FREEZESFX_04                                 02 AUD-FREEZESFX (retired: synthesised sound)
 FREEZESFX_03                                 02 AUD-FREEZESFX (retired: SoundExpr deleted)
 FreezeSound                                  02 AUD-FREEZESFX

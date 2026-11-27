@@ -11,10 +11,12 @@ dotnet run --project tests/DesktopPreviewSmoke/DesktopPreviewSmoke.csproj -c Rel
 dotnet run --project tests/DesktopPreviewSmoke/DesktopPreviewSmoke.csproj -c Release -- --speed-editor
 ```
 
-`tests/run-all-tests.cmd` includes all three checks. The ordinary full A/V gate does not run this
+`tests/run-all-tests.cmd` includes all four checks. The ordinary full A/V gate does not run this
 interactive tier; its null-video player tests cannot prove which pixels the desktop displays.
 
 - The Speed Editor check opens a real main video view and the production `GranularSpeedEditorWindow` on a 1080p hardware-decoded clip: Play must move the editor's playhead at the edit's 1.1x, closing must finish with a verified teardown and the main preview must play afterwards (PREVIEWSPEED_02: a speed command sent while the editor's GPU pipeline was loading froze its preview).
+- The Speed Editor test also samples its opening frame (blue center) and a later playing frame (green center) directly from the desktop so an advancing clock with a black picture fails.
+- The Speed Editor test then moves the live slow-zoom box and shrinks it by dragging a corner through the production pointer handlers. It checks eight play/pause cycles, requires playback to advance after every resume, checks dispatcher responsiveness, and samples the final paused frame.
 - The default check exercises the production WGL/D3D video control, paused seeks, playback,
   resize, detach/reattach and repeated shutdown.
 - The merger check opens the production `VideoMergerWindow`, adds three separate colored files
@@ -31,7 +33,7 @@ The silent-middle regression found a join-time audio drain/WASAPI reopen under m
 `gapless-audio=weak`. The production merger sets `gapless-audio=yes` before EDL loads so the
 audio device stays open across decoder-format changes (`MERGERGAPLESS_01`).
 
-Fixtures, logs and isolated application state live under `tests/AvRegression/desktop`.
+Fixtures, logs and isolated application state live under the corresponding `logs/<Suite>_Results/work` folder.
 `TestArtifactDirectory` replaces only that checked test directory and shares the suite's
 exclusive lock. Test inputs never come from the user's saved merger session.
 

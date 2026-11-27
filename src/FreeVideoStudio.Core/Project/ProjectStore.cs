@@ -71,14 +71,15 @@ public static class ProjectStore
             return null;
         }
 
-        ProjectDocument? doc = TryReadOne(path, out error);
+        ProjectDocument? doc = TryReadOne(path, out error, out bool accessDenied);
         if (doc != null) return doc;
+        if (accessDenied) return null;
         if (IsFromANewerVersion(path)) return null;
 
         string backup = path + BackupSuffix;
         if (!File.Exists(backup)) return null;
 
-        ProjectDocument? fromBackup = TryReadOne(backup, out string? backupError);
+        ProjectDocument? fromBackup = TryReadOne(backup, out string? backupError, out _);
         if (fromBackup == null)
         {
             CoreLogger.Fail("PROJECT", $"Backup also unreadable: {backupError}");
@@ -91,12 +92,13 @@ public static class ProjectStore
         return fromBackup;
     }
 
-    private static ProjectDocument? TryReadOne(string path, out string? error)
+    private static ProjectDocument? TryReadOne(string path, out string? error, out bool accessDenied)
     {
         error = null;
+        accessDenied = false;
         try
         {
-            JsonObject? root = AtomicJsonFile.ReadObject(path);
+            JsonObject? root = AtomicJsonFile.ReadObjectOrThrowOnAccess(path);
             if (root == null)
             {
                 error = "That project file is empty or damaged.";
@@ -108,12 +110,14 @@ public static class ProjectStore
         catch (UnauthorizedAccessException swallowed2)
         {
             error = "Windows would not let the app read that file.";
+            accessDenied = true;
             global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(swallowed2);
             return null;
         }
         catch (IOException ex)
         {
-            error = $"The project could not be read: {ex.Message}";
+            error = "Another program is using that project file right now (for example a sync or backup app). Wait a moment, then open it again.";
+            accessDenied = true;
             global::FreeVideoStudio.Core.Infrastructure.CoreLogger.Swallowed(ex);
             return null;
         }

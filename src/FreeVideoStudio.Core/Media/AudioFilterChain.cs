@@ -29,7 +29,8 @@ public class AudioFilterChain
         bool musicTailFadeOut = true,
         string? voiceOverLabel = null,
         string? voiceProtectMusicPulse = null,
-        string? freezeMusicDipPulse = null)
+        string? freezeMusicDipPulse = null,
+        string? memeStopMusicPulse = null)
     {
         var chain = new List<string>();
 
@@ -227,6 +228,13 @@ public class AudioFilterChain
             chain.AddRange(FreezeSoundEffect.MusicDipChains(bgMusicLabel, freezeMusicDipPulse, "fzd", "[a_bg_freeze_dip]"));
             bgMusicLabel = "[a_bg_freeze_dip]";
             CoreLogger.Info("Audio", "Freeze effect: music keeps playing, ducked 6 dB, carved at 500 Hz and muffled under each freeze.");
+        }
+
+        if (!string.IsNullOrEmpty(memeStopMusicPulse))
+        {
+            chain.Add($"{bgMusicLabel}{MemeMusicStop.Filter(memeStopMusicPulse)}[a_bg_meme_stop]");
+            bgMusicLabel = "[a_bg_meme_stop]";
+            CoreLogger.Info("Audio", "Meme music: the music bed is silenced under each meme set to 'Music stops!'.");
         }
 
         if (!string.IsNullOrEmpty(voiceProtectMusicPulse))

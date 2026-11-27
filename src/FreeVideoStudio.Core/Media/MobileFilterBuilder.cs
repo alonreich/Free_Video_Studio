@@ -144,9 +144,12 @@ public class MobileFilterBuilder
     }
 
     public static IReadOnlyList<(double X, double Y, double W, double H)> HudCanvasRects(JsonObject? mobileCoords, bool showTeammates, bool showSpectating)
+        => HudCanvasLayers(mobileCoords, showTeammates, showSpectating).Select(l => (l.X, l.Y, l.W, l.H)).ToList();
+
+    public static IReadOnlyList<HudCanvasLayer> HudCanvasLayers(JsonObject? mobileCoords, bool showTeammates, bool showSpectating)
     {
-        var rects = new List<(double, double, double, double)>();
-        if (mobileCoords?["crops_1080p"] is not JsonObject crops) return rects;
+        var result = new List<HudCanvasLayer>();
+        if (mobileCoords?["crops_1080p"] is not JsonObject crops) return result;
         var layers = new List<LayerSpec>();
         foreach (var kvp in crops)
         {
@@ -156,13 +159,15 @@ public class MobileFilterBuilder
             if (key == "team" && !showTeammates) continue;
             layers.RegisterLayer(mobileCoords, key, key, key, key);
         }
-        foreach (var l in layers)
+        foreach (var l in layers.OrderBy(l => l.Z).ThenBy(l => l.ConfKey, StringComparer.OrdinalIgnoreCase))
         {
             double w = l.UiRect[0] * l.Scale, h = l.UiRect[1] * l.Scale;
-            if (w > 1 && h > 1) rects.Add((l.Pos.x, l.Pos.y, w, h));
+            if (w > 1 && h > 1) result.Add(new HudCanvasLayer(l.ConfKey, l.Pos.x, l.Pos.y, w, h, l.Z));
         }
-        return rects;
+        return result;
     }
+
+    public sealed record HudCanvasLayer(string Key, double X, double Y, double W, double H, int Z);
 
     public record LayerSpec(
         string Name, string ConfKey,

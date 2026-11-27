@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -14,6 +14,7 @@ public static class MemePickerPrefsStore
 
     private static readonly object _sync = new();
     private static State? _cache;
+    private static string? _cachePath;
 
     public sealed record LastChoice(
         MemePresentationMode Mode,
@@ -28,6 +29,8 @@ public static class MemePickerPrefsStore
         public HashSet<string> Favorites { get; } = new(StringComparer.OrdinalIgnoreCase);
         public List<string> Recent { get; } = new();
         public LastChoice? Last { get; set; }
+        public Dictionary<MemePresentationMode, LastChoice> Modes { get; } = new();
+        public Dictionary<string, bool> Music { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
     private static string StorePath =>
@@ -35,17 +38,27 @@ public static class MemePickerPrefsStore
 
     private static State LoadUnlocked()
     {
-        if (_cache != null) return _cache;
+        string path = StorePath;
+        if (_cache != null && string.Equals(path, _cachePath, StringComparison.OrdinalIgnoreCase)) return _cache;
         var st = new State();
         try
         {
-            string path = StorePath;
             if (File.Exists(path) && JsonNode.Parse(File.ReadAllText(path)) is JsonObject o)
             {
                 if (o["favorites"] is JsonArray fav)
                     foreach (var n in fav) if (n?.ToString() is { Length: > 0 } f) st.Favorites.Add(f);
                 if (o["recent"] is JsonArray rec)
                     foreach (var n in rec) if (n?.ToString() is { Length: > 0 } r && !st.Recent.Contains(r, StringComparer.OrdinalIgnoreCase)) st.Recent.Add(r);
+                if (o["music"] is JsonObject music)
+                    foreach (var kv in music)
+                        if (kv.Value is JsonValue v && v.TryGetValue(out bool keep)) st.Music[kv.Key] = keep;
+                if (o["modes"] is JsonObject modes)
+                    foreach (var kv in modes)
+                        if (Enum.TryParse<MemePresentationMode>(kv.Key, out var mode) && kv.Value is JsonObject saved)
+                        {
+                            var m = FreeVideoStudio.Core.Project.MemePresentationJson.Apply(saved, new FreeVideoStudio.Core.Media.MemePlacement("", 0, 0, "", mode));
+                            st.Modes[mode] = new LastChoice(mode, m.Corner, m.Size, m.PlaySound, m.Animation, m.Transition);
+                        }
                 if (o["last"] is JsonObject last)
                 {
                     var m = FreeVideoStudio.Core.Project.MemePresentationJson.Apply(last, new FreeVideoStudio.Core.Media.MemePlacement("", 0, 0, ""));
@@ -57,6 +70,8 @@ public static class MemePickerPrefsStore
         {
             RuntimeLog.Info("Meme", $"Could not read the meme picker's remembered choices: {ex.Message}");
         }
+        if (st.Last is { } lastChoice) st.Modes.TryAdd(lastChoice.Mode, lastChoice);
+        _cachePath = path;
         _cache = st;
         return st;
     }
@@ -78,6 +93,25 @@ public static class MemePickerPrefsStore
         }
     }
 
+    public static bool? MusicFor(string memePath)
+    {
+        if (string.IsNullOrWhiteSpace(memePath)) return null;
+        lock (_sync) return LoadUnlocked().Music.TryGetValue(Path.GetFileName(memePath), out bool keep) ? keep : null;
+    }
+
+    public static bool MusicContinuesFor(string memePath) =>
+        MusicFor(memePath) ?? FreeVideoStudio.Core.Media.MemePlacement.DefaultMusicContinues(memePath);
+
+    public static void SetMusic(string memePath, bool musicContinues)
+    {
+        if (string.IsNullOrWhiteSpace(memePath)) return;
+        Commit(st => st.Music[Path.GetFileName(memePath)] = musicContinues);
+    }
+
+    public static LastChoice? ForMode(MemePresentationMode mode)
+    {
+        lock (_sync) return LoadUnlocked().Modes.TryGetValue(mode, out var choice) ? choice : null;
+    }
     public static LastChoice? Last
     {
         get { lock (_sync) return LoadUnlocked().Last; }
@@ -105,6 +139,7 @@ public static class MemePickerPrefsStore
                 if (st.Recent.Count > MaxRecent) st.Recent.RemoveRange(MaxRecent, st.Recent.Count - MaxRecent);
             }
             st.Last = choice;
+            st.Modes[choice.Mode] = choice;
         });
     }
 
@@ -122,6 +157,12 @@ public static class MemePickerPrefsStore
                     ["favorites"] = new JsonArray(st.Favorites.OrderBy(f => f, StringComparer.OrdinalIgnoreCase).Select(f => (JsonNode?)JsonValue.Create(f)).ToArray()),
                     ["recent"] = new JsonArray(st.Recent.Select(r => (JsonNode?)JsonValue.Create(r)).ToArray()),
                 };
+                if (st.Music.Count > 0)
+                {
+                    var music = new JsonObject();
+                    foreach (var kv in st.Music.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase)) music[kv.Key] = kv.Value;
+                    o["music"] = music;
+                }
                 if (st.Last is { } l)
                 {
                     var last = new JsonObject();
@@ -129,6 +170,15 @@ public static class MemePickerPrefsStore
                         new FreeVideoStudio.Core.Media.MemePlacement("", 0, 0, "", l.Mode, l.Corner, l.Size, l.PlaySound, 0, -1, -1, l.Animation, l.Transition));
                     o["last"] = last;
                 }
+                var modes = new JsonObject();
+                foreach (var kv in st.Modes)
+                {
+                    var modeChoice = kv.Value;
+                    var saved = new JsonObject();
+                    FreeVideoStudio.Core.Project.MemePresentationJson.Write(saved, new FreeVideoStudio.Core.Media.MemePlacement("", 0, 0, "", modeChoice.Mode, modeChoice.Corner, modeChoice.Size, modeChoice.PlaySound, 0, -1, -1, modeChoice.Animation, modeChoice.Transition));
+                    modes[kv.Key.ToString()] = saved;
+                }
+                o["modes"] = modes;
                 payload = o.ToJsonString();
             }
             string path = StorePath;

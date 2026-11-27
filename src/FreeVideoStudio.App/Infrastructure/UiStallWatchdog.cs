@@ -58,7 +58,7 @@ public static class UiStallWatchdog
         {
             string dir = ApplicationPaths.CreateDefault().LogsDirectory;
             Directory.CreateDirectory(dir);
-            File.AppendAllText(Path.Combine(dir, FileName),
+            BoundedLogFile.Append(Path.Combine(dir, FileName),
                 $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} [pid {Environment.ProcessId}] {detail}{Environment.NewLine}");
         }
         catch (Exception ex) { RuntimeLog.Swallowed(ex); }

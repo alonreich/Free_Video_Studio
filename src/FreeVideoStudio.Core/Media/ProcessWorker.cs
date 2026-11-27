@@ -132,6 +132,7 @@ public class ProcessWorker : IDisposable
         public double PosY = -1;
         public MemeOverlayAnimation Animation = MemeOverlayAnimation.None;
         public MemeTransition Transition = MemeTransition.Cut;
+        public bool MusicContinues;
 
         public string VLabel => $"[{Id}_v]";
         public string ALabel => $"[{Id}_a]";
@@ -351,6 +352,7 @@ public class ProcessWorker : IDisposable
                             PosY = placement?.PosY ?? -1,
                             Animation = placement?.Animation ?? MemeOverlayAnimation.None,
                             Transition = placement?.Transition ?? MemeTransition.Cut,
+                            MusicContinues = placement?.MusicContinues ?? (KeepMusicDuringMeme || MemePlacement.DefaultMusicContinues(path)),
                         };
 
                         string memeExt = Path.GetExtension(path).ToLowerInvariant();
@@ -520,7 +522,7 @@ public class ProcessWorker : IDisposable
                     }
                 }
 
-                bool mixMusicAfterMeme = KeepMusicDuringMeme && memeTotalDuration > 0 && musicTracks.Count > 0;
+                bool mixMusicAfterMeme = memes.Any(m => m.MusicContinues) && memeTotalDuration > 0 && musicTracks.Count > 0;
 
                 int? introInputIndex = introDurationSec > 0.001 ? 1 + musicTracks.Count : null;
                 string? textInputLabel = textPngPath != null
@@ -878,6 +880,22 @@ public class ProcessWorker : IDisposable
                     }));
                 }
 
+                string? memeStopMusicPulse = null;
+                if (mixMusicAfterMeme)
+                {
+                    var stopWindows = new List<(double Start, double End)>();
+                    double inserted = 0;
+                    foreach (var m in memes.OrderBy(x => x.CutOutputSec))
+                    {
+                        double start = m.CutOutputSec + inserted;
+                        if (!m.MusicContinues) stopWindows.Add((start, start + m.DurationSec));
+                        inserted += m.DurationSec;
+                    }
+                    memeStopMusicPulse = MemeMusicStop.Pulse(stopWindows);
+                    if (memeStopMusicPulse != null)
+                        CoreLogger.Info("Audio", $"Music stops under {stopWindows.Count} meme(s) and continues under the others.");
+                }
+
                 string currentALabel = aPreparedPad;
                 if (!mixMusicAfterMeme)
                 {
@@ -1212,7 +1230,8 @@ public class ProcessWorker : IDisposable
                         musicTailFadeOut: MusicTailFadeOut,
                         voiceOverLabel: effectiveTakes.Count > 0 ? (effectiveTakes.Count > 1 ? "[vo_mixed_all]" : "[vo_delayed_0]") : null,
                         voiceProtectMusicPulse: VoiceOverProtectFromMusic ? voiceMusicPulseExpr : null,
-                        freezeMusicDipPulse: freezeDipFinal);
+                        freezeMusicDipPulse: freezeDipFinal,
+                        memeStopMusicPulse: memeStopMusicPulse);
 
                     foreach (var part in built.chains)
                     {
@@ -1271,6 +1290,13 @@ public class ProcessWorker : IDisposable
                     coreFilters.Add($"{vOutputFinal}subtitles=filename='{escapedAssPath}'[v_subtitled]");
                     vOutputFinal = "[v_subtitled]";
                     CoreLogger.Info("Captions", $"AICAPTION_EXPORT_01: Burn-in captions track ({CaptionTrack.Lines.Count} line(s)) via ASS subtitle filter; {captionHud?.Count ?? 0} HUD area(s) avoided, {captionSplices.Count} meme splice(s) accounted for.");
+                }
+
+                if (IsMobileFormat && introDurationSec > 0.001)
+                {
+                    coreFilters.Add(ShareCover.ShrinkLeading(vOutputFinal, "[v_share_cover]", introDurationSec));
+                    vOutputFinal = "[v_share_cover]";
+                    CoreLogger.Info("EXPORT", $"{ShareCover.Tag}: the {introDurationSec:F3}s cover frame shows the whole thumbnail at {ShareCover.Fraction:P0} on a blurred border, so chat apps that crop tall previews keep all of it.");
                 }
 
                 string filterScript = string.Join(";", coreFilters.Where(p => !string.IsNullOrEmpty(p)));
@@ -1935,17 +1961,18 @@ public class ProcessWorker : IDisposable
 
                 EmitProgress(2, "Finalizing", 97);
                 string outputDir = ResolveOutputDirectory();
-                string finalOutput = ResolveOutputPath(outputDir, OutputBaseName);
+                string finalOutput = string.Empty;
 
                 try
                 {
+                    finalOutput = ResolveOutputPath(outputDir, OutputBaseName);
                     await FinalOutputCommit.MoveAsync(corePath, finalOutput, overwrite: true).ConfigureAwait(false);
                 }
                 catch (Exception copyEx)
                 {
                     try
                     {
-                        if (File.Exists(finalOutput) && new FileInfo(finalOutput).Length == 0)
+                        if (finalOutput.Length > 0 && File.Exists(finalOutput) && new FileInfo(finalOutput).Length == 0)
                         {
                             File.Delete(finalOutput);
                         }
@@ -1956,7 +1983,7 @@ public class ProcessWorker : IDisposable
 
                     CoreLogger.Fail("Output",
                         $"The finished render could not be saved to the destination: {copyEx.Message}");
-                    CoreLogger.Debug("Output", $"Destination was: {finalOutput}");
+                    CoreLogger.Debug("Output", $"Destination was: {(finalOutput.Length > 0 ? finalOutput : outputDir)}");
 
                     LastFailure = new ExportFailure
                     {

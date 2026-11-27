@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -387,7 +387,7 @@ public partial class MainWindow
                     zoomSrcRes,
                     _voiceOverResult,
                     _cuts,
-                    _memePlacements,
+                    EffectiveMemePlacements(),
                     existingCaptions: _viewModel.CaptionTrack);
 
                 editor.PreviewLayers = CurrentEditorPreviewLayers();
@@ -424,8 +424,9 @@ public partial class MainWindow
 
                     _memePlacements.Clear();
                     _memePlacements.AddRange(editor.ResultMemes);
+                    _viewModel.SelectedMemeItem = null;
+                    _viewModel.IsAddMeme = false;
                     _viewModel.Timeline.MarkMemesAnchored();
-                    _ = AskKeepMusicIfNeededAsync();
 
                     _viewModel.CaptionTrack = editor.ResultCaptionTrack;
                     RuntimeLog.Info("UI", $"Granular editor: {editor.ResultCaptionTrack?.Lines?.Count ?? 0} commentary caption line(s) kept for the export.");
@@ -766,8 +767,6 @@ public partial class MainWindow
 
                     SetMusicButtonActive(true);
 
-                    await AskKeepMusicIfNeededAsync(force: true);
-
                     ApplyPreviewPlayersVolume();
 
                     UpdateTimelineMarkers();
@@ -783,60 +782,21 @@ public partial class MainWindow
             mobileCheckbox.IsCheckedChanged += (s, e) =>
             {
                 UpdatePortraitOverlay();
-                ApplyMemeItemsToCombo(preserveSelection: true);
                 SaveRecoveryState(label: "toggle portrait mode");
             };
         }
 
         var teammatesCb = TeammatesCheckboxCtl;
-        if (teammatesCb != null) teammatesCb.IsCheckedChanged += (s, e) => SaveRecoveryState(label: "toggle teammates");
+        if (teammatesCb != null) teammatesCb.IsCheckedChanged += (s, e) => { SaveRecoveryState(label: "toggle teammates"); _ = RefreshFinalLayoutPreviewAsync(); };
 
         var spectatingCb = SpectatingCheckboxCtl;
-        if (spectatingCb != null) spectatingCb.IsCheckedChanged += (s, e) => SaveRecoveryState(label: "toggle spectating");
+        if (spectatingCb != null) spectatingCb.IsCheckedChanged += (s, e) => { SaveRecoveryState(label: "toggle spectating"); _ = RefreshFinalLayoutPreviewAsync(); };
 
         var enableFadeCb = EnableFadeCheckboxCtl;
         if (enableFadeCb != null) enableFadeCb.IsCheckedChanged += (s, e) => SaveRecoveryState(label: "toggle fade");
 
         var portraitTextInput = PortraitTextInputCtl;
         if (portraitTextInput != null) portraitTextInput.TextChanged += (s, e) => { UpdatePortraitOverlay(); ScheduleRecoveryStateSave(); };
-
-        var addMemeCb = AddMemeCheckboxCtl;
-        if (addMemeCb != null)
-        {
-            addMemeCb.IsCheckedChanged += (s, e) => {
-                if (addMemeCb.IsChecked == true) {
-                    var cb = MemeComboBoxCtl;
-                    if (cb != null) cb.IsDropDownOpen = true;
-                }
-                SaveRecoveryState(label: "toggle meme");
-                UpdateTimelineMarkers();
-            };
-        }
-
-        var memeCb = MemeComboBoxCtl;
-        WireMemePlacementCombo();
-
-        if (memeCb != null) memeCb.SelectionChanged += (s, e) => {
-            if (memeCb.SelectedItem is MemeItem action && action.IsDownloadAction)
-            {
-                memeCb.SelectedItem = e.RemovedItems != null && e.RemovedItems.Count > 0 ? e.RemovedItems[0] : null;
-                _ = RunCloudMemeSyncAsync(action.DownloadCategory ?? MemeCategory.Video);
-                return;
-            }
-
-            if (memeCb.SelectedItem is MemeItem sel)
-            {
-                RuntimeLog.Info("Memes",
-                    $"MemeSelected: type={(sel.IsImage ? "image" : "video")}, file={sel.FileName}, " +
-                    $"width={sel.Width}, height={sel.Height}, aspect={sel.AspectRatio:0.###}");
-                RuntimeLog.Debug("Memes", $"MemeSelected full path: {sel.FullPath}");
-                SyncMemePlacementUi(sel.FullPath);
-            }
-
-            SaveRecoveryState(label: "choose meme");
-            _ = AskKeepMusicIfNeededAsync();
-            UpdateTimelineMarkers();
-        };
 
         var volSliderForRecovery = VolumeSliderCtl;
         if (volSliderForRecovery != null) volSliderForRecovery.PropertyChanged += (s, e) =>
@@ -939,83 +899,5 @@ public partial class MainWindow
                     "SettingsManager.Load() failed — see the log entries tagged [Settings].");
             }
         };
-    }
-
-    private bool _suppressMemePlacementEvent;
-
-    private void SyncMemePlacementUi(string? memePath)
-    {
-        var row = this.FindControl<Grid>("MemePlacementRow");
-        var combo = this.FindControl<ComboBox>("MemePlacementCombo");
-        if (row == null || combo == null) return;
-
-        bool has = !string.IsNullOrWhiteSpace(memePath) && System.IO.File.Exists(memePath);
-        row.IsVisible = has;
-        if (!has) return;
-
-        _suppressMemePlacementEvent = true;
-        combo.SelectedIndex =
-            Infrastructure.MemePlacementStore.Get(memePath!) == Infrastructure.MemePlacement.Start ? 1 : 0;
-        _suppressMemePlacementEvent = false;
-    }
-
-    private void WireMemePlacementCombo()
-    {
-        var combo = this.FindControl<ComboBox>("MemePlacementCombo");
-        if (combo == null) return;
-
-        combo.SelectionChanged += async (_, _) =>
-        {
-            if (_suppressMemePlacementEvent) return;
-
-            var memeCb = MemeComboBoxCtl;
-            if (memeCb?.SelectedItem is not MemeItem sel || sel.IsDownloadAction) return;
-
-            var chosen = combo.SelectedIndex == 1
-                ? Infrastructure.MemePlacement.Start
-                : Infrastructure.MemePlacement.End;
-
-            Infrastructure.MemePlacementStore.Set(sel.FullPath, chosen);
-            SaveRecoveryState(label: "change meme placement");
-            UpdateTimelineMarkers();
-
-            if (Infrastructure.MemePlacementStore.ContradictsShippedDefault(sel.FullPath, chosen))
-            {
-                await ErrorReporter.ShowAsync(this,
-                    "This meme usually goes first",
-                    $"'{sel.FileName}' is the kind of meme that normally plays BEFORE your gameplay — " +
-                    "it is an intro, so putting it at the end can feel out of place.\n\n" +
-                    "Your choice has been saved either way. Switch it back to \"at the START\" if that " +
-                    "was not what you meant.",
-                    "You will not be asked about this meme again.");
-            }
-        };
-    }
-
-    private bool _askingKeepMusic;
-    private async Task AskKeepMusicDuringMemeAsync()
-    {
-        if (_askingKeepMusic) return;
-        _askingKeepMusic = true;
-        try
-        {
-            var dlg = new ConfirmDialogWindow();
-            dlg.SetTitle("Background music during the meme");
-            dlg.SetMessage(
-                "Should the background music keep playing while the meme plays?\n\n" +
-                "KEEP PLAYING — the music carries on underneath the meme.\n" +
-                "STOP — the music pauses while the meme plays.\n\n" +
-                "Your answer is remembered. Open the Music Wizard again to change it.");
-            dlg.SetButtonText("KEEP PLAYING", "STOP");
-            await dlg.ShowDialog(this);
-            if (dlg.DialogResult == ConfirmDialogWindow.ConfirmDialogResult.Yes) _keepMusicDuringMeme = true;
-            else if (dlg.DialogResult == ConfirmDialogWindow.ConfirmDialogResult.No) _keepMusicDuringMeme = false;
-            RuntimeLog.Info("Memes", $"Keep music during meme: {(_keepMusicDuringMeme?.ToString() ?? "unanswered")}.");
-        }
-        catch (Exception ex)
-        {
-            RuntimeLog.Fail("DIALOG", $"Music-during-meme question failed: {ex.Message}");
-        }
-        finally { _askingKeepMusic = false; }
     }
 }

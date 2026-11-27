@@ -145,9 +145,14 @@ public sealed class MpvVideoView : Control, IDisposable
         }
         RuntimeLog.Info(InteropLogStep, $"Native player initialized off UI in {Environment.TickCount64 - started}ms.");
         _mpvHandle = handle;
-        IpcClient = new MpvIpcClient(handle);
-        if (RuntimeLog.IsDevMode && RuntimeLog.DevLogDir != null)
-            Infrastructure.MpvLogCap.Watch(IpcClient, System.IO.Path.Combine(RuntimeLog.DevLogDir, $"mpv_debug_{Environment.ProcessId}_{RuntimeLog.SessionId}.log"));
+        string? logDir = RuntimeLog.DevLogDir;
+        Action<string>? logMessage = null;
+        if (!string.IsNullOrWhiteSpace(logDir))
+        {
+            string path = System.IO.Path.Combine(logDir, $"mpv_debug_{Environment.ProcessId}_{RuntimeLog.SessionId}.log");
+            logMessage = message => Infrastructure.MpvLogCap.Enqueue(path, message);
+        }
+        IpcClient = new MpvIpcClient(handle, logMessage);
         started = Environment.TickCount64;
         if (OperatingSystem.IsWindows())
         {
@@ -193,19 +198,8 @@ public sealed class MpvVideoView : Control, IDisposable
         MpvWrapper.mpv_set_option_string(handle, "ytdl", "no");
         MpvWrapper.mpv_set_option_string(handle, "volume", MpvIpcClient.PlayerMpvVolume().ToString(System.Globalization.CultureInfo.InvariantCulture));
 
-        if (RuntimeLog.IsDevMode && RuntimeLog.DevLogDir != null)
-        {
-            string mpvLogPath = System.IO.Path.Combine(RuntimeLog.DevLogDir, $"mpv_debug_{Environment.ProcessId}_{RuntimeLog.SessionId}.log");
-            MpvWrapper.mpv_set_option_string(handle, "terminal", "yes");
-            MpvWrapper.mpv_set_option_string(handle, "msg-level", "all=v");
-            MpvWrapper.mpv_set_option_string(handle, "log-file", mpvLogPath);
-        }
-        else
-        {
-            MpvWrapper.mpv_set_option_string(handle, "terminal", "no");
-            MpvWrapper.mpv_set_option_string(handle, "msg-level", "all=warn");
-        }
-
+        MpvWrapper.mpv_set_option_string(handle, "terminal", "no");
+        MpvWrapper.mpv_set_option_string(handle, "msg-level", "all=warn");
         MpvWrapper.mpv_set_option_string(handle, "force-window", "no");
         MpvWrapper.mpv_set_option_string(handle, "osd-bar", "no");
 
@@ -315,8 +309,6 @@ public sealed class MpvVideoView : Control, IDisposable
 
     private void SoftwareRenderOnce()
     {
-        Interlocked.Exchange(ref _isUpdateQueued, 0);
-
         if (_swDisposing || _renderContext == nint.Zero) return;
         int w = _swTargetW;
         int h = _swTargetH;
@@ -328,6 +320,8 @@ public sealed class MpvVideoView : Control, IDisposable
         lock (_swRenderGate)
         {
             if (_swDisposing || _renderContext == nint.Zero) return;
+            if (Interlocked.Exchange(ref _isUpdateQueued, 0) != 0)
+                LibMpvInterop.mpv_render_context_update(_renderContext);
 
             if (_swRenderBuffer == null || _swRenderBuffer.Length != size) _swRenderBuffer = new byte[size];
             byte[] target = _swRenderBuffer;
@@ -598,7 +592,8 @@ public sealed class MpvVideoView : Control, IDisposable
         WglInterop.SetPixelFormat(_dummyHdc, format, ref pfd);
 
         _hglrc = WglInterop.wglCreateContext(_dummyHdc);
-        WglInterop.wglMakeCurrent(_dummyHdc, _hglrc);
+        if (_hglrc == nint.Zero || !WglInterop.wglMakeCurrent(_dummyHdc, _hglrc))
+            throw new InvalidOperationException($"Could not bind the preview OpenGL context (error {Marshal.GetLastWin32Error()}).");
 
         WglInterop.LoadExtensions();
 
@@ -656,6 +651,8 @@ public sealed class MpvVideoView : Control, IDisposable
         WglInterop.glGenTextures(SwapChainSize, _glTextures);
 
         RegisterRenderUpdateCallback();
+        if (!WglInterop.wglMakeCurrent(nint.Zero, nint.Zero))
+            throw new InvalidOperationException($"Could not release the preview OpenGL context for the render thread (error {Marshal.GetLastWin32Error()}).");
 
         _renderThreadRunning = true;
         _renderThreadCompletion = new TaskCompletionSource(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
@@ -665,8 +662,6 @@ public sealed class MpvVideoView : Control, IDisposable
             Name = "MpvRenderThread"
         };
         _renderThread.Start();
-
-        WglInterop.wglMakeCurrent(nint.Zero, nint.Zero);
     }
 
     private Task? _initializationTask;
@@ -1823,15 +1818,7 @@ public sealed class MpvVideoView : Control, IDisposable
     {
         try
         {
-            if (_renderContext == nint.Zero) return;
-            ulong flags = LibMpvInterop.mpv_render_context_update(_renderContext);
-            if ((flags & LibMpvInterop.MPV_RENDER_UPDATE_FRAME) != 0)
-            {
-                if (Interlocked.Exchange(ref _isUpdateQueued, 1) == 0)
-                {
-                    if (_renderThreadRunning) _renderSignal.Set();
-                }
-            }
+            if (Interlocked.Exchange(ref _isUpdateQueued, 1) == 0) _renderSignal.Set();
         }
         catch (System.Exception __ex) { RuntimeLog.SwallowedThrottled(__ex); }
     }
@@ -1885,189 +1872,193 @@ public sealed class MpvVideoView : Control, IDisposable
             if (__usWaited > LockWaitReportMs)
                 RuntimeLog.Fail(InteropLogStep,
                     $"LOCK WAIT: UpdateSurface waited {__usWaited}ms for _renderLock on the {ThreadTag()} thread.");
-            Interlocked.Exchange(ref _isUpdateQueued, 0);
-            bool glContextCurrent = false;
+            if (_renderContext == nint.Zero) return;
+            if (!WglInterop.wglMakeCurrent(_dummyHdc, _hglrc))
+            {
+                RuntimeLog.SwallowedThrottled(new InvalidOperationException($"Could not bind the preview OpenGL context for rendering (error {Marshal.GetLastWin32Error()})."));
+                RecordDeclinedFrame();
+                Interlocked.Exchange(ref _isUpdateQueued, 0);
+                return;
+            }
             try
             {
-                if (_renderContext == nint.Zero) return;
-
-                var compositor = _surfaceVisual?.Compositor;
-                var gpu = _gpuInterop;
-
-                int width = _cachedWidth;
-                int height = _cachedHeight;
-
-                if (_drawingSurface == null || _d3d11Device == null || _d3d11Context == null || gpu == null || width <= 1 || height <= 1)
+                if (Interlocked.Exchange(ref _isUpdateQueued, 0) != 0)
                 {
-                    PumpEmptyRender();
-                    return;
+                    ulong flags = LibMpvInterop.mpv_render_context_update(_renderContext);
+                    if ((flags & LibMpvInterop.MPV_RENDER_UPDATE_FRAME) == 0 && !_retryPending) return;
+                }
+                UpdateBoundSurface();
+            }
+            finally
+            {
+                if (!WglInterop.wglMakeCurrent(nint.Zero, nint.Zero))
+                    RuntimeLog.Fail(InteropLogStep, $"Could not release the preview OpenGL context after rendering (error {Marshal.GetLastWin32Error()}).");
+            }
+        }
+    }
+    private void UpdateBoundSurface()
+    {
+        var compositor = _surfaceVisual?.Compositor;
+        var gpu = _gpuInterop;
+
+        int width = _cachedWidth;
+        int height = _cachedHeight;
+
+        if (_drawingSurface == null || _d3d11Device == null || _d3d11Context == null || gpu == null || width <= 1 || height <= 1)
+        {
+            PumpEmptyRender();
+            return;
+        }
+
+        if (!TryEnsureRenderTexture(width, height))
+        {
+            PumpEmptyRender();
+            return;
+        }
+
+        int slotIndex = -1;
+        bool keyedMutexAcquired = false;
+        IDXGIKeyedMutex? acquiredKeyedMutex = null;
+
+        for (int probe = 1; probe <= SwapChainSize; probe++)
+        {
+            int candidate = (_currentBufferIndex + probe) % SwapChainSize;
+            if (_presentGates[candidate].Wait(0))
+            {
+                var candidateMutex = _sharedTextureMutexes[candidate];
+                if (candidateMutex == null || TryAcquireProducerKey(candidateMutex, candidate))
+                {
+                    slotIndex = candidate;
+                    acquiredKeyedMutex = candidateMutex;
+                    keyedMutexAcquired = candidateMutex != null;
+                    break;
                 }
 
-                EnsureRenderTexture(width, height);
+                try { _presentGates[candidate].Release(); }
+                catch (System.Exception ex) { RuntimeLog.SwallowedThrottled(ex); }
+            }
+        }
 
-                int slotIndex = -1;
-                bool keyedMutexAcquired = false;
-                IDXGIKeyedMutex? acquiredKeyedMutex = null;
+        if (slotIndex < 0)
+        {
+            if (!_presentDropLogged)
+            {
+                _presentDropLogged = true;
+                RuntimeLog.Debug(InteropLogStep,
+                    "Dropped a frame: every swap-chain slot still has a present in flight. " +
+                    "Further drops are not logged.");
+            }
+            if (_consecutiveDeclines > 30)
+            {
+                _forceSwapChainRebuild = true;
+            }
+            PumpEmptyRender();
+            return;
+        }
 
-                for (int probe = 1; probe <= SwapChainSize; probe++)
+        _currentBufferIndex = slotIndex;
+        bool permitHandedOff = false;
+
+        try
+        {
+            if (_sharedTextures[_currentBufferIndex] == null || _dxInteropObjects[_currentBufferIndex] == nint.Zero)
+            {
+                PumpEmptyRender();
+                return;
+            }
+
+            bool dxObjectLocked = false;
+            bool frameReady = false;
+            ImportedImageSlot? imageForAvalonia = null;
+            CompositionDrawingSurface? surfaceForAvalonia = null;
+
+            var keyedMutex = acquiredKeyedMutex;
+
+            try
+            {
+                _lockedInteropObjects[0] = _dxInteropObjects[_currentBufferIndex];
+
+                if (WglInterop.wglDXLockObjectsNV!(_dxInteropDevice, 1, _lockedInteropObjects))
                 {
-                    int candidate = (_currentBufferIndex + probe) % SwapChainSize;
-                    if (_presentGates[candidate].Wait(0))
+                    dxObjectLocked = true;
+                    WglInterop.glBindFramebuffer!(WglInterop.GL_FRAMEBUFFER, _glFramebuffers[_currentBufferIndex]);
+                    WglInterop.glFramebufferTexture2D!(WglInterop.GL_FRAMEBUFFER, WglInterop.GL_COLOR_ATTACHMENT0, WglInterop.GL_TEXTURE_2D, _glTextures[_currentBufferIndex], 0);
+
+                    unsafe
                     {
-                        var candidateMutex = _sharedTextureMutexes[candidate];
-                        if (candidateMutex == null || TryAcquireProducerKey(candidateMutex, candidate))
+                        WglInterop.glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+                        WglInterop.glClear(WglInterop.GL_COLOR_BUFFER_BIT);
+
+                        LibMpvInterop.mpv_opengl_fbo fbo = new LibMpvInterop.mpv_opengl_fbo
                         {
-                            slotIndex = candidate;
-                            acquiredKeyedMutex = candidateMutex;
-                            keyedMutexAcquired = candidateMutex != null;
-                            break;
-                        }
+                            fbo = (int)_glFramebuffers[_currentBufferIndex],
+                            w = _renderTextureW,
+                            h = _renderTextureH,
+                            internal_format = (int)WglInterop.GL_RGBA8
+                        };
 
-                        try { _presentGates[candidate].Release(); }
-                        catch (System.Exception ex) { RuntimeLog.SwallowedThrottled(ex); }
-                    }
-                }
+                        int flipY = 0;
 
-                if (slotIndex < 0)
-                {
-                    if (!_presentDropLogged)
-                    {
-                        _presentDropLogged = true;
-                        RuntimeLog.Debug(InteropLogStep,
-                            "Dropped a frame: every swap-chain slot still has a present in flight. " +
-                            "Further drops are not logged.");
-                    }
-                    if (_consecutiveDeclines > 30)
-                    {
-                        _forceSwapChainRebuild = true;
-                    }
-                    PumpEmptyRender();
-                    return;
-                }
+                        LibMpvInterop.mpv_render_param* paramsArray = stackalloc LibMpvInterop.mpv_render_param[3];
 
-                _currentBufferIndex = slotIndex;
-                bool permitHandedOff = false;
+                        paramsArray[0].type = LibMpvInterop.MPV_RENDER_PARAM_OPENGL_FBO;
+                        paramsArray[0].data = (nint)(&fbo);
 
-                try
-                {
-                if (_sharedTextures[_currentBufferIndex] == null || _dxInteropObjects[_currentBufferIndex] == nint.Zero)
-                {
-                    PumpEmptyRender();
-                    return;
-                }
+                        paramsArray[1].type = LibMpvInterop.MPV_RENDER_PARAM_FLIP_Y;
+                        paramsArray[1].data = (nint)(&flipY);
 
-                bool dxObjectLocked = false;
-                bool frameReady = false;
-                ImportedImageSlot? imageForAvalonia = null;
-                CompositionDrawingSurface? surfaceForAvalonia = null;
+                        paramsArray[2].type = 0;
+                        paramsArray[2].data = nint.Zero;
 
-                var keyedMutex = acquiredKeyedMutex;
-
-                try
-                {
-                    WglInterop.wglMakeCurrent(_dummyHdc, _hglrc);
-                    glContextCurrent = true;
-
-                    _lockedInteropObjects[0] = _dxInteropObjects[_currentBufferIndex];
-
-                    if (WglInterop.wglDXLockObjectsNV!(_dxInteropDevice, 1, _lockedInteropObjects))
-                    {
-                        dxObjectLocked = true;
-                        WglInterop.glBindFramebuffer!(WglInterop.GL_FRAMEBUFFER, _glFramebuffers[_currentBufferIndex]);
-                        WglInterop.glFramebufferTexture2D!(WglInterop.GL_FRAMEBUFFER, WglInterop.GL_COLOR_ATTACHMENT0, WglInterop.GL_TEXTURE_2D, _glTextures[_currentBufferIndex], 0);
-
-                        unsafe
-                        {
-                            WglInterop.glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
-                            WglInterop.glClear(WglInterop.GL_COLOR_BUFFER_BIT);
-
-                            LibMpvInterop.mpv_opengl_fbo fbo = new LibMpvInterop.mpv_opengl_fbo
-                            {
-                                fbo = (int)_glFramebuffers[_currentBufferIndex],
-                                w = _renderTextureW,
-                                h = _renderTextureH,
-                                internal_format = (int)WglInterop.GL_RGBA8
-                            };
-
-                            int flipY = 0;
-
-                            LibMpvInterop.mpv_render_param* paramsArray = stackalloc LibMpvInterop.mpv_render_param[3];
-
-                            paramsArray[0].type = LibMpvInterop.MPV_RENDER_PARAM_OPENGL_FBO;
-                            paramsArray[0].data = (nint)(&fbo);
-
-                            paramsArray[1].type = LibMpvInterop.MPV_RENDER_PARAM_FLIP_Y;
-                            paramsArray[1].data = (nint)(&flipY);
-
-                            paramsArray[2].type = 0;
-                            paramsArray[2].data = nint.Zero;
-
-                            LibMpvInterop.mpv_render_context_render(_renderContext, (nint)paramsArray);
-                        }
-
-                        WglInterop.glFlush();
-                        WglInterop.wglDXUnlockObjectsNV?.Invoke(_dxInteropDevice, 1, _lockedInteropObjects);
-                        dxObjectLocked = false;
-
-                        _d3d11Context?.Flush();
-
-                        imageForAvalonia = EnsureImportedImage(_currentBufferIndex);
-                        surfaceForAvalonia = _drawingSurface;
-                        frameReady = imageForAvalonia != null && surfaceForAvalonia != null;
-                    }
-                    else
-                    {
-                        RuntimeLog.Fail(InteropLogStep, $"wglDXLockObjectsNV failed for buffer {_currentBufferIndex}.");
-                    }
-                }
-                finally
-                {
-                    if (dxObjectLocked)
-                    {
-                        WglInterop.wglDXUnlockObjectsNV?.Invoke(_dxInteropDevice, 1, _lockedInteropObjects);
+                        LibMpvInterop.mpv_render_context_render(_renderContext, (nint)paramsArray);
                     }
 
-                    if (glContextCurrent)
-                    {
-                        WglInterop.wglMakeCurrent(nint.Zero, nint.Zero);
-                        glContextCurrent = false;
-                    }
+                    WglInterop.glFlush();
+                    WglInterop.wglDXUnlockObjectsNV?.Invoke(_dxInteropDevice, 1, _lockedInteropObjects);
+                    dxObjectLocked = false;
 
-                    if (keyedMutexAcquired)
-                    {
-                        keyedMutex!.ReleaseSync(frameReady ? ConsumerKey : ProducerKey);
-                    }
-                }
+                    _d3d11Context?.Flush();
 
-                if (frameReady && imageForAvalonia != null && surfaceForAvalonia != null)
-                {
-                    _retryPending = false;
-                    _consecutiveDeclines = 0;
-                    permitHandedOff = true;
-                    ImportAndPresentTexture(_currentBufferIndex, surfaceForAvalonia, imageForAvalonia);
+                    imageForAvalonia = EnsureImportedImage(_currentBufferIndex);
+                    surfaceForAvalonia = _drawingSurface;
+                    frameReady = imageForAvalonia != null && surfaceForAvalonia != null;
                 }
                 else
                 {
-                    PumpEmptyRender();
-                }
-                }
-                finally
-                {
-                    if (!permitHandedOff)
-                    {
-                        try { _presentGates[slotIndex].Release(); }
-                        catch (System.Exception ex) { RuntimeLog.SwallowedThrottled(ex); }
-                    }
+                    RuntimeLog.Fail(InteropLogStep, $"wglDXLockObjectsNV failed for buffer {_currentBufferIndex}.");
                 }
             }
-            catch (Exception ex)
+            finally
             {
-                if (glContextCurrent)
+                if (dxObjectLocked)
                 {
-                    WglInterop.wglMakeCurrent(nint.Zero, nint.Zero);
+                    WglInterop.wglDXUnlockObjectsNV?.Invoke(_dxInteropDevice, 1, _lockedInteropObjects);
                 }
 
-                RuntimeLog.Fail(InteropLogStep, ex);
+                if (keyedMutexAcquired)
+                {
+                    keyedMutex!.ReleaseSync(frameReady ? ConsumerKey : ProducerKey);
+                }
+            }
+
+            if (frameReady && imageForAvalonia != null && surfaceForAvalonia != null)
+            {
+                _retryPending = false;
+                _consecutiveDeclines = 0;
+                permitHandedOff = true;
+                ImportAndPresentTexture(_currentBufferIndex, surfaceForAvalonia, imageForAvalonia);
+            }
+            else
+            {
+                PumpEmptyRender();
+            }
+        }
+        finally
+        {
+            if (!permitHandedOff)
+            {
+                try { _presentGates[slotIndex].Release(); }
+                catch (System.Exception ex) { RuntimeLog.SwallowedThrottled(ex); }
             }
         }
     }
@@ -2124,7 +2115,7 @@ public sealed class MpvVideoView : Control, IDisposable
 
     private const int ConsecutiveDeclineLimit = 90;
 
-    private void PumpEmptyRender()
+    private void RecordDeclinedFrame()
     {
         if (++_consecutiveDeclines <= ConsecutiveDeclineLimit)
         {
@@ -2137,7 +2128,10 @@ public sealed class MpvVideoView : Control, IDisposable
                 $"No frame could be presented for {ConsecutiveDeclineLimit} consecutive attempts — " +
                 "parking the render loop until mpv signals again instead of retrying 15x/sec.");
         }
-
+    }
+    private void PumpEmptyRender()
+    {
+        RecordDeclinedFrame();
         if (_renderContext == nint.Zero || _disposing) return;
 
         try
@@ -2165,11 +2159,17 @@ public sealed class MpvVideoView : Control, IDisposable
         }
     }
 
-    private void EnsureRenderTexture(int width, int height)
+    private bool TryEnsureRenderTexture(int width, int height)
     {
         bool forced = _forceSwapChainRebuild;
         if (!forced && _sharedTextures[0] != null && _renderTextureW == width && _renderTextureH == height)
-            return;
+        {
+            _textureRebuildDeferred = false;
+            return true;
+        }
+        _textureRebuildDeferred = true;
+        if (!TryReleaseTexturesForRebuild()) return false;
+        _textureRebuildDeferred = false;
         _forceSwapChainRebuild = false;
         if (forced) Array.Clear(_producerKeyTimeouts, 0, SwapChainSize);
 
@@ -2178,8 +2178,6 @@ public sealed class MpvVideoView : Control, IDisposable
             var types = string.Join(", ", _gpuInterop.SupportedImageHandleTypes);
             RuntimeLog.Info(InteropLogStep, "Supported image handle types: " + types);
         }
-
-        ReleaseRenderTexture();
 
         var sharedDesc = new Texture2DDescription(
             format: Format.B8G8R8A8_UNorm,
@@ -2194,51 +2192,55 @@ public sealed class MpvVideoView : Control, IDisposable
             sampleQuality: 0,
             miscFlags: ResourceOptionFlags.SharedKeyedMutex);
 
-        WglInterop.wglMakeCurrent(_dummyHdc, _hglrc);
-        try
+        for (int i = 0; i < SwapChainSize; i++)
         {
-            for (int i = 0; i < SwapChainSize; i++)
+            _sharedTextures[i] = _d3d11Device!.CreateTexture2D(sharedDesc);
+            _renderTexturePtrs[i] = _sharedTextures[i]!.NativePointer;
+            _sharedTextureMutexes[i] = _sharedTextures[i]!.QueryInterface<IDXGIKeyedMutex>();
+
+            _dxInteropObjects[i] = WglInterop.wglDXRegisterObjectNV!(
+                _dxInteropDevice,
+                _renderTexturePtrs[i],
+                _glTextures[i],
+                WglInterop.GL_TEXTURE_2D,
+                WglInterop.WGL_ACCESS_READ_WRITE_NV);
+
+            if (_dxInteropObjects[i] == nint.Zero)
             {
-                _sharedTextures[i] = _d3d11Device!.CreateTexture2D(sharedDesc);
-                _renderTexturePtrs[i] = _sharedTextures[i]!.NativePointer;
-                _sharedTextureMutexes[i] = _sharedTextures[i]!.QueryInterface<IDXGIKeyedMutex>();
-
-                _dxInteropObjects[i] = WglInterop.wglDXRegisterObjectNV!(
-                    _dxInteropDevice,
-                    _renderTexturePtrs[i],
-                    _glTextures[i],
-                    WglInterop.GL_TEXTURE_2D,
-                    WglInterop.WGL_ACCESS_READ_WRITE_NV);
-
-                if (_dxInteropObjects[i] == nint.Zero)
-                {
-                    RuntimeLog.Fail(InteropLogStep, $"wglDXRegisterObjectNV failed for buffer {i}.");
-                }
-
-                _d3d11Context?.Flush();
-
-                WglInterop.glBindTexture(WglInterop.GL_TEXTURE_2D, _glTextures[i]);
-                WglInterop.glTexParameteri(WglInterop.GL_TEXTURE_2D, WglInterop.GL_TEXTURE_MIN_FILTER, WglInterop.GL_LINEAR);
-                WglInterop.glTexParameteri(WglInterop.GL_TEXTURE_2D, WglInterop.GL_TEXTURE_MAG_FILTER, WglInterop.GL_LINEAR);
-                WglInterop.glBindTexture(WglInterop.GL_TEXTURE_2D, 0);
-
-                uint[] fbo = new uint[1];
-                WglInterop.glGenFramebuffers!(1, fbo);
-                _glFramebuffers[i] = fbo[0];
-                WglInterop.glBindFramebuffer!(WglInterop.GL_FRAMEBUFFER, _glFramebuffers[i]);
-                WglInterop.glFramebufferTexture2D!(WglInterop.GL_FRAMEBUFFER, WglInterop.GL_COLOR_ATTACHMENT0, WglInterop.GL_TEXTURE_2D, _glTextures[i], 0);
-
-                using var dxgiResource = _sharedTextures[i]!.QueryInterface<IDXGIResource>();
-                _sharedTextureHandles[i] = dxgiResource.SharedHandle;
+                RuntimeLog.Fail(InteropLogStep, $"wglDXRegisterObjectNV failed for buffer {i}.");
             }
 
-            _renderTextureW = width;
-            _renderTextureH = height;
+            _d3d11Context?.Flush();
+
+            WglInterop.glBindTexture(WglInterop.GL_TEXTURE_2D, _glTextures[i]);
+            WglInterop.glTexParameteri(WglInterop.GL_TEXTURE_2D, WglInterop.GL_TEXTURE_MIN_FILTER, WglInterop.GL_LINEAR);
+            WglInterop.glTexParameteri(WglInterop.GL_TEXTURE_2D, WglInterop.GL_TEXTURE_MAG_FILTER, WglInterop.GL_LINEAR);
+            WglInterop.glBindTexture(WglInterop.GL_TEXTURE_2D, 0);
+
+            uint[] fbo = new uint[1];
+            WglInterop.glGenFramebuffers!(1, fbo);
+            _glFramebuffers[i] = fbo[0];
+            WglInterop.glBindFramebuffer!(WglInterop.GL_FRAMEBUFFER, _glFramebuffers[i]);
+            WglInterop.glFramebufferTexture2D!(WglInterop.GL_FRAMEBUFFER, WglInterop.GL_COLOR_ATTACHMENT0, WglInterop.GL_TEXTURE_2D, _glTextures[i], 0);
+
+            using var dxgiResource = _sharedTextures[i]!.QueryInterface<IDXGIResource>();
+            _sharedTextureHandles[i] = dxgiResource.SharedHandle;
         }
-        finally
+
+        _renderTextureW = width;
+        _renderTextureH = height;
+        return true;
+    }
+    private volatile bool _textureRebuildDeferred;
+    internal bool TryReleaseTexturesForRebuild()
+    {
+        for (int i = 0; i < SwapChainSize; i++)
         {
-            WglInterop.wglMakeCurrent(nint.Zero, nint.Zero);
+            if (_presentGates[i].CurrentCount == 0 || Volatile.Read(ref _pendingImports[i]) is { IsDone: false })
+                return false;
         }
+        ReleaseRenderTexture();
+        return true;
     }
 
     private ImportedImageSlot? EnsureImportedImage(int index)
@@ -2328,7 +2330,12 @@ public sealed class MpvVideoView : Control, IDisposable
                 }
                 finally
                 {
-                    try { gate.Release(); } catch (System.Exception ex) { RuntimeLog.SwallowedThrottled(ex); }
+                    try
+                    {
+                        gate.Release();
+                        if (_textureRebuildDeferred && !_disposing) _renderSignal.Set();
+                    }
+                    catch (System.Exception ex) { RuntimeLog.SwallowedThrottled(ex); }
                 }
             }, Avalonia.Threading.DispatcherPriority.Render);
 
@@ -2412,18 +2419,23 @@ public sealed class MpvVideoView : Control, IDisposable
             return null;
         }
 
-        var request = new PendingImport(epoch, sharedHandle);
-        System.Threading.Volatile.Write(ref _pendingImports[index], request);
-        Dispatcher.UIThread.Post(() =>
+        var request = BeginTextureImport(index, epoch, sharedHandle);
+        Dispatcher.UIThread.Post(async () =>
         {
             LastUiStep = $"import[{index}]: calling gpu.ImportImage";
             ICompositionImportedGpuImage? image = null;
             try
             {
-                if (!_disposing) image = gpu.ImportImage(platformHandle, props);
+                if (!_disposing)
+                {
+                    image = gpu.ImportImage(platformHandle, props);
+                    await image.ImportCompleted;
+                }
             }
             catch (Exception ex)
             {
+                if (image != null) DisposeImportedImageOnUiThread(image);
+                image = null;
                 LastUiStep = $"import[{index}]: threw {ex.GetType().Name}";
                 RuntimeLog.SwallowedThrottled(ex);
             }
@@ -2447,7 +2459,13 @@ public sealed class MpvVideoView : Control, IDisposable
         return null;
     }
 
-    private sealed class PendingImport
+    internal PendingImport BeginTextureImport(int index, long epoch, nint sharedHandle)
+    {
+        var request = new PendingImport(epoch, sharedHandle);
+        Volatile.Write(ref _pendingImports[index], request);
+        return request;
+    }
+    internal sealed class PendingImport
     {
         public PendingImport(long epoch, nint handle) { Epoch = epoch; Handle = handle; }
         public long Epoch { get; }

@@ -32,6 +32,8 @@ public sealed class FreezeSoundEffectTests
     [Theory]
     [InlineData(FreezeSound.Church_Bell)]
     [InlineData(FreezeSound.Cinematic_Dramatic_Slow_Down)]
+    [InlineData(FreezeSound.Church_Bell_Mid)]
+    [InlineData(FreezeSound.Church_Bell_Late)]
     public void Assets_AreEmbedded_48kMono(FreezeSound sound)
     {
         float[] a = FreezeSoundEffect.Asset(sound);
@@ -43,7 +45,7 @@ public sealed class FreezeSoundEffectTests
     public void Choices_DefaultIsTheBell_AndUnknownNamesFallBackToIt()
     {
         Assert.Equal(FreezeSound.Church_Bell, FreezeSoundEffect.Default);
-        Assert.Equal(2, FreezeSoundEffect.Choices.Count);
+        Assert.Equal(4, FreezeSoundEffect.Choices.Count);
         Assert.Equal(FreezeSound.Church_Bell, FreezeSoundEffect.Parse(null));
         Assert.Equal(FreezeSound.Church_Bell, FreezeSoundEffect.Parse("Whoosh"));
         Assert.Equal(FreezeSound.Cinematic_Dramatic_Slow_Down, FreezeSoundEffect.Parse("cinematic_dramatic_slow-down"));
@@ -59,6 +61,10 @@ public sealed class FreezeSoundEffectTests
     [InlineData(FreezeSound.Cinematic_Dramatic_Slow_Down, 1.7)]
     [InlineData(FreezeSound.Cinematic_Dramatic_Slow_Down, 3.0)]
     [InlineData(FreezeSound.Cinematic_Dramatic_Slow_Down, 10.0)]
+    [InlineData(FreezeSound.Church_Bell_Mid, 0.5)]
+    [InlineData(FreezeSound.Church_Bell_Mid, 3.0)]
+    [InlineData(FreezeSound.Church_Bell_Late, 0.5)]
+    [InlineData(FreezeSound.Church_Bell_Late, 3.0)]
     public void Sound_LastsTheHoldPlusItsTail_StartsOnTheFrame_AndEndsSilent(FreezeSound sound, double seconds)
     {
         float[] s = FreezeSoundEffect.Render(seconds, sound);
@@ -77,6 +83,8 @@ public sealed class FreezeSoundEffectTests
         for (int i = 0; i < 48000; i += 97) Assert.Equal(asset[i], s[i], 5);
         Assert.Equal(asset[48000 + 19200] * 0.5, s[48000 + 19200], 3);
         Assert.Equal(0.8, FreezeSoundEffect.TailSec(FreezeSound.Church_Bell));
+        Assert.Equal(0.8, FreezeSoundEffect.TailSec(FreezeSound.Church_Bell_Mid));
+        Assert.Equal(0.8, FreezeSoundEffect.TailSec(FreezeSound.Church_Bell_Late));
     }
 
     [Theory]
@@ -165,10 +173,12 @@ public sealed class FreezeSoundEffectTests
     }
 
     [Theory]
-    [InlineData(FreezeSound.Church_Bell, -18.2, -3.8)]
+    [InlineData(FreezeSound.Church_Bell, -18.2, -4.5)]
+    [InlineData(FreezeSound.Church_Bell_Mid, -18.2, -4.1)]
+    [InlineData(FreezeSound.Church_Bell_Late, -18.2, -3.2)]
     [InlineData(FreezeSound.Cinematic_Dramatic_Slow_Down, -18.2, -2.5)]
-    [InlineData(FreezeSound.Church_Bell, null, -5.6)]
-    [InlineData(FreezeSound.Church_Bell, -80.0, -5.6)]
+    [InlineData(FreezeSound.Church_Bell, null, -6.3)]
+    [InlineData(FreezeSound.Church_Bell, -80.0, -6.3)]
     [InlineData(FreezeSound.Church_Bell, -60.0, -30.0)]
     [InlineData(FreezeSound.Church_Bell, -5.0, 6.0)]
     public void Gain_PutsTheSoundAt83PercentOfTheVideosLoudness(FreezeSound sound, double? videoLufs, double expectedDb)
@@ -194,7 +204,7 @@ public sealed class FreezeSoundEffectTests
         var segments = new List<SpeedSegment> { new(2000, 3500, 0) };
         var (graph, _, _, _, _, _) = GranularSpeedBuilder.Build(10000, segments, 1.0, 0, "[0:v]", "[0:a]", "60", needHudBranch: false,
             freezeSound: FreezeSound.Church_Bell, freezeVideoLufs: -18.2);
-        Assert.Contains("_g-38.wav", graph);
+        Assert.Contains("_g-45.wav", graph);
     }
 
     [Fact]
@@ -237,6 +247,8 @@ public sealed class FreezeSoundEffectTests
     [InlineData(FreezeSound.Church_Bell, 3.0)]
     [InlineData(FreezeSound.Cinematic_Dramatic_Slow_Down, 0.5)]
     [InlineData(FreezeSound.Cinematic_Dramatic_Slow_Down, 3.0)]
+    [InlineData(FreezeSound.Church_Bell_Mid, 0.5)]
+    [InlineData(FreezeSound.Church_Bell_Late, 0.5)]
     public void Sound_IsClearOnAPhoneSpeaker(FreezeSound sound, double seconds)
     {
         float[] s = FreezeSoundEffect.Render(seconds, sound);

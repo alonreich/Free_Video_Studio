@@ -15,6 +15,7 @@ public static class MemePresentationJson
     public const string KeyPosY = "posY";
     public const string KeyAnimation = "animation";
     public const string KeyTransition = "transition";
+    public const string KeyMusic = "music";
 
     public static void Write(JsonObject o, MemePlacement m)
     {
@@ -27,6 +28,8 @@ public static class MemePresentationJson
         o[KeyPosY] = m.PosY;
         o[KeyAnimation] = AnimationText(m.Animation);
         o[KeyTransition] = TransitionText(m.Transition);
+        if (m.MusicContinues is bool music) o[KeyMusic] = music ? "continues" : "stops";
+        else o.Remove(KeyMusic);
     }
 
     public static MemePlacement Apply(JsonObject? o, MemePlacement m)
@@ -43,8 +46,16 @@ public static class MemePresentationJson
             PosY = Num(o[KeyPosY], -1),
             Animation = ParseAnimation(Text(o[KeyAnimation])),
             Transition = ParseTransition(Text(o[KeyTransition])),
+            MusicContinues = ParseMusic(Text(o[KeyMusic])),
         };
     }
+
+    public static bool? ParseMusic(string? s) => s?.ToLowerInvariant() switch
+    {
+        "continues" => true,
+        "stops" => false,
+        _ => null,
+    };
 
     public static string ModeText(MemePresentationMode v) => v == MemePresentationMode.CornerOverlay ? "corner" : "inline";
 

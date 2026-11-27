@@ -112,6 +112,9 @@ internal sealed class SmokeApp : Application
             var ipc = video.IpcClient ?? throw new InvalidOperationException("Player did not initialize.");
             Require((await ipc.LoadFileAsync(Program.Media)).Succeeded, "Load command failed.");
             Require((await ipc.SetPropertyAsync("pause", "yes")).Succeeded, "Pause failed.");
+            var loadTime = Stopwatch.StartNew();
+            while (ipc.Duration <= 0 && loadTime.Elapsed < TimeSpan.FromSeconds(5)) await Task.Delay(20);
+            Require(ipc.Duration > 0, "Player did not open the preview fixture.");
             await ColorAtAsync(video, ipc, 1, 0);
             timer.Start();
             Require((await ipc.SetPropertyAsync("pause", "no")).Succeeded, "Play failed.");
@@ -155,6 +158,10 @@ internal sealed class SmokeApp : Application
     private static async Task ColorAtAsync(MpvVideoView video, MpvIpcClient ipc, double seconds, int channel)
     {
         Require((await ipc.SendCommandAsync("seek", seconds, "absolute+exact")).Succeeded, "Seek command failed.");
+        await WaitForDisplayedColorAsync(video, channel, () => Math.Abs(ipc.CurrentTime - seconds) < 0.1 && !ipc.IsSeeking, $"seek to {seconds}s");
+    }
+    internal static async Task WaitForDisplayedColorAsync(MpvVideoView video, int channel, Func<bool> ready, string stage)
+    {
         var clock = Stopwatch.StartNew();
         uint last = 0;
         while (clock.ElapsedMilliseconds < 3000)
@@ -167,9 +174,9 @@ internal sealed class SmokeApp : Application
             finally { ReleaseDC(0, dc); }
             int[] rgb = [(int)(last & 255), (int)((last >> 8) & 255), (int)((last >> 16) & 255)];
             if (last != uint.MaxValue && rgb[channel] > 160 && rgb.Where((_, i) => i != channel).All(c => c < 80)
-                && Math.Abs(ipc.CurrentTime - seconds) < 0.1 && !ipc.IsSeeking) return;
+                && ready()) return;
         }
-        throw new InvalidOperationException($"Displayed frame after seek to {seconds}s is wrong or stale: RGB word {last:X6}, player={ipc.CurrentTime:F3}s.");
+        throw new InvalidOperationException($"Displayed frame at {stage} is wrong or stale: RGB word {last:X6}.");
     }
 
     [DllImport("user32.dll")] private static extern nint GetDC(nint hwnd);

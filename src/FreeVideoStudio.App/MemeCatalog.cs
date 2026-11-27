@@ -18,6 +18,7 @@ public sealed class MemeItem
     public int Width { get; set; }
     public int Height { get; set; }
     public float AspectRatio => Height > 0 ? (float)Width / Height : 0f;
+    public double DurationSec { get; set; }
     public bool IsDownloadAction { get; init; }
 
     public MemeCategory? DownloadCategory { get; init; }
@@ -65,10 +66,12 @@ public static class MemeCatalog
         var misses = new List<ScanCandidate>();
         foreach (ScanCandidate c in candidates)
         {
-            if (cache.TryGet(c.FullPath, c.Length, c.MTimeTicks, out int cachedW, out int cachedH))
+            if (cache.TryGet(c.FullPath, c.Length, c.MTimeTicks, out int cachedW, out int cachedH, out double cachedD)
+                && (c.IsImage || cachedD > 0))
             {
                 c.Width = cachedW;
                 c.Height = cachedH;
+                c.DurationSec = cachedD;
             }
             else
             {
@@ -98,10 +101,11 @@ public static class MemeCatalog
                         }
                         else
                         {
-                            var (w, h) = await new FreeVideoStudio.Core.Media.MediaProber(ffprobePath, c.FullPath)
-                                .GetResolutionAsync().ConfigureAwait(false);
+                            var prober = new FreeVideoStudio.Core.Media.MediaProber(ffprobePath, c.FullPath);
+                            var (w, h) = await prober.GetResolutionAsync().ConfigureAwait(false);
                             c.Width = w;
                             c.Height = h;
+                            c.DurationSec = await prober.GetDurationAsync(ct).ConfigureAwait(false);
                         }
                     }
                     catch (Exception ex)
@@ -112,7 +116,7 @@ public static class MemeCatalog
 
             foreach (ScanCandidate c in misses)
             {
-                cache.Put(c.FullPath, c.Length, c.MTimeTicks, c.Width, c.Height);
+                cache.Put(c.FullPath, c.Length, c.MTimeTicks, c.Width, c.Height, c.DurationSec);
             }
 
             cache.Save();
@@ -136,7 +140,8 @@ public static class MemeCatalog
                 FullPath = c.FullPath,
                 IsImage = c.IsImage,
                 Width = c.Width,
-                Height = c.Height
+                Height = c.Height,
+                DurationSec = c.IsImage ? 0 : c.DurationSec
             });
         }
 
@@ -156,6 +161,7 @@ public static class MemeCatalog
         public long MTimeTicks;
         public int Width;
         public int Height;
+        public double DurationSec;
     }
 
     private static List<ScanCandidate> EnumerateCandidates(string directory)
@@ -226,6 +232,12 @@ public static class MemeCatalog
         CancellationToken cancellationToken = default)
         => SyncFolderAsync(targetDirectory, CloudMemeFolder, ExtensionsFor(category),
                            category == MemeCategory.Image ? "Image memes" : "Video memes", progress, cancellationToken);
+
+    public static Task<(int downloaded, string? error)> SyncAllMemesAsync(
+        string targetDirectory,
+        IProgress<SyncProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+        => SyncFolderAsync(targetDirectory, CloudMemeFolder, VideoExts.Concat(ImageExts).ToArray(), "Memes", progress, cancellationToken);
 
     public static Task<(int downloaded, string? error)> SyncSongsFromCloudAsync(
         string targetDirectory,

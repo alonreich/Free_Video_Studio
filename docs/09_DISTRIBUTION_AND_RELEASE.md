@@ -315,12 +315,13 @@ installer, upgrade path, signing story.
      **RELNOPROMPT_01 (owner decision 2026-11-22):** there is no `PUBLISH` prompt; running `Build.cmd` is
      the confirmation. `--yes` is still accepted (ignored) for old scripts; `FVS_RELEASE_UNATTENDED` and
      RELQA_02 are retired. Every other gate check above and below still refuses a bad release.
-     **RELQA_01 — before that question:** the GitHub check runs of the starting commit must be green —
+     **RELQA_01 — required checks before publication:** the GitHub check runs of the starting commit must be green —
      the latest run of each of `Fix sentinels`, `Release records`, `Build + test (Windows)`,
      `LFS pointers resolve`, and for a stable release `NativeAOT publish` (`RequiredChecks`, `AotCheck`,
      `CiProblems`; read with `gh api repos/{owner}/{repo}/commits/<sha>/check-runs`). Then the fix
      sentinels and both test suites run on this machine (`RunLocalChecks`) and must pass without touching
      tracked files. It used to compile, sign and publish without running a single test.
+     **SANITIZE_01:** `RequireNoLeaks` runs `developer_tools/Sanitize/Sanitize.ps1 check` (05 SYS-SETTINGSSCHEMA) and shows its `LEAK` lines in red; any leak in files or git history (local or still on GitHub), or a missing or failing tool, refuses the release. It changes nothing; fixing is `developer_tools\Sanitize.cmd`.
      **ROOTKEY_01:** the publisher root key must not open with the password stored beside it
      (`CodeSigning.RootKeyIsProtected`; a key kept offline counts as protected).
      **RELRECORD_01/02:** every version heading in `docs/CHANGELOG.md` is a tag on GitHub

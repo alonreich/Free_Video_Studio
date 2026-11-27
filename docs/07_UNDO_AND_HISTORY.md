@@ -1,8 +1,9 @@
-﻿# SPECIFICATION 07: UNDO, REDO & EDIT HISTORY
+# SPECIFICATION 07: UNDO, REDO & EDIT HISTORY
 
 ## Code Mini-Map: Bound Source Files & Symbols
 | Source File Path | Key Classes, Records & Controls | Core Bound Methods, Properties & Symbols | Subsystem Domain Role |
 | :--- | :--- | :--- | :--- |
+| `src/FreeVideoStudio.App/GranularSpeedEditorWindow.Memes.cs` | `GranularSpeedEditorWindow` | EditMemeAsync, CreateMemePickerContext | MEMELANDING_01 preview without mutation, atomic confirmed anchor/settings change. **⚠ CO-GOVERNED BY: 01, 03, 04** |
 | `src/FreeVideoStudio.Core/Undo/UndoStack.cs` | `UndoStack<T>`, `UndoEntry<T>` | `Apply`, `Undo`, `Redo`, `Reset`, `Restore`, `ReplaceCurrent`, `EndGesture`, `TouchGesture`, `NextUndoLabel`, `NextRedoLabel`, `DefaultMaxDepth`, `GestureIdleMs`, `GestureIdle` | Application-wide history |
 | ⚠ `src/FreeVideoStudio.Core/Project/ProjectDocument.cs` | `ProjectDocument` | immutable state carried by the stack | CO-GOVERNED by `06_PROJECT_DOCUMENT_MODEL.md` |
 | ⚠ `src/FreeVideoStudio.App/GranularSpeedEditorWindow.axaml.cs` | `PushUndo` / `EndUndoGesture` call sites, `ClearUndoHistory("changes applied")` | the ORIGIN of U1–U4; migrated onto `UndoStack<T>` (UNDO_26) | CO-GOVERNED by `01`, `04`, `05` |
@@ -166,6 +167,7 @@ types by reflection as well.
   (`CropEditSession.Step(undo, rebuild)`), before the re-read.
 
 * **MERGEUNDO_01 — Video Merger undo/redo over the edit list.** `VideoMergerWindow.History.cs` keeps one `UndoStack<MergeEdl>` (U1–U4) storing `MergerSession.UserEdit(edl)` (analysis fields stripped, so a finished background probe is never a step). `MergerSession.DescribeChange` labels each step and gives gesture keys (`speed`, `thumb`) so a wheel sweep or marker drag is ONE step. Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z (not while a TextBox has focus or a MERGE runs). Undo/redo and session restore share `ApplyEdlStateAsync`, which reorders the queue in place (`MergerSession.SyncQueue`, never Clear) and re-derives music from its clip anchors; `UndoStack.ReplaceCurrent` absorbs the re-capture right after an undo so normalisation can never burn the redo branch.
+* **MEMEFLOW_01 / MEMELANDING_01 (2026-11-25):** main-screen Add uses ordinary placements and one project edit. In the Speed Editor, changing Start/Here/End, mode, part and sound in one popup commits one `UpdateMeme` checkpoint; pre-Add landing resolution/result rendering never checkpoints. The retired hidden main-screen meme toggle no longer records a second edit while an accepted legacy editor session is migrated.
 * **MEMEMODE_01 — every meme property change is undoable.** Mode, corner, size and sound are fields of `MemePlacement` / `EdlMeme`, so the Speed Editor snapshot, `ProjectDocument` and `MergeEdl` equality all see them (U4). The editor pushes `"change meme"` once per popup confirmation; the Main App records the returned memes with `PushProjectEdit` and the Merger with `RecordHistory` (`MemePresentationModeTests.EveryPropertyChange_IsAnUndoableStep`).
 
 ### 7.1 Granular APPLY / Reopen Policy  {#UNDO-GRANULAR-APPLY}

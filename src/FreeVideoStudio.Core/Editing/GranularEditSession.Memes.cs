@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -28,7 +28,7 @@ public sealed partial class GranularEditSession
         return true;
     }
 
-    public EditOutcome ResolveNewMemeAnchor(OutputTimeline live, double rawSourceRelSec, MemePresentationMode mode, out double at)
+    public EditOutcome ResolveNewMemeAnchor(OutputTimeline live, double rawSourceRelSec, MemePresentationMode mode, out double at, string? ignoreId = null)
     {
         ArgumentNullException.ThrowIfNull(live);
         if (mode == MemePresentationMode.CornerOverlay)
@@ -40,7 +40,7 @@ public sealed partial class GranularEditSession
         at = live.SnapInsertionPoint(SnapMemeToNearestLegalEdge(rawSourceRelSec, out _));
         if (live.HasInsertionAtSource(at))
             return EditOutcome.Refused("A full-screen meme already sits at that exact point. Move the playhead a little.");
-        if (!MemeSeparationIsSafe(at, null, out string? clash)) return EditOutcome.Refused(clash!);
+        if (!MemeSeparationIsSafe(at, ignoreId, out string? clash)) return EditOutcome.Refused(clash!);
         return EditOutcome.Success;
     }
 
@@ -83,7 +83,7 @@ public sealed partial class GranularEditSession
         if (idx < 0) return EditOutcome.Refused("That meme is no longer on the timeline.");
         var old = Memes[idx];
 
-        double at = old.AtSourceSecRelative;
+        double at = Math.Clamp(wanted.AtSourceSecRelative, 0, clipDurMs / 1000);
         if (mode == MemePresentationMode.InlineFullScreen)
         {
             var others = TimelineExcludingMeme(memeId, clipDurMs);
@@ -93,6 +93,11 @@ public sealed partial class GranularEditSession
             if (!MemeSeparationIsSafe(at, memeId, out string? clash)) return EditOutcome.Refused(clash!);
         }
 
+        if (mode == MemePresentationMode.CornerOverlay)
+        {
+            var ruler = TimelineExcludingMeme(memeId, clipDurMs);
+            if (ruler.IsCutAtSource(at)) at = ruler.NextSurvivingSource(at);
+        }
         var updated = wanted with { Id = old.Id, AtSourceSecRelative = at };
         movedBySec = at - old.AtSourceSecRelative;
         before = old;

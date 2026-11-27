@@ -304,7 +304,7 @@ public partial class MainWindow
           .Append('|').Append(string.Join(",", _memePlacements))
           .Append('|').Append(legacyMeme).Append(legacyMeme != null ? Infrastructure.MemePlacementStore.Get(legacyMeme).ToString() : "")
           .Append('|').Append(this.FindControl<Avalonia.Controls.ToggleSwitch>("EnableFadeCheckbox")?.IsChecked)
-          .Append('|').Append(_keepMusicDuringMeme)
+          .Append('|').Append(string.Join(",", EffectiveMemePlacements().Select(m => m.MusicKeepsPlaying ? 'c' : 's')))
           .Append('|').Append(tamer).Append(_gameplayLoudnessLufs?.ToString("F2", ci))
           .Append('|').Append(settings.Defaults.DuckingEnabled).Append(settings.Defaults.DuckingStrength)
           .Append(settings.Defaults.CarvingEnabled).Append(settings.Defaults.CarvingStrength)

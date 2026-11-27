@@ -149,6 +149,13 @@
                                 AutomationProperties.Name="Start a new video editing project"
                                 HorizontalAlignment="Center" VerticalAlignment="Center"
                                 HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
+                        <Button Name="FinishedMergerBtn" Content="VIDEO MERGER"
+                                Click="OnVideoMergerClicked" MinWidth="180" IsVisible="False"
+                                Classes="Secondary" FontWeight="Bold" Cursor="Hand"
+                                ToolTip.Tip="Close the editor and open the Video Merger with the videos you made this session, in order."
+                                AutomationProperties.Name="Open the Video Merger with this session's videos"
+                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
                         <Button Content="EXIT APP"
                                 Click="OnExitClicked" MinWidth="180"
                                 Classes="Danger" FontWeight="Bold" Cursor="Hand"

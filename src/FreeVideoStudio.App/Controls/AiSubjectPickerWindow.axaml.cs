@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -54,6 +55,32 @@ public partial class AiSubjectPickerWindow : Window
     public AiPickerChoice Choice { get; private set; } = AiPickerChoice.Cancelled;
 
     public string ManualDescription { get; private set; } = string.Empty;
+
+    public const string FocusViewTag = "AIPICKFOCUS_01";
+
+    internal const string PickIntro = "Click who to follow. Once is enough.";
+
+    internal const double FocusViewFraction = 0.75;
+
+    internal const double ZoomLess = 1.6;
+    internal const double ZoomNormal = ViewModels.AiZoomTuning.DefaultStrength;
+    internal const double ZoomMore = 3.0;
+
+    public double ChosenZoomStrength { get; private set; } = ViewModels.AiZoomTuning.DefaultStrength;
+
+    internal bool FocusView { get; private set; } = true;
+
+    private readonly Bitmap?[] _fullBitmaps = new Bitmap?[3];
+
+    private double ViewFraction => FocusView ? FocusViewFraction : 1.0;
+
+    private double ViewOrigin => (1.0 - ViewFraction) / 2.0;
+
+    internal static int ViewToSource1000(double viewNorm, double fraction)
+        => (int)Math.Round(Math.Clamp(((1.0 - fraction) / 2.0 + Math.Clamp(viewNorm, 0, 1) * fraction) * 1000.0, 0, 1000));
+
+    internal static double SourceToView(double source1000, double fraction)
+        => (source1000 / 1000.0 - (1.0 - fraction) / 2.0) / fraction;
 
     private readonly List<DiscoveredSubject> _subjects;
     private readonly List<Border> _cardBorders = new();
@@ -153,7 +180,8 @@ public partial class AiSubjectPickerWindow : Window
             _frameBorders[i] = scope?.Find($"Frame{frameIdx}Border") as Border;
             _badges[i] = scope?.Find($"Frame{frameIdx}Badge") as TextBlock;
 
-            LoadFrameImage(_images[i], _framePaths[i]);
+            _fullBitmaps[i] = LoadFrameBitmap(_framePaths[i]);
+            ApplyFrameView(i);
             if (_canvases[i] is { } c)
             {
                 c.SizeChanged += (_, _) => RedrawHighlights();
@@ -181,6 +209,33 @@ public partial class AiSubjectPickerWindow : Window
         }
 
         Opened += (_, _) => RedrawHighlights();
+
+        if (scope?.Find("PickerViewToggleBtn") is Button viewBtn)
+        {
+            viewBtn.Click += (_, _) =>
+            {
+                FocusView = !FocusView;
+                viewBtn.Content = FocusView ? "🔍 Show whole picture" : "🔍 Show closer";
+                for (int k = 0; k < 3; k++) ApplyFrameView(k);
+                RedrawHighlights();
+            };
+        }
+
+        double saved = SettingsManager.Instance.AiZoomBaseScale > 0 ? SettingsManager.Instance.AiZoomBaseScale : ViewModels.AiZoomTuning.DefaultStrength;
+        ChosenZoomStrength = saved;
+        var zoomBtns = new (string Name, double Value)[] { ("PickerZoomLessBtn", ZoomLess), ("PickerZoomNormalBtn", ZoomNormal), ("PickerZoomMoreBtn", ZoomMore) };
+        double nearest = zoomBtns.OrderBy(z => Math.Abs(z.Value - saved)).First().Value;
+        foreach (var (name, value) in zoomBtns)
+        {
+            if (scope?.Find(name) is not ToggleButton tb) continue;
+            tb.IsChecked = value == nearest;
+            tb.Click += (_, _) =>
+            {
+                ChosenZoomStrength = value;
+                foreach (var (other, _) in zoomBtns)
+                    if (scope.Find(other) is ToggleButton o) o.IsChecked = other == name;
+            };
+        }
 
         if (scope?.Find("CancelPickerBtn") is Button cancelBtn)
             cancelBtn.Click += (_, _) => { Choice = AiPickerChoice.Cancelled; Close(false); };
@@ -363,7 +418,7 @@ public partial class AiSubjectPickerWindow : Window
         if (_currentStage == 1)
         {
             if (headline != null) headline.Text = $"{_batchPrefix}Stage 1 of 3 · Choose who to follow";
-            if (intro != null) intro.Text = "Click the same person or object in each picture where they appear.";
+            if (intro != null) intro.Text = PickIntro;
             if (backBtn != null) backBtn.IsVisible = false;
             if (resampleBtn != null) resampleBtn.IsVisible = allNotVisible;
 
@@ -382,7 +437,7 @@ public partial class AiSubjectPickerWindow : Window
                 }
                 else if (selectedCount == 0)
                 {
-                    statusText.Text = "Click the same person or object in each picture where they appear.";
+                    statusText.Text = PickIntro;
                     statusText.Foreground = ThemeResources.Brush(this, "AppTextPrimaryBrush", Brushes.White);
                 }
                 else
@@ -416,17 +471,18 @@ public partial class AiSubjectPickerWindow : Window
     internal void OnFrameClicked(int frameIndex, Grid hitGrid, PointerPressedEventArgs e, StackPanel? container)
     {
         int i = Math.Clamp(frameIndex, 1, 3) - 1;
-        if (_images[i]?.Source is not Bitmap bmp) return;
+        if (_fullBitmaps[i] is not Bitmap bmp) return;
         double cw = hitGrid.Bounds.Width, ch = hitGrid.Bounds.Height;
         const double margin = 4;
-        double bw = bmp.Size.Width, bh = bmp.Size.Height;
+        double frac = ViewFraction;
+        double bw = bmp.Size.Width * frac, bh = bmp.Size.Height * frac;
         if (cw <= 2 * margin || ch <= 2 * margin || bw <= 0 || bh <= 0) return;
 
         double scale = Math.Min((cw - 2 * margin) / bw, (ch - 2 * margin) / bh);
         double ox = (cw - bw * scale) / 2.0, oy = (ch - bh * scale) / 2.0;
         Point pt = e.GetPosition(hitGrid);
-        int clickX1000 = (int)Math.Round(Math.Clamp((pt.X - ox) / (bw * scale) * 1000.0, 0, 1000));
-        int clickY1000 = (int)Math.Round(Math.Clamp((pt.Y - oy) / (bh * scale) * 1000.0, 0, 1000));
+        int clickX1000 = ViewToSource1000((pt.X - ox) / (bw * scale), frac);
+        int clickY1000 = ViewToSource1000((pt.Y - oy) / (bh * scale), frac);
 
         byte[] rgb = LocalTrackingService.DecodeJpegToRgb(_framePaths[i], 320, 180);
         int nextId = _subjects.Count + 1;
@@ -461,6 +517,31 @@ public partial class AiSubjectPickerWindow : Window
         UpdateFrameBadge(frameIndex);
         RedrawHighlights();
         UpdateWizardState();
+    }
+
+    private static Bitmap? LoadFrameBitmap(string path)
+    {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return null;
+        try
+        {
+            using var stream = File.OpenRead(path);
+            return new Bitmap(stream);
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Swallowed(ex);
+            return null;
+        }
+    }
+
+    private void ApplyFrameView(int i)
+    {
+        if (_images[i] is not { } img || _fullBitmaps[i] is not { } bmp) return;
+        if (!FocusView) { img.Source = bmp; return; }
+        int pw = bmp.PixelSize.Width, ph = bmp.PixelSize.Height;
+        int cw = Math.Max(1, (int)Math.Round(pw * FocusViewFraction));
+        int ch = Math.Max(1, (int)Math.Round(ph * FocusViewFraction));
+        img.Source = new CroppedBitmap(bmp, new PixelRect((pw - cw) / 2, (ph - ch) / 2, cw, ch));
     }
 
     private static void LoadFrameImage(Image? img, string path)
@@ -580,7 +661,7 @@ public partial class AiSubjectPickerWindow : Window
     {
         if (sub == null) return;
         int i = Math.Clamp(sub.FrameIndex, 1, 3) - 1;
-        if (_canvases[i] is not { } canvas || _images[i]?.Source is not Bitmap bmp) return;
+        if (_canvases[i] is not { } canvas || _fullBitmaps[i] is not Bitmap bmp) return;
         double cw = canvas.Bounds.Width, ch = canvas.Bounds.Height;
         if ((cw <= 8 || ch <= 8) && _images[i] is { } imgControl)
         {
@@ -588,15 +669,16 @@ public partial class AiSubjectPickerWindow : Window
             ch = imgControl.Bounds.Height;
         }
         const double margin = 4;
-        double bw = bmp.Size.Width, bh = bmp.Size.Height;
+        double frac = ViewFraction;
+        double bw = bmp.Size.Width * frac, bh = bmp.Size.Height * frac;
         if (cw <= 2 * margin || ch <= 2 * margin || bw <= 0 || bh <= 0) return;
 
         double scale = Math.Min((cw - 2 * margin) / bw, (ch - 2 * margin) / bh);
         double ox = (cw - bw * scale) / 2, oy = (ch - bh * scale) / 2;
-        double x = ox + sub.Xmin / 1000.0 * bw * scale;
-        double y = oy + sub.Ymin / 1000.0 * bh * scale;
-        double w = Math.Max(18, (sub.Xmax - sub.Xmin) / 1000.0 * bw * scale);
-        double h = Math.Max(18, (sub.Ymax - sub.Ymin) / 1000.0 * bh * scale);
+        double x = ox + SourceToView(sub.Xmin, frac) * bw * scale;
+        double y = oy + SourceToView(sub.Ymin, frac) * bh * scale;
+        double w = Math.Max(18, (sub.Xmax - sub.Xmin) / 1000.0 / frac * bw * scale);
+        double h = Math.Max(18, (sub.Ymax - sub.Ymin) / 1000.0 / frac * bh * scale);
 
         double padX = Math.Max(2, w * 0.04);
         double padY = Math.Max(2, h * 0.04);
@@ -716,7 +798,7 @@ public partial class AiSubjectPickerWindow : Window
             BorderThickness = new Thickness(1),
         };
         var thumbGrid = new Grid();
-        var fallbackBmp = _images[frameIdx - 1]?.Source as Bitmap;
+        var fallbackBmp = _fullBitmaps[frameIdx - 1];
         var thumbImg = new Image
         {
             Stretch = Stretch.Uniform,

@@ -207,7 +207,7 @@
 
             <Grid Grid.Row="1" RowDefinitions="Auto, Auto, Auto" Margin="10,8,10,8">
                 <Grid Grid.Row="1" Margin="0,0,0,8">
-                    <Button Name="SetThumbnailButton" Classes="Secondary" Padding="16,8" HorizontalAlignment="Left" VerticalAlignment="Center" IsEnabled="False" ToolTip.Tip="Save the exact frame you are looking at right now to be the cover image for your video.">
+                    <Button Name="SetThumbnailButton" AutomationProperties.Name="Set thumbnail" Classes="Secondary" Padding="16,8" HorizontalAlignment="Left" VerticalAlignment="Center" IsEnabled="False" ToolTip.Tip="Save the exact frame you are looking at right now to be the cover image for your video.">
                         <StackPanel Orientation="Horizontal" Spacing="0" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Path Fill="{DynamicResource AppTextPrimaryBrush}" Width="{DynamicResource AppFontSize18}" Height="{DynamicResource AppFontSize18}" Stretch="Uniform" VerticalAlignment="Center" Data="{DynamicResource AppImageIconGeometry}" />
                             <TextBlock Name="SetThumbnailText" Text=" SET THUMBNAIL " FontSize="{DynamicResource AppFontSize12}" VerticalAlignment="Center" Margin="6,0,6,0" />
@@ -232,7 +232,7 @@
                 </Grid>
 
                 <Grid Grid.Row="2" Margin="0,8,0,0">
-                    <Button Name="VoiceOverButton" Classes="VoiceOverEntry" Padding="16,8" HorizontalAlignment="Left" VerticalAlignment="Center" IsEnabled="False" ToolTip.Tip="Record your own voice over the video.">
+                    <Button Name="VoiceOverButton" AutomationProperties.Name="Voice over" Classes="VoiceOverEntry" Padding="16,8" HorizontalAlignment="Left" VerticalAlignment="Center" IsEnabled="False" ToolTip.Tip="Record your own voice over the video.">
                         <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Path Fill="{DynamicResource AppOnAccentTextBrush}" Width="{DynamicResource AppFontSize16}" Height="{DynamicResource AppFontSize16}" Stretch="Uniform" VerticalAlignment="Center" Data="{DynamicResource AppVoiceOverIconGeometry}"/>
                             <TextBlock Name="VoiceOverText" Text="VOICE OVER" FontSize="{DynamicResource AppFontSize12}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
@@ -249,7 +249,7 @@
                         <StackPanel Name="QualityPanel" IsVisible="False" Orientation="Vertical" Spacing="2" Margin="0,0,20,8" VerticalAlignment="Center">
                             <TextBlock Text="VIDEO QUALITY" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" TextWrapping="Wrap"
                                        ToolTip.Tip="How good you want the finished video to look. Pick it once and leave it — the app works out the file size for you." />
-                            <controls:SpinningWheelSlider Name="QualitySlider" Value="{Binding QualitySliderValue, Mode=TwoWay}" Width="160" MinHeight="44" Cursor="Hand" ToolTip.Tip="Pick how good the finished video should look. The estimated file size appears to the left." />
+                            <controls:SpinningWheelSlider Name="QualitySlider" AutomationProperties.Name="Video quality" Value="{Binding QualitySliderValue, Mode=TwoWay}" Width="160" MinHeight="44" Cursor="Hand" ToolTip.Tip="Pick how good the finished video should look. The estimated file size appears to the left." />
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" Margin="0,0,20,8">
@@ -279,7 +279,7 @@
                         <Grid Name="SpeedPanel" IsVisible="False" VerticalAlignment="Center" Margin="0,0,0,8" ColumnDefinitions="Auto,8,Auto">
                             <StackPanel Grid.Column="0" Orientation="Vertical" Spacing="2" VerticalAlignment="Center">
                                 <TextBlock Text="SPEED" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" TextWrapping="Wrap" Margin="0,0,0,2" />
-                                <controls:SpinningWheelSlider Name="MainSpeedSlider" Value="{Binding MainSpeedSliderValue, Mode=TwoWay}" Width="160" MinHeight="44" Cursor="Hand" ToolTip.Tip="Slide left to make the video slow motion, or right to speed it up." />
+                                <controls:SpinningWheelSlider Name="MainSpeedSlider" AutomationProperties.Name="Video speed" Value="{Binding MainSpeedSliderValue, Mode=TwoWay}" Width="160" MinHeight="44" Cursor="Hand" ToolTip.Tip="Slide left to make the video slow motion, or right to speed it up." />
                                 <TextBlock Name="MainSpeedLabel" Text="" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,2,0,0" VerticalAlignment="Top" TextTrimming="CharacterEllipsis" />
                             </StackPanel>
 
@@ -305,7 +305,7 @@
                     <StackPanel Grid.Row="0" Spacing="10" Margin="0,0,0,15">
                         <TextBlock Text="FILE OPERATIONS" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold"/>
                         <Button Name="UploadButton" Classes="Primary" Content="OPEN VIDEO" HorizontalAlignment="Stretch" ToolTip.Tip="Click here to pick a video on this PC and start editing. It stays on your computer; nothing is uploaded."/>
-                        <Button Name="AddMusicButton" Classes="Secondary" HorizontalAlignment="Stretch" IsEnabled="False" ToolTip.Tip="Add a background song to play over your video.">
+                        <Button Name="AddMusicButton" AutomationProperties.Name="Add music" Classes="Secondary" HorizontalAlignment="Stretch" IsEnabled="False" ToolTip.Tip="Add a background song to play over your video.">
                             <StackPanel Orientation="Horizontal" Spacing="0" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <Path Fill="{DynamicResource AppTextPrimaryBrush}" Width="{DynamicResource AppFontSize14}" Height="{DynamicResource AppFontSize14}" Stretch="Uniform" VerticalAlignment="Center" Data="{DynamicResource AppMusicNoteIconGeometry}" />
                                 <TextBlock Name="AddMusicText" Text=" ADD MUSIC " FontSize="{DynamicResource AppFontSize12}" FontWeight="Bold" VerticalAlignment="Center" Margin="6,0,6,0" />
@@ -367,22 +367,14 @@
                                         <TextBlock Text="Enable Fade" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center" />
                                         <ToggleSwitch Name="EnableFadeCheckbox" IsChecked="{Binding IsEnableFade, Mode=TwoWay}" IsEnabled="False" OnContent="{x:Null}" OffContent="{x:Null}" MinWidth="36" MinHeight="36" Grid.Column="1" AutomationProperties.Name="Enable fade" ToolTip.Tip="Turn this on to make the video slowly fade in at the start and fade out at the end." />
                                     </Grid>
-                                    <Grid ColumnDefinitions="*, Auto">
+                                    <Grid ColumnDefinitions="*, Auto" IsVisible="False">
                                         <TextBlock Text="Add MEME" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0" />
                                         <ToggleSwitch Name="AddMemeCheckbox" IsChecked="{Binding IsAddMeme, Mode=TwoWay}" IsEnabled="False" OnContent="{x:Null}" OffContent="{x:Null}" MinWidth="36" MinHeight="36" Grid.Column="1" AutomationProperties.Name="Add MEME" ToolTip.Tip="Turn this on to add funny meme popups over your video." />
                                     </Grid>
-                                    <ComboBox Name="MemeComboBox" HorizontalAlignment="Stretch" IsVisible="{Binding #AddMemeCheckbox.IsChecked}" PlaceholderText="Select MEME" ToolTip.Tip="Choose which meme effect to display over your video." MinHeight="32" FontSize="{DynamicResource AppFontSize11}" />
-
-                                    <Grid Name="MemePlacementRow" IsVisible="False" ColumnDefinitions="Auto,*" Margin="0,6,0,0">
-                                        <TextBlock Grid.Column="0" Text="Plays" VerticalAlignment="Center" Margin="0,0,8,0"
-                                                   Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}"/>
-                                        <ComboBox Grid.Column="1" Name="MemePlacementCombo" HorizontalAlignment="Stretch"
-                                                  MinHeight="32" FontSize="{DynamicResource AppFontSize11}"
-                                                  ToolTip.Tip="Choose whether this meme plays before your gameplay or after it. Your choice is remembered for this meme.">
-                                            <ComboBoxItem Content="at the END — after my video"/>
-                                            <ComboBoxItem Content="at the START — before my video"/>
-                                        </ComboBox>
-                                    </Grid>
+                                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Classes="Secondary" MinHeight="32" Cursor="Hand"
+                                            IsEnabled="{Binding #AddMemeCheckbox.IsEnabled}" Content="Add meme"
+                                            FontSize="{DynamicResource AppFontSize11}" Click="OnChooseMainMemeClicked"
+                                            ToolTip.Tip="Pick a meme for the start, cursor or end. Preview it, then Add."/>
                                 </StackPanel>
 
                             </StackPanel>

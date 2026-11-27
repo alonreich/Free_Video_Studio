@@ -16,6 +16,7 @@ public partial class MainWindow
 
     private void OnToolNavigationResult(Services.ToolNavigationResult result)
     {
+        _ = RefreshFinalLayoutPreviewAsync();
         if (!result.ReturnedToOwner)
         {
             RuntimeLog.Info("HANDOFF", $"{result.ToolName} closed without an explicit return; the editor is unchanged.");

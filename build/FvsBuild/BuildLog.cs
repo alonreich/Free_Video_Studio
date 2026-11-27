@@ -1,4 +1,4 @@
-﻿using System.Text;
+﻿using FreeVideoStudio.Core.Infrastructure;
 
 namespace FvsBuild;
 
@@ -7,7 +7,7 @@ internal sealed class BuildLog : IDisposable
     private enum Level { Info, Warning, Error, Success, Banner }
 
     private readonly string _path;
-    private readonly StreamWriter _writer;
+    private readonly BoundedLogFile _writer;
     private readonly object _gate = new();
     private int _errorCount;
     private int _warningCount;
@@ -16,7 +16,8 @@ internal sealed class BuildLog : IDisposable
     {
         _path = path;
         try { if (File.Exists("build.result.txt")) File.Delete("build.result.txt"); } catch (IOException) { }
-        _writer = new StreamWriter(path, append: false, new UTF8Encoding(false)) { AutoFlush = true };
+        BoundedLogFile.Replace(path, string.Empty);
+        _writer = new BoundedLogFile(path);
     }
 
     public int ErrorCount { get { lock (_gate) return _errorCount; } }
@@ -52,7 +53,7 @@ internal sealed class BuildLog : IDisposable
             {
                 Console.WriteLine(line);
             }
-            _writer.WriteLine(line);
+            _writer.Write(line + Environment.NewLine);
         }
     }
 
@@ -71,9 +72,7 @@ internal sealed class BuildLog : IDisposable
                        $"({(int)duration.TotalMinutes}m{duration.Seconds:D2}s)";
         lock (_gate)
         {
-            _writer.Dispose();
-            string body = File.ReadAllText(_path);
-            File.WriteAllText(_path, first + Environment.NewLine + body, new UTF8Encoding(false));
+            BoundedLogFile.Prepend(_path, first + Environment.NewLine);
         }
     }
 

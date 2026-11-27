@@ -16,7 +16,8 @@ public sealed record MemePlacement(
     double PosX = -1,
     double PosY = -1,
     MemeOverlayAnimation Animation = MemeOverlayAnimation.None,
-    MemeTransition Transition = MemeTransition.Cut)
+    MemeTransition Transition = MemeTransition.Cut,
+    bool? MusicContinues = null)
 {
     public const double MinStillDurationSec = 1.0;
     public const double MaxStillDurationSec = 10.0;
@@ -24,6 +25,24 @@ public sealed record MemePlacement(
     public const double MinClipDurationSec = 0.5;
 
     public bool HasCustomPosition => PosX >= 0 && PosY >= 0;
+
+    public bool MusicKeepsPlaying => MusicContinues ?? DefaultMusicContinues(FilePath);
+
+    public static bool DefaultMusicContinues(string? path) => IsStillImageFile(path);
+
+    public static bool IsStillImageFile(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        string ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
+        return ext is ".png" or ".jpg" or ".jpeg";
+    }
+
+    public static bool AnyInlineKeepsMusic(IEnumerable<MemePlacement>? placements)
+    {
+        if (placements == null) return false;
+        foreach (var p in placements) if (p != null && !p.IsCornerOverlay && p.MusicKeepsPlaying) return true;
+        return false;
+    }
 
     public const double StillImageDurationSec = 4.0;
 

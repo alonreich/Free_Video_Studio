@@ -1,4 +1,4 @@
-﻿using Avalonia.Controls;
+using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
@@ -37,12 +37,135 @@ public partial class GranularSpeedEditorWindow
         catch (Exception ex) { RuntimeLog.Fail("MEME", $"Adding a meme failed: {ex.Message}"); }
     }
 
+    private WrapPanel? _selectedMemeActions;
+    private readonly TextBlock _selectedMemeTitle = new() { MaxWidth = 120, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+    private readonly Image _selectedMemePicture = new() { Width = 32, Height = 24, Stretch = Avalonia.Media.Stretch.Uniform };
+    private Infrastructure.OwnedLruCache<Avalonia.Media.Imaging.Bitmap>.Lease? _selectedMemeLease;
+    private string? _selectedMemePath;
+    private int _selectedMemeGeneration;
+    private void InstallSelectedMemeActions()
+    {
+        if (_removeMemeBtn?.Parent is not StackPanel parent) return;
+        var top = new WrapPanel();
+        foreach (var child in parent.Children.ToArray())
+        {
+            parent.Children.Remove(child);
+            if (!ReferenceEquals(child, _removeMemeBtn)) top.Children.Add(child);
+        }
+        parent.Orientation = Avalonia.Layout.Orientation.Vertical;
+        parent.Children.Add(top);
+        _selectedMemeActions = new WrapPanel { IsVisible = false };
+        _selectedMemeActions.Children.Add(_selectedMemePicture);
+        _selectedMemeActions.Children.Add(_selectedMemeTitle);
+        var preview = new Button { Content = "Preview", Margin = new Thickness(4, 0) };
+        preview.Classes.Add("Secondary");
+        preview.Click += (_, _) => PreviewSelectedMeme();
+        var change = new Button { Content = "Change", Margin = new Thickness(4, 0) };
+        change.Classes.Add("Secondary");
+        change.Click += (_, _) => { if (_edit.SelectedMemeId is { } id) _ = EditMemeAsync(id); };
+        _selectedMemeActions.Children.Add(preview);
+        _selectedMemeActions.Children.Add(change);
+        _removeMemeBtn.Content = "Remove";
+        _removeMemeBtn.MinWidth = 64;
+        _selectedMemeActions.Children.Add(_removeMemeBtn);
+        parent.Children.Add(_selectedMemeActions);
+        Closed += (_, _) =>
+        {
+            _selectedMemePath = null;
+            _selectedMemePicture.Source = null;
+            _selectedMemeLease?.Dispose();
+            _selectedMemeLease = null;
+        };
+    }
+    private void UpdateSelectedMemeActions()
+    {
+        var meme = _edit.Memes.FirstOrDefault(m => m.Id == _edit.SelectedMemeId);
+        if (_selectedMemeActions != null) _selectedMemeActions.IsVisible = meme != null;
+        _selectedMemeTitle.Text = meme == null ? "" : Controls.MemePickerRow.TitleFor(Path.GetFileName(meme.FilePath));
+        if (_selectedMemePath == meme?.FilePath) return;
+        _selectedMemePath = meme?.FilePath;
+        _selectedMemePicture.Source = null;
+        _selectedMemeLease?.Dispose();
+        _selectedMemeLease = null;
+        int generation = ++_selectedMemeGeneration;
+        if (meme != null) _ = LoadSelectedMemeThumbnailAsync(meme.FilePath, generation);
+    }
+    private async Task LoadSelectedMemeThumbnailAsync(string path, int generation)
+    {
+        try
+        {
+            var lease = await Task.Run(() => Infrastructure.MemeThumbnailCache.AcquireAsync(path, Infrastructure.CornerMemeFrames.IsStillImage(path), CancellationToken.None));
+            if (_selectedMemePath != path || _editorClosing || generation != _selectedMemeGeneration) { lease?.Dispose(); return; }
+            _selectedMemeLease = lease;
+            _selectedMemePicture.Source = lease?.Value;
+        }
+        catch (Exception ex) { RuntimeLog.Swallowed(ex); }
+    }
+    private void PreviewSelectedMeme()
+    {
+        if (_edit.SelectedMemeId is not { } id) return;
+        SelectAndShowMeme(id);
+        if (_videoHost?.IpcClient?.IsPaused == true) TogglePlayPause();
+    }
+    private Controls.MemePickerContext CreateMemePickerContext(MemePlacement? existing = null)
+    {
+        double here = existing?.AtSourceSecRelative ?? Math.Max(0, _playheadMs / 1000.0);
+        return new Controls.MemePickerContext(choice =>
+        {
+            double requested = choice.Placement switch
+            {
+                ViewModels.MemePlacementPoint.Start => 0,
+                ViewModels.MemePlacementPoint.End => choice.IsCorner
+                    ? GameplayTimeline().OutputToSourceRelative(Math.Max(0, GameplayTimeline().TotalOutputSeconds - choice.LengthSeconds))
+                    : GetDuration(),
+                _ => here,
+            };
+            var ruler = existing == null ? OutTimeline() : _edit.TimelineExcludingMeme(existing.Id, GetDuration() * 1000);
+            var ok = _edit.ResolveNewMemeAnchor(ruler, requested, choice.Mode, out double at, existing?.Id);
+            if (existing != null && ok.Ok && choice.IsFullScreen && !_edit.MemeSeparationIsSafe(at, existing.Id, out var clash))
+                return new Controls.MemeLanding(false, at, 0, clash!);
+            if (!ok.Ok) return new Controls.MemeLanding(false, at, 0, ok.Error!);
+            string? mergeNote = null;
+            if (_mergeSource != null) at = _mergeSource.ResolveMemeAt(at, choice.IsCorner, out _, out mergeNote);
+            double output = ruler.SourceToOutput(at);
+            if (choice.IsCorner && GameplayTimeline().TotalOutputSeconds - GameplayTimeline().SourceToOutput(at) <= 0.001)
+                return new Controls.MemeLanding(false, at, output, "No gameplay remains here for a corner meme. Choose End, or move the video cursor earlier.");
+            string note = Math.Abs(at - requested) > 0.01 ? $" · moved {Math.Abs(at - requested):0.0}s to the nearest allowed spot" : "";
+            return new Controls.MemeLanding(true, at, output, $"Starts at {output:0.0}s{note}{(mergeNote == null ? "" : " · " + mergeNote)}");
+        }, _edit.IsMergeMode ? null : async (candidate, ct) =>
+        {
+            ct.ThrowIfCancellationRequested();
+            var segments = _edit.ResultSegments.ToList();
+            if (_edit.FreezeTimeMs >= 0) segments.Add(new SpeedSegment(_edit.FreezeTimeMs, _edit.FreezeTimeMs + _edit.FreezeDurationS * 1000, 0));
+            var memes = _edit.Memes.Where(m => m.Id != existing?.Id).ToList();
+            memes.Add(candidate);
+            if (Owner is MainWindow main)
+                return await main.ComposeEditorMemePreviewAsync(segments, _edit.ResultCuts.ToList(), memes, _edit.CaptionTrack, _edit.BaseSpeed);
+            return new Models.ExportPayload
+            {
+                InputPath = _edit.VideoPath, TrimStartMs = _edit.TrimStartMs, TrimEndMs = _edit.TrimEndMs,
+                LoadedVideoDurationMs = _edit.TrimEndMs, BaseSpeed = _edit.BaseSpeed, IsMobileFormat = _edit.IsMobileFormat,
+                SpeedSegments = segments, Cuts = _edit.ResultCuts.ToList(), MemePlacements = memes, QualityLevel = 2,
+                CaptionTrack = _edit.CaptionTrack,
+            };
+        }, _edit.IsMergeMode ? async (candidate, directory, ct, progress) =>
+        {
+            if (Owner is not VideoMergerWindow merger || _mergeSource == null)
+                return new Models.ExportResult { ErrorMessage = "The merged video is not available for preview." };
+            var memes = _edit.Memes.Where(m => m.Id != existing?.Id).ToList();
+            memes.Add(candidate);
+            var state = new MergeEditorState(_edit.Segments.ToList(), _edit.FreezeTimeMs, _edit.FreezeDurationS,
+                _edit.Cuts.ToList(), memes, _edit.BaseSpeed, _edit.CaptionTrack);
+            return await merger.RenderEditorMemePreviewAsync(_mergeSource, state, _edit.IsMobileFormat, directory, ct, progress);
+        } : null);
+    }
     private async Task AddMemeAsync()
     {
         if (string.IsNullOrWhiteSpace(_edit.VideoPath)) return;
 
+        if (_videoHost?.IpcClient is { } player) await player.SetPropertyAsync("pause", "yes");
         var pick = await Controls.MemePickerWindow.PickAsync(this, AvailableMemes, _edit.IsMobileFormat,
-            latest => AvailableMemes = latest);
+            latest => AvailableMemes = latest, context: CreateMemePickerContext());
         if (pick == null) return;
         var picked = pick.Item;
 
@@ -52,7 +175,7 @@ public partial class GranularSpeedEditorWindow
             return;
         }
 
-        double rawSourceRelSec = Math.Max(0, _playheadMs / 1000.0);
+        double rawSourceRelSec = pick.AnchorSec ?? Math.Max(0, _playheadMs / 1000.0);
         bool corner = pick.Mode == MemePresentationMode.CornerOverlay;
 
         var anchor = _edit.ResolveNewMemeAnchor(OutTimeline(), rawSourceRelSec, pick.Mode, out double at);
@@ -103,8 +226,9 @@ public partial class GranularSpeedEditorWindow
             if (idx < 0) return;
             var old = _edit.Memes[idx];
 
+            if (_videoHost?.IpcClient is { } player) await player.SetPropertyAsync("pause", "yes");
             var pick = await Controls.MemePickerWindow.PickAsync(this, AvailableMemes, _edit.IsMobileFormat,
-                latest => AvailableMemes = latest, existing: old);
+                latest => AvailableMemes = latest, existing: old, context: CreateMemePickerContext(old));
             if (pick == null) return;
             idx = _edit.Memes.FindIndex(m => m.Id == memeId);
             if (idx < 0) return;
@@ -116,7 +240,7 @@ public partial class GranularSpeedEditorWindow
                 if (duration <= 0.01) { NotifyError("That meme's length could not be read, so nothing changed."); return; }
             }
 
-            var changed = _edit.UpdateMeme(memeId, pick.ToPlacement(old.AtSourceSecRelative, duration),
+            var changed = _edit.UpdateMeme(memeId, pick.ToPlacement(pick.AnchorSec ?? old.AtSourceSecRelative, duration),
                 Math.Max(0.001, GetDuration()) * 1000, out var before, out var updated, out double movedBy);
             if (!changed.Ok) { NotifyError(changed.Error!); return; }
             if (updated == null || updated == before) return;

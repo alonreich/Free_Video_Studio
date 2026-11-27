@@ -6,8 +6,11 @@ param(
 
 $ErrorActionPreference = 'Continue'
 $repoRoot = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')
+if (-not ('FreeVideoStudio.Core.Infrastructure.BoundedLogFile' -as [type])) {
+    Add-Type -Path (Join-Path $repoRoot 'src/FreeVideoStudio.Core/Infrastructure/BoundedLogFile.cs')
+}
 $root = '.'
-$logPath = '.\build.log'
+$logPath = Join-Path $repoRoot 'build.log'
 $legacyResultPath = '.\build.result.txt'
 $esc = [char]0x1B
 $script:ErrorCount = 0
@@ -79,7 +82,7 @@ function Write-LoggedLine {
     }
     try { Write-Host $Line -ForegroundColor (Get-HostColor -Level $level) }
     catch { Write-Host $Line }
-    Add-Content -LiteralPath $logPath -Value (Format-AnsiLine -Line $Line -Level $level) -Encoding utf8
+    [FreeVideoStudio.Core.Infrastructure.BoundedLogFile]::Append($logPath, (Format-AnsiLine -Line $Line -Level $level) + [Environment]::NewLine)
 }
 
 function Get-BuildVerdict {
@@ -163,8 +166,7 @@ function Prepend-BuildLogSummary {
     $topBlock = $ansiOne + [Environment]::NewLine +
         [Environment]::NewLine + [Environment]::NewLine + [Environment]::NewLine +
         $ansiBanner + [Environment]::NewLine
-    $existing = [System.IO.File]::ReadAllText($logPath)
-    [System.IO.File]::WriteAllText($logPath, $topBlock + $existing, [System.Text.UTF8Encoding]::new($false))
+    [FreeVideoStudio.Core.Infrastructure.BoundedLogFile]::Prepend($logPath, $topBlock)
 }
 
 function Write-LogHeader {

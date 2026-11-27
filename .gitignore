@@ -57,3 +57,4 @@ settings.json.corrupt-*.bak
 /tests/.test-run.lock
 /logs/
 developer_tools/local_ai_pack/out/
+developer_tools/Sanitize/ai-sanitize.exe

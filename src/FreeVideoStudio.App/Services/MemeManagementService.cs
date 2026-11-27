@@ -36,55 +36,20 @@ public static class MemeManagementService
         }
     }
 
-    public static IDataTemplate CreateMemeItemTemplate(Window parent, Func<bool> isPortraitGetter)
+    public static async Task<(int Count, string? Error)> DownloadAllMemesAsync(Window parent)
     {
-        return new FuncDataTemplate<MemeItem>((item, _) =>
-        {
-            if (item == null) return new TextBlock();
-            var tb = new TextBlock { Text = item.FileName, VerticalAlignment = VerticalAlignment.Center };
-            if (item.IsDownloadAction)
-            {
-                bool pictures = item.DownloadCategory == MemeCategory.Image;
-                tb.Text = pictures
-                    ? "⬇  Download more meme PICTURES…"
-                    : "⬇  Download more meme VIDEOS…";
-                tb.FontWeight = FontWeight.Bold;
-                tb.Foreground = new SolidColorBrush(Color.Parse("#38bdf8"));
-                ToolTip.SetTip(tb, pictures
-                    ? "Fetch more still-image memes from the official library. Files you already have are skipped, never overwritten."
-                    : "Fetch more video memes from the official library. Files you already have are skipped, never overwritten.");
-            }
-            else if (isPortraitGetter() && item.AspectRatio > 0.85f)
-            {
-                tb.Foreground = ThemeResources.Brush(parent, "AppDangerBrush", Brushes.Red);
-                ToolTip.SetTip(tb, "Fit for landscape");
-            }
-            return tb;
-        });
-    }
-
-    public static async Task<(int Count, string? Error)> DownloadCloudMemesAsync(Window parent, MemeCategory category)
-    {
-        string label = MemeCatalog.LabelFor(category);
-
-        var dlg = new ConfirmDialogWindow();
-        dlg.SetTitle($"Download more {label}?");
-        dlg.SetMessage(
-            $"This connects to the internet and copies new {label} from the official library into your meme folder.\n\n" +
-            "Anything you already have is left alone — nothing is replaced or deleted. " +
-            "You can press this again any time to pick up whatever is new.");
-        dlg.SetButtonText("DOWNLOAD", "CANCEL");
-        await dlg.ShowDialog(parent);
-        if (!dlg.Result) return (0, null);
-
         await MemeDirectory.WhenReadyAsync().ConfigureAwait(true);
         string memeDir = MemeDirectory.EnsureActiveExists();
         var result = await CloudSyncProgressWindow.RunAsync(
-            parent, $"Downloading {label}",
-            (progress, ct) => MemeCatalog.SyncMemesAsync(memeDir, category, progress, ct));
+            parent, "Getting more memes",
+            (progress, ct) => MemeCatalog.SyncAllMemesAsync(memeDir, progress, ct));
         if (result.Item1 > 0) MemeDirectory.NotifyChanged();
         return result;
     }
+
+    public static string DownloadStatus(int count) => count == 0
+        ? "You already have every meme in the library."
+        : count == 1 ? "✓ Got 1 new meme." : $"✓ Got {count} new memes.";
 
     public static async Task<double> ProbeMusicDurationSecondsAsync(string ffmpegPath, string musicPath)
     {

@@ -624,7 +624,7 @@ public sealed class AiWorkflowFixTests
         var badge1 = (TextBlock)scope.Find("Frame1Badge")!;
 
         Assert.Equal("Stage 1 of 3 · Choose who to follow", headline.Text);
-        Assert.Equal("Click the same person or object in each picture where they appear.", intro.Text);
+        Assert.Equal(AiSubjectPickerWindow.PickIntro, intro.Text);
         Assert.Equal("Next: Check Selections →", confirmBtn.Content);
 
         notVisBtn1.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));

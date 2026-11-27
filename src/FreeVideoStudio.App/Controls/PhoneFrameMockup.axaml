@@ -56,6 +56,7 @@
                     </Grid>
                 </Grid>
             </Border>
+            <Canvas Name="HudLayoutCanvas" Width="720" Height="1280" ZIndex="3" IsHitTestVisible="False" ClipToBounds="True"/>
         </Grid>
     </Grid>
 </UserControl>

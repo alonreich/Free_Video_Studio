@@ -29,7 +29,7 @@ dotnet run --project tests/MediaPipelineChecks/MediaPipelineChecks.csproj --no-r
 
 The GPU checks require a working NVIDIA GPU and the bundled FFmpeg CUDA/NVENC filters. They run actual exports, not just argument comparisons. The FFV1 test deliberately fails GPU video processing, then verifies one compatibility retry with NVENC retained. Intel preset parsing is checked separately; Intel hardware encoding requires a supported Intel device.
 
-Generated media, logs and temporary state stay under `logs/Media_Results/work` (`--libav-soak`: `logs/DecoderSoak_Results/work`), replaced on every run (TESTOUT_01, docs/README.md section 0.3b). Existing user media/settings are not changed. The harness verifies numerical audio levels, crop recovery, regional formatting, complete exports and GPU route selection. It does not automate desktop window interaction or publish NativeAOT.
+Generated media, logs and temporary state stay under `logs/Media_Results/work` (`--libav-soak`: `logs/DecoderSoak_Results/work`), replaced on every run (TESTOUT_01, docs/README.md section 0.3b). On Windows, the test process suppresses the crash dialog so a native crash returns a failing exit code to the suite. Existing user media/settings are not changed. The harness verifies numerical audio levels, crop recovery, regional formatting, complete exports and GPU route selection. It does not automate desktop window interaction or publish NativeAOT.
 
 To verify the native build separately, refresh cached build references first so the runtime and native compiler versions match. These commands use local packages only:
 

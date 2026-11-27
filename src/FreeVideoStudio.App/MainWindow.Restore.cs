@@ -238,15 +238,15 @@ public partial class MainWindow
             {
                 if (File.Exists(restoreTarget))
                 {
-                    _pendingMemeRestorePath = restoreTarget;
-                    var memeCbRestore = MemeComboBoxCtl;
-                    var immediate = _memeItems.FirstOrDefault(m =>
-                        string.Equals(m.FullPath, restoreTarget, StringComparison.OrdinalIgnoreCase));
-                    if (memeCbRestore != null && immediate != null)
-                    {
-                        memeCbRestore.SelectedItem = immediate;
-                        _pendingMemeRestorePath = null;
-                    }
+                    _viewModel.SelectedMemeItem = _memeItems.FirstOrDefault(m =>
+                        string.Equals(m.FullPath, restoreTarget, StringComparison.OrdinalIgnoreCase))
+                        ?? new MemeItem
+                        {
+                            FileName = Path.GetFileName(restoreTarget),
+                            FullPath = restoreTarget,
+                            IsImage = FreeVideoStudio.Core.Media.MemePlacement.IsStillImageFile(restoreTarget),
+                        };
+                    _viewModel.MemeAtStart = Infrastructure.MemePlacementStore.Get(restoreTarget) == Infrastructure.MemePlacement.Start;
                 }
                 else
                 {

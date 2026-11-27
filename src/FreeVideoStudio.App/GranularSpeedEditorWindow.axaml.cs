@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using System.Collections.Immutable;
@@ -54,10 +54,22 @@ public partial class GranularSpeedEditorWindow : Window
         {
             _previewLayers = value ?? FreeVideoStudio.App.Models.EditorPreviewLayers.None;
             _musicBed.Result = _previewLayers.Music;
-            _musicBed.KeepMusicDuringMeme = _previewLayers.KeepMusicDuringMeme;
             if (_previewLayers.VoiceOver != null && !ReferenceEquals(_previewLayers.VoiceOver, _voiceOverPlayer.Result))
                 _voiceOverPlayer.Result = _previewLayers.VoiceOver;
+            _ = RefreshFinalLayoutPreviewAsync();
         }
+    }
+
+    private int _finalLayoutVersion;
+
+    private async Task RefreshFinalLayoutPreviewAsync()
+    {
+        int version = ++_finalLayoutVersion;
+        if (this.FindControl<Controls.PhoneFrameMockup>("GranularPhoneFrame") is not { } frame) return;
+        if (!_edit.IsMobileFormat) { frame.SetFinalLayout(null); return; }
+        var layers = await Infrastructure.FinalLayoutPreview.LoadAsync(_previewLayers.ShowTeammates, _previewLayers.ShowSpectating);
+        if (version != _finalLayoutVersion) return;
+        frame.SetFinalLayout(layers);
     }
 
     public bool Accepted { get; private set; }
@@ -276,12 +288,7 @@ public partial class GranularSpeedEditorWindow : Window
 
     private double? _holdCaretOutSec;
 
-    private const double CreateDragThresholdPx = 4.0;
 
-    private bool _createDragArmed;
-    private bool _createDragActive;
-    private double _createDragStartMs;
-    private double _createDragCurrentMs;
 
     private void DecorateFrozenSpan(Avalonia.Controls.Canvas host, double x, double spanW, double h,
                                     bool withLabel, bool withGrips = false)
@@ -533,24 +540,6 @@ public partial class GranularSpeedEditorWindow : Window
                 RuntimeLog.Info("Granular",
                     $"Freeze settled: {FormatMs(_edit.FreezeTimeMs - _edit.TrimStartMs)} for {_edit.FreezeDurationS:0.00}s ({finished}).");
                 SetStatus($"Freeze at {FormatMs(_edit.FreezeTimeMs - _edit.TrimStartMs)}, held for {_edit.FreezeDurationS:0.00}s.");
-                return;
-            }
-
-            if (_createDragArmed)
-            {
-                bool wasDrag = _createDragActive;
-                double a = Math.Min(_createDragStartMs, _createDragCurrentMs);
-                double b = Math.Max(_createDragStartMs, _createDragCurrentMs);
-
-                _createDragArmed = false;
-                _createDragActive = false;
-                e.Pointer.Capture(null);
-                HideDragReadout();
-
-                if (wasDrag) CreateSegmentFromDrag(a, b);
-                else SetPlayheadFromScrub(_createDragStartMs);
-
-                RedrawTimeline();
                 return;
             }
 
@@ -997,14 +986,14 @@ public partial class GranularSpeedEditorWindow : Window
         {
             double currentAbs = _videoHost?.IpcClient?.CurrentTime ?? 0;
             double trimEndSec = (_edit.TrimEndMs > 0) ? _edit.TrimEndMs / 1000.0 : double.MaxValue;
-            double target = Math.Min(currentAbs + 5, trimEndSec);
+            double target = Math.Min(currentAbs + Infrastructure.PreviewKeySeek.StepSeconds, trimEndSec);
             _ = SeekInternal(target - (_edit.TrimStartMs / 1000.0));
             e.Handled = true;
         }
         else if (seekBack.Matches(e))
         {
             double currentAbs = _videoHost?.IpcClient?.CurrentTime ?? 0;
-            double target = Math.Max(currentAbs - 5, _edit.TrimStartMs / 1000.0);
+            double target = Math.Max(currentAbs - Infrastructure.PreviewKeySeek.StepSeconds, _edit.TrimStartMs / 1000.0);
             _ = SeekInternal(target - (_edit.TrimStartMs / 1000.0));
             e.Handled = true;
         }
@@ -1186,12 +1175,9 @@ public partial class GranularSpeedEditorWindow : Window
                     UpdateDeleteButtonVisibility();
                 }
 
-                _createDragArmed = true;
-                _createDragStartMs = pointerMs;
-                _createDragCurrentMs = pointerMs;
-                _createDragActive = false;
-                _isCanvasScrubbing = false;
+                _isCanvasScrubbing = true;
                 e.Pointer.Capture(canvas);
+                SetPlayheadFromScrub(pointerMs);
                 RedrawTimeline();
                 e.Handled = true;
             };
@@ -1300,24 +1286,6 @@ public partial class GranularSpeedEditorWindow : Window
                     return;
                 }
 
-                if (_createDragArmed)
-                {
-                    if (!_createDragActive &&
-                        Math.Abs(pointerMs - _createDragStartMs) >= CreateDragThresholdPx * msPerPx)
-                    {
-                        _createDragActive = true;
-                    }
-
-                    if (_createDragActive)
-                    {
-                        _createDragCurrentMs = pointerMs;
-                        UpdateDragReadout(Math.Min(_createDragStartMs, _createDragCurrentMs),
-                                          Math.Max(_createDragStartMs, _createDragCurrentMs));
-                        RedrawTimeline();
-                    }
-                    e.Handled = true;
-                    return;
-                }
 
                 if (_draggingSegmentIndex < 0 || _draggingSegmentIndex >= _edit.Segments.Count || _segDragMode == SegDragMode.None)
                     return;
@@ -1806,44 +1774,6 @@ public partial class GranularSpeedEditorWindow : Window
         UpdateAiSmartZoomBtnVisualState();
         UpdateAiCommentaryBtnVisualState();
         SyncZoomModeChecksFromSegment();
-    }
-
-    private void CreateSegmentFromDrag(double startMs, double endMs)
-    {
-        double dur = GetDuration();
-        if (dur <= 0) return;
-
-        double totalMs = dur * 1000.0;
-        int start = (int)Math.Round(Math.Clamp(startMs, 0, totalMs));
-        int end = (int)Math.Round(Math.Clamp(endMs, 0, totalMs));
-
-        if (end - start < GranularEditSession.SegMinWidthMs)
-        {
-            NotifyError($"That block would be too short — drag out at least {GranularEditSession.SegMinWidthMs}ms.");
-            return;
-        }
-
-        _edit.PendingStartMs = start;
-        _edit.PendingEndMs = end;
-
-        int before = _edit.Segments.Count;
-        AddPendingSegment();
-
-        ScheduleGranularRecoverySave();
-
-        if (_edit.Segments.Count > before)
-        {
-            int newIdx = _edit.Segments.FindIndex(sg => sg.StartMs == start && sg.EndMs == end);
-            if (newIdx >= 0)
-            {
-                SelectSegment(newIdx);
-                Notify($"Segment #{newIdx + 1} added and selected: {FormatMs(start)} – {FormatMs(end)} @ {_edit.Segments[newIdx].Speed:0.0}x.");
-                return;
-            }
-        }
-
-        RefreshSegmentList();
-        UpdateDeleteButtonVisibility();
     }
 
     private void AddPendingSegment()
@@ -2436,7 +2366,7 @@ public partial class GranularSpeedEditorWindow : Window
             var emptyLabel = _emptyLaneLabel;
             if (emptyLabel != null)
                 emptyLabel.IsVisible = _edit.Segments.Count == 0 && _edit.FreezeTimeMs < 0
-                                       && _edit.PendingStartMs < 0 && !_createDragActive;
+                                       && _edit.PendingStartMs < 0;
 
             UpdateCaret();
             RelayoutFrameLane();
@@ -2604,25 +2534,6 @@ public partial class GranularSpeedEditorWindow : Window
                     if (_selectedSegmentBorderRef != null && _edit.SelectedSegmentIndex == -1)
                         _selectedSegmentBorderRef = null;
                 }
-            }
-
-            if (_createDragActive)
-            {
-                double ax = SrcMsToX(Math.Min(_createDragStartMs, _createDragCurrentMs), w);
-                double bx = SrcMsToX(Math.Max(_createDragStartMs, _createDragCurrentMs), w);
-                var ghost = new Avalonia.Controls.Shapes.Rectangle
-                {
-                    Width = Math.Max(1, bx - ax),
-                    Height = h,
-                    Fill = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(70, 255, 255, 255)),
-                    Stroke = Avalonia.Media.Brushes.SeaGreen,
-                    StrokeThickness = 2,
-                    StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 4, 3 },
-                    IsHitTestVisible = false
-                };
-                Avalonia.Controls.Canvas.SetLeft(ghost, ax);
-                Avalonia.Controls.Canvas.SetTop(ghost, 0);
-                canvas.Children.Add(ghost);
             }
 
             if (_edit.PendingStartMs >= 0)
@@ -3199,6 +3110,7 @@ public partial class GranularSpeedEditorWindow : Window
 
         var portraitGrid = this.FindControl<Avalonia.Controls.Grid>("GranularPortraitDimmingGrid");
         if (portraitGrid != null) portraitGrid.IsVisible = _edit.IsMobileFormat;
+        _ = RefreshFinalLayoutPreviewAsync();
     }
 
     private void UpdateDragReadout(double startMs, double endMs)
@@ -3824,9 +3736,53 @@ public partial class GranularSpeedEditorWindow : Window
             Child = _zoomFactorText
         };
         canvas.Children.Add(_zoomFactorBadge);
+
+        for (int i = 0; i < 2; i++)
+        {
+            var guide = new Avalonia.Controls.Shapes.Rectangle
+            {
+                Fill = ZoomBrush(),
+                IsHitTestVisible = false,
+                IsVisible = false,
+                ZIndex = 15
+            };
+            _zoomGuides[i] = guide;
+            canvas.Children.Add(guide);
+        }
+    }
+
+    private void RenderZoomGuides(Avalonia.Controls.Canvas canvas)
+    {
+        if (_zoomGuides[0] == null || _zoomGuides[1] == null) return;
+        var b = ZoomBoundsUi(canvas);
+        bool dragging = _zoomDrag != ZoomDrag.None && _hasZoomBox && b.Width > 0 && b.Height > 0;
+        void Show(Avalonia.Controls.Shapes.Rectangle g, Infrastructure.ZoomGuideState st, bool vertical)
+        {
+            if (!dragging || st == Infrastructure.ZoomGuideState.Hidden) { g.IsVisible = false; return; }
+            bool snapped = st == Infrastructure.ZoomGuideState.Snapped;
+            double t = snapped ? 2.0 : 1.0;
+            g.Opacity = snapped ? 0.95 : 0.35;
+            g.IsVisible = true;
+            if (vertical)
+            {
+                g.Width = t; g.Height = b.Height;
+                Avalonia.Controls.Canvas.SetLeft(g, b.X + b.Width / 2.0 - t / 2.0);
+                Avalonia.Controls.Canvas.SetTop(g, b.Y);
+            }
+            else
+            {
+                g.Width = b.Width; g.Height = t;
+                Avalonia.Controls.Canvas.SetLeft(g, b.X);
+                Avalonia.Controls.Canvas.SetTop(g, b.Y + b.Height / 2.0 - t / 2.0);
+            }
+        }
+        Show(_zoomGuides[0]!, _zoomGuideV, vertical: true);
+        Show(_zoomGuides[1]!, _zoomGuideH, vertical: false);
     }
 
     private bool _zoomBoxTouched;
+    private readonly Avalonia.Controls.Shapes.Rectangle?[] _zoomGuides = new Avalonia.Controls.Shapes.Rectangle?[2];
+    private Infrastructure.ZoomGuideState _zoomGuideV, _zoomGuideH;
     private Border? _zoomFactorBadge;
     private TextBlock? _zoomFactorText;
 
@@ -3936,6 +3892,7 @@ public partial class GranularSpeedEditorWindow : Window
             double cw = canvas.Bounds.Width, ch = canvas.Bounds.Height;
 
             RenderPortraitBoundary(canvas);
+            RenderZoomGuides(canvas);
 
             if (!_hasZoomBox)
             {
@@ -4075,6 +4032,9 @@ public partial class GranularSpeedEditorWindow : Window
             double y = p.Y >= anchor.Y ? anchor.Y : anchor.Y - h;
             _zoomUiRect = ClampToVideo(new Avalonia.Rect(x, y, w, h), bounds, aspect, minW, minH);
             _hasZoomBox = true;
+            var guides = Infrastructure.ZoomBoxSnap.Snap(_zoomUiRect, bounds, allowSnap: false);
+            _zoomGuideV = guides.Vertical;
+            _zoomGuideH = guides.Horizontal;
         }
         else if (_zoomDrag == ZoomDrag.Move)
         {
@@ -4083,7 +4043,11 @@ public partial class GranularSpeedEditorWindow : Window
             double maxY = Math.Max(bounds.Y, bounds.Bottom - _zoomStartRect.Height);
             double nx = Math.Clamp(_zoomStartRect.X + dx, bounds.X, maxX);
             double ny = Math.Clamp(_zoomStartRect.Y + dy, bounds.Y, maxY);
-            _zoomUiRect = new Avalonia.Rect(nx, ny, _zoomStartRect.Width, _zoomStartRect.Height);
+            var snap = Infrastructure.ZoomBoxSnap.Snap(
+                new Avalonia.Rect(nx, ny, _zoomStartRect.Width, _zoomStartRect.Height), bounds, allowSnap: true);
+            _zoomUiRect = snap.Box;
+            _zoomGuideV = snap.Vertical;
+            _zoomGuideH = snap.Horizontal;
         }
 
         _zoomDragMoved = true;
@@ -4102,6 +4066,8 @@ public partial class GranularSpeedEditorWindow : Window
         bool moved = _zoomDragMoved;
         _zoomDrag = ZoomDrag.None;
         _zoomDragMoved = false;
+        _zoomGuideV = _zoomGuideH = Infrastructure.ZoomGuideState.Hidden;
+        RenderZoomBox();
         if (!_hasZoomBox) return;
 
         if (wasDraw && !moved)
@@ -4513,11 +4479,13 @@ public partial class GranularSpeedEditorWindow : Window
         var inlineMemes = new List<(double AnchorOutputSec, double DurationSec)>();
         foreach (var m in FreeVideoStudio.Core.Media.MemePlacement.InlineOnly(_edit.Memes))
             inlineMemes.Add((timeMapper(_edit.TrimStartMs / 1000.0 + m.AtSourceSecRelative), m.DurationSec));
+        _musicBed.KeepMusicDuringMeme = FreeVideoStudio.Core.Media.MemePlacement.AnyInlineKeepsMusic(_edit.Memes);
         _musicBed.Update(new FreeVideoStudio.App.Controls.MusicPreviewFrame(_edit.TrimStartMs,
             _edit.TrimStartMs + GetDuration() * 1000.0, ms => timeMapper(ms / 1000.0), editedTimeSec,
             !paused && !ended, ipc.IsSeeking || _isSeeking, !_isCanvasScrubbing, memeActive, inlineMemes,
             _memePreview?.CurrentPhase == Infrastructure.MemePreviewDirector.Phase.PlayingMeme,
-            _voiceTimeline?.FreezeOutputRanges()));
+            _voiceTimeline?.FreezeOutputRanges(),
+            Infrastructure.MemeMusicPreview.ActiveMemeStopsMusic(_edit.Memes, _memePreview?.ActiveMemeId)));
     }
 
     private void SetPlayheadFromScrub(double msFromTrimStart)
@@ -4831,6 +4799,7 @@ public partial class GranularSpeedEditorWindow : Window
     private void UpdateMemeButtonsState()
     {
         if (_removeMemeBtn != null) _removeMemeBtn.IsVisible = _edit.SelectedMemeId != null;
+        UpdateSelectedMemeActions();
 
         if (_memeListBtn != null)
         {
@@ -4982,6 +4951,7 @@ public partial class GranularSpeedEditorWindow : Window
         _memeListBtn = this.FindControl<Button>("MemeListBtn");
         if (_memeListBtn != null) _memeListBtn.Click += (_, _) => OpenMemeListMenu(_memeListBtn);
 
+        InstallSelectedMemeActions();
         UpdateMemeButtonsState();
     }
 

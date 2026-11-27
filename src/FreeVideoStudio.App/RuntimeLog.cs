@@ -1,3 +1,4 @@
+using FreeVideoStudio.Core.Infrastructure;
 ﻿using System;
 using System.IO;
 using System.Linq;
@@ -14,7 +15,6 @@ public static class RuntimeLog
     private static bool _initialized;
     private static bool _exitRegistered;
     private static string _appName = "[MAIN APP]";
-    private const long MaxLogSize = 10 * 1024 * 1024;
     private const int MaxOldLogs = 5;
     private const long MaxTotalOldBytes = 50L * 1024 * 1024;
     private static readonly TimeSpan MaxOldAge = TimeSpan.FromDays(14);
@@ -35,7 +35,6 @@ public static class RuntimeLog
     private static readonly string LogMutexName =
         FreeVideoStudio.Core.Infrastructure.NamedSystemMutex.UserScopedName("FreeVideoStudioLogMutex");
     private static readonly BlockingCollection<string> _logQueue = new(10000);
-    private static long _estimatedSize = -1;
     private static long _droppedCount;
 
     private static long _failedBatchCount;
@@ -289,10 +288,8 @@ public static class RuntimeLog
 
             string safeDetail = FreeVideoStudio.Core.Diagnostics.SecretRedactor.RedactSecrets(detail);
             string line = $"{_appName} [s:{_sessionId}] {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} [FATAL] {step} - {safeDetail}{Environment.NewLine}";
-            byte[] bytes = Encoding.UTF8.GetBytes(line);
-            using var fs = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
-            fs.Write(bytes, 0, bytes.Length);
-            fs.Flush(true);
+            using var log = new BoundedLogFile(path);
+            log.WriteDurable(line);
         }
         catch (System.Exception) {  }
         finally
@@ -407,40 +404,7 @@ public static class RuntimeLog
                             continue;
                         }
 
-                        var fi = new FileInfo(LogPath);
-                        _estimatedSize = fi.Exists ? fi.Length : 0;
-                        long incomingBytes = Encoding.UTF8.GetByteCount(combinedText);
-
-                        if (_estimatedSize + incomingBytes >= MaxLogSize)
-                        {
-                            string oldLog = LogPath + $".{DateTimeOffset.Now.ToUnixTimeMilliseconds()}.{Guid.NewGuid():N}.old";
-                            try
-                            {
-                                if (File.Exists(LogPath))
-                                {
-                                    File.Move(LogPath, oldLog);
-                                    _estimatedSize = 0;
-                                    CleanupOldLogs();
-                                }
-                            }
-                            catch (System.Exception) {  }
-                        }
-
-                        using var fs = new FileStream(LogPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
-                        using var sw = new StreamWriter(fs, new UTF8Encoding(false));
-                        sw.Write(combinedText);
-                        _estimatedSize += incomingBytes;
-
-                        int burstCount = 0;
-                        while (burstCount < 500
-                               && _estimatedSize < MaxLogSize
-                               && _logQueue.TryTake(out string? followUp))
-                        {
-                            sw.Write(followUp);
-                            _estimatedSize += Encoding.UTF8.GetByteCount(followUp);
-                            burstCount++;
-                        }
-                        sw.Flush();
+                        BoundedLogFile.Append(LogPath, combinedText);
                         written = true;
                     }
                     catch (Exception)
@@ -473,6 +437,15 @@ public static class RuntimeLog
                 f.Contains(".crash.", StringComparison.OrdinalIgnoreCase) ||
                 f.EndsWith(".local.log", StringComparison.OrdinalIgnoreCase);
 
+            foreach (var path in Directory.EnumerateFiles(dir))
+            {
+                if ((IsRotatedLog(path) || IsAuxiliaryLog(path) || path == LogPath ||
+                     Path.GetFileName(path) == Infrastructure.UiStallWatchdog.FileName) &&
+                    new FileInfo(path).Length > BoundedLogFile.MaxBytes)
+                {
+                    try { BoundedLogFile.Append(path, string.Empty); } catch (IOException) { }
+                }
+            }
             var oldLogs = Directory.GetFiles(dir, "*.*")
                                    .Where(f => IsRotatedLog(f) || IsAuxiliaryLog(f))
                                    .Select(f => new FileInfo(f))

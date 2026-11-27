@@ -1,40 +1,46 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
-using System.Threading;
-using FreeVideoStudio.Core.Media;
-
+using System.Text;
+using System.Threading.Channels;
+using System.Threading.Tasks;
+using FreeVideoStudio.Core.Diagnostics;
+using FreeVideoStudio.Core.Infrastructure;
 namespace FreeVideoStudio.App.Infrastructure;
-
 internal static class MpvLogCap
 {
-    internal const long CapBytes = 64L * 1024 * 1024;
-    private static readonly TimeSpan Interval = TimeSpan.FromSeconds(2);
-
-    internal static bool OverCap(long lengthBytes) => lengthBytes > CapBytes;
-
-    public static void Watch(MpvIpcClient client, string path)
+    private static readonly Channel<(string Path, string Message)> Messages = Channel.CreateBounded<(string, string)>(
+        new BoundedChannelOptions(1024) { SingleReader = true, FullMode = BoundedChannelFullMode.DropOldest });
+    static MpvLogCap()
     {
-        Timer? timer = null;
-        int done = 0;
-        timer = new Timer(_ =>
+        var worker = Task.Run(DrainAsync);
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
         {
-            if (Volatile.Read(ref done) != 0) return;
-            long length;
-            try
+            Messages.Writer.TryComplete();
+            worker.Wait(2000);
+        };
+    }
+    internal static void Enqueue(string path, string message)
+    {
+        string safe = SecretRedactor.RedactSecrets(message);
+        if (safe.Length > 8192) safe = safe[..8192] + "... [truncated]" + Environment.NewLine;
+        Messages.Writer.TryWrite((path, safe));
+    }
+    private static async Task DrainAsync()
+    {
+        while (await Messages.Reader.WaitToReadAsync().ConfigureAwait(false))
+        {
+            var batches = new Dictionary<string, StringBuilder>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < 128 && Messages.Reader.TryRead(out var entry); i++)
             {
-                var info = new FileInfo(path);
-                if (!info.Exists) return;
-                length = info.Length;
+                if (!batches.TryGetValue(entry.Path, out var batch)) batches[entry.Path] = batch = new StringBuilder();
+                batch.Append(entry.Message);
             }
-            catch (Exception ex)
+            foreach (var batch in batches)
             {
-                RuntimeLog.Swallowed(ex);
-                return;
+                try { BoundedLogFile.Append(batch.Key, batch.Value.ToString()); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { RuntimeLog.SwallowedThrottled(ex); }
             }
-            if (!OverCap(length) || Interlocked.Exchange(ref done, 1) != 0) return;
-            _ = client.SetPropertyAsync("log-file", "");
-            RuntimeLog.Warn("MPV", $"Player debug log reached {CapBytes / (1024 * 1024)} MB and was stopped so a repeating error cannot fill the disk: {Path.GetFileName(path)}.");
-            timer?.Dispose();
-        }, null, Interval, Interval);
+        }
     }
 }

@@ -86,6 +86,7 @@ internal static partial class ReleaseGate
         if (!beta) RequireNotesNotAlreadyPublished(notes, problems);
 
         if (baseSha.Length > 0) RequireGreenCi(baseSha, beta, problems);
+        RequireNoLeaks(problems, log);
         if (problems.Count == 0) RunLocalChecks(problems, log);
 
         if (problems.Count > 0)
@@ -420,6 +421,27 @@ internal static partial class ReleaseGate
             else if (conclusion != "success") problems.Add($"CI job '{name}' did not pass ({conclusion}).");
         }
         return problems;
+    }
+
+    internal const string SanitizeScript = "developer_tools/Sanitize/Sanitize.ps1";
+
+    private static void RequireNoLeaks(List<string> problems, BuildLog log)
+    {
+        log.Info("[RELEASE] Scanning files, hidden folders and git history for sensitive data (SANITIZE_01)...");
+        if (!File.Exists(SanitizeScript))
+        {
+            problems.Add(SanitizeScript + " is missing, so it cannot be proven that nothing sensitive is published (SANITIZE_01).");
+            return;
+        }
+        bool clean = Cli.TryCapture("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", SanitizeScript, "check"], out List<string> lines);
+        foreach (string line in lines)
+        {
+            if (line.StartsWith("LEAK", StringComparison.Ordinal)) log.Error("  " + line);
+            else if (line.StartsWith("LOCAL", StringComparison.Ordinal) || line.StartsWith("CHECK", StringComparison.Ordinal)) log.Warn("  " + line);
+            else log.Info("  " + line);
+        }
+        if (!clean)
+            problems.Add("The sensitive-data scan found something that would be published, or could not run (SANITIZE_01). See the red lines above; fix with developer_tools\\Sanitize.cmd.");
     }
 
     private static void RunLocalChecks(List<string> problems, BuildLog log)

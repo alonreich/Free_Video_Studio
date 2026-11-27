@@ -73,7 +73,6 @@ public partial class VoiceOverWindow : Window
         {
             _previewLayers = value ?? FreeVideoStudio.App.Models.EditorPreviewLayers.None;
             _musicBed.Result = _previewLayers.Music;
-            _musicBed.KeepMusicDuringMeme = _previewLayers.KeepMusicDuringMeme;
         }
     }
 
@@ -92,11 +91,13 @@ public partial class VoiceOverWindow : Window
             inlineMemes.Add((PreviewSourceMsToOutputSec((_trimStartSec + m.AtSourceSecRelative) * 1000.0), m.DurationSec));
         double endMs = (_trimEndSec > _trimStartSec ? _trimEndSec : _trimStartSec + Math.Max(0.1, ipc.Duration)) * 1000.0;
         bool ended = !memeActive && PreviewSourceSeconds * 1000.0 >= endMs - 1;
+        _musicBed.KeepMusicDuringMeme = MemePlacement.AnyInlineKeepsMusic(_memes);
         _musicBed.Update(new FreeVideoStudio.App.Controls.MusicPreviewFrame(_trimStartSec * 1000.0, endMs,
             PreviewSourceMsToOutputSec, PreviewOutputSeconds, playing && !ended, _isSeeking || ipc.IsSeeking,
             _dragSeekTimeSec == null, memeActive, inlineMemes,
             _memePreview?.CurrentPhase == Infrastructure.MemePreviewDirector.Phase.PlayingMeme,
-            (_playbackPlan?.Timeline ?? _timeline)?.FreezeOutputRanges()));
+            (_playbackPlan?.Timeline ?? _timeline)?.FreezeOutputRanges(),
+            Infrastructure.MemeMusicPreview.ActiveMemeStopsMusic(_memes, _memePreview?.ActiveMemeId)));
     }
 
     private string _lastLiveCrop = "";

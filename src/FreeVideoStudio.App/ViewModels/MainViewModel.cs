@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -33,7 +33,6 @@ public sealed class MainViewModel : ViewModelBase
     private bool _isEnableFade = true;
     private bool _isAddMeme;
     private MemeItem? _selectedMemeItem;
-    private bool _keepMusicDuringMeme;
 
     private bool _isInGameOverlaysVisible = true;
 
@@ -214,20 +213,22 @@ public sealed class MainViewModel : ViewModelBase
         get => _selectedMemeItem;
         set
         {
-            if (SetProperty(ref _selectedMemeItem, value))
-                NotifyStateDirty();
+            if (!SetProperty(ref _selectedMemeItem, value)) return;
+            OnPropertyChanged(nameof(MemeButtonText));
+            NotifyStateDirty();
         }
     }
 
-    public bool KeepMusicDuringMeme
+    private bool _memeAtStart;
+    public bool MemeAtStart
     {
-        get => _keepMusicDuringMeme;
-        set
-        {
-            if (SetProperty(ref _keepMusicDuringMeme, value))
-                NotifyStateDirty();
-        }
+        get => _memeAtStart;
+        set { if (SetProperty(ref _memeAtStart, value)) OnPropertyChanged(nameof(MemeButtonText)); }
     }
+
+    public string MemeButtonText => _selectedMemeItem is { } m
+        ? $"🤡 {FreeVideoStudio.App.Controls.MemePickerRow.TitleFor(m.FileName)} · {(_memeAtStart ? "at the start" : "at the end")}  ✎"
+        : "🤡 Choose a meme…";
 
     public bool IsInGameOverlaysVisible
     {

@@ -37,7 +37,7 @@ public partial class MainWindow
     {
         double start = _trimStartSet ? _trimStartMs : 0;
         double end = _trimEndSet && _trimEndMs > start ? _trimEndMs : _loadedVideoDurationMs;
-        var meme = MemeComboBoxCtl?.SelectedItem as MemeItem;
+        var meme = _viewModel.SelectedMemeItem;
         string? legacy = IsAddMeme && meme is { IsDownloadAction: false } ? meme.FullPath : null;
         return new(_loadedVideoPath, _loadedVideoDurationMs, start, end, _baseSpeed,
             BuildExportSpeedSegments().ToArray(), _cuts.ToArray(), _memePlacements.ToArray(), legacy,

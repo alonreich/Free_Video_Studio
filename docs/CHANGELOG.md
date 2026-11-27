@@ -10,6 +10,36 @@ What people who use Free Video Studio read: plain-English notes about what chang
 
 ## Upcoming
 
+- **Better Previews:** In portrait mode the preview marks where each in-game overlay of your mask will appear, including Teammate HP and Spectating eye when they are on. Left and Right now jump 2 seconds instead of 5; Ctrl or Shift with the arrows still steps one frame.
+
+- **Full Thumbnail in Chats:** Portrait videos now start with your whole thumbnail slightly smaller on a soft blurred border, so WhatsApp and text messages no longer cut off its top.
+
+- **Easier Speed Editor:** The zoom box shows gentle centre lines while you move it and clicks into the exact middle of the picture. Dragging along the top lane now just moves the playhead; new speed blocks come from MARK START and MARK END only.
+
+- **Simpler AI Smart Zoom:** The three pictures now open closer, so people are easier to spot (one button shows the whole picture again). Clicking once is enough. Choose Less, Normal or More zoom right there.
+
+- **Straight to the Video Merger:** After making two or more videos, the finished screen offers VIDEO MERGER, which opens them in the order you made them. Once a video is done, switching tools or exiting no longer warns you about leaving the editor.
+
+- **Add Music in the Merger:** Scrubbing the music screens no longer turns the video black after the first clip. Every clip now plays in the preview.
+
+- **Keyboard and screen readers:** Speed and quality controls now identify themselves and report their values. Thumbnail, voice-over and music buttons have clear names. The tour keeps keyboard focus inside it, and Back and Skip do what their labels say.
+
+- **Project guide:** The guide now distinguishes routine builds and tests from local installer checks and public releases. It also points directly to the settings, preview, and logging rules.
+
+- **Smaller logs:** Each diagnostic log keeps recent messages in the same file and stays within 5 MB, even when the preview player repeatedly reports an error.
+
+- **Speed Editor preview:** Fixed a startup race that could leave the preview black when opening the Speed Editor with a video already loaded. Resizing or recovering the preview now lets the current frame finish before replacing its video buffers.
+
+- **Meme Gallery:** Memes now show as a picture gallery with video memes and picture memes in their own sections, each with its length. The main screen uses the same gallery. One button downloads the whole free meme library at once.
+
+- **Music Under Each Meme:** Each meme says "Music continues to play" or "Music stops!". Pictures keep the music by default, videos stop it, and your choice is remembered for that meme. No more popup question.
+
+- **Safer Work:** After an unexpected close, your chosen meme comes back with the rest of your work. If the save folder fails at the end of an export, the finished video is kept safe. A project another program is briefly using no longer opens an older backup, and long names with emoji stay readable.
+
+- **Simpler Memes:** One Add meme button opens the same choices everywhere, remembers each style and shows where the meme will land. Choose Start, Here or End; drag two handles to keep the funny part. Preview with sound before adding. Select a meme in the Speed Editor for Preview, Change or Remove.
+
+- **Cleaner Church Bell:** The freeze-frame bell no longer starts with a doorbell-like double ding. Two more bell choices, Mid Start and Late Start, are in Settings › Sound & Music for an even softer strike. Freeze sound exports use consistent file names across regional settings.
+
 ## v2026.11.23.0836 — 2026-11-23
 
 - **AI Commentary Captions, Clarified:** Writes timed on-screen captions in fewer, bigger pieces, so it is faster and follows the whole story. It says plainly what the AI is doing and why it waits, shows whether your AI hears game audio, and right-click rewrites a line. Online-only buttons are dimmed in PC-only mode.

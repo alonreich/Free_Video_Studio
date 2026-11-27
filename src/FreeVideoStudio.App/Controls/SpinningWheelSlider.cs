@@ -1,5 +1,8 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Automation;
+using Avalonia.Automation.Peers;
+using Avalonia.Automation.Provider;
 using Avalonia.Input;
 using Avalonia.Media;
 using System;
@@ -72,6 +75,47 @@ namespace FreeVideoStudio.App.Controls
         }
 
         private static long Stamp() => System.Diagnostics.Stopwatch.GetTimestamp();
+        private DialAutomationPeer? _automationPeer;
+        protected override AutomationPeer OnCreateAutomationPeer() => _automationPeer ??= new DialAutomationPeer(this);
+        private string AccessibleValue(int value)
+        {
+            int index = value - _range.min;
+            return index >= 0 && index < _labels.Count ? _labels[index] : value.ToString(System.Globalization.CultureInfo.CurrentCulture);
+        }
+        private sealed class DialAutomationPeer(SpinningWheelSlider owner) : ControlAutomationPeer(owner), IRangeValueProvider, IValueProvider
+        {
+            protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Slider;
+            public bool IsReadOnly => !owner.IsEffectivelyEnabled;
+            public double Minimum => owner._range.min;
+            public double Maximum => owner._range.max;
+            public double Value => owner.Value;
+            public double SmallChange => 1;
+            public double LargeChange => 5;
+            string IValueProvider.Value => owner.AccessibleValue(owner.Value);
+            public void SetValue(double value)
+            {
+                if (IsReadOnly) throw new InvalidOperationException("The dial is disabled.");
+                if (!double.IsFinite(value) || value < Minimum || value > Maximum) throw new ArgumentOutOfRangeException(nameof(value));
+                int next = (int)Math.Round(value);
+                if (next == owner.Value) return;
+                owner._interactionPending = false;
+                owner.Value = next;
+                owner.ValueChangeCompleted?.Invoke(owner, owner.Value);
+            }
+            public void SetValue(string? value)
+            {
+                if (value is null) throw new ArgumentNullException(nameof(value));
+                int index = owner._labels.IndexOf(value);
+                if (index >= 0) SetValue(index + owner._range.min);
+                else if (double.TryParse(value, out double number)) SetValue(number);
+                else throw new ArgumentException("Choose one of the dial values.", nameof(value));
+            }
+            public void NotifyValueChanged(int oldValue, int newValue)
+            {
+                RaisePropertyChangedEvent(RangeValuePatternIdentifiers.ValueProperty, (double)oldValue, (double)newValue);
+                RaisePropertyChangedEvent(ValuePatternIdentifiers.ValueProperty, owner.AccessibleValue(oldValue), owner.AccessibleValue(newValue));
+            }
+        }
 
         private static double SecondsSince(long stamp)
             => (Stamp() - stamp) / (double)System.Diagnostics.Stopwatch.Frequency;
@@ -164,6 +208,8 @@ namespace FreeVideoStudio.App.Controls
         protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
         {
             base.OnPropertyChanged(change);
+            if (change.Property == ValueProperty)
+                _automationPeer?.NotifyValueChanged(change.GetOldValue<int>(), change.GetNewValue<int>());
             if (change.Property == IsEnabledProperty || change.Property.Name == "IsFocused")
             {
                 InvalidateVisual();

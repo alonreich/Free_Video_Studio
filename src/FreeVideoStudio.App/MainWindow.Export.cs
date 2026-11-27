@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -77,6 +77,13 @@ public partial class MainWindow
         }
     }
 
+    internal const string SessionMergeTag = "MERGESESSIONVIDEOS_01";
+
+    private readonly List<string> _sessionExports = new();
+
+    internal IReadOnlyList<string> SessionExportsStillOnDisk()
+        => _sessionExports.Where(System.IO.File.Exists).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
     private void RestoreUiAfterExport(Button processButton)
     {
         OverlayLayerCtl?.StopOverlay();
@@ -107,6 +114,8 @@ public partial class MainWindow
         {
             var dlg = new FreeVideoStudio.App.Controls.FinishedDialogWindow();
             dlg.SetOutputPath(result.OutputPath ?? string.Empty);
+            var sessionClips = SessionExportsStillOnDisk();
+            dlg.SetMergerOffer(sessionClips.Count);
             if (!string.IsNullOrEmpty(post.Attribution)) dlg.SetAttributionText(post.Attribution);
             await dlg.ShowDialog(this);
 
@@ -116,6 +125,11 @@ public partial class MainWindow
             }
 
             if (dlg.DialogResult == 1) Close();
+            else if (dlg.DialogResult == 3)
+            {
+                RuntimeLog.Info("UI", $"{SessionMergeTag}: opening the Video Merger with {sessionClips.Count} video(s) made in this session.");
+                await SwitchToCompanionAppAsync("--merger", "Video Merger", sessionClips);
+            }
             else if (dlg.DialogResult == 2)
             {
                 ResetProjectStateToUpload();
@@ -165,16 +179,7 @@ public partial class MainWindow
         if (ActiveVideoHost != null) ActiveVideoHost.IsVisible = false;
         OverlayLayerCtl?.StartOverlay();
 
-        var addMemeCb = this.FindControl<Avalonia.Controls.ToggleSwitch>("AddMemeCheckbox");
-        string? memeFile = null;
-        if (addMemeCb != null && addMemeCb.IsChecked == true)
-        {
-            var memeCb = this.FindControl<Avalonia.Controls.ComboBox>("MemeComboBox");
-            if (memeCb?.SelectedItem is MemeItem memeSel && !memeSel.IsDownloadAction && System.IO.File.Exists(memeSel.FullPath))
-            {
-                memeFile = memeSel.FullPath;
-            }
-        }
+        string? memeFile = SelectedLegacyMemeFile();
 
         int qualityIdx = this.FindControl<FreeVideoStudio.App.Controls.SpinningWheelSlider>("QualitySlider")?.Value
                          ?? FreeVideoStudio.App.ViewModels.QualityLadder.DefaultIndex;
@@ -239,6 +244,7 @@ public partial class MainWindow
             ClearOverlayTextForNextVideo("the video finished processing");
 
             _exportedCleanSinceLastEdit = true;
+            if (!string.IsNullOrWhiteSpace(result.OutputPath)) _sessionExports.Add(result.OutputPath);
             _recovery.ClearState();
             RuntimeLog.Info("RECOVERY", "Export completed successfully - recovery state cleared; no crash prompt is due for this session.");
 
@@ -399,7 +405,6 @@ public partial class MainWindow
             MusicTailFadeOut = musicTailOut,
             MusicTracks = musicTracks,
             MusicConfig = musicConfig,
-            KeepMusicDuringMeme = _keepMusicDuringMeme ?? false,
             VoiceOverWavPath = _voiceOverResult?.VoiceOverWavPath,
             VoiceOverStartSec = _voiceOverResult?.VoiceOverStartTimestampSec ?? 0.0,
             VoiceOverTakes = _voiceOverResult != null ? GetExistingVoiceOverTakes(_voiceOverResult) : null,
@@ -412,13 +417,8 @@ public partial class MainWindow
 
     private string? SelectedLegacyMemeFile()
     {
-        var addMemeCb = this.FindControl<Avalonia.Controls.ToggleSwitch>("AddMemeCheckbox");
-        if (addMemeCb != null && addMemeCb.IsChecked == true)
-        {
-            var memeCb = this.FindControl<Avalonia.Controls.ComboBox>("MemeComboBox");
-            if (memeCb?.SelectedItem is MemeItem memeSel && !memeSel.IsDownloadAction && System.IO.File.Exists(memeSel.FullPath))
-                return memeSel.FullPath;
-        }
+        if (_viewModel.IsAddMeme && _viewModel.SelectedMemeItem is { IsDownloadAction: false } memeSel && System.IO.File.Exists(memeSel.FullPath))
+            return memeSel.FullPath;
         return null;
     }
 

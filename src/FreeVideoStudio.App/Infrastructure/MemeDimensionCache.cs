@@ -23,6 +23,7 @@ internal sealed class MemeDimensionCache
         public long MTimeTicks;
         public int Width;
         public int Height;
+        public double DurationSec;
         public long UsedTicks;
     }
 
@@ -63,6 +64,7 @@ internal sealed class MemeDimensionCache
                     MTimeTicks = ReadLong(e, "mtime"),
                     Width = w,
                     Height = h,
+                    DurationSec = e["d"] is JsonValue dv && dv.TryGetValue<double>(out double d) && double.IsFinite(d) ? d : 0,
                     UsedTicks = ReadLong(e, "used")
                 };
             }
@@ -76,9 +78,13 @@ internal sealed class MemeDimensionCache
     }
 
     public bool TryGet(string fullPath, long length, long mTimeTicks, out int width, out int height)
+        => TryGet(fullPath, length, mTimeTicks, out width, out height, out _);
+
+    public bool TryGet(string fullPath, long length, long mTimeTicks, out int width, out int height, out double durationSec)
     {
         width = 0;
         height = 0;
+        durationSec = 0;
 
         lock (_sync)
         {
@@ -89,11 +95,12 @@ internal sealed class MemeDimensionCache
             e.UsedTicks = DateTime.UtcNow.Ticks;
             width = e.Width;
             height = e.Height;
+            durationSec = e.DurationSec;
             return true;
         }
     }
 
-    public void Put(string fullPath, long length, long mTimeTicks, int width, int height)
+    public void Put(string fullPath, long length, long mTimeTicks, int width, int height, double durationSec = 0)
     {
         if (width <= 0 || height <= 0) return;
 
@@ -105,6 +112,7 @@ internal sealed class MemeDimensionCache
                 MTimeTicks = mTimeTicks,
                 Width = width,
                 Height = height,
+                DurationSec = double.IsFinite(durationSec) && durationSec > 0 ? durationSec : 0,
                 UsedTicks = DateTime.UtcNow.Ticks
             };
             _dirty = true;
@@ -160,6 +168,7 @@ internal sealed class MemeDimensionCache
                     ["mtime"] = kv.Value.MTimeTicks,
                     ["w"] = kv.Value.Width,
                     ["h"] = kv.Value.Height,
+                    ["d"] = Math.Round(kv.Value.DurationSec, 3),
                     ["used"] = kv.Value.UsedTicks
                 };
             }

@@ -180,9 +180,17 @@ public partial class VideoMergerWindow
             r.MusicVolume, r.VideoVolume, r.LoopMusic, r.EnableDucking, r.EnableCarving, starts, ends);
     }
 
+    internal const string SessionClipsTag = "MERGESESSIONVIDEOS_01";
+
     private async Task RestoreSessionAsync()
     {
         if (VideoQueue.Count > 0) return;
+        if (LaunchContext is { InitialClips.Count: > 0 } launch)
+        {
+            RuntimeLog.Info("MERGER", $"{SessionClipsTag}: opening with the {launch.InitialClips.Count} video(s) made in this session, in the order they were made.");
+            await AddExternalVideosAsync(launch.InitialClips.ToArray());
+            return;
+        }
         try
         {
             var projectEdl = Services.ToolNavigator.ReadMergeQueue()?.ToEdl();

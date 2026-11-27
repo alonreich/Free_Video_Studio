@@ -13,6 +13,33 @@ namespace FreeVideoStudio.App.Tests;
 
 public sealed class PreviewShutdownTests
 {
+    [AvaloniaFact]
+    public void LiveTextureRebuildDefersUntilLastPresentationCompletes()
+    {
+        var host = new MpvVideoView();
+        var lastSlot = host.PresentGates[^1];
+        Assert.True(lastSlot.Wait(0));
+        try
+        {
+            Assert.False(host.TryReleaseTexturesForRebuild());
+            Assert.Equal(0, lastSlot.CurrentCount);
+        }
+        finally
+        {
+            lastSlot.Release();
+        }
+        Assert.True(host.TryReleaseTexturesForRebuild());
+        Assert.All(host.PresentGates, gate => Assert.Equal(1, gate.CurrentCount));
+    }
+    [AvaloniaFact]
+    public void LiveTextureRebuildDefersUntilPendingImportFinishes()
+    {
+        var host = new MpvVideoView();
+        var request = host.BeginTextureImport(MpvVideoView.SwapChainSize - 1, 1, (nint)42);
+        Assert.False(host.TryReleaseTexturesForRebuild());
+        request.Complete(null);
+        Assert.True(host.TryReleaseTexturesForRebuild());
+    }
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
     [Fact]

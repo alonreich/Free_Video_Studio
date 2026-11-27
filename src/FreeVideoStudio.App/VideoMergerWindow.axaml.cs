@@ -1317,8 +1317,8 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             if (_videoHost?.IpcClient != null) _ = _videoHost.IpcClient.SetPropertyAsync("pause", _videoHost.IpcClient.IsPaused ? "no" : "yes");
             e.Handled = true;
         }
-        else if (e.Key == Avalonia.Input.Key.Left) { TakeManualControl(); _ = SeekPreview(Math.Max(0, PreviewPositionSec() - 5)); e.Handled = true; }
-        else if (e.Key == Avalonia.Input.Key.Right) { TakeManualControl(); _ = SeekPreview(PreviewPositionSec() + 5); e.Handled = true; }
+        else if (e.Key == Avalonia.Input.Key.Left) { TakeManualControl(); _ = SeekPreview(Math.Max(0, PreviewPositionSec() - Infrastructure.PreviewKeySeek.StepSeconds)); e.Handled = true; }
+        else if (e.Key == Avalonia.Input.Key.Right) { TakeManualControl(); _ = SeekPreview(PreviewPositionSec() + Infrastructure.PreviewKeySeek.StepSeconds); e.Handled = true; }
         else if (e.Key == Avalonia.Input.Key.Up) { MoveVideo(-1); e.Handled = true; }
         else if (e.Key == Avalonia.Input.Key.Down) { MoveVideo(1); e.Handled = true; }
     }
