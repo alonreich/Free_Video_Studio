@@ -51,15 +51,65 @@ public sealed class OwnerRequestBatchTests
     }
 
     [Fact]
-    public void PickerFocusView_MapsClicksAndBoxesBackToTheWholePicture()
+    public void PickerFrameZoom_KeepsThePictureCoveringTheViewAndMapsBackToTheWholeFrame()
     {
-        Assert.Equal(125, AiSubjectPickerWindow.ViewToSource1000(0, 0.75));
-        Assert.Equal(500, AiSubjectPickerWindow.ViewToSource1000(0.5, 0.75));
-        Assert.Equal(875, AiSubjectPickerWindow.ViewToSource1000(1, 0.75));
-        Assert.Equal(1000, AiSubjectPickerWindow.ViewToSource1000(1, 1.0));
-        Assert.Equal(0.5, AiSubjectPickerWindow.SourceToView(500, 0.75), 6);
-        Assert.Equal(0.0, AiSubjectPickerWindow.SourceToView(125, 0.75), 6);
-        Assert.Equal(0.75, AiSubjectPickerWindow.FocusViewFraction);
+        var (vw, vh) = AiSubjectPickerWindow.ViewportSize(400, 600, 16.0 / 9.0);
+        Assert.Equal(400, vw, 6);
+        Assert.Equal(225, vh, 6);
+        var (l, cx, cy) = AiSubjectPickerWindow.ComputeLayout(vw, vh, 16.0 / 9.0, AiSubjectPickerWindow.DefaultFrameZoom, 0.5, 0.5);
+        Assert.Equal(0.5, cx, 6);
+        Assert.Equal(0.5, cy, 6);
+        Assert.Equal(vw * 1.7, l.Width, 6);
+        Assert.Equal(0.5, (vw / 2 - l.OffsetX) / l.Width, 6);
+        var (edge, ecx, _) = AiSubjectPickerWindow.ComputeLayout(vw, vh, 16.0 / 9.0, 1.7, 0.0, 0.5);
+        Assert.True(edge.OffsetX <= 1e-9 && ecx > 0);
+        var (whole, _, _) = AiSubjectPickerWindow.ComputeLayout(vw, vh, 16.0 / 9.0, 1.0, 0.9, 0.9);
+        Assert.Equal(0, whole.OffsetX, 6);
+        Assert.Equal(0, whole.OffsetY, 6);
+    }
+
+    [Fact]
+    public void PickerPortraitView_UsesTheExportsTwoByThreeGameplayArea()
+    {
+        Assert.Equal(2.0 / 3.0, AiSubjectPickerWindow.PortraitViewAspect, 9);
+        Assert.Equal(1.0, AiSubjectPickerWindow.MinFrameZoom(false, 16.0 / 9.0), 9);
+        Assert.Equal(0.375, AiSubjectPickerWindow.MinFrameZoom(true, 16.0 / 9.0), 9);
+        var (vw, vh) = AiSubjectPickerWindow.ViewportSize(400, 600, AiSubjectPickerWindow.PortraitViewAspect);
+        Assert.Equal(400, vw, 6);
+        Assert.Equal(600, vh, 6);
+        var (l, _, _) = AiSubjectPickerWindow.ComputeLayout(vw, vh, 16.0 / 9.0, 1.0, 0.5, 0.5);
+        Assert.Equal(720.0 / 1920.0, vw / l.Width, 6);
+    }
+
+    [Fact]
+    public void PickerNextImage_PicksAMomentAboutOneToOneAndAHalfSecondsAwayInsideTheSegment()
+    {
+        var rng = new System.Random(7);
+        for (int k = 0; k < 200; k++)
+        {
+            double t = AiSubjectPickerWindow.NextImageTime(15.0, 10.0, 10.0, rng);
+            double d = System.Math.Abs(t - 15.0);
+            Assert.InRange(d, 1.0, 1.5);
+            double edge = AiSubjectPickerWindow.NextImageTime(10.2, 10.0, 10.0, rng);
+            Assert.InRange(edge, 10.0, 20.0);
+            Assert.InRange(edge - 10.2, 1.0, 1.5);
+            double tiny = AiSubjectPickerWindow.NextImageTime(10.3, 10.0, 0.5, rng);
+            Assert.InRange(tiny, 10.0, 10.5);
+        }
+    }
+
+    [Fact]
+    public void SpeedEditorTopLaneIsHalfTheFilmstripLane()
+    {
+        Assert.Equal(30.0, GranularSpeedEditorWindow.SegmentLaneHeight, 9);
+    }
+
+    [Fact]
+    public void ToggleSwitchLeavesNoTintedBoxAfterAMouseClick()
+    {
+        string xaml = System.IO.File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "AvaloniaApp.axaml"));
+        Assert.DoesNotContain("ToggleSwitch:focus /template/ Grid#SwitchAreaGrid", xaml);
+        Assert.Contains("ToggleSwitch:focus-visible /template/ Grid#SwitchAreaGrid", xaml);
     }
 
     [Fact]

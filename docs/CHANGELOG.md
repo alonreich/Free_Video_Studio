@@ -14,15 +14,15 @@ What people who use Free Video Studio read: plain-English notes about what chang
 
 - **Full Thumbnail in Chats:** Portrait videos now start with your whole thumbnail slightly smaller on a soft blurred border, so WhatsApp and text messages no longer cut off its top.
 
-- **Easier Speed Editor:** The zoom box shows gentle centre lines while you move it and clicks into the exact middle of the picture. Dragging along the top lane now just moves the playhead; new speed blocks come from MARK START and MARK END only.
+- **Easier Speed Editor:** The zoom box shows gentle centre lines while you move it and clicks into the exact middle of the picture. Dragging along the top lane now just moves the playhead; new speed blocks come from MARK START and MARK END only, so that lane is now half as tall.
 
-- **Simpler AI Smart Zoom:** The three pictures now open closer, so people are easier to spot (one button shows the whole picture again). Clicking once is enough. Choose Less, Normal or More zoom right there.
+- **Simpler AI Smart Zoom:** Opens as big as the Speed Editor. Each picture starts zoomed in; zoom with the mouse wheel or the slider beside it, and in portrait mode it looks like your final video. Mark the enemy in each picture; it zooms in so you can fine-tune. Can't see them? Press Next Image.
 
 - **Straight to the Video Merger:** After making two or more videos, the finished screen offers VIDEO MERGER, which opens them in the order you made them. Once a video is done, switching tools or exiting no longer warns you about leaving the editor.
 
 - **Add Music in the Merger:** Scrubbing the music screens no longer turns the video black after the first clip. Every clip now plays in the preview.
 
-- **Keyboard and screen readers:** Speed and quality controls now identify themselves and report their values. Thumbnail, voice-over and music buttons have clear names. The tour keeps keyboard focus inside it, and Back and Skip do what their labels say.
+- **Keyboard, screen readers and switches:** Speed and quality controls identify themselves and report their values. Thumbnail, voice-over and music buttons have clear names. The tour keeps focus inside it; Back and Skip do what they say. Switches no longer leave a shaded box after a click.
 
 - **Project guide:** The guide now distinguishes routine builds and tests from local installer checks and public releases. It also points directly to the settings, preview, and logging rules.
 

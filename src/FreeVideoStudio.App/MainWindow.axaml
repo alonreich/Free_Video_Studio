@@ -371,7 +371,7 @@
                                         <TextBlock Text="Add MEME" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0" />
                                         <ToggleSwitch Name="AddMemeCheckbox" IsChecked="{Binding IsAddMeme, Mode=TwoWay}" IsEnabled="False" OnContent="{x:Null}" OffContent="{x:Null}" MinWidth="36" MinHeight="36" Grid.Column="1" AutomationProperties.Name="Add MEME" ToolTip.Tip="Turn this on to add funny meme popups over your video." />
                                     </Grid>
-                                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Classes="Secondary" MinHeight="32" Cursor="Hand"
+                                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Classes="Secondary" MinHeight="32" Cursor="Hand"
                                             IsEnabled="{Binding #AddMemeCheckbox.IsEnabled}" Content="Add meme"
                                             FontSize="{DynamicResource AppFontSize11}" Click="OnChooseMainMemeClicked"
                                             ToolTip.Tip="Pick a meme for the start, cursor or end. Preview it, then Add."/>

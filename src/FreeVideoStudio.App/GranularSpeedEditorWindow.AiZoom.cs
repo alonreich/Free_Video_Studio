@@ -1320,8 +1320,10 @@ public partial class GranularSpeedEditorWindow
                             discovery, source.SourceStartSec, source.DurationSec,
                             useLocalFreeDiscovery, profile,
                             allowDescribeManually: !useLocalFreeDiscovery && mode != AiMode.LocalOnly,
-                            previousDescription: targetDescription);
-                        await picker.ShowDialog<bool>(this);
+                            previousDescription: targetDescription,
+                            portrait: _edit.IsMobileFormat,
+                            videoPath: source.VideoPath);
+                        await picker.ShowOverAsync(this);
                         if (picker.Choice == AiPickerChoice.ResampleMoments)
                         {
                             sampleAttempt++;
@@ -1340,8 +1342,8 @@ public partial class GranularSpeedEditorWindow
                             (baseScale, minScale) = AdoptPickerZoomStrength(picker, baseScale, minScale);
                             target = picker.SelectedSubject;
                             int idx = Math.Clamp(target.FrameIndex, 1, 3);
-                            referenceFrame = idx switch { 1 => discovery.F1, 3 => discovery.F3, _ => discovery.F2 };
-                            double t = idx switch { 1 => discovery.T1, 3 => discovery.T3, _ => discovery.T2 };
+                            referenceFrame = picker.FramePathAt(idx);
+                            double t = picker.FrameTimeAt(idx);
                             referenceTime = Math.Max(0, t - source.SourceStartSec);
                             break;
                         }
@@ -1990,8 +1992,10 @@ public partial class GranularSpeedEditorWindow
                             disc, source.SourceStartSec, source.DurationSec,
                             blockLocalFree, profile, blockTag,
                             allowDescribeManually: !blockLocalFree && mode != AiMode.LocalOnly,
-                            previousDescription: blockDesc);
-                        await picker.ShowDialog<bool>(this);
+                            previousDescription: blockDesc,
+                            portrait: _edit.IsMobileFormat,
+                            videoPath: source.VideoPath);
+                        await picker.ShowOverAsync(this);
                         if (picker.Choice == AiPickerChoice.ResampleMoments)
                         {
                             blockSampleAttempt++;
@@ -2024,8 +2028,8 @@ public partial class GranularSpeedEditorWindow
                         (baseScale, minScale) = AdoptPickerZoomStrength(picker, baseScale, minScale);
                         var target = picker.SelectedSubject;
                         int idx = Math.Clamp(target.FrameIndex, 1, 3);
-                        string refFrame = idx switch { 1 => disc.F1, 3 => disc.F3, _ => disc.F2 };
-                        double tObs = idx switch { 1 => disc.T1, 3 => disc.T3, _ => disc.T2 };
+                        string refFrame = picker.FramePathAt(idx);
+                        double tObs = picker.FrameTimeAt(idx);
                         double refTime = Math.Max(0, tObs - source.SourceStartSec);
 
                         var lookahead = await ResolveLookaheadDurationAsync(segIndex, seg, source, disc, target, refTime, blockTag);

@@ -359,7 +359,7 @@ public partial class GranularSpeedEditorWindow
         var fill = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(150, colour.R, colour.G, colour.B));
         var fillSelected = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(230, colour.R, colour.G, colour.B));
         var outline = new Avalonia.Media.SolidColorBrush(colour);
-        double stripH = Math.Max(8, h * 0.28);
+        double stripH = Math.Max(10, h * 0.4);
 
         foreach (var m in corners)
         {

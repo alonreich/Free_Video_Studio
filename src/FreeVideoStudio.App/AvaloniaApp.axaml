@@ -524,9 +524,6 @@
         <Style Selector="ToggleSwitch:focus /template/ Border#SwitchKnobBounds">
             <Setter Property="BorderBrush" Value="{DynamicResource AppFocusOuterBrush}"/>
         </Style>
-        <Style Selector="ToggleSwitch:focus /template/ Grid#SwitchAreaGrid">
-            <Setter Property="Background" Value="{DynamicResource AppAccentAlpha15Brush}"/>
-        </Style>
         <Style Selector="ToggleSwitch:focus-visible /template/ Border#OuterBorder">
             <Setter Property="BorderBrush" Value="{DynamicResource AppFocusInnerBrush}"/>
         </Style>

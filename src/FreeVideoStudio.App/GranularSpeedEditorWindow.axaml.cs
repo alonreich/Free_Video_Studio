@@ -278,11 +278,13 @@ public partial class GranularSpeedEditorWindow : Window
         }, null, WatchdogTickMs, WatchdogTickMs);
     }
 
-    private const double MarkerOverlayFallbackHeightPx = 150.0;
+    private const double MarkerOverlayFallbackHeightPx = 120.0;
 
     private const double LaneHeight = 60.0;
 
-    private const double LaneBlockHeight = 60.0;
+    internal const double SegmentLaneHeight = LaneHeight / 2.0;
+
+    private const double LaneBlockHeight = SegmentLaneHeight;
 
     private double _playheadMs;
 
@@ -2229,7 +2231,7 @@ public partial class GranularSpeedEditorWindow : Window
             Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
             Focusable = true,
             ClipToBounds = false,
-            MinHeight = LaneHeight,
+            MinHeight = SegmentLaneHeight,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch
         };
@@ -2288,6 +2290,8 @@ public partial class GranularSpeedEditorWindow : Window
         lanes.LaneBHost.Children.Add(thumbLoading);
 
         SetupCaptionsLane();
+
+        lanes.SetLaneHeights(SegmentLaneHeight, LaneHeight);
 
         lanes.LaneASeekable = false;
         lanes.LaneBSeekable = true;

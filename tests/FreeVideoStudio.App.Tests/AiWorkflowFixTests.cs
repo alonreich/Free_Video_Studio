@@ -608,7 +608,7 @@ public sealed class AiWorkflowFixTests
     }
 
     [AvaloniaFact]
-    public void AiSubjectPickerWindow_WizardStages_AndNotVisibleBehavior()
+    public void AiSubjectPickerWindow_WizardStages_NextImageReplacesNotVisible()
     {
         var subjects = new List<DiscoveredSubject>
         {
@@ -620,24 +620,41 @@ public sealed class AiWorkflowFixTests
         var headline = (TextBlock)scope.Find("PickerHeadlineText")!;
         var intro = (TextBlock)scope.Find("PickerIntroText")!;
         var confirmBtn = (Button)scope.Find("ConfirmPickerBtn")!;
-        var notVisBtn1 = (Button)scope.Find("Frame1NotVisibleBtn")!;
         var badge1 = (TextBlock)scope.Find("Frame1Badge")!;
 
         Assert.Equal("Stage 1 of 3 · Choose who to follow", headline.Text);
         Assert.Equal(AiSubjectPickerWindow.PickIntro, intro.Text);
         Assert.Equal("Next: Check Selections →", confirmBtn.Content);
+        Assert.Equal("Picture 1 (Start)", ((TextBlock)scope.Find("Frame1TimeLabel")!).Text);
+        for (int f = 1; f <= 3; f++)
+        {
+            Assert.Null(scope.Find($"Frame{f}NotVisibleBtn"));
+            var next = (Button)scope.Find($"Frame{f}NextImageBtn")!;
+            Assert.Equal("Next Image", next.Content);
+            Assert.False(next.IsEnabled);
+            Assert.NotNull(scope.Find($"Frame{f}ZoomSlider"));
+            Assert.NotNull(scope.Find($"Frame{f}ZoomInBtn"));
+            Assert.NotNull(scope.Find($"Frame{f}ZoomOutBtn"));
+            Assert.NotNull(scope.Find($"Frame{f}ZoomResetBtn"));
+            Assert.Equal(AiSubjectPickerWindow.DefaultFrameZoom, picker.FrameZoomOf(f), 6);
+        }
+        Assert.Equal(1.5, picker.FrameTimeAt(2), 6);
+        Assert.Null(scope.Find("PickerViewToggleBtn"));
 
-        notVisBtn1.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
-        Assert.Equal("— Not visible", badge1.Text);
-
-        var notVisBtn2 = (Button)scope.Find("Frame2NotVisibleBtn")!;
-        var notVisBtn3 = (Button)scope.Find("Frame3NotVisibleBtn")!;
-        notVisBtn2.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
-        notVisBtn3.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
-
-        var resampleBtn = (Button)scope.Find("ResampleBtn")!;
-        Assert.True(resampleBtn.IsVisible);
+        Assert.Equal("✓ Selected", badge1.Text);
+        Assert.True(confirmBtn.IsEnabled);
+        ((Button)scope.Find("Frame1ClearBtn")!).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        Assert.Equal("Waiting for selection", badge1.Text);
         Assert.False(confirmBtn.IsEnabled);
+        Assert.False(((Button)scope.Find("ResampleBtn")!).IsVisible);
+    }
+
+    [AvaloniaFact]
+    public void AiSubjectPickerWindow_PortraitFlagShowsTheTallFinalView()
+    {
+        var discovery = new AiDiscoveryResult(new List<DiscoveredSubject>(), "", "", "", 0.5, 1.5, 2.5, 0);
+        Assert.True(new AiSubjectPickerWindow(discovery, 0, 3.0, portrait: true).IsPortraitView);
+        Assert.False(new AiSubjectPickerWindow(discovery, 0, 3.0).IsPortraitView);
     }
 
     [Fact]

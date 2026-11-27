@@ -11,6 +11,12 @@ What ENGINEERS and AI agents read: every change, in technical terms, as it happe
 
 ## Unreleased
 
+- 2026-11-28 · AIPICKZOOM_01 / AIPICKNEXT_01 / AIPICKSIZE_01 / AIPICKPORTRAIT_01 · AI Smart Zoom picker: per-picture zoom (default 1.7x, wheel at cursor, slider/+/−/reset, right/middle-drag pan), portrait shows the export's 2:3 area, click auto-zooms to the mark, Next Image (1–1.5 s away) replaces Not visible, no seconds/#numbers, opens at the editor's size. 04 UI-AIZOOM (AiSubjectPickerWindow.*, GranularSpeedEditorWindow.AiZoom.cs)
+
+- 2026-11-28 · SEGLANEHALF_01 · Speed Editor top (speed-block) lane halved to 30 px via SetLaneHeights(30, 60); LaneBlockHeight follows it, corner-meme strips max(10, 0.4h), marker fallback 120 px. 04 UI-GRANULAR (GranularSpeedEditorWindow.axaml.cs, .Memes.cs)
+
+- 2026-11-28 · SWITCHTINT_01 · ToggleSwitch: removed the :focus SwitchAreaGrid tint that left a shaded box behind a switch after a mouse click; keyboard :focus-visible keeps it. Main App "Add meme" button content centred. 04 UI-THEME (AvaloniaApp.axaml, MainWindow.axaml)
+
 - 2026-11-27 · RESCUE_03 / PROJLOCK_01 / OUTNAME_02 · Fixes QA #1–#3: ProcessWorker reserves the output name inside the rescue try (render rescued, DestinationError); ProjectStore reads via new AtomicJsonFile.ReadObjectOrThrowOnAccess and never falls back to .bak on IO/access errors; OutputFileNaming truncation keeps surrogate pairs whole. QA skips removed. 03 RESCUE_01, 06, 03 OUTNAME_01 (ProcessWorker.cs, AtomicJsonFile.cs, ProjectStore.cs, OutputFileNaming.cs, sentinels.txt)
 
 - 2026-11-27 · QAAUDIT_03 · QA chaos audit, tests only (no product code changed). New `QaChaosRegressionTests` with three skipped ("QA #n") tests for OPEN defects: #1 an output folder that fails at save time deletes the finished render (`ProcessWorker.ResolveOutputPath` outside the rescue try); #2 a locked .fvsproj opens the older .bak as "damaged" (`AtomicJsonFile.ReadObject` swallows IO errors); #3 `OutputFileNaming.Sanitize` splits a surrogate pair. Plus passing save/load/backup/export coverage. (`tests/FreeVideoStudio.Core.Tests/QaChaosRegressionTests.cs`, `docs/INDEX.md`)

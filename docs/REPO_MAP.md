@@ -244,7 +244,7 @@ Local AI (optional):  Core\LocalAi\ (OrtRuntime.cs ONNX Runtime C API, LocalAiPa
                       export_sam2_onnx.py, build_pack.py; output in out\, git-ignored, used by the A/V gate). Installed pack: %LocalAppData%\FreeVideoStudio\LocalAi\v1.
                       Specs: 01 TL-LOCALTRACK, 10 SYS-LOCALAI, 09 DIST-LOCALAIPACK.
 AI ease of use:       Controls\AiZoomStartWindow.cs (clean Smart Zoom start choices: Cloud AI Tracker vs 100% Free Local AI, zero text box),
-                      Controls\AiSubjectPickerWindow.axaml(.cs/.Correction.cs) (AIZOOMWIZARD_01 3-stage wizard, AIPICKERELLIPSE_01 glowing red oval target selection & guided AskManualDescriptionAsync failover),
+                      Controls\AiSubjectPickerWindow.axaml(.cs/.Correction.cs/.FrameView.cs) (AIZOOMWIZARD_01 3-stage wizard, AIPICKERELLIPSE_01 glowing red oval target selection & guided AskManualDescriptionAsync failover; .FrameView.cs: per-picture zoom/pan, portrait 2:3 view, Next Image, editor-sized window),
                       Controls\AiMultiBlockZoomWindow.cs & Services\MultiBlockZoomPlan.cs (multi-block batch queue, atomic apply),
                       Controls\AiZoomPreviewModalWindow.cs (dedicated Smart Zoom preview modal dialog, Stage 3 review Keep/Fix Tracking/Discard, AIPREVIEW_01),
                       Controls\DialogChrome.cs (title bar for code-built dialogs), tests\FreeVideoStudio.App.Tests\AiWorkflowFixTests.cs.

@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="FreeVideoStudio.App.Controls.AiSubjectPickerWindow"
         Title="AI Smart Zoom — Choose Who to Follow"
-        Width="1140" Height="780" MinWidth="920" MinHeight="640"
+        Width="1140" Height="780" MinWidth="760" MinHeight="560"
         Background="{DynamicResource AppSurfaceBrush}"
         WindowStartupLocation="CenterOwner"
         ExtendClientAreaToDecorationsHint="True"
@@ -19,7 +19,7 @@
                     <TextBlock Name="PickerHeadlineText" Text="Stage 1 of 3 · Choose who to follow" FontSize="{DynamicResource AppFontSize20}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
                     <Border Background="{DynamicResource AppSurfaceSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1.5" CornerRadius="8" Padding="14,10">
                         <StackPanel Spacing="3">
-                            <TextBlock Name="PickerIntroText" Text="Click who to follow. Once is enough."
+                            <TextBlock Name="PickerIntroText" Text="Click the enemy in each picture where you can see them."
                                        Foreground="{DynamicResource AppTextPrimaryBrush}" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize13}" TextWrapping="Wrap"/>
                             <TextBlock Name="PickerStep2GuideText" IsVisible="False" Text=""
                                        Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize12}" TextWrapping="Wrap"/>
@@ -35,15 +35,31 @@
                             <Border Background="{DynamicResource AppScrimBrush}" Padding="8,5">
                                 <TextBlock Name="Frame1TimeLabel" Text="Picture 1 (Start)" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" HorizontalAlignment="Center"/>
                             </Border>
-                            <Grid Name="Frame1HitGrid" Grid.Row="1" Background="Transparent" Cursor="Hand" ToolTip.Tip="Click on the target in Picture 1">
-                                <Image Name="Frame1Image" Stretch="Uniform" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="4"/>
-                                <Canvas Name="Frame1Canvas" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" IsHitTestVisible="False" ClipToBounds="True"/>
+                            <Grid Grid.Row="1" ColumnDefinitions="*, Auto">
+                                <Grid Name="Frame1HitGrid" Background="Transparent" Cursor="Hand" ClipToBounds="True"
+                                      ToolTip.Tip="Click the enemy in Picture 1. Spin the mouse wheel to zoom, drag with the right or middle mouse button to look around.">
+                                    <Border Name="Frame1Viewport" HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="True" Background="{DynamicResource AppScrimBrush}">
+                                        <Grid>
+                                            <Canvas Name="Frame1Stage">
+                                                <Image Name="Frame1Image" Stretch="Fill"/>
+                                            </Canvas>
+                                            <Canvas Name="Frame1Canvas" IsHitTestVisible="False" ClipToBounds="True"/>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                                <Grid Grid.Column="1" RowDefinitions="Auto, *, Auto, Auto" Margin="2,6,6,6">
+                                    <Button Name="Frame1ZoomInBtn" Grid.Row="0" Content="+" Classes="Secondary" Width="30" MinHeight="28" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Cursor="Hand" ToolTip.Tip="Zoom in on this picture"/>
+                                    <Slider Name="Frame1ZoomSlider" Grid.Row="1" Orientation="Vertical" HorizontalAlignment="Center" Margin="0,4" Cursor="Hand" ToolTip.Tip="Zoom this picture in or out"/>
+                                    <Button Name="Frame1ZoomOutBtn" Grid.Row="2" Content="−" Classes="Secondary" Width="30" MinHeight="28" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Cursor="Hand" ToolTip.Tip="Zoom out to see the sides of this picture"/>
+                                    <Button Name="Frame1ZoomResetBtn" Grid.Row="3" Content="⟲" Classes="Secondary" Width="30" MinHeight="28" Margin="0,4,0,0" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Cursor="Hand" ToolTip.Tip="Reset the zoom of this picture"/>
+                                </Grid>
                             </Grid>
                             <Border Grid.Row="2" Background="{DynamicResource AppScrimBrush}" Padding="8,6" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
                                 <Grid ColumnDefinitions="*, Auto, Auto">
-                                    <TextBlock Name="Frame1Badge" Text="Waiting for selection" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center"/>
-                                    <Button Name="Frame1NotVisibleBtn" Grid.Column="1" Content="Not visible" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0"/>
-                                    <Button Name="Frame1ClearBtn" Grid.Column="2" Content="Clear" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0"/>
+                                    <TextBlock Name="Frame1Badge" Text="Waiting for selection" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    <Button Name="Frame1NextImageBtn" Grid.Column="1" Content="Next Image" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0" Cursor="Hand"
+                                            ToolTip.Tip="Can't spot the enemy here? Shows another picture about a second away. Click again for another one."/>
+                                    <Button Name="Frame1ClearBtn" Grid.Column="2" Content="Clear" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0" Cursor="Hand"/>
                                 </Grid>
                             </Border>
                         </Grid>
@@ -54,15 +70,31 @@
                             <Border Background="{DynamicResource AppScrimBrush}" Padding="8,5">
                                 <TextBlock Name="Frame2TimeLabel" Text="Picture 2 (Middle)" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" HorizontalAlignment="Center"/>
                             </Border>
-                            <Grid Name="Frame2HitGrid" Grid.Row="1" Background="Transparent" Cursor="Hand" ToolTip.Tip="Click on the target in Picture 2">
-                                <Image Name="Frame2Image" Stretch="Uniform" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="4"/>
-                                <Canvas Name="Frame2Canvas" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" IsHitTestVisible="False" ClipToBounds="True"/>
+                            <Grid Grid.Row="1" ColumnDefinitions="*, Auto">
+                                <Grid Name="Frame2HitGrid" Background="Transparent" Cursor="Hand" ClipToBounds="True"
+                                      ToolTip.Tip="Click the enemy in Picture 2. Spin the mouse wheel to zoom, drag with the right or middle mouse button to look around.">
+                                    <Border Name="Frame2Viewport" HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="True" Background="{DynamicResource AppScrimBrush}">
+                                        <Grid>
+                                            <Canvas Name="Frame2Stage">
+                                                <Image Name="Frame2Image" Stretch="Fill"/>
+                                            </Canvas>
+                                            <Canvas Name="Frame2Canvas" IsHitTestVisible="False" ClipToBounds="True"/>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                                <Grid Grid.Column="1" RowDefinitions="Auto, *, Auto, Auto" Margin="2,6,6,6">
+                                    <Button Name="Frame2ZoomInBtn" Grid.Row="0" Content="+" Classes="Secondary" Width="30" MinHeight="28" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Cursor="Hand" ToolTip.Tip="Zoom in on this picture"/>
+                                    <Slider Name="Frame2ZoomSlider" Grid.Row="1" Orientation="Vertical" HorizontalAlignment="Center" Margin="0,4" Cursor="Hand" ToolTip.Tip="Zoom this picture in or out"/>
+                                    <Button Name="Frame2ZoomOutBtn" Grid.Row="2" Content="−" Classes="Secondary" Width="30" MinHeight="28" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Cursor="Hand" ToolTip.Tip="Zoom out to see the sides of this picture"/>
+                                    <Button Name="Frame2ZoomResetBtn" Grid.Row="3" Content="⟲" Classes="Secondary" Width="30" MinHeight="28" Margin="0,4,0,0" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Cursor="Hand" ToolTip.Tip="Reset the zoom of this picture"/>
+                                </Grid>
                             </Grid>
                             <Border Grid.Row="2" Background="{DynamicResource AppScrimBrush}" Padding="8,6" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
                                 <Grid ColumnDefinitions="*, Auto, Auto">
-                                    <TextBlock Name="Frame2Badge" Text="Waiting for selection" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center"/>
-                                    <Button Name="Frame2NotVisibleBtn" Grid.Column="1" Content="Not visible" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0"/>
-                                    <Button Name="Frame2ClearBtn" Grid.Column="2" Content="Clear" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0"/>
+                                    <TextBlock Name="Frame2Badge" Text="Waiting for selection" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    <Button Name="Frame2NextImageBtn" Grid.Column="1" Content="Next Image" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0" Cursor="Hand"
+                                            ToolTip.Tip="Can't spot the enemy here? Shows another picture about a second away. Click again for another one."/>
+                                    <Button Name="Frame2ClearBtn" Grid.Column="2" Content="Clear" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0" Cursor="Hand"/>
                                 </Grid>
                             </Border>
                         </Grid>
@@ -73,15 +105,31 @@
                             <Border Background="{DynamicResource AppScrimBrush}" Padding="8,5">
                                 <TextBlock Name="Frame3TimeLabel" Text="Picture 3 (End)" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" Foreground="{DynamicResource AppAccentBrush}" HorizontalAlignment="Center"/>
                             </Border>
-                            <Grid Name="Frame3HitGrid" Grid.Row="1" Background="Transparent" Cursor="Hand" ToolTip.Tip="Click on the target in Picture 3">
-                                <Image Name="Frame3Image" Stretch="Uniform" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="4"/>
-                                <Canvas Name="Frame3Canvas" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" IsHitTestVisible="False" ClipToBounds="True"/>
+                            <Grid Grid.Row="1" ColumnDefinitions="*, Auto">
+                                <Grid Name="Frame3HitGrid" Background="Transparent" Cursor="Hand" ClipToBounds="True"
+                                      ToolTip.Tip="Click the enemy in Picture 3. Spin the mouse wheel to zoom, drag with the right or middle mouse button to look around.">
+                                    <Border Name="Frame3Viewport" HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="True" Background="{DynamicResource AppScrimBrush}">
+                                        <Grid>
+                                            <Canvas Name="Frame3Stage">
+                                                <Image Name="Frame3Image" Stretch="Fill"/>
+                                            </Canvas>
+                                            <Canvas Name="Frame3Canvas" IsHitTestVisible="False" ClipToBounds="True"/>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                                <Grid Grid.Column="1" RowDefinitions="Auto, *, Auto, Auto" Margin="2,6,6,6">
+                                    <Button Name="Frame3ZoomInBtn" Grid.Row="0" Content="+" Classes="Secondary" Width="30" MinHeight="28" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Cursor="Hand" ToolTip.Tip="Zoom in on this picture"/>
+                                    <Slider Name="Frame3ZoomSlider" Grid.Row="1" Orientation="Vertical" HorizontalAlignment="Center" Margin="0,4" Cursor="Hand" ToolTip.Tip="Zoom this picture in or out"/>
+                                    <Button Name="Frame3ZoomOutBtn" Grid.Row="2" Content="−" Classes="Secondary" Width="30" MinHeight="28" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Cursor="Hand" ToolTip.Tip="Zoom out to see the sides of this picture"/>
+                                    <Button Name="Frame3ZoomResetBtn" Grid.Row="3" Content="⟲" Classes="Secondary" Width="30" MinHeight="28" Margin="0,4,0,0" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Cursor="Hand" ToolTip.Tip="Reset the zoom of this picture"/>
+                                </Grid>
                             </Grid>
                             <Border Grid.Row="2" Background="{DynamicResource AppScrimBrush}" Padding="8,6" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
                                 <Grid ColumnDefinitions="*, Auto, Auto">
-                                    <TextBlock Name="Frame3Badge" Text="Waiting for selection" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center"/>
-                                    <Button Name="Frame3NotVisibleBtn" Grid.Column="1" Content="Not visible" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0"/>
-                                    <Button Name="Frame3ClearBtn" Grid.Column="2" Content="Clear" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0"/>
+                                    <TextBlock Name="Frame3Badge" Text="Waiting for selection" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextMutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    <Button Name="Frame3NextImageBtn" Grid.Column="1" Content="Next Image" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0" Cursor="Hand"
+                                            ToolTip.Tip="Can't spot the enemy here? Shows another picture about a second away. Click again for another one."/>
+                                    <Button Name="Frame3ClearBtn" Grid.Column="2" Content="Clear" Classes="Secondary" FontSize="{DynamicResource AppFontSize11}" MinHeight="26" Margin="4,0,0,0" Cursor="Hand"/>
                                 </Grid>
                             </Border>
                         </Grid>
@@ -98,9 +146,7 @@
                 </Border>
 
                 <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" Margin="28,0,28,10">
-                    <Button Name="PickerViewToggleBtn" Classes="Secondary" Content="🔍 Show whole picture" MinHeight="34" Cursor="Hand"
-                            ToolTip.Tip="The pictures are shown closer so people are easier to see. Click to see the whole picture."/>
-                    <TextBlock Text="Zoom:" VerticalAlignment="Center" Margin="16,0,0,0" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize12}" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                    <TextBlock Text="Zoom:" VerticalAlignment="Center" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize12}" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
                     <ToggleButton Name="PickerZoomLessBtn" Content="Less" MinHeight="34" MinWidth="70" Cursor="Hand" ToolTip.Tip="The camera stays wider. The target looks smaller."/>
                     <ToggleButton Name="PickerZoomNormalBtn" Content="Normal" MinHeight="34" MinWidth="70" Cursor="Hand" ToolTip.Tip="The usual amount of zoom."/>
                     <ToggleButton Name="PickerZoomMoreBtn" Content="More" MinHeight="34" MinWidth="70" Cursor="Hand" ToolTip.Tip="The camera goes closer. The target looks bigger."/>
@@ -115,7 +161,7 @@
                             ToolTip.Tip="Didn't see the right option above? Click to describe who or what you want Cloud AI to mark in these pictures."/>
                     <Button Name="ResampleBtn" Grid.Column="2" Classes="Secondary" Content="Try Another Moment" MinHeight="42" Cursor="Hand" Margin="8,0,0,0" IsVisible="False"
                             ToolTip.Tip="Samples different moments within this segment to find your target."/>
-                    <TextBlock Name="SelectionStatusText" Grid.Column="3" Text="Click the same person or object in each picture where they appear."
+                    <TextBlock Name="SelectionStatusText" Grid.Column="3" Text="Click the enemy in each picture where you can see them."
                                FontSize="{DynamicResource AppFontSize12}" FontWeight="SemiBold" Foreground="{DynamicResource AppTextPrimaryBrush}"
                                VerticalAlignment="Center" HorizontalAlignment="Center" TextWrapping="Wrap" Margin="10,0"/>
                     <Button Name="BackStageBtn" Grid.Column="4" Classes="Secondary" Content="← BACK" MinWidth="100" MinHeight="42" Cursor="Hand" Margin="0,0,8,0" IsVisible="False"

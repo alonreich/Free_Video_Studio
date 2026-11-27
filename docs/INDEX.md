@@ -43,7 +43,7 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   AiCameraSmoothnessTests.cs                 01 TL-AITRACKING (AICAMSMOOTH_01)
   AiSetup.cs                                 04 UI-AIMODE | 10 SYS-AICAPABILITY (AICAPABILITY_01)
   AiModeTests.cs                             04 UI-AIMODE
-  AiSubjectPickerWindow.axaml(.cs/.Correction.cs) 04 UI-AIZOOM (AIPICKERELLIPSE_01, AIZOOMWIZARD_01, AIPICKFOCUS_01) | 10
+  AiSubjectPickerWindow.axaml(.cs/.Correction.cs/.FrameView.cs) 04 UI-AIZOOM (AIPICKERELLIPSE_01, AIZOOMWIZARD_01, AIPICKFOCUS_01, AIPICKZOOM_01, AIPICKNEXT_01, AIPICKSIZE_01, AIPICKPORTRAIT_01) | 10
   AiZoomPreviewModalWindow.cs                04 UI-AIZOOM (AIPREVIEW_01)
 ⚠ AiTrajectorySmoother.cs                    01 03
   AGENTS.md                                  GOV | README.md §0 (pointer only, ONBOARD_01)
@@ -1754,6 +1754,11 @@ PROJ_07                                      07 UNDO-STATE   [code-only: Project
 SWITCHPROMPT_01                              06 PROJ-CLOSEGUARD
 LAYOUTLOOP_01                                01   [code-only: TimelineLanesControl.axaml.cs]
 ZOOMSIZE_02                                  01   [code-only: TimelineLanesControl.axaml.cs]
+SEGLANEHALF_01                               04 UI-GRANULAR   [GranularSpeedEditorWindow.SegmentLaneHeight]
+AIPICKZOOM_01                                04 UI-AIZOOM   [AiSubjectPickerWindow.FrameView.cs]
+AIPICKNEXT_01                                04 UI-AIZOOM   [AiSubjectPickerWindow.OnNextImageClickedAsync]
+AIPICKSIZE_01                                04 UI-AIZOOM   [AiSubjectPickerWindow.ShowOverAsync]
+AIPICKPORTRAIT_01                            04 UI-AIZOOM   [AiSubjectPickerWindow.PortraitViewAspect]
 LAYOUTLOOP_02                                04 UI-GRANULAR   [code-only: GranularSpeedEditorWindow.axaml.cs — same defect as LAYOUTLOOP_01]
 EDGEGUARD_01                                 01 TL-MARKERS   [code-only: GranularSpeedEditorWindow.axaml.cs]
 DRAGCOST_01                                  04 UI-GRANULAR   [code-only: GranularSpeedEditorWindow.axaml.cs]
