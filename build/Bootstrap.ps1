@@ -95,6 +95,10 @@ try {
     $orchestrator = Join-Path $repo $config.orchestrator
     switch ($Command.ToLowerInvariant()) {
         'dev' {
+            if (-not $config.dev) {
+                & dotnet run --project $orchestrator -c Release -- --dev-run
+                exit $LASTEXITCODE
+            }
             foreach ($step in @($config.dev)) {
                 $parts = @($step.run | ForEach-Object { ([string]$_).Replace('{repo}', $repo) })
                 $exe = $parts[0]
