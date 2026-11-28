@@ -55,6 +55,8 @@ public class ProcessWorker : IDisposable
     public double SpeedFactor { get; set; } = 1.0;
     public bool ShowTeammates { get; set; }
     public bool ShowSpectating { get; set; } = true;
+    public HudVisibility? HudVisibility { get; set; }
+    public HudVisibility EffectiveHudVisibility => HudVisibility ?? HudVisibility.FromLegacy(ShowTeammates, ShowSpectating);
     public int QualityLevel { get; set; } = 2;
     public bool EnableFades { get; set; } = true;
     public string? MemeFile { get; set; }
@@ -1006,7 +1008,7 @@ public class ProcessWorker : IDisposable
                         finalHudPad = "[v_mob_hud]";
                     }
                     var (mobileChain, mobileOut) = MobileFilterBuilder.Build(
-                        finalMainPad, finalHudPad, mobileCoords, ShowTeammates, ShowSpectating,
+                        finalMainPad, finalHudPad, mobileCoords, EffectiveHudVisibility,
                         textInputLabel, false, OriginalResolution);
                     coreFilters.Add(mobileChain);
                     vOutputPad = mobileOut;
@@ -1268,7 +1270,7 @@ public class ProcessWorker : IDisposable
                     var (canvasWidth, canvasHeight) = CaptionAssWriter.ExportCanvas(false, IsMobileFormat, origW, origH);
 
                     var captionHud = IsMobileFormat
-                        ? MobileFilterBuilder.HudCanvasRects(mobileCoords, ShowTeammates, ShowSpectating)
+                        ? MobileFilterBuilder.HudCanvasRects(mobileCoords, EffectiveHudVisibility)
                         : null;
                     var captionSplices = memes.Where(m => m.DurationSec > 0)
                         .Select(m => (m.CutOutputSec, m.DurationSec))

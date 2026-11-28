@@ -210,12 +210,14 @@ public partial class MainWindow
             if (portraitCbRestore != null) portraitCbRestore.IsChecked = _viewModel.IsPortraitMode;
 
             bool showTeammates = state["showTeammates"]?.GetValue<bool>() ?? false;
-            var teammatesCbRestore = TeammatesCheckboxCtl;
-            if (teammatesCbRestore != null) teammatesCbRestore.IsChecked = showTeammates;
-
             bool showSpectating = state["showSpectating"]?.GetValue<bool>() ?? true;
-            var spectatingCbRestore = SpectatingCheckboxCtl;
-            if (spectatingCbRestore != null) spectatingCbRestore.IsChecked = showSpectating;
+            var restoredHud = ReadHudToggleState(state["hudToggles"] as System.Text.Json.Nodes.JsonObject);
+            if (restoredHud == null)
+            {
+                _viewModel.IsTeammates = showTeammates;
+                _viewModel.IsSpectating = showSpectating;
+            }
+            else _viewModel.ApplyHudToggleState(restoredHud);
 
             var enableFadeCbRestore = EnableFadeCheckboxCtl;
             if (enableFadeCbRestore != null && state.ContainsKey("enableFade"))

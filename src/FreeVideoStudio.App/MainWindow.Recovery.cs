@@ -101,6 +101,7 @@ public partial class MainWindow
                 ["volume"] = mainVm.MainVolume,
                 ["showTeammates"] = mainVm.IsTeammates,
                 ["showSpectating"] = mainVm.IsSpectating,
+                ["hudToggles"] = WriteHudToggleState(mainVm.HudToggleState),
                 ["enableFade"] = mainVm.IsEnableFade,
                 ["addMeme"] = mainVm.IsAddMeme,
                 ["memeFile"] = mainVm.SelectedMemeItem?.FileName ?? "",

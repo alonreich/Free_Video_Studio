@@ -139,6 +139,10 @@ UI accessibility:     tests/FreeVideoStudio.App.Tests/UiAccessibilityAuditTests.
 Editor helpers:       src\FreeVideoStudio.App\Infrastructure\ZoomBoxSnap.cs (zoom-box centre guides/snap, 01 TL-ZOOM),
                       src\FreeVideoStudio.App\Infrastructure\PreviewKeySeek.cs (arrow-key step, 04 UI-GRANULAR),
                       src\FreeVideoStudio.App\Infrastructure\FinalLayoutPreview.cs + MainWindow.FinalLayout.cs (final-layout boxes, FINALLAYOUT_01),
+                      src\FreeVideoStudio.App\Infrastructure\HudSnapshots.cs + HudPreviewController.cs (50% overlay snapshots in the phone preview, 3 background rounds, HUDSNAP_01; tests in App HudSnapshotTests.cs),
+                      src\FreeVideoStudio.Core\Media\HudElements.cs + App MainViewModel.Hud.cs, HudToggleItem.cs, HudElementDefaultRow.cs, MainWindow.HudToggles.cs,
+                      HudChoiceMemory.cs, CropToolWindow.ProfileKind.cs (per-element mask overlay switches, HUDELEMENTS_01 / HUDREMEMBER_01;
+                      tests in Core HudElementsTests.cs and App HudSwitchboardTests.cs),
                       src\FreeVideoStudio.Core\Media\ShareCover.cs (92% chat-safe cover frame, SHARECOVER_01; tests in Core ShareCoverTests.cs);
                       tests\FreeVideoStudio.App.Tests\OwnerRequestBatchTests.cs covers the zoom snap, arrow step, final layout, AI picker closer view,
                       the Finished dialog VIDEO MERGER offer and the music wizard's merged preview.
@@ -205,6 +209,7 @@ Meme picker:          .\src\FreeVideoStudio.App\Controls\MemePickerWindow.axaml(
                       + ProjectSafetyQaTests.MemeExport.cs drives Main Add meme and Speed Editor Change through save/reopen, then checks full-screen and corner export durations, frame regions and audio tones.
 Memes (MEMEAUDIT_01): Core\Media\MemeTransitions.cs (full-screen cut/fade/zoom, corner fade/slide),
                       GranularSpeedEditorWindow.Memes.cs / .MemeBands.cs (editor memes, corner drag, list, keys, selected thumbnail + Preview/Change/Remove),
+                      GranularSpeedEditorWindow.Guide.cs (next-step line above the video, freeze lengths revealed with a left-to-right glow),
                       MainWindow.Memes.cs (ordinary placements from the main Add meme button, legacy markers, candidate payload);
                       MainWindow.QuickStart.cs (start screen: drop-card click, AI Kill Tracker switch, AI setup tip; docs/04 UI-AIEASE);
                       tests: Core MemeAuditTests.cs, App MemeAuditAppTests.cs. Specs: docs/01 TL-MEME, docs/04 UI-MEMEFLOW (click/action guide + validation), docs/03 FFM-MEMECONCAT /
@@ -244,7 +249,7 @@ Local AI (optional):  Core\LocalAi\ (OrtRuntime.cs ONNX Runtime C API, LocalAiPa
                       export_sam2_onnx.py, build_pack.py; output in out\, git-ignored, used by the A/V gate). Installed pack: %LocalAppData%\FreeVideoStudio\LocalAi\v1.
                       Specs: 01 TL-LOCALTRACK, 10 SYS-LOCALAI, 09 DIST-LOCALAIPACK.
 AI ease of use:       Controls\AiZoomStartWindow.cs (clean Smart Zoom start choices: Cloud AI Tracker vs 100% Free Local AI, zero text box),
-                      Controls\AiSubjectPickerWindow.axaml(.cs/.Correction.cs/.FrameView.cs) (AIZOOMWIZARD_01 3-stage wizard, AIPICKERELLIPSE_01 glowing red oval target selection & guided AskManualDescriptionAsync failover; .FrameView.cs: per-picture zoom/pan, portrait 2:3 view, Next Image, editor-sized window),
+                      Controls\AiSubjectPickerWindow.axaml(.cs/.Correction.cs/.FrameView.cs/.FinalShot.cs) (AIZOOMWIZARD_01 3-stage wizard, AIPICKERELLIPSE_01 glowing red oval target selection & guided AskManualDescriptionAsync failover; .FrameView.cs: per-picture zoom/pan, portrait 2:3 view, Next Image, editor-sized window; .FinalShot.cs: YOUR VIDEO box/panel and How close? slider),
                       Controls\AiMultiBlockZoomWindow.cs & Services\MultiBlockZoomPlan.cs (multi-block batch queue, atomic apply),
                       Controls\AiZoomPreviewModalWindow.cs (dedicated Smart Zoom preview modal dialog, Stage 3 review Keep/Fix Tracking/Discard, AIPREVIEW_01),
                       Controls\DialogChrome.cs (title bar for code-built dialogs), tests\FreeVideoStudio.App.Tests\AiWorkflowFixTests.cs.

@@ -41,7 +41,7 @@ public partial class AiSubjectPickerWindow
         var root = new StackPanel { Margin = new Thickness(24, 16, 24, 18), Spacing = 10 };
         root.Children.Add(new TextBlock
         {
-            Text = "Stage 2 of 3 · Check your selections",
+            Text = "Fix tracking · Point at what to follow",
             FontWeight = FontWeight.Bold,
             [!TextBlock.FontSizeProperty] = new DynamicResourceExtension("AppFontSize18"),
             Foreground = ThemeResources.Brush(owner, "AppTextPrimaryBrush", Brushes.White),

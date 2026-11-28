@@ -16,6 +16,7 @@ public partial class MainWindow
 
     private void OnToolNavigationResult(Services.ToolNavigationResult result)
     {
+        ApplyMaskProfileToOverlayUi();
         _ = RefreshFinalLayoutPreviewAsync();
         if (!result.ReturnedToOwner)
         {

@@ -99,6 +99,63 @@ public sealed class OwnerRequestBatchTests
     }
 
     [Fact]
+    public void FinalShotBox_MatchesTheExportCropAroundTheTarget()
+    {
+        var land = AiSubjectPickerWindow.FinalShotRect(0.5, 0.5, 2.0, portrait: false, 16.0 / 9.0);
+        Assert.Equal(0.5, land.W, 9);
+        Assert.Equal(0.5, land.H, 9);
+        Assert.Equal(0.25, land.X, 9);
+        Assert.Equal(0.5 - FreeVideoStudio.Core.Media.AiTrajectorySmoother.PreferredTargetY * 0.5, land.Y, 9);
+        var edge = AiSubjectPickerWindow.FinalShotRect(0.02, 0.98, 2.0, portrait: false, 16.0 / 9.0);
+        Assert.Equal(0, edge.X, 9);
+        Assert.Equal(0.5, edge.Y, 9);
+        var tall = AiSubjectPickerWindow.FinalShotRect(0.5, 0.5, 1.95, portrait: true, 16.0 / 9.0);
+        Assert.Equal(1 / 1.95, tall.H, 9);
+        Assert.Equal(tall.H * (2.0 / 3.0) / (16.0 / 9.0), tall.W, 9);
+        Assert.Equal(0.5, tall.X + tall.W / 2, 9);
+    }
+
+    [Fact]
+    public void EffectiveZoom_PortraitIsFixedAndLandscapeFollowsTheSlider()
+    {
+        double Eff(double s, bool p) => FreeVideoStudio.Core.Media.AiTrajectorySmoother.EffectiveBaseScale(s, 1920, 1080, p);
+        Assert.Equal(1.95, Eff(1.5, true), 9);
+        Assert.Equal(1.95, Eff(4.0, true), 9);
+        Assert.True(Eff(1.5, false) < Eff(2.2, false));
+        Assert.Equal(1.5 * 1.4, Eff(1.5, false), 9);
+    }
+
+    [Fact]
+    public void SpeedEditorGuide_AlwaysNamesTheNextStep()
+    {
+        Assert.Equal(GranularSpeedEditorWindow.GuideStep.MarkStart, GranularSpeedEditorWindow.GuideStepFor(false, false, false, false, 0));
+        Assert.Equal(GranularSpeedEditorWindow.GuideStep.MarkEnd, GranularSpeedEditorWindow.GuideStepFor(false, true, true, false, 0));
+        Assert.Equal(GranularSpeedEditorWindow.GuideStep.PickSpeed, GranularSpeedEditorWindow.GuideStepFor(false, true, false, true, 1));
+        Assert.Equal(GranularSpeedEditorWindow.GuideStep.PickFreezeLength, GranularSpeedEditorWindow.GuideStepFor(false, true, false, false, 1));
+        Assert.Equal(GranularSpeedEditorWindow.GuideStep.AimZoom, GranularSpeedEditorWindow.GuideStepFor(true, true, true, true, 3));
+        Assert.Equal(GranularSpeedEditorWindow.GuideStep.Done, GranularSpeedEditorWindow.GuideStepFor(false, false, false, false, 2));
+        foreach (GranularSpeedEditorWindow.GuideStep step in System.Enum.GetValues(typeof(GranularSpeedEditorWindow.GuideStep)))
+            Assert.InRange(GranularSpeedEditorWindow.GuideText(step).Length, 10, 60);
+    }
+
+    [Fact]
+    public void FreezePresets_GlowOneAfterAnotherLeftToRightWithinTwoSeconds()
+    {
+        int n = GranularSpeedEditorWindow.FreezePresetNames.Length;
+        Assert.Equal(6, n);
+        Assert.True(GranularSpeedEditorWindow.FreezeGlowLit(0, 0));
+        Assert.False(GranularSpeedEditorWindow.FreezeGlowLit(n - 1, 0));
+        Assert.True(GranularSpeedEditorWindow.FreezeGlowLit(n - 1, GranularSpeedEditorWindow.FreezeGlowTotalMs - 1));
+        for (int i = 1; i < n; i++)
+            Assert.True(GranularSpeedEditorWindow.FreezeGlowStartMs(i) > GranularSpeedEditorWindow.FreezeGlowStartMs(i - 1));
+        for (int i = 0; i < n; i++)
+            Assert.False(GranularSpeedEditorWindow.FreezeGlowLit(i, GranularSpeedEditorWindow.FreezeGlowTotalMs));
+        string xaml = System.IO.File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "GranularSpeedEditorWindow.axaml"));
+        Assert.Contains("Name=\"FreezePresetsPanel\" Classes=\"SpeedPresetRows\" Orientation=\"Vertical\" VerticalAlignment=\"Center\" IsVisible=\"False\"", xaml);
+        Assert.Contains("Name=\"GuideLineText\" Grid.Row=\"0\"", xaml);
+    }
+
+    [Fact]
     public void SpeedEditorTopLaneIsHalfTheFilmstripLane()
     {
         Assert.Equal(30.0, GranularSpeedEditorWindow.SegmentLaneHeight, 9);

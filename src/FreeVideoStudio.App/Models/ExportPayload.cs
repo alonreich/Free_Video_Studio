@@ -34,6 +34,7 @@ public record ExportPayload
     public bool EnableFades { get; init; }
     public bool ShowTeammates { get; init; }
     public bool ShowSpectating { get; init; } = true;
+    public IReadOnlyList<string>? HiddenHudKeys { get; init; }
     public string? MemeFile { get; init; }
 
     public List<FreeVideoStudio.Core.Media.MemePlacement>? MemePlacements { get; init; }

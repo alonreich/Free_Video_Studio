@@ -22,8 +22,8 @@ public static class CropProfileCodec
         JsonObject zOrders = EnsureObject(config, "z_orders");
         JsonObject sourceCrops = EnsureObject(config, CropConfigDefaults.SourceCropsSection);
 
-        s.AdoptRolesFromConfig(crops);
-        s.AdoptRolesFromConfig(sourceCrops);
+        s.AdoptRolesFromConfig(crops, config);
+        s.AdoptRolesFromConfig(sourceCrops, config);
 
         var layers = new List<CropLayer>();
         foreach (CropHudRole role in s.AllRoles.ToList())
@@ -48,7 +48,7 @@ public static class CropProfileCodec
                 var derived = CoordinateMath.InverseTransformFromContentAreaInt(
                     (ReadInt(crop[2], 0), ReadInt(crop[3], 0), cropW, cropH),
                     s.OriginalResolution,
-                    HudConfig.CropDriftType(role.Key));
+                    HudConfig.CropDriftType(role.Key, config));
                 sourceRect = new CropSourceRect(derived.x, derived.y, derived.w, derived.h);
                 CoreLogger.Info("CROP", $"Migrated '{role.Key}' to a stored source rect (pre-v4 config).");
             }
@@ -103,6 +103,7 @@ public static class CropProfileCodec
                 (int uox, int uoy) = CropEditSession.ClampOverlay(layer.X, layer.Y, layer.Width, layer.Height);
                 WriteSectionNode(overlays, layer.RoleKey, new JsonObject { ["x"] = uox, ["y"] = uoy });
                 WriteSectionNode(zOrders, layer.RoleKey, layer.Z);
+                HudElements.WriteElement(config, layer.RoleKey, layer.DisplayName, s.AnchorOf(layer.RoleKey));
                 unverifiedCount++;
                 CoreLogger.Info("CROP", $"  Save item: {layer.RoleKey} position/z only (no video loaded, stored crop preserved).");
                 continue;
@@ -124,6 +125,7 @@ public static class CropProfileCodec
             WriteSectionNode(scales, layer.RoleKey, scale.ToString());
             WriteSectionNode(overlays, layer.RoleKey, new JsonObject { ["x"] = ox, ["y"] = oy });
             WriteSectionNode(zOrders, layer.RoleKey, layer.Z);
+            HudElements.WriteElement(config, layer.RoleKey, layer.DisplayName, s.AnchorOf(layer.RoleKey));
             CoreLogger.Info("CROP", $"  Save item: {layer.RoleKey} crop=[{clampedCrop.w}x{clampedCrop.h}+{clampedCrop.x}+{clampedCrop.y}] scale={scale} overlay=({ox},{oy}) z={layer.Z}");
         }
 
@@ -133,6 +135,7 @@ public static class CropProfileCodec
             if (ReadSectionNode(crops, deletedKey) is null) continue;
 
             WriteSectionNode(crops, deletedKey, new JsonArray(0, 0, 0, 0));
+            HudElements.RemoveElement(config, deletedKey);
             CoreLogger.Info("CROP", $"  Save item: {deletedKey} removed (crop cleared to 0x0).");
         }
 

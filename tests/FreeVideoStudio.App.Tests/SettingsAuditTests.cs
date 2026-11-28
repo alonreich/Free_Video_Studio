@@ -150,8 +150,11 @@ public sealed class SettingsAuditTests
         foreach (string start in new[] { "StartSpeed", "StartQualityIndex", "StartPortrait", "StartShowTeammates", "StartEnableFade" })
         {
             Assert.Contains(start, vm);
-            Assert.Contains(start, win);
+            if (start != "StartShowTeammates") Assert.Contains(start, win);
         }
+        string hud = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "ViewModels", "MainViewModel.Hud.cs"));
+        Assert.Contains("StartHudElement", hud);
+        Assert.Contains("ReloadHudToggles", win);
         string export = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "MainWindow.Export.cs"));
         Assert.Contains("RememberChoices", export);
     }

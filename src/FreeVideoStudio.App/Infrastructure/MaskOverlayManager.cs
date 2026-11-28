@@ -287,6 +287,76 @@ public static class MaskOverlayManager
         }
     }
 
+    public static IReadOnlyList<HudElementInfo> ReadProfileElements(string? profileName)
+    {
+        if (IsNoMask(profileName)) return Array.Empty<HudElementInfo>();
+        var load = LoadProfile(profileName);
+        return load.Success ? HudElements.FromConfig(load.Config) : Array.Empty<HudElementInfo>();
+    }
+
+    public static HudVisibility DefaultVisibility(string? profileName)
+    {
+        if (string.IsNullOrWhiteSpace(profileName)) return HudVisibility.FromLegacy(SettingsManager.Instance.Defaults.StartShowTeammates, true);
+        var d = SettingsManager.Instance.Defaults;
+        var hidden = ReadProfileElements(profileName).Where(e => !d.StartHudElement(profileName!, e.Key)).Select(e => e.Key);
+        return new HudVisibility(hidden);
+    }
+
+    public static AiGameProfile? ProfileGameType(string? profileName)
+    {
+        if (IsNoMask(profileName)) return AiGameProfile.Generic;
+        var load = LoadProfile(profileName);
+        return HudElements.ResolveGameType(load.Success ? load.Config : null, profileName);
+    }
+
+    public static bool SetProfileGameType(string? profileName, AiGameProfile? type)
+    {
+        try
+        {
+            string? safeName = SanitizeProfileName(profileName);
+            if (safeName == null || IsNoMask(safeName)) return false;
+            var load = LoadProfile(safeName);
+            if (!load.Success) return false;
+            var config = load.Config!;
+            HudElements.SetGameType(config, type);
+            AtomicJsonFile.WriteObject(Path.Combine(ProfilesDirectory, safeName + ".json"), config);
+            if (string.Equals(SanitizeProfileName(SettingsManager.Instance.ActiveMaskOverlay), safeName, StringComparison.OrdinalIgnoreCase))
+            {
+                using (AcquireConfigLock())
+                {
+                    var live = AtomicJsonFile.ReadObject(ApplicationPaths.CreateDefault().CropCoordinatesFile);
+                    if (live != null)
+                    {
+                        HudElements.SetGameType(live, type);
+                        AtomicJsonFile.WriteObject(ApplicationPaths.CreateDefault().CropCoordinatesFile, live);
+                    }
+                }
+                if (type is { } t) SettingsManager.Update(s => s.AiTrackingGameProfile = t);
+            }
+            RuntimeLog.Info("MASK PROFILE", $"'{safeName}' game type set to {(type?.ToString() ?? "automatic")}.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            RuntimeLog.Fail("MASK PROFILE", $"SetProfileGameType('{profileName}') failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    public static string? CreateBlankProfile(string newName, AiGameProfile? gameType = null)
+    {
+        string? safeName = SanitizeProfileName(newName);
+        if (safeName == null || IsNoMask(safeName)) return null;
+        EnsureDefaults();
+        var pPath = Path.Combine(ProfilesDirectory, safeName + ".json");
+        if (File.Exists(pPath)) return null;
+        var blank = CropConfigDefaults.CreateNoMask();
+        HudElements.SetGameType(blank, gameType);
+        AtomicJsonFile.WriteObject(pPath, blank);
+        RuntimeLog.Info("MASK PROFILE", $"Created blank profile '{safeName}' (no HUD elements).");
+        return safeName;
+    }
+
     public static void CreateNewProfile(string newName)
     {
         string? safeName = SanitizeProfileName(newName);

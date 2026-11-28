@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using System.Collections.Immutable;
@@ -62,14 +62,42 @@ public partial class GranularSpeedEditorWindow : Window
 
     private int _finalLayoutVersion;
 
+    private Infrastructure.HudPreviewController? _hudPreview;
+
+    private Infrastructure.HudPreviewController EnsureHudPreview(Controls.PhoneFrameMockup frame)
+    {
+        if (_hudPreview != null) return _hudPreview;
+        _hudPreview = new Infrastructure.HudPreviewController(frame, () =>
+            _videoHost?.IpcClient is { } ipc
+                ? new Infrastructure.HudPlayerState(_edit.VideoPath, ipc.CurrentTime, ipc.Duration, ipc.IsPaused, ipc.VideoWidth, ipc.VideoHeight)
+                : null);
+        System.Action<Infrastructure.AppSettings> onCommit = committed => Dispatcher.UIThread.Post(() => _ = RefreshFinalLayoutPreviewAsync());
+        Infrastructure.SettingsManager.Committed += onCommit;
+        Closed += (_, _) =>
+        {
+            Infrastructure.SettingsManager.Committed -= onCommit;
+            _hudPreview?.Dispose();
+        };
+        return _hudPreview;
+    }
+
     private async Task RefreshFinalLayoutPreviewAsync()
     {
         int version = ++_finalLayoutVersion;
         if (this.FindControl<Controls.PhoneFrameMockup>("GranularPhoneFrame") is not { } frame) return;
-        if (!_edit.IsMobileFormat) { frame.SetFinalLayout(null); return; }
-        var layers = await Infrastructure.FinalLayoutPreview.LoadAsync(_previewLayers.ShowTeammates, _previewLayers.ShowSpectating);
+        if (!_edit.IsMobileFormat || !Infrastructure.HudPreviewController.Enabled)
+        {
+            frame.SetFinalLayout(null);
+            _hudPreview?.Configure(null, FreeVideoStudio.Core.Media.HudVisibility.AllVisible);
+            if (_edit.IsMobileFormat) EnsureHudPreview(frame);
+            return;
+        }
+        var visibility = _previewLayers.HudVisibility;
+        var snapshot = await Infrastructure.FinalLayoutPreview.LoadSnapshotAsync();
         if (version != _finalLayoutVersion) return;
-        frame.SetFinalLayout(layers);
+        var layers = snapshot.Visible(visibility);
+        frame.SetFinalLayout(layers, snapshot.Labels, null);
+        EnsureHudPreview(frame).Configure(layers, visibility);
     }
 
     public bool Accepted { get; private set; }
@@ -521,7 +549,7 @@ public partial class GranularSpeedEditorWindow : Window
                     double edgeMs = zStart ? (zseg.ZoomStartMs ?? zseg.StartMs) : (zseg.ZoomEndMs ?? zseg.EndMs);
                     RefreshSegmentList();
                     RuntimeLog.Info("Granular",
-                        $"Zoom {(zStart ? "START" : "END")} settled on segment #{zi + 1}: {FormatMs(edgeMs)} (block now {FormatMs(zseg.StartMs)}–{FormatMs(zseg.EndMs)}).");
+                        $"Zoom {(zStart ? "START" : "END")} settled on block #{zi + 1}: {FormatMs(edgeMs)} (block now {FormatMs(zseg.StartMs)}–{FormatMs(zseg.EndMs)}).");
                     SetStatus($"Zoom {(zStart ? "start" : "end")} at {FormatMs(edgeMs)} — block moved with it.");
                     _ = SeekInternal(edgeMs / 1000.0);
                 }
@@ -555,7 +583,7 @@ public partial class GranularSpeedEditorWindow : Window
                     ClampZoomInsideItsBlock(_draggingSegmentIndex);
                     var seg = _edit.Segments[_draggingSegmentIndex];
                     RuntimeLog.Info("Granular", $"Segment #{_draggingSegmentIndex + 1} settled: rel {FormatMs(seg.StartMs)}–{FormatMs(seg.EndMs)} @ {seg.Speed:0.0}x (abs {FormatMs(seg.StartMs + _edit.TrimStartMs)}–{FormatMs(seg.EndMs + _edit.TrimStartMs)}).");
-                    SetStatus($"Segment #{_draggingSegmentIndex + 1} set to {FormatMs(seg.StartMs)}–{FormatMs(seg.EndMs)} @ {seg.Speed:0.0}x.");
+                    SetStatus($"Block #{_draggingSegmentIndex + 1} set to {FormatMs(seg.StartMs)}–{FormatMs(seg.EndMs)} @ {seg.Speed:0.0}x.");
                 }
                 _segDragMode = SegDragMode.None;
                 _draggingSegmentIndex = -1;
@@ -745,10 +773,10 @@ public partial class GranularSpeedEditorWindow : Window
         if (playBtn != null) ToolTip.SetTip(playBtn, $"Play or pause the video ({kb.PlayPause})");
 
         var startBtn = this.FindControl<Button>("MarkStartBtn");
-        if (startBtn != null) ToolTip.SetTip(startBtn, $"Mark the start of the segment ({kb.MarkStart})");
+        if (startBtn != null) ToolTip.SetTip(startBtn, $"Mark the start of the block ({kb.MarkStart})");
 
         var endBtn = this.FindControl<Button>("MarkEndBtn");
-        if (endBtn != null) ToolTip.SetTip(endBtn, $"Mark the end of the segment ({kb.MarkEnd})");
+        if (endBtn != null) ToolTip.SetTip(endBtn, $"Mark the end of the block ({kb.MarkEnd})");
 
         RefreshTransportKeyBindings();
     }
@@ -815,12 +843,13 @@ public partial class GranularSpeedEditorWindow : Window
         if (_edit.MarkStart(currentMs) is int overlap)
         {
             var overlapping = _edit.Segments[overlap];
-            ShowFeedback($"⚠ Inside segment #{overlap + 1}! Delete it first.");
-            NotifyError($"Cannot mark here — overlaps segment #{overlap + 1} [{FormatMs(overlapping.StartMs)} – {FormatMs(overlapping.EndMs)}]. Delete it first.");
+            ShowFeedback($"⚠ Inside block #{overlap + 1}! Delete it first.");
+            NotifyError($"Cannot mark here — overlaps block #{overlap + 1} [{FormatMs(overlapping.StartMs)} – {FormatMs(overlapping.EndMs)}]. Delete it first.");
             return;
         }
 
         UpdateDeleteButtonVisibility();
+        _freezeAwaitingLength = false;
         ShowFeedback($"START: {FormatMs(_edit.PendingStartMs)}");
         RedrawTimeline();
     }
@@ -833,7 +862,7 @@ public partial class GranularSpeedEditorWindow : Window
         var marked = _edit.MarkEnd(currentMs, out int? overlap);
         if (!marked.Ok)
         {
-            ShowFeedback(overlap is int o ? $"⚠ Inside segment #{o + 1}! Delete it first." : "⚠ END can't be before START");
+            ShowFeedback(overlap is int o ? $"⚠ Inside block #{o + 1}! Delete it first." : "⚠ END can't be before START");
             NotifyError(marked.Error!);
             return;
         }
@@ -851,7 +880,7 @@ public partial class GranularSpeedEditorWindow : Window
             }
         }
 
-        NotifyUndoable($"Segment added at {FormatMs(_edit.PendingEndMs)}", "MarkEndBtn");
+        NotifyUndoable($"Block added at {FormatMs(_edit.PendingEndMs)}", "MarkEndBtn");
 
         AddPendingSegment();
 
@@ -1158,8 +1187,8 @@ public partial class GranularSpeedEditorWindow : Window
                     _dragStartPointerMs = pointerMs;
                     e.Pointer.Capture(canvas);
                     SetStatus(mode == SegDragMode.Move
-                        ? $"Moving segment #{hitIdx + 1} — release to set."
-                        : $"Resizing segment #{hitIdx + 1} — release to set.");
+                        ? $"Moving block #{hitIdx + 1} — release to set."
+                        : $"Resizing block #{hitIdx + 1} — release to set.");
                     UpdateDragReadout(seg.StartMs, seg.EndMs);
                     RedrawTimeline();
                     e.Handled = true;
@@ -1360,9 +1389,9 @@ public partial class GranularSpeedEditorWindow : Window
                     newEnd = Math.Clamp(NearestSnap(newEnd), Math.Min(upperBound, newStart + GranularEditSession.SegMinWidthMs), upperBound);
 
                 if (hitLeftWall)
-                    SetStatus("Blocked on the left by the previous segment.");
+                    SetStatus("Blocked on the left by the previous block.");
                 else if (hitRightWall)
-                    SetStatus("Blocked on the right by the next segment.");
+                    SetStatus("Blocked on the right by the next block.");
                 else
                 {
                     bool explained = false;
@@ -1378,16 +1407,16 @@ public partial class GranularSpeedEditorWindow : Window
                             var moveAvail = _edit.GetSlowZoomGlideAvailability(idx, overrideSegment: movedSeg);
                             if (moveAvail.AnyUnavailable)
                             {
-                                SetStatus(moveAvail.GetCombinedExplanation() ?? $"Moving segment #{idx + 1} — release to set.");
+                                SetStatus(moveAvail.GetCombinedExplanation() ?? $"Moving block #{idx + 1} — release to set.");
                                 explained = true;
                             }
                         }
                     }
                     if (!explained)
-                        SetStatus(_segDragMode == SegDragMode.Move ? $"Moving segment #{idx + 1} — release to set." : $"Resizing segment #{idx + 1} — release to set.");
+                        SetStatus(_segDragMode == SegDragMode.Move ? $"Moving block #{idx + 1} — release to set." : $"Resizing block #{idx + 1} — release to set.");
                 }
 
-                PushUndo("resize segment", "seg-edge");
+                PushUndo("resize block", "seg-edge");
                 double actualDelta = newStart - _dragOrigStartMs;
                 double? newZoomStart = (_segDragMode == SegDragMode.Move && _dragOrigZoomStartMs.HasValue)
                     ? _dragOrigZoomStartMs.Value + actualDelta
@@ -1618,6 +1647,7 @@ public partial class GranularSpeedEditorWindow : Window
                 btn.Click += (_, _) =>
                 {
                     _edit.SelectedFreezePresetS = val;
+                    OnFreezeLengthChosen();
                     RememberEditorChoice(d => Math.Abs(d.DefaultFreezeDurationS - val) > 0.001, d => d.DefaultFreezeDurationS = val);
 
                     _freezePulseTimer?.Stop();
@@ -1692,6 +1722,7 @@ public partial class GranularSpeedEditorWindow : Window
 
                     RedrawTimeline();
                     UpdateDeleteButtonVisibility();
+                    StartFreezeGlow();
                     FreeVideoStudio.App.RuntimeLog.Info("GRANULAR_EDITOR", $"State Change: User clicked 'Freeze Image' toggle. Button set to State 2 (Active/Red - UNFREEZE IMAGE).");
 
                     if (!promptPreset)
@@ -1793,7 +1824,7 @@ public partial class GranularSpeedEditorWindow : Window
         if (speedLbl != null) speedLbl.Text = $"{_edit.BaseSpeed:0.0}x";
 
         RefreshSegmentList();
-        if (seg != null) Notify($"Segment added: {FormatMs(seg.StartMs)} – {FormatMs(seg.EndMs)} @ {seg.Speed:0.0}x");
+        if (seg != null) Notify($"Block added: {FormatMs(seg.StartMs)} – {FormatMs(seg.EndMs)} @ {seg.Speed:0.0}x");
     }
 
     private void RefreshSegmentList()
@@ -1804,7 +1835,7 @@ public partial class GranularSpeedEditorWindow : Window
 
         var countLbl = this.FindControl<TextBlock>("SegmentCountLabel");
         if (countLbl != null)
-            countLbl.Text = _edit.Segments.Count == 0 ? "No segments" : $"{_edit.Segments.Count} segment{(_edit.Segments.Count == 1 ? "" : "s")}";
+            countLbl.Text = _edit.Segments.Count == 0 ? "No blocks" : $"{_edit.Segments.Count} block{(_edit.Segments.Count == 1 ? "" : "s")}";
 
         for (int i = 0; i < _edit.Segments.Count; i++)
         {
@@ -1823,9 +1854,9 @@ public partial class GranularSpeedEditorWindow : Window
             };
             PaintToken(border, Border.BackgroundProperty, isSelected ? "AppZoomCardCheckedBrush" : "AppZoomCardBrush");
             PaintToken(border, Border.BorderBrushProperty, isSelected ? "AppWarningBrush" : "AppBorderBrush");
-            ToolTip.SetTip(border, "Click to select this segment");
+            ToolTip.SetTip(border, "Click to select this block");
             Avalonia.Automation.AutomationProperties.SetName(border,
-                $"Segment {idx + 1} of {_edit.Segments.Count}, {FormatClock(seg.StartMs)} to {FormatClock(seg.EndMs)}, speed {seg.Speed:0.0}x" +
+                $"Block {idx + 1} of {_edit.Segments.Count}, {FormatClock(seg.StartMs)} to {FormatClock(seg.EndMs)}, speed {seg.Speed:0.0}x" +
                 (seg.ZoomW.HasValue ? ", zoomed" : "") + (isSelected ? ", selected" : ""));
 
             var grid = new Grid();
@@ -1856,8 +1887,8 @@ public partial class GranularSpeedEditorWindow : Window
                 CornerRadius = new CornerRadius(3),
                 Margin = new Thickness(4, 0, 0, 0)
             };
-            Avalonia.Automation.AutomationProperties.SetName(delBtn, $"Delete segment {idx + 1} of {_edit.Segments.Count}");
-            ToolTip.SetTip(delBtn, "Delete this segment");
+            Avalonia.Automation.AutomationProperties.SetName(delBtn, $"Delete block {idx + 1} of {_edit.Segments.Count}");
+            ToolTip.SetTip(delBtn, "Delete this block");
             delBtn.Click += (_, e) =>
             {
                 e.Handled = true;
@@ -1867,7 +1898,7 @@ public partial class GranularSpeedEditorWindow : Window
             void SelectThisSegment()
             {
                 SelectSegment(idx, jumpPlayhead: true);
-                SetStatus($"Selected segment #{idx + 1}. Change speed, press DELETE to remove, or drag its zoom box to re-aim it.");
+                SetStatus($"Selected block #{idx + 1}. Change speed, press DELETE to remove, or drag its zoom box to re-aim it.");
             }
 
             border.PointerEntered += (_, _) =>
@@ -2213,7 +2244,7 @@ public partial class GranularSpeedEditorWindow : Window
         var emptyLabel = new TextBlock
         {
             Name = "GranularEmptyLaneLabel",
-            Text = "No Speed Segments Yet!",
+            Text = "No Speed Blocks Yet!",
             Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#94a3b8")),
             FontSize = Infrastructure.ThemeManager.ScaledFontSize(12),
             FontWeight = Avalonia.Media.FontWeight.Bold,
@@ -2364,6 +2395,8 @@ public partial class GranularSpeedEditorWindow : Window
                 return;
             }
             canvas.Children.Clear();
+            UpdateFreezePresetsVisibility();
+            UpdateGuideLine();
 
             if (_draggingMemeId == null) ResnapMemesAfterBlockEdit();
 
@@ -2661,8 +2694,8 @@ public partial class GranularSpeedEditorWindow : Window
                     }
 
                     var zseg = _edit.Segments[index];
-                    string inTip = $"Zoom on segment #{index + 1}.\nDrag to move where the zoom begins.";
-                    string outTip = $"Zoom on segment #{index + 1}.\nDrag to move where the zoom ends.";
+                    string inTip = $"Zoom on block #{index + 1}.\nDrag to move where the zoom begins.";
+                    string outTip = $"Zoom on block #{index + 1}.\nDrag to move where the zoom ends.";
                     if (zseg.ZoomSlow)
                     {
                         var zAvail = _edit.GetSlowZoomGlideAvailability(index);
@@ -2826,7 +2859,7 @@ public partial class GranularSpeedEditorWindow : Window
 
         var del = new Avalonia.Controls.MenuItem
         {
-            Header = hasZoom ? "Delete Block (speed AND zoom)" : "Delete Segment",
+            Header = hasZoom ? "Delete Block (speed AND zoom)" : "Delete Block",
             Icon = new TextBlock { Text = "\U0001F5D1", Margin = new Avalonia.Thickness(0) }
         };
         del.Click += (_, _) => { if (_edit.SelectedSegmentIndex >= 0) ExecuteDeleteSelectedSegment(); };
@@ -2939,8 +2972,8 @@ public partial class GranularSpeedEditorWindow : Window
         };
         hitBox.Child = stick;
         ToolTip.SetTip(hitBox, isStart
-            ? "Drag left/right to move this segment's START"
-            : "Drag left/right to move this segment's END");
+            ? "Drag left/right to move this block's START"
+            : "Drag left/right to move this block's END");
 
         Avalonia.Controls.Canvas.SetLeft(hitBox, boxLeft);
         Avalonia.Controls.Canvas.SetTop(hitBox, 0);
@@ -2955,7 +2988,7 @@ public partial class GranularSpeedEditorWindow : Window
 
             if (_zoomModeActive && segIndex == _edit.SelectedSegmentIndex)
             {
-                SetStatus("The zoom box is open, so the magnifiers own this edge. Press ZOOM-IN or Escape to resize the block itself.");
+                SetStatus("The zoom box is open, so the magnifiers own this edge. Press ZOOM BY HAND or Escape to resize the block itself.");
                 e.Handled = true;
                 return;
             }
@@ -2984,7 +3017,7 @@ public partial class GranularSpeedEditorWindow : Window
                 : 0;
 
             e.Pointer.Capture(canvas);
-            SetStatus($"Resizing segment #{segIndex + 1} — release to set.");
+            SetStatus($"Resizing block #{segIndex + 1} — release to set.");
             e.Handled = true;
         };
 
@@ -3072,7 +3105,7 @@ public partial class GranularSpeedEditorWindow : Window
         var zoomBtn = ZoomSegmentBtnCtl;
         if (zoomBtn != null) zoomBtn.Click += (_, __) =>
         {
-            if (GuideWhenNothingMarked("ZOOM-IN")) return;
+            if (GuideWhenNothingMarked("ZOOM BY HAND")) return;
             ToggleZoomMode();
         };
 
@@ -3158,9 +3191,9 @@ public partial class GranularSpeedEditorWindow : Window
         {
             var seg = _edit.Segments[index];
             bool ok = await FreeVideoStudio.App.Controls.ConfirmDialogWindow.AskAsync(this,
-                $"Delete the speed segment from {FormatMs(seg.StartMs)} to {FormatMs(seg.EndMs)}?\n\n" +
+                $"Delete the speed block from {FormatMs(seg.StartMs)} to {FormatMs(seg.EndMs)}?\n\n" +
                 "Changed your mind later? Press Ctrl+Z to bring it back.",
-                "Delete this segment?", "DELETE", "KEEP IT", destructive: true);
+                "Delete this block?", "DELETE", "KEEP IT", destructive: true);
             if (!ok) { RuntimeLog.Info("UI", "User kept the speed segment (delete prompt)."); return; }
             if (_edit.SelectedSegmentIndex != index && index < _edit.Segments.Count) SelectSegmentAt(index);
         }
@@ -3180,8 +3213,8 @@ public partial class GranularSpeedEditorWindow : Window
             double spd = _edit.SpeedAt(curMs);
             _ = _previewSpeed.Force(_videoHost.IpcClient, spd);
         }
-        SetStatus("Selected segment deleted.");
-        NotifyUndoable("Segment deleted", "DeleteSegmentBtn");
+        SetStatus("Selected block deleted.");
+        NotifyUndoable("Block deleted", "DeleteSegmentBtn");
         ScheduleGranularRecoverySave();
     }
 
@@ -3267,9 +3300,9 @@ public partial class GranularSpeedEditorWindow : Window
             _ = _previewSpeed.Force(_videoHost.IpcClient, _edit.BaseSpeed);
         }
         SetStatus(hadFreeze
-            ? "All segments, the frozen frame and pending selections cleared."
-            : "All segments and pending selections cleared.");
-        NotifyUndoable(hadFreeze ? "Cleared everything, including the frozen frame" : "Cleared all segments",
+            ? "All blocks, the frozen frame and pending selections cleared."
+            : "All blocks and pending selections cleared.");
+        NotifyUndoable(hadFreeze ? "Cleared everything, including the frozen frame" : "Cleared all blocks",
             "ClearAllSegmentsBtn");
     }
 
@@ -3352,7 +3385,7 @@ public partial class GranularSpeedEditorWindow : Window
                     NotifyError($"This zoom is too close to another gliding zoom — they need {needSec:0.0}s between them, " +
                                 "or neither can glide. Move one of them apart first, or leave this one instant.");
                     RuntimeLog.Info("Granular",
-                        $"Refused INSTANT→SLOW on segment #{_edit.SelectedSegmentIndex + 1}: less than {needSec:0.###}s clear of another slow zoom.");
+                        $"Refused INSTANT→SLOW on block #{_edit.SelectedSegmentIndex + 1}: less than {needSec:0.###}s clear of another slow zoom.");
                     return;
                 }
 
@@ -3434,7 +3467,7 @@ public partial class GranularSpeedEditorWindow : Window
         RefreshSegmentList();
         RedrawTimeline();
         UpdateDeleteButtonVisibility();
-        Notify("Zoom removed. Press ZOOM-IN to set a new one.");
+        Notify("Zoom removed. Press ZOOM BY HAND to set a new one.");
     }
 
     private bool CreateZoomBlockFromPendingMarks()
@@ -3477,7 +3510,7 @@ public partial class GranularSpeedEditorWindow : Window
 
         if (_edit.PendingStartMs >= 0 && _edit.PendingEndMs < 0)
         {
-            NotifyError("Mark an END first — press MARK END where the zoom should stop, then press ZOOM-IN.");
+            NotifyError("Mark an END first — press MARK END where the zoom should stop, then press ZOOM BY HAND.");
             return false;
         }
 
@@ -3585,6 +3618,7 @@ public partial class GranularSpeedEditorWindow : Window
         ClearLiveZoomCrop();
 
         _zoomModeActive = true;
+        UpdateGuideLine();
         UpdateDetachButtonForZoomMode();
         EnsureZoomVisuals(canvas);
         canvas.IsVisible = true;
@@ -3622,6 +3656,7 @@ public partial class GranularSpeedEditorWindow : Window
         var canvas = ZoomOverlayCanvasCtl;
         var zoomBtn = ZoomSegmentBtnCtl;
         _zoomModeActive = false;
+        UpdateGuideLine();
         UpdateDetachButtonForZoomMode();
         _zoomDrag = ZoomDrag.None;
         if (canvas != null) canvas.IsVisible = false;
@@ -3632,7 +3667,7 @@ public partial class GranularSpeedEditorWindow : Window
         HideZoomTutorial();
         if (zoomBtn != null)
         {
-            zoomBtn.Content = "🔍 ZOOM-IN";
+            zoomBtn.Content = "🔍 ZOOM BY HAND";
             zoomBtn.Classes.Remove("Success");
             if (!zoomBtn.Classes.Contains("ZoomAction")) zoomBtn.Classes.Add("ZoomAction");
         }
@@ -5030,7 +5065,7 @@ public partial class GranularSpeedEditorWindow : Window
             double removedSec = _edit.TotalCutSeconds();
             RuntimeLog.Success("CUT",
                 $"DELETE PARTS applied. {_edit.Cuts.Count} cut(s) now removing {removedSec:F2}s total. " +
-                $"{_edit.Segments.Count} speed segment(s) survive, freeze={(_edit.FreezeTimeMs >= 0 ? FormatMs(_edit.FreezeTimeMs - _edit.TrimStartMs) : "none")}. " +
+                $"{_edit.Segments.Count} speed block(s) survive, freeze={(_edit.FreezeTimeMs >= 0 ? FormatMs(_edit.FreezeTimeMs - _edit.TrimStartMs) : "none")}. " +
                 $"Finished video is about {OutDurationSec():F2}s. Timeline condensed and recalculated.");
 
             _voiceOverPlayer.Reload();

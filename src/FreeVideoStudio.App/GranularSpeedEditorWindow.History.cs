@@ -36,7 +36,7 @@ public partial class GranularSpeedEditorWindow
         }
 
         RuntimeLog.Info("UNDO",
-            $"UNDO '{step.Label}': segments {step.From.Segments.Length} -> {step.To.Segments.Length}, " +
+            $"UNDO '{step.Label}': blocks {step.From.Segments.Length} -> {step.To.Segments.Length}, " +
             $"cuts {step.From.Cuts.Length} -> {step.To.Cuts.Length}, " +
             $"base {step.From.BaseSpeed:0.00}x -> {step.To.BaseSpeed:0.00}x. " +
             $"Depth now undo={_edit.History.UndoCount} redo={_edit.History.RedoCount}.");
@@ -55,7 +55,7 @@ public partial class GranularSpeedEditorWindow
         }
 
         RuntimeLog.Info("UNDO",
-            $"REDO '{step.Label}': back to {step.To.Segments.Length} segment(s), {step.To.Cuts.Length} cut(s). " +
+            $"REDO '{step.Label}': back to {step.To.Segments.Length} block(s), {step.To.Cuts.Length} cut(s). " +
             $"Depth now undo={_edit.History.UndoCount} redo={_edit.History.RedoCount}.");
 
         RefreshAfterRestore();

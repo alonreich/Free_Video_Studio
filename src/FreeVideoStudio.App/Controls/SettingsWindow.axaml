@@ -186,17 +186,39 @@
                         <TabItem Header="Editing" Name="EditingTab">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
                                 <StackPanel Classes="Page">
-                                    <TextBlock Classes="H1" Text="Your game" Margin="0,4,0,0"/>
+                                    <TextBlock Classes="H1" Text="What you record" Margin="0,4,0,0"/>
                                     <Grid ColumnDefinitions="Auto,*">
-                                        <StackPanel Classes="LabelRow" ToolTip.Tip="Pick the game you record. Every game puts its health bar, map and weapons in different places.&#x0a;&#x0a;The app uses this to cut those parts out neatly for phone videos, and the AI camera uses it to know what to follow.&#x0a;'No Mask' means: do not cut anything out.">
-                                            <TextBlock Classes="Label" Text="Game"/>
+                                        <StackPanel Classes="LabelRow" ToolTip.Tip="Pick what you record: a game, a drone flight, birds, bees or anything else. Each mask profile keeps different on-screen parts (for example a health bar, a map or a speed readout) in different places.&#x0a;&#x0a;The app uses this to cut those parts out neatly for phone videos, and the AI camera uses it to know what to follow.&#x0a;'No Mask' means: do not cut anything out.">
+                                            <TextBlock Classes="Label" Text="Mask profile"/>
                                             <TextBlock Classes="Info"/>
                                         </StackPanel>
                                         <ComboBox Grid.Column="1" Name="MaskOverlayProfileComboBox" MinWidth="260" HorizontalAlignment="Left"
                                                   ItemsSource="{Binding Vm.GameProfiles}" SelectedIndex="{Binding Vm.GameIndex, Mode=TwoWay}"
-                                                  AutomationProperties.Name="Game"
-                                                  ToolTip.Tip="The game you record. Changes the cut-out layout and the AI camera."/>
+                                                  AutomationProperties.Name="Mask profile"
+                                                  ToolTip.Tip="What you record. Changes the cut-out layout and the AI camera."/>
                                     </Grid>
+                                    <CheckBox Name="ShowHudSnapshotsCheckBox" Content="Show my mask overlays in the phone preview" Margin="0,6,0,0"
+                                              IsChecked="{Binding Vm.ShowHudSnapshots, Mode=TwoWay}" AutomationProperties.Name="Show mask overlays in the phone preview"
+                                              ToolTip.Tip="Only for tall (phone) videos.&#x0a;&#x0a;ON: the phone preview shows faded pictures of the parts your mask profile keeps (for example a health bar, a map, a logo or a speed readout) where they will be in the video.&#x0a;OFF: none of this is shown and the app does no extra work for it.&#x0a;&#x0a;Starts OFF on computers without a graphics card, to keep them fast."/>
+
+                                    <StackPanel Name="HudElementDefaultsPanel" Spacing="4" Margin="0,8,0,0" IsVisible="{Binding Vm.HasHudElementRows}">
+                                        <StackPanel Classes="LabelRow" ToolTip.Tip="Every part your mask profile keeps (named in the Crop Tools) gets its own switch in the main window.&#x0a;&#x0a;Pick how each one starts in a new video:&#x0a;Always on, Always off, or Remember my last choice.&#x0a;&#x0a;A saved project always opens the way you left it.">
+                                            <TextBlock Classes="Label" Text="Overlay parts in new videos"/>
+                                            <TextBlock Classes="Info"/>
+                                        </StackPanel>
+                                        <ItemsControl Name="HudElementDefaultsList" ItemsSource="{Binding Vm.HudElementRows}" Margin="12,0,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:HudElementDefaultRow">
+                                                    <Grid ColumnDefinitions="220,Auto" Margin="0,2">
+                                                        <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,10,0"
+                                                                   ToolTip.Tip="{Binding Label}" Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                                                        <ComboBox Grid.Column="1" MinWidth="220" ItemsSource="{Binding Behaviors}" SelectedIndex="{Binding BehaviorIndex, Mode=TwoWay}"
+                                                                  AutomationProperties.Name="{Binding Label}" ToolTip.Tip="{Binding Tip}"/>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
 
                                     <Separator Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,8,0,0"/>
                                     <StackPanel Classes="LabelRow" ToolTip.Tip="What a freshly opened video starts with.&#x0a;&#x0a;Like my last video: speed, quality, phone format, teammates and fades start the way your last exported video was made.&#x0a;With my defaults: they always start with the values below.">
@@ -227,8 +249,6 @@
                                         <WrapPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal">
                                             <CheckBox Name="DefaultPortraitCheckBox" Content="Phone format (9:16)" Margin="0,0,18,0" IsChecked="{Binding Vm.DefaultPortrait, Mode=TwoWay}"
                                                       ToolTip.Tip="Makes a tall video for TikTok, Shorts and Reels."/>
-                                            <CheckBox Name="DefaultTeammatesCheckBox" Content="Show teammates" Margin="0,0,18,0" IsChecked="{Binding Vm.DefaultTeammates, Mode=TwoWay}"
-                                                      ToolTip.Tip="Keeps your teammates' names and health bars in the video. Games with 'No Mask' never show them."/>
                                             <CheckBox Name="DefaultFadeCheckBox" Content="Fade in and out" IsChecked="{Binding Vm.DefaultFade, Mode=TwoWay}"
                                                       ToolTip.Tip="The video gently fades from black at the start and back to black at the end."/>
                                         </WrapPanel>

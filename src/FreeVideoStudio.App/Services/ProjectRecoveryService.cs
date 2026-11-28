@@ -58,8 +58,9 @@ public sealed class ProjectRecoveryService
         bool memeSelected = mainVm.IsAddMeme || mainVm.SelectedMemeItem != null;
 
         bool noMask = MaskOverlayManager.IsNoMask(SettingsManager.Instance.ActiveMaskOverlay);
-        bool hudToggled = mainVm.IsTeammates != (!noMask && defaults.StartShowTeammates)
-                       || mainVm.IsSpectating != !noMask;
+        bool hudToggled = mainVm.HudToggles.Count > 0
+            ? mainVm.HudToggles.Any(t => t.IsOn != defaults.StartHudElement(mainVm.HudProfileName ?? string.Empty, t.Key))
+            : mainVm.IsTeammates != (!noMask && defaults.StartShowTeammates) || mainVm.IsSpectating != !noMask;
 
         bool exportTogglesChanged = mainVm.IsPortraitMode != defaults.StartPortrait
                                  || mainVm.IsEnableFade != defaults.StartEnableFade;

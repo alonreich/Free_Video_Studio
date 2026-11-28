@@ -116,7 +116,7 @@ public partial class GranularSpeedEditorWindow
         _applyGranularBtn.Content = _isAiCommentaryPreviewing ? "APPLY (incl. commentary)" : "APPLY";
         ToolTip.SetTip(_applyGranularBtn, _isAiCommentaryPreviewing
             ? "Apply all changes, INCLUDING the AI commentary you are previewing, and return"
-            : "Apply all speed segments and return");
+            : "Apply all speed blocks and return");
     }
 
     private void UpdateAiCommentaryBtnVisualState()
@@ -598,8 +598,7 @@ public partial class GranularSpeedEditorWindow
         try
         {
             var coords = await VideoConfig.GetMobileCoordinatesAsync().ConfigureAwait(false);
-            var d = SettingsManager.Instance.Defaults;
-            _previewHudRects = MobileFilterBuilder.HudCanvasRects(coords, d.StartShowTeammates, showSpectating: true);
+            _previewHudRects = MobileFilterBuilder.HudCanvasRects(coords, _previewLayers.HudVisibility);
             Dispatcher.UIThread.Post(() =>
             {
                 var current = _isAiCommentaryPreviewing ? _aiCommentaryCandidateTrack : _edit.CaptionTrack;

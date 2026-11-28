@@ -72,6 +72,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         bool hasText = !string.IsNullOrWhiteSpace(NewMaskOverlayName);
         SetEnabled("CreateMaskOverlayBtn",
             _edit.GateUnlocked && _edit.ActiveProfile != null && hasText && ValidateNewMaskOverlayName() == null);
+        SetEnabled("CreateBlankMaskOverlayBtn", hasText && ValidateNewMaskOverlayName() == null && !_isSaving);
     }
 
     private void RefreshMaskOverlayNameCache(IEnumerable<string> profiles)
@@ -584,6 +585,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             };
         }
 
+        BuildProfileKindUi(combo);
+
         var btn = this.FindControl<Button>("CreateMaskOverlayBtn");
         var txt = this.FindControl<TextBox>("NewMaskOverlayTextBox");
         if (btn != null && txt != null)
@@ -662,7 +665,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
         SetEnabled("OpenVideoButton", unlocked);
         RefreshCreateMaskOverlayButton();
-        SetEnabled("NewMaskOverlayTextBox", unlocked);
+        SetEnabled("NewMaskOverlayTextBox", true);
         SetEnabled("ResetMenuButton", unlocked);
         SetEnabled("SnapToggle", unlocked);
 
@@ -724,6 +727,8 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
             _edit.ActiveProfile = verifiedName;
 
             ResetWorkingState();
+            _edit.BeginProfile(validatedConfig, HudElements.UsesFortniteRoles(validatedConfig, verifiedName));
+            RefreshGameTypeCombo(validatedConfig, verifiedName);
             SetProfileGate(unlocked: true);
 
             await RehydrateSavedLayersAsync(validatedConfig);
@@ -2263,7 +2268,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         string? primary = _edit.QuadrantGuess(sel).Key;
         var placed = _items.Select(i => i.RoleKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var ordered = _edit.AllRoles
+        var ordered = _edit.PickerRoles(placed)
             .OrderBy(r => placed.Contains(r.Key) ? 1 : 0)
             .ThenBy(r => string.Equals(r.Key, primary, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
             .ToList();
@@ -2504,6 +2509,7 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
 
     private async Task ConfirmSelectionAsAsync(HudRole role)
     {
+        role = _edit.EnsureRole(role);
         RoleName = role.DisplayName;
 
         HideRolePopup();
@@ -2579,11 +2585,11 @@ public partial class CropToolWindow : Window, System.ComponentModel.INotifyDataE
         var contentRect = CoordinateMath.TransformToContentAreaInt(
             (sourceRect.X, sourceRect.Y, sourceRect.Width, sourceRect.Height),
             _edit.OriginalResolution,
-            HudConfig.CropDriftType(roleKey));
+            _edit.DriftOf(roleKey));
         var exportRect = CoordinateMath.InverseTransformFromContentAreaInt(
             (contentRect.x, contentRect.y, contentRect.w, contentRect.h),
             _edit.OriginalResolution,
-            HudConfig.CropDriftType(roleKey));
+            _edit.DriftOf(roleKey));
         return await CropSnapshotRegionAsync(snapshotPath, new SourceRect(exportRect.x, exportRect.y, exportRect.w, exportRect.h)).ConfigureAwait(false);
     }
 

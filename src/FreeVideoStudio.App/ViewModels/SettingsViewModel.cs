@@ -210,18 +210,32 @@ public sealed partial class SettingsViewModel : ViewModelBase
             _p.ActiveMaskOverlay = GameProfiles[value];
             OnPropertyChanged();
             SyncCameraViewToGame();
+            RefreshHudElementRows();
         }
     }
 
-    public static AiGameProfile? CameraViewForGame(string? game)
+    public static AiGameProfile? CameraViewForGame(string? game) => HudElements.GameTypeFromName(game);
+
+    public Func<string, IReadOnlyList<HudElementInfo>>? HudElementSource { get; init; }
+
+    public Func<string, AiGameProfile?>? GameTypeSource { get; init; }
+
+    public ObservableCollection<HudElementDefaultRow> HudElementRows { get; } = new();
+
+    public bool HasHudElementRows => HudElementRows.Count > 0;
+
+    public static IReadOnlyList<string> HudBehaviorNames { get; } = HudElementDefaultRow.BehaviorNames;
+
+    public void RefreshHudElementRows()
     {
-        string g = (game ?? "").Trim().ToLowerInvariant();
-        if (g.Length == 0) return null;
-        if (g.Contains("fortnite")) return AiGameProfile.Fortnite;
-        if (g.Contains("counter") || g.Contains("battlefield") || g.Contains("apex") || g.Contains("call of duty") || g.Contains("valorant"))
-            return AiGameProfile.FirstPerson;
-        if (g.Contains("drone") || g.Contains("no mask")) return AiGameProfile.Generic;
-        return null;
+        HudElementRows.Clear();
+        string profile = _p.ActiveMaskOverlay ?? "";
+        IReadOnlyList<HudElementInfo> elements = Array.Empty<HudElementInfo>();
+        try { elements = HudElementSource?.Invoke(profile) ?? Array.Empty<HudElementInfo>(); }
+        catch (Exception ex) when (ex is System.IO.IOException or InvalidOperationException or UnauthorizedAccessException) { RuntimeLog.Swallowed(ex); }
+        foreach (HudElementInfo e in elements)
+            HudElementRows.Add(new HudElementDefaultRow(_p.Defaults, profile, e.Key, e.Label));
+        OnPropertyChanged(nameof(HasHudElementRows));
     }
 
     public List<string> QualityNames { get; }
@@ -289,6 +303,12 @@ public sealed partial class SettingsViewModel : ViewModelBase
         if (current(_p.Defaults) == value) return;
         write(_p.Defaults, value ? CheckboxDefaultBehavior.AlwaysOn : CheckboxDefaultBehavior.AlwaysOff);
         OnPropertyChanged(name);
+    }
+
+    public bool ShowHudSnapshots
+    {
+        get => _p.ShowHudSnapshots ?? Infrastructure.HudPreviewController.DefaultEnabled;
+        set { if (ShowHudSnapshots == value && _p.ShowHudSnapshots != null) return; _p.ShowHudSnapshots = value; OnPropertyChanged(); }
     }
 
     public bool KeepOverlayTextBetweenVideos { get => _p.KeepOverlayTextBetweenVideos; set { if (_p.KeepOverlayTextBetweenVideos == value) return; _p.KeepOverlayTextBetweenVideos = value; OnPropertyChanged(); } }
@@ -576,6 +596,22 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
+    internal static Dictionary<string, string>? MergeHudDefaults(IReadOnlyDictionary<string, string>? from, IReadOnlyDictionary<string, string>? to)
+    {
+        if (from == null) return null;
+        var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (to != null) foreach (var pair in to) merged[pair.Key] = pair.Value;
+        foreach (var pair in from)
+        {
+            string behavior = pair.Value.Split(':')[0];
+            string last = to != null && to.TryGetValue(pair.Key, out string? current) && current.Split(':') is { Length: > 1 } cp
+                ? cp[1]
+                : pair.Value.Split(':') is { Length: > 1 } fp ? fp[1] : "1";
+            merged[pair.Key] = behavior + ":" + last;
+        }
+        return merged;
+    }
+
     public static void CopySection(AppSettings from, AppSettings to, SettingsSection section)
     {
         switch (section)
@@ -602,7 +638,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
                     td.QualityIndex = fd.QualityIndex;
                 }
                 else FixStartDefaults(fd, td);
+                td.HudElementDefaults = MergeHudDefaults(fd.HudElementDefaults, td.HudElementDefaults);
                 to.KeepOverlayTextBetweenVideos = from.KeepOverlayTextBetweenVideos;
+                to.ShowHudSnapshots = from.ShowHudSnapshots;
                 WriteRiskyAsk(to, AnyRiskyAsk(from));
                 break;
             case SettingsSection.Files:
@@ -706,7 +744,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     private void SyncCameraViewToGame()
     {
-        if (CameraViewForGame(_p.ActiveMaskOverlay) is { } view) _p.AiTrackingGameProfile = view;
+        if ((GameTypeSource?.Invoke(_p.ActiveMaskOverlay ?? "") ?? CameraViewForGame(_p.ActiveMaskOverlay)) is { } view) _p.AiTrackingGameProfile = view;
     }
 
     public void RestoreAll()
@@ -768,6 +806,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     {
         KeyBindRowViewModel.Load(KeyBindRows, _p.KeyBinds ?? new KeyBinds());
         KeyBindStatus = "";
+        RefreshHudElementRows();
         OnPropertyChanged(string.Empty);
         Reloaded?.Invoke();
     }

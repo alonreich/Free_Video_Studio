@@ -1049,8 +1049,8 @@ public partial class VideoMergerWindow : Window, Services.IToolNavigationResultS
             if (targetRatio == FreeVideoStudio.Core.Media.MergerWorker.TargetAspectRatio.Portrait9x16)
             {
                 var coords = await FreeVideoStudio.Core.Media.VideoConfig.GetMobileCoordinatesAsync();
-                var d = Infrastructure.SettingsManager.Instance.Defaults;
-                worker.CaptionHudRects = FreeVideoStudio.Core.Media.MobileFilterBuilder.HudCanvasRects(coords, d.StartShowTeammates, showSpectating: true);
+                var visibility = Infrastructure.MaskOverlayManager.DefaultVisibility(Infrastructure.SettingsManager.Instance.ActiveMaskOverlay);
+                worker.CaptionHudRects = FreeVideoStudio.Core.Media.MobileFilterBuilder.HudCanvasRects(coords, visibility);
             }
             await EnsureTimelineReadyAsync();
             ApplyScraperToWorker(worker);

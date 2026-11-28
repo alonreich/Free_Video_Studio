@@ -60,11 +60,14 @@ public sealed partial class SettingsViewModel : IDisposable
         var source = services.Store.Current;
         var vm = new SettingsViewModel(source, music, gameProfiles)
         {
+            HudElementSource = MaskOverlayManager.ReadProfileElements,
+            GameTypeSource = MaskOverlayManager.ProfileGameType,
             _services = services,
             _initialMusicFolder = initialMusic,
             _openMergerOutputDir = source.MergerOutputDirectory ?? "",
             _onlineAiOff = source.AiMode == AiMode.LocalOnly,
         };
+        vm.RefreshHudElementRows();
         return vm;
     }
 

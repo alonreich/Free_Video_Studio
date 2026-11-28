@@ -21,9 +21,11 @@
 
         <Grid Grid.Row="0" ColumnDefinitions="*, Auto">
 
-            <Grid Grid.Column="0" RowDefinitions="*, Auto, Auto, Auto" Margin="12,10,12,8">
+            <Grid Grid.Column="0" RowDefinitions="Auto, *, Auto, Auto, Auto" Margin="12,10,12,8">
 
-                <Border Name="GranularVideoAreaBorder" Grid.Row="0" Background="{DynamicResource AppVideoSurfaceBrush}" CornerRadius="6" ClipToBounds="True">
+                <TextBlock Name="GuideLineText" Grid.Row="0" Text="Play to a moment, then press MARK START." HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,0,6" FontSize="{DynamicResource AppFontSize14}" FontWeight="SemiBold" Foreground="{DynamicResource AppAccentBrush}" AutomationProperties.LiveSetting="Polite" AutomationProperties.Name="What to do next"/>
+
+                <Border Name="GranularVideoAreaBorder" Grid.Row="1" Background="{DynamicResource AppVideoSurfaceBrush}" CornerRadius="6" ClipToBounds="True">
                     <Grid>
                         <Viewbox Name="GranularPreviewViewbox" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" ZIndex="0">
                             <Grid Name="ZoomContainerGrid" Width="1920" Height="1080">
@@ -203,12 +205,12 @@
                     </Grid>
                 </Border>
 
-                <Border Grid.Row="1" Background="{DynamicResource AppOverlayBrush}" CornerRadius="6" Padding="8,4" Margin="10,4,10,4" ClipToBounds="False">
+                <Border Grid.Row="2" Background="{DynamicResource AppOverlayBrush}" CornerRadius="6" Padding="8,4" Margin="10,4,10,4" ClipToBounds="False">
                     <controls:TimelineLanesControl Name="GranularLanes" ClipToBounds="False"
                                                    MarkerHeadroomPx="56" Margin="0,-56,0,0"/>
                 </Border>
 
-                <Grid Grid.Row="2" Margin="10,2,10,2" ColumnDefinitions="*, Auto, *">
+                <Grid Grid.Row="3" Margin="10,2,10,2" ColumnDefinitions="*, Auto, *">
 
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8"
                                 HorizontalAlignment="Left" VerticalAlignment="Center">
@@ -218,8 +220,8 @@
                                 <TextBlock Name="FreezeImageToggleText" Text=" FREEZE IMAGE " FontSize="{DynamicResource AppFontSize9}" VerticalAlignment="Center" Margin="4,0,4,0" />
                             </StackPanel>
                         </Button>
-                        <Border Width="1" Background="{DynamicResource AppBorderBrush}" Margin="0,4" Opacity="0.5" />
-                        <StackPanel Name="FreezePresetsPanel" Classes="SpeedPresetRows" Orientation="Vertical" VerticalAlignment="Center">
+                        <Border Name="FreezePresetsDivider" Width="1" Background="{DynamicResource AppBorderBrush}" Margin="0,4" Opacity="0.5" IsVisible="False" />
+                        <StackPanel Name="FreezePresetsPanel" Classes="SpeedPresetRows" Orientation="Vertical" VerticalAlignment="Center" IsVisible="False">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <Button Name="FreezePreset05" Classes="SpeedPreset" Content="0.5s" ToolTip.Tip="Freeze for 0.5s" Cursor="Hand"/>
                                 <Button Name="FreezePreset10" Classes="SpeedPreset" Content="1.0s" ToolTip.Tip="Freeze for 1.0s" Cursor="Hand"/>
@@ -249,16 +251,16 @@
                         <Button Name="AiCommentaryBtn" Classes="Primary" Content="AI CAPTIONS" MinWidth="140"
                                 HorizontalContentAlignment="Center"
                                 ToolTip.Tip="Writes on-screen AI commentary captions that light up word by word (does not create a voice). Requires online AI. You see a preview before anything is kept."/>
-                        <Button Name="AiSmartZoomBtn" Classes="Primary" Content="AI SMART ZOOM" MinWidth="140"
+                        <Button Name="AiSmartZoomBtn" Classes="Primary" Content="🎯 AI SMART ZOOM" MinWidth="140"
                                 HorizontalContentAlignment="Center"
                                 ToolTip.Tip="The camera zooms in and follows one person or thing through the selected block. You see a preview before anything is kept."/>
-                        <Button Name="ZoomSegmentBtn" Classes="ZoomAction" Content="🔍 ZOOM-IN" MinWidth="140"
+                        <Button Name="ZoomSegmentBtn" Classes="ZoomAction" Content="🔍 ZOOM BY HAND" MinWidth="140"
                                 HorizontalContentAlignment="Center"
                                 ToolTip.Tip="Draw a zoom (punch-in) box. If no speed block is selected, one is created for you at normal speed."/>
                     </StackPanel>
                 </Grid>
 
-                <Grid Grid.Row="3" Margin="10,2,10,0" ColumnDefinitions="*, Auto, *">
+                <Grid Grid.Row="4" Margin="10,2,10,0" ColumnDefinitions="*, Auto, *">
 
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6"
                                 HorizontalAlignment="Left" VerticalAlignment="Center">
@@ -291,7 +293,7 @@
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="20">
                         <StackPanel Orientation="Vertical" Spacing="2" Margin="0,0,0,0" VerticalAlignment="Center">
                             <TextBlock Text="SPEED" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" />
-                            <controls:SpinningWheelSlider Name="PendingSpeedSlider" AutomationProperties.Name="Selected segment speed" Value="10" Width="160" MinHeight="{DynamicResource AppButtonMinHeight}" HorizontalAlignment="Center" ToolTip.Tip="Precise speed for the active segment" />
+                            <controls:SpinningWheelSlider Name="PendingSpeedSlider" AutomationProperties.Name="Selected block speed" Value="10" Width="160" MinHeight="{DynamicResource AppButtonMinHeight}" HorizontalAlignment="Center" ToolTip.Tip="Precise speed for the selected block" />
                             <TextBlock Name="PendingSpeedLabel" Text="1.1x" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,-2,0,0" />
                         </StackPanel>
                         <StackPanel Name="SpeedPresetsPanel" Classes="SpeedPresetRows" Orientation="Vertical" VerticalAlignment="Center" Margin="0,0,0,0">
@@ -329,10 +331,10 @@
             <Border Grid.Column="1" MinWidth="280" MaxWidth="360" Background="{DynamicResource AppPanelBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1,0,0,0" Padding="12">
                 <Grid RowDefinitions="Auto, Auto, Auto, *, Auto, Auto, Auto, Auto">
                     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,5">
-                        <TextBlock Grid.Column="0" Text="SPEED SEGMENTS" Foreground="{DynamicResource AppAccentBrush}" FontSize="{DynamicResource AppFontSize13}" FontWeight="Bold" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="0" Text="SPEED BLOCKS" Foreground="{DynamicResource AppAccentBrush}" FontSize="{DynamicResource AppFontSize13}" FontWeight="Bold" VerticalAlignment="Center"/>
                         <Button Grid.Column="1" Name="HelpButton" Content="?" MinWidth="{DynamicResource AppSpeedPresetMinWidth}" MinHeight="{DynamicResource AppButtonMinHeight}" Padding="0" FontWeight="Bold" Classes="Secondary" AutomationProperties.Name="Open speed editor help" ToolTip.Tip="New here? Click for simple step-by-step help."/>
                     </Grid>
-                    <TextBlock Grid.Row="1" Name="SegmentCountLabel" Text="No segments" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" Margin="0,0,0,8"/>
+                    <TextBlock Grid.Row="1" Name="SegmentCountLabel" Text="No blocks" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" Margin="0,0,0,8"/>
                     <Border Grid.Row="2" Background="{DynamicResource AppSurfaceBrush}" CornerRadius="4" Padding="8,6" Margin="0,0,0,10">
                         <StackPanel Spacing="4">
                             <TextBlock Text="WHAT THE COLOURS MEAN" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize9}" FontWeight="Bold"/>
@@ -373,7 +375,7 @@
                                        FontSize="{DynamicResource AppFontSize9}" FontWeight="Bold"/>
                             <ScrollViewer MaxHeight="72" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                 <TextBlock Name="BottomStatusLabel"
-                                           Text="Set speed, then press MARK END to create a segment. Start is auto-inferred."
+                                           Text="Set speed, then press MARK END to create a block. Start is auto-inferred."
                                            Foreground="{DynamicResource AppTextPrimaryBrush}"
                                            FontSize="{DynamicResource AppFontSize11}"
                                            TextWrapping="Wrap"/>
@@ -405,22 +407,22 @@
 
                     <StackPanel Grid.Row="7" Orientation="Vertical" Spacing="8" Margin="0,0,0,0" HorizontalAlignment="Stretch">
                         <Button Name="RemoveZoomBtn" Classes="ZoomAction" Content="🔍 REMOVE ZOOM" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" IsVisible="False" ToolTip.Tip="Take the zoom off this block. The block itself and its speed stay exactly as they are."/>
-                        <Button Name="DeleteSegmentBtn" Classes="Danger" Content="DELETE SEGMENT" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" IsVisible="False" ToolTip.Tip="Delete the selected speed segment. Ctrl+Z brings it back." />
-                        <Button Name="ClearAllSegmentsBtn" Classes="Danger" Content="CLEAR ALL SEGMENTS" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" IsVisible="False" ToolTip.Tip="Remove all speed segments">
+                        <Button Name="DeleteSegmentBtn" Classes="Danger" Content="DELETE BLOCK" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" IsVisible="False" ToolTip.Tip="Delete the selected speed block. Ctrl+Z brings it back." />
+                        <Button Name="ClearAllSegmentsBtn" Classes="Danger" Content="CLEAR ALL BLOCKS" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" IsVisible="False" ToolTip.Tip="Remove all speed blocks">
                             <Button.Flyout>
                                 <Flyout Placement="Top" FlyoutPresenterClasses="CustomFlyout">
                                     <StackPanel Spacing="14" Margin="22" MinWidth="380" MaxWidth="440">
                                         <StackPanel Orientation="Horizontal" Spacing="12">
                                             <TextBlock Text="🧹" FontSize="{DynamicResource AppFontSize28}" VerticalAlignment="Center"/>
-                                            <TextBlock Text="Erase every segment?" FontSize="{DynamicResource AppFontSize18}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                            <TextBlock Text="Erase every block?" FontSize="{DynamicResource AppFontSize18}" FontWeight="Bold" Foreground="{DynamicResource AppTextPrimaryBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
                                         </StackPanel>
-                                        <TextBlock Name="ClearAllDetailText" Text="Every speed segment will be removed." FontSize="{DynamicResource AppFontSize13}" Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"/>
+                                        <TextBlock Name="ClearAllDetailText" Text="Every speed block will be removed." FontSize="{DynamicResource AppFontSize13}" Foreground="{DynamicResource AppTextMutedBrush}" TextWrapping="Wrap"/>
                                         <Border Background="{DynamicResource AppOverlayBrush}" BorderBrush="{DynamicResource AppWarningBrush}" BorderThickness="1" CornerRadius="6" Padding="12,10">
                                             <TextBlock Text="Every speed block and every zoom on the timeline is erased in one go. Changed your mind? Press Ctrl+Z to bring them all back." Foreground="{DynamicResource AppWarningBrush}" FontSize="{DynamicResource AppFontSize12}" FontWeight="SemiBold" TextWrapping="Wrap"/>
                                         </Border>
                                         <Grid ColumnDefinitions="*,12,*">
                                             <Button Grid.Column="0" Name="KeepAllSegmentsBtn" Classes="Secondary" Content="KEEP THEM" MinHeight="48" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" ToolTip.Tip="Close this box and change nothing."/>
-                                            <Button Grid.Column="2" Name="ConfirmClearAllSegmentsBtn" Classes="Danger" Content="ERASE ALL" MinHeight="48" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" ToolTip.Tip="Remove every speed segment. Ctrl+Z brings them back." />
+                                            <Button Grid.Column="2" Name="ConfirmClearAllSegmentsBtn" Classes="Danger" Content="ERASE ALL" MinHeight="48" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" ToolTip.Tip="Remove every speed block. Ctrl+Z brings them back." />
                                         </Grid>
                                     </StackPanel>
                                 </Flyout>
@@ -445,7 +447,7 @@
                             <Button Grid.Column="1" Name="AcceptGranularBtn" Classes="Success" Content="APPLY"
                                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                     Margin="4,0,0,0"
-                                    ToolTip.Tip="Apply all speed segments and return"/>
+                                    ToolTip.Tip="Apply all speed blocks and return"/>
                         </Grid>
                     </StackPanel>
                 </Grid>

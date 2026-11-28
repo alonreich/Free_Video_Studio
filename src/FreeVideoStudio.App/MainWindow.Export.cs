@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -389,8 +389,9 @@ public partial class MainWindow
             ApplyPeakFlattening = _applyPeakFlattening,
             IsMobileFormat = this.FindControl<Avalonia.Controls.ToggleSwitch>("PortraitModeCheckbox")?.IsChecked ?? true,
             EnableFades = this.FindControl<Avalonia.Controls.ToggleSwitch>("EnableFadeCheckbox")?.IsChecked ?? true,
-            ShowTeammates = this.FindControl<Avalonia.Controls.ToggleSwitch>("TeammatesCheckbox")?.IsChecked ?? false,
+            ShowTeammates = IsTeammates,
             ShowSpectating = IsSpectating,
+            HiddenHudKeys = _viewModel.HudVisibility.Hidden.ToArray(),
             MemeFile = memeFile,
             MemeAtStart = !string.IsNullOrWhiteSpace(memeFile) &&
                           Infrastructure.MemePlacementStore.Get(memeFile!) == Infrastructure.MemePlacement.Start,

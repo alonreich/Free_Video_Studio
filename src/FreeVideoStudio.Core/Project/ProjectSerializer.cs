@@ -32,11 +32,13 @@ public static class ProjectSerializer
 
     private const string KeyOverlayText = "overlay_text";
 
+    private const string KeyHudToggles = "hud_toggles";
+
     private static readonly HashSet<string> KnownKeys = new(StringComparer.Ordinal)
     {
         KeyFormat, KeySchema, KeyTitle, KeyCreated, KeyModified, KeySource, KeyBaseSpeed,
         KeyCutStart, KeyTrimmed, KeySegments, KeyCuts, KeyMemes, KeyAudio, KeyExport,
-        KeyMask, KeyMerge, KeyCaptions, KeyFreeze, KeyOverlayText,
+        KeyMask, KeyMerge, KeyCaptions, KeyFreeze, KeyOverlayText, KeyHudToggles,
     };
 
     public static JsonObject Write(ProjectDocument doc)
@@ -76,6 +78,15 @@ public static class ProjectSerializer
         root[KeyTrimmed] = doc.TrimmedDurationMs;
         root[KeyFreeze] = new JsonObject { ["time_ms"] = doc.FreezeTimeMs, ["duration_s"] = doc.FreezeDurationS };
         root[KeyOverlayText] = doc.OverlayText ?? string.Empty;
+        if (doc.HudToggles is { Count: > 0 } toggles)
+        {
+            var togglesObj = new JsonObject();
+            foreach (var pair in toggles.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                if (!string.IsNullOrWhiteSpace(pair.Key)) togglesObj[pair.Key] = pair.Value;
+            }
+            root[KeyHudToggles] = togglesObj;
+        }
 
         JsonArray segments = new();
         foreach (SpeedSegment s in doc.Segments)
@@ -385,6 +396,7 @@ public static class ProjectSerializer
             FreezeTimeMs = double.IsFinite(freezeMs) && freezeMs >= 0 ? freezeMs : -1,
             FreezeDurationS = double.IsFinite(freezeSec) && freezeSec > 0 ? freezeSec : 1.0,
             OverlayText = ReadString(root, KeyOverlayText, string.Empty) ?? string.Empty,
+            HudToggles = ReadHudToggles(root[KeyHudToggles] as JsonObject),
             Segments = segments,
             Cuts = cuts,
             Memes = memes,
@@ -424,6 +436,18 @@ public static class ProjectSerializer
             songs.Add(new ProjectMusicSong(path!, full, inSec, outSec, ReadBool(o, "user_trimmed", false)));
         }
         return songs;
+    }
+
+    private static IReadOnlyDictionary<string, bool>? ReadHudToggles(JsonObject? o)
+    {
+        if (o == null) return null;
+        var map = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in o)
+        {
+            if (string.IsNullOrWhiteSpace(pair.Key) || pair.Value is not JsonValue v) continue;
+            if (v.TryGetValue(out bool b)) map[pair.Key] = b;
+        }
+        return map.Count > 0 ? map : null;
     }
 
     private static string? ReadString(JsonObject? o, string key, string? fallback)

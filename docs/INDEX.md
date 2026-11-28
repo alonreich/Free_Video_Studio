@@ -43,7 +43,7 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   AiCameraSmoothnessTests.cs                 01 TL-AITRACKING (AICAMSMOOTH_01)
   AiSetup.cs                                 04 UI-AIMODE | 10 SYS-AICAPABILITY (AICAPABILITY_01)
   AiModeTests.cs                             04 UI-AIMODE
-  AiSubjectPickerWindow.axaml(.cs/.Correction.cs/.FrameView.cs) 04 UI-AIZOOM (AIPICKERELLIPSE_01, AIZOOMWIZARD_01, AIPICKFOCUS_01, AIPICKZOOM_01, AIPICKNEXT_01, AIPICKSIZE_01, AIPICKPORTRAIT_01) | 10
+  AiSubjectPickerWindow.axaml(.cs/.Correction.cs/.FrameView.cs/.FinalShot.cs) 04 UI-AIZOOM (AIPICKERELLIPSE_01, AIZOOMWIZARD_01/02, AIPICKFOCUS_01, AIPICKZOOM_01, AIPICKNEXT_01, AIPICKSIZE_01, AIPICKPORTRAIT_01, AIPICKSHOT_01) | 10
   AiZoomPreviewModalWindow.cs                04 UI-AIZOOM (AIPREVIEW_01)
 ⚠ AiTrajectorySmoother.cs                    01 03
   AGENTS.md                                  GOV | README.md §0 (pointer only, ONBOARD_01)
@@ -542,6 +542,17 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   ZoomBoxSnap.cs                             01 TL-ZOOM (ZOOMSNAP_01)
   PreviewKeySeek.cs                          04 UI-GRANULAR (ARROWSTEP_01)
   FinalLayoutPreview.cs                      04 UI-GRANULAR (FINALLAYOUT_01)
+  HudSnapshots.cs                            04 UI-GRANULAR (HUDSNAP_01 HudSnapshotPlan, HudSnapshotSet, HudSnapshotWorker)
+  HudPreviewController.cs                    04 UI-GRANULAR (HUDSNAP_01, HUDSNAPSETTING_01)
+  HudElements.cs                             01 TL-PORTRAIT | 04 UI-GRANULAR (HUDELEMENTS_01 HudElements, HudVisibility, HudElementInfo)
+  HudChoiceMemory.cs                         04 UI-GRANULAR | 05 SYS-SETTINGSSCHEMA (HUDREMEMBER_01)
+  MainViewModel.Hud.cs                       04 UI-GRANULAR (HUDELEMENTS_01 HudToggles, ReloadHudToggles, DensityFor)
+  HudToggleItem.cs                           04 UI-GRANULAR (HUDELEMENTS_01)
+  HudElementDefaultRow.cs                    04 UI-GRANULAR | 05 SYS-SETTINGSSCHEMA (HUDREMEMBER_01)
+  MainWindow.HudToggles.cs                   04 UI-GRANULAR (HUDELEMENTS_01 hover, pane visibility, recovery map)
+  CropToolWindow.ProfileKind.cs              04 UI-GRANULAR (HUDELEMENTS_01 NEW BLANK, game type)
+  HudElementsTests.cs                        01 TL-PORTRAIT | 06 PROJ-SCHEMA (HUDELEMENTS_01)
+  HudSwitchboardTests.cs                     04 UI-GRANULAR (HUDELEMENTS_01, HUDREMEMBER_01)
   ShareCover.cs                              03 FFM-SCRAPER (SHARECOVER_01)
   ShareCoverTests.cs                         03 FFM-SCRAPER (SHARECOVER_01)
   MainWindow.FinalLayout.cs                  04 UI-GRANULAR (FINALLAYOUT_01)
@@ -611,6 +622,11 @@ MERGESESSIONVIDEOS_01                        05 SYS-RECOVERY
 DONECLEAN_02                                 05 SYS-RECOVERY | 04 UI-SAFEGUARDS
 WIZMERGEPREVIEW_01                           02 AUD-MUSICWIN
 FINALLAYOUT_01                               04 UI-GRANULAR | 03 (HudCanvasLayers)
+HUDSNAP_01                                   04 UI-GRANULAR   [HudSnapshots.cs, HudPreviewController.cs]
+HUDPLATE_01                                  04 UI-GRANULAR   [PhoneFrameMockup.ShowHudSnapshots]
+HUDSNAPSETTING_01                            04 UI-GRANULAR | 05   [AppSettings.ShowHudSnapshots]
+HUDELEMENTS_01                               04 UI-GRANULAR | 01 TL-PORTRAIT | 06 PROJ-SCHEMA   [HudElements.cs, MainViewModel.Hud.cs]
+HUDREMEMBER_01                               04 UI-GRANULAR | 05 SYS-SETTINGSSCHEMA   [HudChoiceMemory.cs, DefaultValues.HudElementDefaults]
 SHARECOVER_01                                03 FFM-SCRAPER
 MEMEFLOW_01                                 04 UI-MEMEFLOW | 06 PROJ-SCHEMA | 07 UNDO-MIGRATION
 MEMEMODEPREF_01                             04 UI-MEMEFLOW | 05 SYS-STORAGE-TABLE
@@ -1755,6 +1771,13 @@ SWITCHPROMPT_01                              06 PROJ-CLOSEGUARD
 LAYOUTLOOP_01                                01   [code-only: TimelineLanesControl.axaml.cs]
 ZOOMSIZE_02                                  01   [code-only: TimelineLanesControl.axaml.cs]
 SEGLANEHALF_01                               04 UI-GRANULAR   [GranularSpeedEditorWindow.SegmentLaneHeight]
+SPEEDGUIDE_01                                04 UI-GRANULAR   [GranularSpeedEditorWindow.Guide.cs]
+FREEZEREVEAL_01                              04 UI-GRANULAR   [GranularSpeedEditorWindow.Guide.cs]
+NEUTRALWORD_01                               04 UI-GRANULAR   [picker, review, Settings, Main App texts]
+BLOCKWORD_01                                 04 UI-GRANULAR   [GranularSpeedEditorWindow*.cs/.axaml texts]
+AIPICKSHOT_01                                04 UI-AIZOOM   [AiSubjectPickerWindow.FinalShot.cs]
+AIZOOMEFFECTIVE_01                           04 UI-AIZOOM | 01 TL-AITRACKING   [AiTrajectorySmoother.EffectiveBaseScale]
+AIREVIEWPLAYER_01                            04 UI-AIZOOM   [AiZoomPreviewModalWindow.cs, AiZoomPreviewBounds]
 AIPICKZOOM_01                                04 UI-AIZOOM   [AiSubjectPickerWindow.FrameView.cs]
 AIPICKNEXT_01                                04 UI-AIZOOM   [AiSubjectPickerWindow.OnNextImageClickedAsync]
 AIPICKSIZE_01                                04 UI-AIZOOM   [AiSubjectPickerWindow.ShowOverAsync]

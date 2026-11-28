@@ -480,6 +480,9 @@ public class AppSettings : FreezableSettings
     public bool KeepOverlayTextBetweenVideos { get => _keepOverlayTextBetweenVideosField; set => Set(ref _keepOverlayTextBetweenVideosField, value); }
     private bool _keepOverlayTextBetweenVideosField = false;
 
+    public bool? ShowHudSnapshots { get => _showHudSnapshotsField; set => Set(ref _showHudSnapshotsField, value); }
+    private bool? _showHudSnapshotsField;
+
     public bool ConfirmVoiceOverDeleteTake { get => _confirmVoiceOverDeleteTakeField; set => Set(ref _confirmVoiceOverDeleteTakeField, value); }
     private bool _confirmVoiceOverDeleteTakeField = true;
 
@@ -801,6 +804,59 @@ public class DefaultValues : FreezableSettings
     public double StartSpeed => SpeedBehavior == ValueDefaultBehavior.RememberLast ? LastSpeed : DefaultSpeed;
     public int StartQualityIndex => QualityBehavior == ValueDefaultBehavior.RememberLast ? LastQualityIndex : QualityIndex;
 
+    public Dictionary<string, string>? HudElementDefaults
+    {
+        get => _hudElementDefaultsField;
+        set => Set(ref _hudElementDefaultsField, value is null ? null : new Dictionary<string, string>(value, StringComparer.OrdinalIgnoreCase));
+    }
+    private Dictionary<string, string>? _hudElementDefaultsField;
+
+    public const string HudTeamKey = "team";
+
+    public static string HudDefaultsKey(string profile, string element)
+        => ((profile ?? string.Empty).Trim() + "|" + (element ?? string.Empty).Trim()).ToLowerInvariant();
+
+    private bool TryReadHudEntry(string profile, string element, out CheckboxDefaultBehavior behavior, out bool last)
+    {
+        behavior = CheckboxDefaultBehavior.AlwaysOn;
+        last = true;
+        if (HudElementDefaults == null || !HudElementDefaults.TryGetValue(HudDefaultsKey(profile, element), out string? raw) || string.IsNullOrWhiteSpace(raw))
+            return false;
+        string[] parts = raw.Split(':');
+        if (!Enum.TryParse(parts[0], ignoreCase: true, out behavior) || !Enum.IsDefined(behavior)) return false;
+        last = parts.Length < 2 || parts[1] != "0";
+        return true;
+    }
+
+    public CheckboxDefaultBehavior HudBehavior(string profile, string element)
+    {
+        if (TryReadHudEntry(profile, element, out var behavior, out _)) return behavior;
+        return string.Equals(element, HudTeamKey, StringComparison.OrdinalIgnoreCase) ? ShowTeammatesBehavior : CheckboxDefaultBehavior.AlwaysOn;
+    }
+
+    public bool HudLastChoice(string profile, string element)
+    {
+        if (TryReadHudEntry(profile, element, out _, out bool last)) return last;
+        return !string.Equals(element, HudTeamKey, StringComparison.OrdinalIgnoreCase) || ShowTeammates;
+    }
+
+    public bool StartHudElement(string profile, string element) => Resolve(HudBehavior(profile, element), HudLastChoice(profile, element));
+
+    private void WriteHudEntry(string profile, string element, CheckboxDefaultBehavior behavior, bool last)
+    {
+        var next = HudElementDefaults == null
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(HudElementDefaults, StringComparer.OrdinalIgnoreCase);
+        next[HudDefaultsKey(profile, element)] = behavior + ":" + (last ? "1" : "0");
+        HudElementDefaults = next;
+    }
+
+    public void SetHudBehavior(string profile, string element, CheckboxDefaultBehavior behavior)
+        => WriteHudEntry(profile, element, behavior, HudLastChoice(profile, element));
+
+    public void RememberHudElement(string profile, string element, bool on)
+        => WriteHudEntry(profile, element, HudBehavior(profile, element), on);
+
     public void RememberChoices(bool portrait, bool showTeammates, bool enableFade, double speed, int qualityIndex)
     {
         PortraitMode = portrait;
@@ -817,6 +873,7 @@ public class DefaultValues : FreezableSettings
 [JsonSerializable(typeof(DefaultValues))]
 [JsonSerializable(typeof(CheckboxDefaultBehavior))]
 [JsonSerializable(typeof(ValueDefaultBehavior))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(AudioFixPrompt))]
 [JsonSerializable(typeof(ThemeMode))]
 [JsonSerializable(typeof(FontScale))]

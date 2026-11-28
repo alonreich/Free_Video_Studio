@@ -1,4 +1,4 @@
-namespace FreeVideoStudio.App.Models;
+﻿namespace FreeVideoStudio.App.Models;
 
 public sealed record EditorPreviewLayers(
     MusicWizardResult? Music,
@@ -7,6 +7,12 @@ public sealed record EditorPreviewLayers(
     bool ShowSpectating = true)
 {
     public static readonly EditorPreviewLayers None = new(null, null);
+
+    public System.Collections.Generic.IReadOnlyCollection<string>? HiddenHudKeys { get; init; }
+
+    public FreeVideoStudio.Core.Media.HudVisibility HudVisibility => HiddenHudKeys != null
+        ? new FreeVideoStudio.Core.Media.HudVisibility(HiddenHudKeys)
+        : FreeVideoStudio.Core.Media.HudVisibility.FromLegacy(ShowTeammates, ShowSpectating);
 
     public bool HasMusic => Music != null && !string.IsNullOrEmpty(Music.MusicFilePath);
 

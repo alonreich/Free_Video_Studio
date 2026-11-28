@@ -37,8 +37,9 @@ public partial class MainWindow
     internal Models.EditorPreviewLayers CurrentEditorPreviewLayers() =>
         new(_musicWizardResult, _voiceOverResult)
         {
-            ShowTeammates = TeammatesCheckboxCtl?.IsChecked == true,
-            ShowSpectating = SpectatingCheckboxCtl?.IsChecked == true
+            ShowTeammates = _viewModel.IsTeammates,
+            ShowSpectating = _viewModel.IsSpectating,
+            HiddenHudKeys = _viewModel.HudVisibility.Hidden.ToArray()
         };
 
     private double PreviewVideoEndMs() => _trimEndMs > 0 ? _trimEndMs : _loadedVideoDurationMs;

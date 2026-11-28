@@ -10,13 +10,13 @@ What people who use Free Video Studio read: plain-English notes about what chang
 
 ## Upcoming
 
-- **Better Previews:** In portrait mode the preview marks where each in-game overlay of your mask will appear, including Teammate HP and Spectating eye when they are on. Left and Right now jump 2 seconds instead of 5; Ctrl or Shift with the arrows still steps one frame.
+- **Your Own Overlay Switches:** Every part you keep in Crop Tools gets its own named switch, saved per video, with Always on/off/Remember in Settings. Hover one to light it up in the faded phone preview (off in Settings). Crop Tools adds NEW BLANK profiles, plain names and a game type. Left/Right jump 2 seconds.
 
 - **Full Thumbnail in Chats:** Portrait videos now start with your whole thumbnail slightly smaller on a soft blurred border, so WhatsApp and text messages no longer cut off its top.
 
-- **Easier Speed Editor:** The zoom box shows gentle centre lines while you move it and clicks into the exact middle of the picture. Dragging along the top lane now just moves the playhead; new speed blocks come from MARK START and MARK END only, so that lane is now half as tall.
+- **Easier Speed Editor:** The zoom box shows gentle centre lines while you move it and clicks into the exact middle of the picture. A short line above the video tells you the next step, freeze lengths appear only after FREEZE IMAGE, and the top lane is half as tall.
 
-- **Simpler AI Smart Zoom:** Opens as big as the Speed Editor. Each picture starts zoomed in; zoom with the mouse wheel or the slider beside it, and in portrait mode it looks like your final video. Mark the enemy in each picture; it zooms in so you can fine-tune. Can't see them? Press Next Image.
+- **Simpler AI Smart Zoom:** Mark what to follow (a player, drone, bird…) and press Track. A yellow box and a small preview show exactly what your video will show; slide How close? to change it. The check screen has Play/Pause, a timeline, Final/Original and Keep it or Try again. Can't see the enemy? Press Next Image.
 
 - **Straight to the Video Merger:** After making two or more videos, the finished screen offers VIDEO MERGER, which opens them in the order you made them. Once a video is done, switching tools or exiting no longer warns you about leaving the editor.
 

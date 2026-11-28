@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -31,7 +31,7 @@ public partial class VideoMergerWindow
         if (portrait)
         {
             var coords = await VideoConfig.GetMobileCoordinatesAsync();
-            worker.CaptionHudRects = MobileFilterBuilder.HudCanvasRects(coords, prefs.Defaults.StartShowTeammates, true);
+            worker.CaptionHudRects = MobileFilterBuilder.HudCanvasRects(coords, Infrastructure.MaskOverlayManager.DefaultVisibility(prefs.ActiveMaskOverlay));
         }
         if (_thumbPath != null)
         {

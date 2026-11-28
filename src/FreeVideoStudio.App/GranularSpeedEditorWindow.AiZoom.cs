@@ -130,7 +130,7 @@ public partial class GranularSpeedEditorWindow
         }
         else
         {
-            btn.Content = "AI SMART ZOOM";
+            btn.Content = "🎯 AI SMART ZOOM";
             btn.Classes.Remove("Success");
             if (!btn.Classes.Contains("Primary")) btn.Classes.Add("Primary");
         }
@@ -342,7 +342,7 @@ public partial class GranularSpeedEditorWindow
         _aiPreviewModalWindow = modal;
         try
         {
-            await modal.ShowDialog(this);
+            await modal.ShowOverAsync(this);
             if (modal.Action == AiZoomPreviewAction.FixTracking)
             {
                 if (_lastAiRun != null)
@@ -1009,7 +1009,7 @@ public partial class GranularSpeedEditorWindow
             ? string.Empty
             : onlineMode
                 ? $"Sends 3 stills + this block to {AiVisionProviders.DisplayName(u2Config.Vendor)} for cloud discovery & tracking. " + AiCostEstimator.PlainCost(findEstimate, u2Config.Vendor, u2Model)
-                : $"Sends 3 pictures of this segment to {findVendor}; tracking runs 100% on this PC. " + AiCostEstimator.PlainCost(findEstimate, u1Config.Vendor, u1Model);
+                : $"Sends 3 pictures of this block to {findVendor}; tracking runs 100% on this PC. " + AiCostEstimator.PlainCost(findEstimate, u1Config.Vendor, u1Model);
 
         var eligibleBlocks = MultiBlockZoomPlan.BuildEntries(_edit.Segments, CurrentClipEndsMs(), GeminiTrackingService.MaxTrackSec)
             .Count(e => e.IsEligible);
@@ -1322,7 +1322,8 @@ public partial class GranularSpeedEditorWindow
                             allowDescribeManually: !useLocalFreeDiscovery && mode != AiMode.LocalOnly,
                             previousDescription: targetDescription,
                             portrait: _edit.IsMobileFormat,
-                            videoPath: source.VideoPath);
+                            videoPath: source.VideoPath,
+                            sourceWidth: sw, sourceHeight: sh);
                         await picker.ShowOverAsync(this);
                         if (picker.Choice == AiPickerChoice.ResampleMoments)
                         {
@@ -1994,7 +1995,8 @@ public partial class GranularSpeedEditorWindow
                             allowDescribeManually: !blockLocalFree && mode != AiMode.LocalOnly,
                             previousDescription: blockDesc,
                             portrait: _edit.IsMobileFormat,
-                            videoPath: source.VideoPath);
+                            videoPath: source.VideoPath,
+                            sourceWidth: sw, sourceHeight: sh);
                         await picker.ShowOverAsync(this);
                         if (picker.Choice == AiPickerChoice.ResampleMoments)
                         {

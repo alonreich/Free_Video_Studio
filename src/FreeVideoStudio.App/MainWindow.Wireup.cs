@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -786,11 +786,7 @@ public partial class MainWindow
             };
         }
 
-        var teammatesCb = TeammatesCheckboxCtl;
-        if (teammatesCb != null) teammatesCb.IsCheckedChanged += (s, e) => { SaveRecoveryState(label: "toggle teammates"); _ = RefreshFinalLayoutPreviewAsync(); };
-
-        var spectatingCb = SpectatingCheckboxCtl;
-        if (spectatingCb != null) spectatingCb.IsCheckedChanged += (s, e) => { SaveRecoveryState(label: "toggle spectating"); _ = RefreshFinalLayoutPreviewAsync(); };
+        WireHudToggles();
 
         var enableFadeCb = EnableFadeCheckboxCtl;
         if (enableFadeCb != null) enableFadeCb.IsCheckedChanged += (s, e) => SaveRecoveryState(label: "toggle fade");

@@ -31,7 +31,16 @@ public static class HudConfig
         return CropConfigDefaults.Create();
     }
 
-    public static string? CropDriftType(string key)
+    public static string? CropDriftType(string key) => GuessDriftType(key);
+
+    public static string? CropDriftType(string key, JsonObject? config)
+    {
+        string? stored = HudElements.StoredAnchor(config, key);
+        if (stored == null) return GuessDriftType(key);
+        return stored == HudElements.AnchorCenter ? null : stored;
+    }
+
+    public static string? GuessDriftType(string key)
     {
         if (string.IsNullOrWhiteSpace(key)) return null;
         if (key is "stats" or "normal_hp" or "team" or "spectating" or "map" or "minimap")

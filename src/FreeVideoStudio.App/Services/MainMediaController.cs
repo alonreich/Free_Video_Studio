@@ -141,6 +141,7 @@ public class MainMediaController
         worker.EnableFades = payload.EnableFades;
         worker.ShowTeammates = payload.ShowTeammates;
         worker.ShowSpectating = payload.ShowSpectating;
+        worker.HudVisibility = payload.HiddenHudKeys != null ? new FreeVideoStudio.Core.Media.HudVisibility(payload.HiddenHudKeys) : null;
         worker.MemeFile = payload.MemeFile;
         worker.MemeAtStart = payload.MemeAtStart;
         if (payload.MemePlacements != null && payload.MemePlacements.Count > 0)

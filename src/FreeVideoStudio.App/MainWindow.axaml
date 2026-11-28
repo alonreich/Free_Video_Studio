@@ -14,6 +14,9 @@
         DragDrop.AllowDrop="True">
 
     <Window.Styles>
+        <Style Selector="Border.HudRowHot">
+            <Setter Property="Background" Value="{DynamicResource AppHoverOverlayBrush}"/>
+        </Style>
         <Style Selector="Border.DropIconPulse">
             <Style.Animations>
                 <Animation Duration="0:0:2.4" IterationCount="INFINITE">
@@ -348,15 +351,30 @@
                                 <Separator Name="InGameOverlaysSeparator" Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,6,0,6"/>
 
                                 <StackPanel Name="InGameOverlaysPanel" Spacing="2">
-                                    <TextBlock Text="IN-GAME OVERLAYS" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,3"/>
-                                    <Grid ColumnDefinitions="*, Auto">
-                                        <TextBlock Text="Teammate HP" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                        <ToggleSwitch Name="TeammatesCheckbox" IsChecked="{Binding IsTeammates, Mode=TwoWay}" IsEnabled="False" OnContent="{x:Null}" OffContent="{x:Null}" MinWidth="36" MinHeight="36" Grid.Column="1" AutomationProperties.Name="Teammate HP overlay" ToolTip.Tip="Turn this on to show your teammates' health in the video." />
-                                    </Grid>
-                                    <Grid ColumnDefinitions="*, Auto">
-                                        <TextBlock Text="Spectating Eye" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                        <ToggleSwitch Name="SpectatingCheckbox" IsChecked="{Binding IsSpectating, Mode=TwoWay}" IsEnabled="False" OnContent="{x:Null}" OffContent="{x:Null}" MinWidth="36" MinHeight="36" Grid.Column="1" AutomationProperties.Name="Spectating eye overlay" ToolTip.Tip="Turn this on to show the spectator eye counter in the video." />
-                                    </Grid>
+                                    <TextBlock Name="InGameOverlaysHeader" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize11}" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,1" Text="MASK OVERLAYS"/>
+                                    <TextBlock Name="InGameOverlaysSummary" Text="{Binding HudToggleSummary}" Foreground="{DynamicResource AppTextMutedBrush}" FontSize="{DynamicResource AppFontSize10}" HorizontalAlignment="Center" Margin="0,0,0,3"
+                                               ToolTip.Tip="How many parts of your mask profile are in this video. Hover a switch to see that part light up in the phone preview."/>
+                                    <ScrollViewer Name="HudTogglesScroller" MaxHeight="320" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                        <ItemsControl Name="HudTogglesList" ItemsSource="{Binding HudToggles}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:HudToggleItem">
+                                                    <Border Name="HudToggleRow" Classes.HudRowHot="{Binding IsHighlighted}" CornerRadius="4" Padding="2,0" Background="Transparent" MinHeight="{Binding RowMinHeight}">
+                                                        <Grid ColumnDefinitions="*, Auto">
+                                                            <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="{Binding FontSize}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,0"
+                                                                       ToolTip.Tip="{Binding Label}"/>
+                                                            <LayoutTransformControl Grid.Column="1" VerticalAlignment="Center">
+                                                                <LayoutTransformControl.LayoutTransform>
+                                                                    <ScaleTransform ScaleX="{Binding SwitchScale}" ScaleY="{Binding SwitchScale}"/>
+                                                                </LayoutTransformControl.LayoutTransform>
+                                                                <ToggleSwitch Classes="HudToggle" IsChecked="{Binding IsOn, Mode=TwoWay}" IsEnabled="{Binding IsEnabled}" OnContent="{x:Null}" OffContent="{x:Null}" MinWidth="36" MinHeight="36"
+                                                                              AutomationProperties.Name="{Binding AccessibleName}" ToolTip.Tip="{Binding Tip}"/>
+                                                            </LayoutTransformControl>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
                                 </StackPanel>
 
                                 <Separator Background="{DynamicResource AppBorderBrush}" Height="1" Margin="0,6,0,6"/>

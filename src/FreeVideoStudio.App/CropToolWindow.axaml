@@ -34,14 +34,19 @@
                     Padding="16,8">
                 <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto">
                     <TextBlock Text="Profile:" Foreground="{DynamicResource AppTextPrimaryBrush}" VerticalAlignment="Center" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSize12}"/>
-                    <ComboBox Name="CropToolMaskOverlayCombo"
-                              Grid.Column="1"
-                              Margin="8,0,14,0"
-                              MinWidth="170"
-                              MaxWidth="260"
-                              HorizontalAlignment="Left"
-                              PlaceholderText="Choose a profile to edit…"
-                              ToolTip.Tip="Pick the game profile whose HUD layout you want to edit."/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="8,0,14,0" VerticalAlignment="Center">
+                        <ComboBox Name="CropToolMaskOverlayCombo"
+                                  MinWidth="170"
+                                  MaxWidth="260"
+                                  HorizontalAlignment="Left"
+                                  PlaceholderText="Choose a profile to edit…"
+                                  ToolTip.Tip="Pick the game profile whose HUD layout you want to edit."/>
+                        <ComboBox Name="CropToolGameTypeCombo"
+                                  MinWidth="150"
+                                  IsEnabled="False"
+                                  AutomationProperties.Name="What this profile records"
+                                  ToolTip.Tip="What this profile records. The AI camera uses it to know what to follow, and Fortnite profiles get the Fortnite HUD names.&#x0a;&#x0a;Saved straight into this profile."/>
+                    </StackPanel>
                     <StackPanel Name="StepStrip" Grid.Column="2" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="0,0,14,0">
                         <Border Name="Step1Dot" Classes="WizDotActive" MinWidth="{DynamicResource AppWizStepDotSize}" MinHeight="{DynamicResource AppWizStepDotSize}" CornerRadius="12" VerticalAlignment="Center">
                             <TextBlock Name="Step1Icon" Classes="WizIconOn" Text="1" FontWeight="Bold" FontSize="{DynamicResource AppFontSize10}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -98,7 +103,10 @@
                     </StackPanel>
                     <Button Name="CropToolHelpButton" Grid.Column="7" Classes="Secondary" Content="?" MinWidth="{DynamicResource AppSpeedPresetMinWidth}" MinHeight="{DynamicResource AppButtonMinHeight}" Padding="0" FontWeight="Bold" VerticalAlignment="Center" Margin="8,0,0,0" AutomationProperties.Name="Show me around the crop tools" ToolTip.Tip="New here? Play the short walkthrough that points out what everything on this screen does."/>
                     <Button Name="CropToolAiSettingsButton" Grid.Column="8" Classes="Secondary" Content="⚙ AI" MinWidth="{DynamicResource AppSpeedPresetMinWidth}" MinHeight="{DynamicResource AppButtonMinHeight}" Padding="6,0" FontWeight="Bold" VerticalAlignment="Center" Margin="8,0,0,0" AutomationProperties.Name="AI Settings" ToolTip.Tip="Configure your AI provider and key for Magic Wand HUD suggestions."/>
-                    <Button Name="CreateMaskOverlayBtn" Grid.Column="6" Classes="Primary" Content="SAVE AS NEW" ToolTip.Tip="Copy the profile you have selected into a new profile with this name. The original is left alone." FontSize="{DynamicResource AppFontSize10}" IsEnabled="False" />
+                    <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <Button Name="CreateMaskOverlayBtn" Classes="Primary" Content="SAVE AS NEW" ToolTip.Tip="Copy the profile you have selected into a new profile with this name. The original is left alone." FontSize="{DynamicResource AppFontSize10}" IsEnabled="False" />
+                        <Button Name="CreateBlankMaskOverlayBtn" Classes="Secondary" Content="NEW BLANK" ToolTip.Tip="Start a brand-new, empty profile with this name: no HUD boxes copied from another game. Then draw only the parts you want." FontSize="{DynamicResource AppFontSize10}" IsEnabled="False" />
+                    </StackPanel>
                 </Grid>
             </Border>
 

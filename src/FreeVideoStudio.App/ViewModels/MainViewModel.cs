@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -13,7 +13,7 @@ using FreeVideoStudio.Core.Media;
 
 namespace FreeVideoStudio.App.ViewModels;
 
-public sealed class MainViewModel : ViewModelBase
+public sealed partial class MainViewModel : ViewModelBase
 {
     private readonly ApplicationPaths _paths;
     private readonly ProjectRecoveryService _recoveryService;
@@ -170,9 +170,10 @@ public sealed class MainViewModel : ViewModelBase
 
     public bool IsTeammates
     {
-        get => _isTeammates;
+        get => FindHudToggle(HudTeamKey)?.IsOn ?? _isTeammates;
         set
         {
+            SetHudToggleProgrammatic(HudTeamKey, value);
             if (SetProperty(ref _isTeammates, value))
                 NotifyStateDirty();
         }
@@ -180,9 +181,10 @@ public sealed class MainViewModel : ViewModelBase
 
     public bool IsSpectating
     {
-        get => _isSpectating;
+        get => FindHudToggle(HudSpectatingKey)?.IsOn ?? _isSpectating;
         set
         {
+            SetHudToggleProgrammatic(HudSpectatingKey, value);
             if (SetProperty(ref _isSpectating, value))
                 NotifyStateDirty();
         }
@@ -351,6 +353,7 @@ public sealed class MainViewModel : ViewModelBase
         IsPortraitMode = d.StartPortrait;
         IsTeammates = d.StartShowTeammates;
         IsSpectating = true;
+        ReloadHudToggles(SettingsManager.Instance.ActiveMaskOverlay, resetToDefaults: true);
         IsEnableFade = d.StartEnableFade;
 
         string stateFile = _paths.SessionStateFile;
@@ -383,6 +386,7 @@ public sealed class MainViewModel : ViewModelBase
             IsTeammates = false;
             IsSpectating = false;
         }
+        ReloadHudToggles(profileName, resetToDefaults: !string.Equals(profileName, HudProfileName, StringComparison.OrdinalIgnoreCase));
     }
 
     public void ResetEditingStateForNewVideo()

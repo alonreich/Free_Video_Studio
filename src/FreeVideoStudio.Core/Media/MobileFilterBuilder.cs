@@ -16,7 +16,18 @@ public class MobileFilterBuilder
         string? txtInputLabel = null,
         bool useCuda = false,
         string originalResolution = "1920x1080")
+        => Build(inputMainPad, inputHudPad, mobileCoords, HudVisibility.FromLegacy(showTeammates, showSpectating), txtInputLabel, useCuda, originalResolution);
+
+    public static (string filterChain, string outputLabel) Build(
+        string inputMainPad,
+        string inputHudPad,
+        JsonObject mobileCoords,
+        HudVisibility visibility,
+        string? txtInputLabel = null,
+        bool useCuda = false,
+        string originalResolution = "1920x1080")
     {
+        visibility ??= HudVisibility.AllVisible;
         var parts = new List<string>();
         var scales = mobileCoords["scales"]?.AsObject() ?? new JsonObject();
         var overlays = mobileCoords["overlays"]?.AsObject() ?? new JsonObject();
@@ -32,8 +43,7 @@ public class MobileFilterBuilder
                 string key = kvp.Key;
 
                 if (HudConfig.IsRetiredRole(key)) continue;
-                if (key == "spectating" && !showSpectating) continue;
-                else if (key == "team" && !showTeammates) continue;
+                if (!visibility.IsVisible(key)) continue;
 
                 activeLayers.RegisterLayer(mobileCoords, key, key, key, key);
             }
@@ -72,7 +82,7 @@ public class MobileFilterBuilder
                 var sourceRect = CoordinateMath.InverseTransformFromContentAreaInt(
                     (layer.UiRect[2], layer.UiRect[3], layer.UiRect[0], layer.UiRect[1]),
                     originalResolution,
-                    HudConfig.CropDriftType(layer.ConfKey));
+                    HudConfig.CropDriftType(layer.ConfKey, mobileCoords));
 
                 int sx = sourceRect.x, sy = sourceRect.y, sw = sourceRect.w, sh = sourceRect.h;
 
@@ -144,10 +154,17 @@ public class MobileFilterBuilder
     }
 
     public static IReadOnlyList<(double X, double Y, double W, double H)> HudCanvasRects(JsonObject? mobileCoords, bool showTeammates, bool showSpectating)
-        => HudCanvasLayers(mobileCoords, showTeammates, showSpectating).Select(l => (l.X, l.Y, l.W, l.H)).ToList();
+        => HudCanvasRects(mobileCoords, HudVisibility.FromLegacy(showTeammates, showSpectating));
 
-    public static IReadOnlyList<HudCanvasLayer> HudCanvasLayers(JsonObject? mobileCoords, bool showTeammates, bool showSpectating)
+    public static IReadOnlyList<(double X, double Y, double W, double H)> HudCanvasRects(JsonObject? mobileCoords, HudVisibility visibility)
+        => HudCanvasLayers(mobileCoords, visibility).Select(l => (l.X, l.Y, l.W, l.H)).ToList();
+
+    public static IReadOnlyList<HudCanvasLayer> HudCanvasLayers(JsonObject? mobileCoords, bool showTeammates, bool showSpectating, string? originalResolution = null)
+        => HudCanvasLayers(mobileCoords, HudVisibility.FromLegacy(showTeammates, showSpectating), originalResolution);
+
+    public static IReadOnlyList<HudCanvasLayer> HudCanvasLayers(JsonObject? mobileCoords, HudVisibility visibility, string? originalResolution = null)
     {
+        visibility ??= HudVisibility.AllVisible;
         var result = new List<HudCanvasLayer>();
         if (mobileCoords?["crops_1080p"] is not JsonObject crops) return result;
         var layers = new List<LayerSpec>();
@@ -155,19 +172,22 @@ public class MobileFilterBuilder
         {
             string key = kvp.Key;
             if (HudConfig.IsRetiredRole(key)) continue;
-            if (key == "spectating" && !showSpectating) continue;
-            if (key == "team" && !showTeammates) continue;
+            if (!visibility.IsVisible(key)) continue;
             layers.RegisterLayer(mobileCoords, key, key, key, key);
         }
         foreach (var l in layers.OrderBy(l => l.Z).ThenBy(l => l.ConfKey, StringComparer.OrdinalIgnoreCase))
         {
             double w = l.UiRect[0] * l.Scale, h = l.UiRect[1] * l.Scale;
-            if (w > 1 && h > 1) result.Add(new HudCanvasLayer(l.ConfKey, l.Pos.x, l.Pos.y, w, h, l.Z));
+            if (w <= 1 || h <= 1) continue;
+            var src = originalResolution == null
+                ? (x: 0, y: 0, w: 0, h: 0)
+                : CoordinateMath.InverseTransformFromContentAreaInt((l.UiRect[2], l.UiRect[3], l.UiRect[0], l.UiRect[1]), originalResolution, HudConfig.CropDriftType(l.ConfKey, mobileCoords));
+            result.Add(new HudCanvasLayer(l.ConfKey, l.Pos.x, l.Pos.y, w, h, l.Z, src.x, src.y, src.w, src.h));
         }
         return result;
     }
 
-    public sealed record HudCanvasLayer(string Key, double X, double Y, double W, double H, int Z);
+    public sealed record HudCanvasLayer(string Key, double X, double Y, double W, double H, int Z, int SrcX = 0, int SrcY = 0, int SrcW = 0, int SrcH = 0);
 
     public record LayerSpec(
         string Name, string ConfKey,

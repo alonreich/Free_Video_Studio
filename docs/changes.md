@@ -11,6 +11,20 @@ What ENGINEERS and AI agents read: every change, in technical terms, as it happe
 
 ## Unreleased
 
+- 2026-11-28 · HUDELEMENTS_01 / HUDREMEMBER_01 · MASK OVERLAYS pane: one switch per profile element (Crop Tools names, ellipsis + tooltip, density by count, hover highlight); `HudVisibility` drives export and previews; per-video `hud_toggles`; per-element start state in Settings. Crop Tools: NEW BLANK, generic names, game type, frozen anchors. 04 UI-GRANULAR, 01, 05, 06 (HudElements.cs, MainViewModel.Hud.cs, CropEditSession.cs)
+
+- 2026-11-28 · FAULTTIER_01 · HudPreviewController's two `OperationCanceledException` catches were empty (empty-catch count 35 > baseline 33); they now log a Debug line, so the baseline holds without being raised. Verified: Core 1254, App 1407, AV gate PASS (2772), manual run of the switchboard. 04 UI-GRANULAR (HudPreviewController.cs)
+
+- 2026-11-28 · NEUTRALWORD_01 · Universal wording for any mask profile (games, drones, wildlife): AI picker/review say "what to follow"/"target" instead of enemy/player; Settings › Editing "What you record" / "Mask profile"; Main App pane header MASK OVERLAYS. 04 UI-GRANULAR (AiSubjectPickerWindow.*, AiZoomPreviewModalWindow.cs, SettingsWindow.axaml, MainWindow.axaml)
+
+- 2026-11-28 · HUDSNAP_01 / HUDPLATE_01 / HUDSNAPSETTING_01 · Portrait preview overlays: solid plates, then 50% real snapshots cut with the export's source rects; background worker grabs quarter midpoints, then 2 refining rounds (4+3+6), exact frame when paused; immutable sets, UI-only bitmaps, generation-checked. Setting ShowHudSnapshots (auto: on with GPU, off CPU-only). 04 UI-GRANULAR
+
+- 2026-11-28 · AIPICKSHOT_01 / AIZOOMEFFECTIVE_01 / AIZOOMWIZARD_02 · AI picker: Less/Normal/More replaced by a How close? slider plus a dashed YOUR VIDEO box per marked picture and a live crop panel, both from AiTrajectorySmoother.EffectiveBaseScale (shared with the tracker; slider disabled when the cap fixes the zoom, e.g. portrait 1.95). Stage 2 removed: 🎯 Track goes straight to review. 04 UI-AIZOOM
+
+- 2026-11-28 · AIREVIEWPLAYER_01 · AI zoom review: Play/Pause like the Main App, ±2 s, seconds ruler over a click/drag timeline, FINAL VIDEO/ORIGINAL toggle, KEEP IT / TRY AGAIN; first open at the Speed Editor's bounds, then remembered (AiZoomPreviewBounds). 04 UI-AIZOOM (AiZoomPreviewModalWindow.cs)
+
+- 2026-11-28 · SPEEDGUIDE_01 / FREEZEREVEAL_01 / BLOCKWORD_01 · Speed Editor: next-step line above the video; freeze length buttons hidden until a freeze exists and glow left to right for 2 s on FREEZE IMAGE; all texts say "block"; ZOOM-IN is now ZOOM BY HAND. 04 UI-GRANULAR (GranularSpeedEditorWindow.Guide.cs, .axaml, .axaml.cs)
+
 - 2026-11-28 · AIPICKZOOM_01 / AIPICKNEXT_01 / AIPICKSIZE_01 / AIPICKPORTRAIT_01 · AI Smart Zoom picker: per-picture zoom (default 1.7x, wheel at cursor, slider/+/−/reset, right/middle-drag pan), portrait shows the export's 2:3 area, click auto-zooms to the mark, Next Image (1–1.5 s away) replaces Not visible, no seconds/#numbers, opens at the editor's size. 04 UI-AIZOOM (AiSubjectPickerWindow.*, GranularSpeedEditorWindow.AiZoom.cs)
 
 - 2026-11-28 · SEGLANEHALF_01 · Speed Editor top (speed-block) lane halved to 30 px via SetLaneHeights(30, 60); LaneBlockHeight follows it, corner-meme strips max(10, 0.4h), marker fallback 120 px. 04 UI-GRANULAR (GranularSpeedEditorWindow.axaml.cs, .Memes.cs)

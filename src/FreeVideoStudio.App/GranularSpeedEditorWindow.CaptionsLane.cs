@@ -571,7 +571,7 @@ public partial class GranularSpeedEditorWindow
             }
             else
             {
-                Notify($"AI did not generate replacement text for this segment. {summary}");
+                Notify($"AI did not generate replacement text for this block. {summary}");
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

@@ -1,4 +1,4 @@
-using Avalonia.Platform.Storage;
+﻿using Avalonia.Platform.Storage;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -927,11 +927,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         var portrait = PortraitModeCheckboxCtl;
         if (portrait != null) portrait.IsChecked = d.StartPortrait;
 
-        var teammates = TeammatesCheckboxCtl;
-        if (teammates != null) teammates.IsChecked = d.StartShowTeammates;
-
-        var spectating = SpectatingCheckboxCtl;
-        if (spectating != null) spectating.IsChecked = true;
+        _viewModel.ReloadHudToggles(FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.ActiveMaskOverlay, resetToDefaults: true);
 
         var enableFade = EnableFadeCheckboxCtl;
         if (enableFade != null) enableFade.IsChecked = d.StartEnableFade;
@@ -988,11 +984,7 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
         var portrait = PortraitModeCheckboxCtl;
         if (portrait != null) portrait.IsEnabled = true;
 
-        var teammates = TeammatesCheckboxCtl;
-        if (teammates != null) teammates.IsEnabled = true;
-
-        var spectatingToggle = SpectatingCheckboxCtl;
-        if (spectatingToggle != null) spectatingToggle.IsEnabled = true;
+        _viewModel.HudTogglesEnabled = true;
 
         var enableFade = EnableFadeCheckboxCtl;
         if (enableFade != null) enableFade.IsEnabled = true;
@@ -2263,22 +2255,10 @@ private readonly RecoveryManager _recovery = new RecoveryManager();
             bool noMask = FreeVideoStudio.App.Infrastructure.MaskOverlayManager.IsNoMask(
                 FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.ActiveMaskOverlay);
 
-            var panel = this.FindControl<StackPanel>("InGameOverlaysPanel");
-            if (panel != null) panel.IsVisible = !noMask;
+            _viewModel.ApplyMaskProfile(FreeVideoStudio.App.Infrastructure.SettingsManager.Instance.ActiveMaskOverlay);
+            UpdateHudPanelVisibility();
 
-            var sep = this.FindControl<Separator>("InGameOverlaysSeparator");
-            if (sep != null) sep.IsVisible = !noMask;
-
-            if (noMask)
-            {
-                var team = TeammatesCheckboxCtl;
-                if (team != null) team.IsChecked = false;
-
-                var spec = SpectatingCheckboxCtl;
-                if (spec != null) spec.IsChecked = false;
-            }
-
-            RuntimeLog.Info("UI", $"ApplyMaskProfileToOverlayUi: noMask={noMask}.");
+            RuntimeLog.Info("UI", $"ApplyMaskProfileToOverlayUi: noMask={noMask}, {_viewModel.HudToggles.Count} HUD switch(es).");
         }
         catch (System.Exception ex) { RuntimeLog.Swallowed(ex); }
     }

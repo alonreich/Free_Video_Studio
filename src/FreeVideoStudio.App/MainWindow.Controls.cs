@@ -27,10 +27,6 @@ public partial class MainWindow
     private Avalonia.Controls.Canvas? TimelineMarkersCanvasCtl => _cTimelineMarkersCanvas ??= this.FindControl<Avalonia.Controls.Canvas>("TimelineMarkersCanvas");
     private SpinningWheelSlider? _cMainSpeedSlider;
     private SpinningWheelSlider? MainSpeedSliderCtl => _cMainSpeedSlider ??= this.FindControl<SpinningWheelSlider>("MainSpeedSlider");
-    private ToggleSwitch? _cTeammatesCheckbox;
-    private ToggleSwitch? TeammatesCheckboxCtl => _cTeammatesCheckbox ??= this.FindControl<ToggleSwitch>("TeammatesCheckbox");
-    private ToggleSwitch? _cSpectatingCheckbox;
-    private ToggleSwitch? SpectatingCheckboxCtl => _cSpectatingCheckbox ??= this.FindControl<ToggleSwitch>("SpectatingCheckbox");
     private Button? _cSetThumbnailButton;
     private Button? SetThumbnailButtonCtl => _cSetThumbnailButton ??= this.FindControl<Button>("SetThumbnailButton");
     private SpinningWheelSlider? _cQualitySlider;

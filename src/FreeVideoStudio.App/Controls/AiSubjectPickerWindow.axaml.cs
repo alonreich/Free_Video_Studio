@@ -58,11 +58,11 @@ public partial class AiSubjectPickerWindow : Window
 
     public const string FocusViewTag = "AIPICKFOCUS_01";
 
-    internal const string PickIntro = "Click the enemy in each picture where you can see them.";
+    internal const string PickIntro = "Click what you want to follow in each picture where you can see it.";
 
-    internal const double ZoomLess = 1.6;
-    internal const double ZoomNormal = ViewModels.AiZoomTuning.DefaultStrength;
-    internal const double ZoomMore = 3.0;
+    internal const string PickHeadline = "Step 1 of 2 · Mark what to follow";
+
+    internal const string TrackButtonText = "🎯 Track";
 
     public double ChosenZoomStrength { get; private set; } = ViewModels.AiZoomTuning.DefaultStrength;
 
@@ -86,7 +86,6 @@ public partial class AiSubjectPickerWindow : Window
     private readonly bool _isLocalFreeMode;
     private readonly string? _previousDescription;
     private readonly string _batchPrefix;
-    private int _currentStage = 1;
     private DiscoveredSubject? _currentSelected;
     private DiscoveredSubject? _hovered;
 
@@ -105,10 +104,14 @@ public partial class AiSubjectPickerWindow : Window
         string? previousDescription = null,
         DiscoveredSubject? initialSubject = null,
         bool portrait = false,
-        string? videoPath = null)
+        string? videoPath = null,
+        int sourceWidth = 0,
+        int sourceHeight = 0)
     {
         _portrait = portrait;
         _videoPath = videoPath;
+        _sourceW = sourceWidth > 0 ? sourceWidth : 1920;
+        _sourceH = sourceHeight > 0 ? sourceHeight : 1080;
         _subjects = discovery.Subjects != null ? new List<DiscoveredSubject>(discovery.Subjects) : new List<DiscoveredSubject>();
         _framePaths = new[] { discovery.F1, discovery.F2, discovery.F3 };
         _frameTimes = new[] { discovery.T1, discovery.T2, discovery.T3 };
@@ -153,7 +156,6 @@ public partial class AiSubjectPickerWindow : Window
         _container = container;
         var confirmBtn = scope?.Find("ConfirmPickerBtn") as Button;
         var statusText = scope?.Find("SelectionStatusText") as TextBlock;
-        var backBtn = scope?.Find("BackStageBtn") as Button;
         var resampleBtn = scope?.Find("ResampleBtn") as Button;
 
         string[] names = { "Start", "Middle", "End" };
@@ -189,20 +191,8 @@ public partial class AiSubjectPickerWindow : Window
         };
 
         double saved = SettingsManager.Instance.AiZoomBaseScale > 0 ? SettingsManager.Instance.AiZoomBaseScale : ViewModels.AiZoomTuning.DefaultStrength;
-        ChosenZoomStrength = saved;
-        var zoomBtns = new (string Name, double Value)[] { ("PickerZoomLessBtn", ZoomLess), ("PickerZoomNormalBtn", ZoomNormal), ("PickerZoomMoreBtn", ZoomMore) };
-        double nearest = zoomBtns.OrderBy(z => Math.Abs(z.Value - saved)).First().Value;
-        foreach (var (name, value) in zoomBtns)
-        {
-            if (scope?.Find(name) is not ToggleButton tb) continue;
-            tb.IsChecked = value == nearest;
-            tb.Click += (_, _) =>
-            {
-                ChosenZoomStrength = value;
-                foreach (var (other, _) in zoomBtns)
-                    if (scope.Find(other) is ToggleButton o) o.IsChecked = other == name;
-            };
-        }
+        ChosenZoomStrength = Math.Clamp(saved, ViewModels.AiZoomTuning.MinStrength, ViewModels.AiZoomTuning.MaxStrength);
+        WireHowClose();
 
         if (scope?.Find("CancelPickerBtn") is Button cancelBtn)
             cancelBtn.Click += (_, _) => { Choice = AiPickerChoice.Cancelled; Close(false); };
@@ -232,15 +222,6 @@ public partial class AiSubjectPickerWindow : Window
             };
         }
 
-        if (backBtn != null)
-        {
-            backBtn.Click += (_, _) =>
-            {
-                _currentStage = 1;
-                UpdateWizardState();
-            };
-        }
-
         if (confirmBtn != null)
         {
             confirmBtn.Click += (_, _) =>
@@ -251,20 +232,9 @@ public partial class AiSubjectPickerWindow : Window
                     SelectedSubject = firstSelected;
                     SelectedSubject.AdditionalAnchors = _anchors.Where(a => a != null && a != firstSelected).ToList()!;
                 }
-                if (_currentStage == 1)
-                {
-                    if (_frameStates.Any(s => s == FrameChoiceState.Selected) || _anchors.Any(a => a != null))
-                    {
-                        _currentStage = 2;
-                        UpdateWizardState();
-                    }
-                }
-                else
-                {
-                    if (firstSelected == null) return;
-                    Choice = AiPickerChoice.Track;
-                    Close(true);
-                }
+                if (firstSelected == null) return;
+                Choice = AiPickerChoice.Track;
+                Close(true);
             };
         }
 
@@ -359,61 +329,35 @@ public partial class AiSubjectPickerWindow : Window
         var scope = this.FindNameScope();
         var confirmBtn = scope?.Find("ConfirmPickerBtn") as Button;
         var statusText = scope?.Find("SelectionStatusText") as TextBlock;
-        var backBtn = scope?.Find("BackStageBtn") as Button;
         var resampleBtn = scope?.Find("ResampleBtn") as Button;
         var headline = scope?.Find("PickerHeadlineText") as TextBlock;
         var intro = scope?.Find("PickerIntroText") as TextBlock;
 
         int selectedCount = _frameStates.Count(s => s == FrameChoiceState.Selected);
-
-        if (_currentStage == 1)
+        if (headline != null) headline.Text = $"{_batchPrefix}{PickHeadline}";
+        if (intro != null) intro.Text = PickIntro;
+        if (resampleBtn != null) resampleBtn.IsVisible = false;
+        if (confirmBtn != null)
         {
-            if (headline != null) headline.Text = $"{_batchPrefix}Stage 1 of 3 · Choose who to follow";
-            if (intro != null) intro.Text = PickIntro;
-            if (backBtn != null) backBtn.IsVisible = false;
-            if (resampleBtn != null) resampleBtn.IsVisible = false;
-
-            if (confirmBtn != null)
-            {
-                confirmBtn.Content = "Next: Check Selections →";
-                confirmBtn.IsEnabled = selectedCount > 0;
-            }
-
-            if (statusText != null)
-            {
-                if (selectedCount == 0)
-                {
-                    statusText.Text = PickIntro;
-                    statusText.Foreground = ThemeResources.Brush(this, "AppTextPrimaryBrush", Brushes.White);
-                }
-                else
-                {
-                    statusText.Text = selectedCount == 3
-                        ? "✓ Enemy marked in all 3 pictures. Click 'Next: Check Selections →'"
-                        : $"✓ Enemy marked in {selectedCount} of 3 pictures. Mark the others too, or press Next Image if you can't see them.";
-                    statusText.Foreground = ThemeResources.Brush(this, "AppSuccessBrush", Brushes.ForestGreen);
-                }
-            }
+            confirmBtn.Content = TrackButtonText;
+            confirmBtn.IsEnabled = selectedCount > 0;
         }
-        else
+        if (statusText != null)
         {
-            if (headline != null) headline.Text = $"{_batchPrefix}Stage 2 of 3 · Check your selections";
-            if (intro != null) intro.Text = "Do the red circles surround the same person or object?";
-            if (backBtn != null) backBtn.IsVisible = true;
-            if (resampleBtn != null) resampleBtn.IsVisible = false;
-
-            if (confirmBtn != null)
+            if (selectedCount == 0)
             {
-                confirmBtn.Content = "🎯 Track";
-                confirmBtn.IsEnabled = selectedCount > 0;
+                statusText.Text = PickIntro;
+                statusText.Foreground = ThemeResources.Brush(this, "AppTextPrimaryBrush", Brushes.White);
             }
-
-            if (statusText != null)
+            else
             {
-                statusText.Text = $"Ready to track across {selectedCount} confirmed picture{(selectedCount == 1 ? "" : "s")}. Press '🎯 Track' to start.";
+                statusText.Text = selectedCount == 3
+                    ? "✓ Marked in all 3 pictures. Press 🎯 Track."
+                    : $"✓ Marked in {selectedCount} of 3 pictures. Mark the others too, or press 🎯 Track.";
                 statusText.Foreground = ThemeResources.Brush(this, "AppSuccessBrush", Brushes.ForestGreen);
             }
         }
+        UpdateFinalShot();
     }
 
     internal void OnFrameClicked(int frameIndex, PointerPressedEventArgs e, StackPanel? container)
@@ -589,6 +533,8 @@ public partial class AiSubjectPickerWindow : Window
             int selIdx = _subjects.IndexOf(_currentSelected) + 1;
             Draw(_currentSelected, Math.Max(1, selIdx), isSelected: true, isHovered: _hovered == _currentSelected);
         }
+        DrawFinalShotBoxes();
+        UpdateFinalShot();
     }
 
     private void Draw(DiscoveredSubject? sub, int displayIndex, bool isSelected, bool isHovered, bool isSecondaryAnchor = false)

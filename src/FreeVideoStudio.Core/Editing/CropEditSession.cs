@@ -89,12 +89,74 @@ public sealed class CropEditSession
 
     public static IReadOnlyList<CropHudRole> BuiltInRoles { get; } =
     [
-        new("loot", "Loot Area", 10, 680, 1370),
-        new("stats", "Mini Map + Stats", 30, 730, 150),
-        new("normal_hp", "Own Health Bar (HP)", 20, 30, 1620),
-        new("team", "Teammates health Bars (HP)", 40, 30, 250),
-        new("spectating", "Spectating Eye", 100, 30, 1300),
+        new("loot", HudElements.BuiltInLabel("loot")!, 10, 680, 1370),
+        new("stats", HudElements.BuiltInLabel("stats")!, 30, 730, 150),
+        new("normal_hp", HudElements.BuiltInLabel("normal_hp")!, 20, 30, 1620),
+        new("team", HudElements.BuiltInLabel("team")!, 40, 30, 250),
+        new("spectating", HudElements.BuiltInLabel("spectating")!, 100, 30, 1300),
     ];
+
+    public static IReadOnlyList<string> GenericPresetNames { get; } =
+    [
+        "Health", "Shield", "Ammo", "Minimap", "Score", "Kill Feed", "Timer", "Webcam", "Chat",
+    ];
+
+    public bool UseFortniteRoles { get; set; } = true;
+
+    private readonly Dictionary<string, string> _anchors = new(StringComparer.OrdinalIgnoreCase);
+
+    public static string KeyForName(string displayName) => displayName.Trim().ToLowerInvariant().Replace(" ", "_");
+
+    public void BeginProfile(JsonObject? config, bool useFortniteRoles)
+    {
+        _customRoles.Clear();
+        _anchors.Clear();
+        UseFortniteRoles = useFortniteRoles;
+        if (config?[HudElements.ElementsSection] is not JsonObject elements) return;
+        foreach (var pair in elements)
+        {
+            if (HudElements.StoredAnchor(config, pair.Key) is { } anchor) _anchors[pair.Key] = anchor;
+        }
+    }
+
+    public string AnchorOf(string roleKey)
+    {
+        if (_anchors.TryGetValue(roleKey, out string? a)) return a;
+        string anchor = HudConfig.GuessDriftType(roleKey) ?? HudElements.AnchorCenter;
+        _anchors[roleKey] = anchor;
+        return anchor;
+    }
+
+    public string? DriftOf(string? roleKey)
+    {
+        if (string.IsNullOrWhiteSpace(roleKey)) return null;
+        string anchor = _anchors.TryGetValue(roleKey, out string? a) ? a : HudConfig.GuessDriftType(roleKey) ?? HudElements.AnchorCenter;
+        return anchor == HudElements.AnchorCenter ? null : anchor;
+    }
+
+    public IReadOnlyList<CropHudRole> PickerRoles(IEnumerable<string> placedKeys)
+    {
+        var placed = new HashSet<string>(placedKeys, StringComparer.OrdinalIgnoreCase);
+        var list = new List<CropHudRole>();
+        foreach (CropHudRole role in BuiltInRoles)
+            if (UseFortniteRoles || placed.Contains(role.Key)) list.Add(role);
+        list.AddRange(_customRoles);
+        if (UseFortniteRoles) return list;
+        foreach (string name in GenericPresetNames)
+        {
+            string key = KeyForName(name);
+            if (list.Any(r => string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase)
+                           || string.Equals(r.DisplayName, name, StringComparison.OrdinalIgnoreCase))) continue;
+            list.Add(new CropHudRole(key, name, 50, -1, -1));
+        }
+        return list;
+    }
+
+    public CropHudRole EnsureRole(CropHudRole role)
+    {
+        if (TryGetRole(role.Key, out CropHudRole existing)) return existing;
+        return RegisterCustomRole(role.DisplayName);
+    }
 
     private static readonly Dictionary<string, CropHudRole> BuiltInByKey =
         BuiltInRoles.ToDictionary(r => r.Key, StringComparer.OrdinalIgnoreCase);
@@ -121,7 +183,7 @@ public sealed class CropEditSession
     public CropHudRole RegisterCustomRole(string displayName)
     {
         string trimmed = displayName.Trim();
-        string key = trimmed.ToLowerInvariant().Replace(" ", "_");
+        string key = KeyForName(trimmed);
 
         if (TryGetRole(key, out CropHudRole existing)) return existing;
 
@@ -139,7 +201,9 @@ public sealed class CropEditSession
         return role;
     }
 
-    public void AdoptRolesFromConfig(JsonObject section)
+    public void AdoptRolesFromConfig(JsonObject section) => AdoptRolesFromConfig(section, null);
+
+    public void AdoptRolesFromConfig(JsonObject section, JsonObject? config)
     {
         foreach (var pair in section)
         {
@@ -147,8 +211,12 @@ public sealed class CropEditSession
             if (TryGetRole(pair.Key, out _)) continue;
             if (pair.Value is not JsonArray arr || arr.Count < 4) continue;
             if (ReadInt(arr[0], 0) <= 1 || ReadInt(arr[1], 0) <= 1) continue;
-
-            RegisterCustomRole(PrettifyRoleKey(pair.Key));
+            string label = HudElements.StoredLabel(config, pair.Key) ?? PrettifyRoleKey(pair.Key);
+            if (AllRoles.Any(r => string.Equals(r.DisplayName, label, StringComparison.OrdinalIgnoreCase)))
+                label = PrettifyRoleKey(pair.Key);
+            _customRoles.Add(new CropHudRole(pair.Key, label, 50, -1, -1));
+            if (HudElements.StoredAnchor(config, pair.Key) is { } anchor) _anchors[pair.Key] = anchor;
+            CoreLogger.Info("CROP", $"HUD element '{label}' (key={pair.Key}) loaded from the profile.");
         }
     }
 
@@ -169,6 +237,18 @@ public sealed class CropEditSession
             (true, true) => "loot",
             (true, false) => "normal_hp",
         };
+        if (!UseFortniteRoles)
+        {
+            string name = (bottom, right) switch
+            {
+                (false, false) => "Minimap",
+                (false, true) => "Kill Feed",
+                (true, true) => "Ammo",
+                (true, false) => "Health",
+            };
+            string presetKey = KeyForName(name);
+            return TryGetRole(presetKey, out CropHudRole known) ? known : new CropHudRole(presetKey, name, 50, -1, -1);
+        }
         return TryGetRole(key, out CropHudRole role) ? role : BuiltInRoles[0];
     }
 
@@ -184,7 +264,7 @@ public sealed class CropEditSession
     }
 
     public (int x, int y, int w, int h) ToContent(CropSourceRect r, string? roleKey) =>
-        CoordinateMath.TransformToContentAreaInt((r.X, r.Y, r.Width, r.Height), OriginalResolution, HudConfig.CropDriftType(roleKey ?? ""));
+        CoordinateMath.TransformToContentAreaInt((r.X, r.Y, r.Width, r.Height), OriginalResolution, DriftOf(roleKey));
 
     public (int width, int height, Frac scale) QuantizeLayerSize(CropSourceRect sourceRect, double desiredWidth, string? roleKey = null)
     {

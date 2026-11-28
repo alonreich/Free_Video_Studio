@@ -622,9 +622,12 @@ public sealed class AiWorkflowFixTests
         var confirmBtn = (Button)scope.Find("ConfirmPickerBtn")!;
         var badge1 = (TextBlock)scope.Find("Frame1Badge")!;
 
-        Assert.Equal("Stage 1 of 3 · Choose who to follow", headline.Text);
+        Assert.Equal(AiSubjectPickerWindow.PickHeadline, headline.Text);
         Assert.Equal(AiSubjectPickerWindow.PickIntro, intro.Text);
-        Assert.Equal("Next: Check Selections →", confirmBtn.Content);
+        Assert.Equal(AiSubjectPickerWindow.TrackButtonText, confirmBtn.Content);
+        Assert.Null(scope.Find("BackStageBtn"));
+        Assert.Null(scope.Find("PickerZoomNormalBtn"));
+        Assert.NotNull(scope.Find("HowCloseSlider"));
         Assert.Equal("Picture 1 (Start)", ((TextBlock)scope.Find("Frame1TimeLabel")!).Text);
         for (int f = 1; f <= 3; f++)
         {
@@ -647,6 +650,54 @@ public sealed class AiWorkflowFixTests
         Assert.Equal("Waiting for selection", badge1.Text);
         Assert.False(confirmBtn.IsEnabled);
         Assert.False(((Button)scope.Find("ResampleBtn")!).IsVisible);
+    }
+
+    [AvaloniaFact]
+    public void AiSubjectPickerWindow_TrackIsOneClickAfterMarking()
+    {
+        var subjects = new List<DiscoveredSubject>
+        {
+            new() { Id = 1, Label = "Player", FrameIndex = 2, Xmin = 400, Ymin = 300, Xmax = 500, Ymax = 600 },
+        };
+        var discovery = new AiDiscoveryResult(subjects, "", "", "", 0.5, 1.5, 2.5, 0);
+        var picker = new AiSubjectPickerWindow(discovery, 0, 3.0, isLocalFreeMode: true);
+        var confirmBtn = (Button)picker.FindNameScope()!.Find("ConfirmPickerBtn")!;
+        Assert.True(confirmBtn.IsEnabled);
+        confirmBtn.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        Assert.Equal(AiPickerChoice.Track, picker.Choice);
+        Assert.Same(subjects[0], picker.SelectedSubject);
+    }
+
+    [AvaloniaFact]
+    public void AiSubjectPickerWindow_HowCloseIsDisabledWhereTheZoomCannotChange()
+    {
+        var discovery = new AiDiscoveryResult(new List<DiscoveredSubject>(), "", "", "", 0.5, 1.5, 2.5, 0);
+        var portrait = new AiSubjectPickerWindow(discovery, 0, 3.0, portrait: true, sourceWidth: 1920, sourceHeight: 1080);
+        Assert.False(portrait.HowCloseHasEffect);
+        Assert.False(((Slider)portrait.FindNameScope()!.Find("HowCloseSlider")!).IsEnabled);
+        Assert.True(((TextBlock)portrait.FindNameScope()!.Find("HowCloseNote")!).IsVisible);
+        var landscape = new AiSubjectPickerWindow(discovery, 0, 3.0, sourceWidth: 1920, sourceHeight: 1080);
+        Assert.True(landscape.HowCloseHasEffect);
+        Assert.True(((Slider)landscape.FindNameScope()!.Find("HowCloseSlider")!).IsEnabled);
+    }
+
+    [AvaloniaFact]
+    public void AiZoomPreviewModal_HasPlayerControlsAndBeforeAfter()
+    {
+        var modal = new AiZoomPreviewModalWindow(() => { }, "Summary", 1);
+        var scope = modal.FindNameScope();
+        Assert.True(modal.IsPlayingState);
+        modal.TogglePlaybackState(false);
+        Assert.False(modal.IsPlayingState);
+        Assert.False(modal.ShowsOriginal);
+        Assert.Equal("0:03.5", AiZoomPreviewModalWindow.FormatClock(3.5));
+        Assert.Equal((1600.0, 900.0), AiZoomPreviewModalWindow.FitSixteenNine(1600, 1000));
+        Assert.Equal(2.0, AiZoomPreviewModalWindow.SeekStepSec);
+        string src = File.ReadAllText(RepoRoot.SourcePath("src", "FreeVideoStudio.App", "Controls", "AiZoomPreviewModalWindow.cs"));
+        Assert.Contains("WindowBoundsHelper.Track(this, BoundsKey", src);
+        Assert.Contains("\"KEEP IT\"", src);
+        Assert.Contains("\"TRY AGAIN\"", src);
+        Assert.Contains("new ReviewTimelineRuler", src);
     }
 
     [AvaloniaFact]

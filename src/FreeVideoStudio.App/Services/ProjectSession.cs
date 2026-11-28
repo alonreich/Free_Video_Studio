@@ -557,6 +557,7 @@ public sealed class ProjectSession
             FreezeTimeMs = timeline.FreezeTimeMs,
             FreezeDurationS = timeline.FreezeDurationS,
             OverlayText = _viewModel.OverlayText ?? string.Empty,
+            HudToggles = _viewModel.HudToggles.Count > 0 ? _viewModel.HudToggleState : null,
             Title = string.IsNullOrWhiteSpace(path) ? "Untitled" : Path.GetFileNameWithoutExtension(path),
             ModifiedUtc = _clock.UtcNow,
         };
@@ -600,6 +601,7 @@ public sealed class ProjectSession
             timeline.FreezeTimeMs = document.FreezeTimeMs;
             timeline.FreezeDurationS = document.FreezeDurationS;
             _viewModel.OverlayText = document.OverlayText ?? string.Empty;
+            _viewModel.ApplyHudToggleState(document.HudToggles);
 
             _viewModel.IsPortraitMode = document.Export.PortraitMode;
             if (document.Export.QualityIndex >= 0)

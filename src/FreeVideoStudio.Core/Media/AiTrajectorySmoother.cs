@@ -324,6 +324,14 @@ public static class AiTrajectorySmoother
     public const double FastMoveHoldAfterSec = 0.80;
     public const double FastMoveSustainFraction = 0.6;
 
+    public const string EffectiveScaleTag = "AIZOOMEFFECTIVE_01";
+
+    public static double ClarityCap(int sourceW, int sourceH, bool portraitMode)
+        => portraitMode ? PortraitMaxScale : Math.Clamp(Math.Min(sourceW / 560.0, sourceH / 315.0), 1.2, 4.0);
+
+    public static double EffectiveBaseScale(double baseScale, int sourceW, int sourceH, bool portraitMode)
+        => Math.Min(Math.Clamp(baseScale, 1.2, 5.0) * 1.4, ClarityCap(sourceW, sourceH, portraitMode));
+
     internal static bool IsWobble(int i, int n, bool[] seen, double[] cx, double[] cy, double[] stepSpeed)
     {
         if (i + 2 >= n || !seen[i + 2]) return false;
@@ -362,8 +370,7 @@ public static class AiTrajectorySmoother
         }
 
         baseScale = Math.Clamp(baseScale, 1.2, 5.0);
-        double clarityCap = portraitMode ? PortraitMaxScale : Math.Clamp(Math.Min(sourceW / 560.0, sourceH / 315.0), 1.2, 4.0);
-        double effectiveBaseScale = Math.Min(baseScale * 1.4, clarityCap);
+        double effectiveBaseScale = EffectiveBaseScale(baseScale, sourceW, sourceH, portraitMode);
         double effectiveMinScale = Math.Clamp(minScale, 1.0, effectiveBaseScale);
         deadbandPercent = Math.Clamp(deadbandPercent, 0.0, 10.0);
 

@@ -46,6 +46,8 @@ public sealed record ProjectDocument
 
     public string OverlayText { get; init; } = string.Empty;
 
+    public IReadOnlyDictionary<string, bool>? HudToggles { get; init; }
+
     public string Title { get; init; } = "Untitled";
 
     public DateTimeOffset CreatedUtc { get; init; } = DateTimeOffset.UtcNow;
@@ -120,7 +122,8 @@ public sealed record ProjectDocument
             && Equals(Captions, other.Captions)
             && FreezeTimeMs.Equals(other.FreezeTimeMs)
             && FreezeDurationS.Equals(other.FreezeDurationS)
-            && string.Equals(OverlayText ?? string.Empty, other.OverlayText ?? string.Empty, StringComparison.Ordinal);
+            && string.Equals(OverlayText ?? string.Empty, other.OverlayText ?? string.Empty, StringComparison.Ordinal)
+            && HudTogglesEqual(HudToggles, other.HudToggles);
     }
 
     public override int GetHashCode()
@@ -138,6 +141,29 @@ public sealed record ProjectDocument
         hash.Add(Mask?.Fingerprint);
         hash.Add(Merge);
         return hash.ToHashCode();
+    }
+
+    internal static bool HudTogglesEqual(IReadOnlyDictionary<string, bool>? left, IReadOnlyDictionary<string, bool>? right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if ((left?.Count ?? 0) != (right?.Count ?? 0)) return false;
+        if (left is null || right is null) return true;
+        foreach (var pair in left)
+        {
+            if (!TryGetIgnoreCase(right, pair.Key, out bool other) || other != pair.Value) return false;
+        }
+        return true;
+    }
+
+    private static bool TryGetIgnoreCase(IReadOnlyDictionary<string, bool> map, string key, out bool value)
+    {
+        if (map.TryGetValue(key, out value)) return true;
+        foreach (var pair in map)
+        {
+            if (string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase)) { value = pair.Value; return true; }
+        }
+        value = false;
+        return false;
     }
 
     internal static bool SequenceEqual<T>(IReadOnlyList<T>? left, IReadOnlyList<T>? right)

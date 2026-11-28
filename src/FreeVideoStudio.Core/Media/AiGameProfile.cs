@@ -72,7 +72,7 @@ public static class AiHudAvoidZones
                 int x = a[2]?.GetValue<int>() ?? 0;
                 int y = a[3]?.GetValue<int>() ?? 0;
                 if (w <= 1 || h <= 1) continue;
-                var src = CoordinateMath.InverseTransformFromContentAreaInt((x, y, w, h), originalResolution, HudConfig.CropDriftType(kv.Key));
+                var src = CoordinateMath.InverseTransformFromContentAreaInt((x, y, w, h), originalResolution, HudConfig.CropDriftType(kv.Key, config));
                 var zone = new AiNormalizedRect((double)src.x / sw, (double)src.y / sh, (double)src.w / sw, (double)src.h / sh);
                 if (zone.IsUsable && zone.W * zone.H < 0.25) zones.Add(zone);
             }
