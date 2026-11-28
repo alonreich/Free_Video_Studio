@@ -11,6 +11,28 @@ internal static class CodeSigning
 
     public static bool SignedWithLocalDevCertificate { get; private set; }
 
+    public static bool DevBuild { get; set; }
+
+    internal static readonly string[] TimestampServers =
+    [
+        "http://timestamp.digicert.com",
+        "http://timestamp.sectigo.com",
+        "http://timestamp.globalsign.com/tsa/r6advanced1",
+    ];
+
+    private static int SignWithTimestamp(string signtool, string pfx, string password, string file, BuildLog log)
+    {
+        int exit = -1;
+        foreach (string server in TimestampServers)
+        {
+            exit = Cli.RunStreaming(signtool, ["sign", "/fd", "SHA256", "/f", pfx, "/p", password, "/tr", server, "/td", "SHA256", file], log);
+            if (exit == 0) return 0;
+            log.Warn($"[Sign] Timestamp server {server} failed (exit {exit}); trying the next one (SIGNTSA_01)...");
+        }
+        log.Error("ERROR: every timestamp server failed. Nothing is signed without a timestamp: it would stop being valid when the certificate expires (SIGNTSA_01).");
+        return exit;
+    }
+
     public static bool SignIfNeeded(string exePath, BuildLog log)
     {
         SignedWithLocalDevCertificate = false;
@@ -44,26 +66,16 @@ internal static class CodeSigning
 
         if (string.IsNullOrEmpty(pfx))
         {
-            bool acknowledged = string.Equals(
-                Environment.GetEnvironmentVariable("FVS_ALLOW_UNSIGNED"), "1", StringComparison.Ordinal);
-
-            if (!acknowledged)
+            if (!DevBuild)
             {
-                log.Error("ERROR: FVS_SIGN_PFX is not set. Refusing to produce an unsigned release.");
-                log.Error("       An unsigned build gets the full SmartScreen wall AND disables");
-                log.Error("       UPDATETRUST_01 publisher pinning, which downgrades auto-update to a");
-                log.Error("       hash supplied by the same document that supplies the download URL.");
-                log.Error("       To sign:              set FVS_SIGN_PFX and FVS_SIGN_PASS, re-run Build.cmd,");
-                log.Error("                             or create the local dev certificate: ssl-certificate\\create-dev-codesign-cert.ps1");
-                log.Error("       To build unsigned:    set FVS_ALLOW_UNSIGNED=1 (acknowledged, recorded, NOT for release).");
+                log.Blocked("RELEASE BLOCKED - no signing certificate on this PC", [
+                    "An official release is never unsigned: SmartScreen would block it and installed copies would refuse its updates (UPDATETRUST_01).",
+                    "Fix: restore ssl-certificate\\fvs-codesign.pfx and its password file, set FVS_SIGN_PFX and FVS_SIGN_PASS, or run ssl-certificate\\create-dev-codesign-cert.ps1.",
+                ]);
                 return false;
             }
 
-            log.Info("[Sign] ==========================================================================");
-            log.Info("[Sign] UNSIGNED BUILD - FVS_ALLOW_UNSIGNED=1 was set.");
-            log.Info("[Sign] SmartScreen will warn end users, and this binary cannot act as an");
-            log.Info("[Sign] update trust anchor (UPDATETRUST_01). DO NOT PUBLISH THIS ARTIFACT.");
-            log.Info("[Sign] ==========================================================================");
+            log.Warn("[Sign] Dev build: no signing certificate on this PC, so it is UNSIGNED. Fine for local testing, never published (DEVSIGN_01).");
             return true;
         }
 
@@ -83,9 +95,7 @@ internal static class CodeSigning
         }
 
         log.Info($"[Sign] Signing {exePath} ...");
-        int signExit = Cli.RunStreaming(signtool,
-            ["sign", "/fd", "SHA256", "/f", pfx, "/p", password, "/tr", "http://timestamp.digicert.com", "/td", "SHA256", exePath],
-            log);
+        int signExit = SignWithTimestamp(signtool, pfx, password, exePath, log);
         if (signExit != 0)
         {
             log.Error("ERROR: Authenticode signing FAILED. Refusing to ship an unsigned binary that was meant to be signed.");
@@ -149,9 +159,7 @@ internal static class CodeSigning
         log.Info($"[Sign] Signing {unsigned.Count} bundled tool file(s) (SIGNDEPS_01)...");
         foreach (string file in unsigned)
         {
-            int exit = Cli.RunStreaming(signtool,
-                ["sign", "/fd", "SHA256", "/f", pfx, "/p", password, "/tr", "http://timestamp.digicert.com", "/td", "SHA256", file],
-                log);
+            int exit = SignWithTimestamp(signtool, pfx, password, file, log);
             if (exit != 0 || Cli.RunQuiet(signtool, ["verify", "/pa", "/q", file]) != 0)
             {
                 log.Error($"ERROR: signing the bundled file failed: {file}");

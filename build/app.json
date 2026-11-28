@@ -1,0 +1,8 @@
+{
+  "name": "Free Video Studio",
+  "orchestrator": "build/FvsBuild/FvsBuild.csproj",
+  "dev": [
+    { "run": ["dotnet", "run", "--project", "build/FvsVerify/FvsVerify.csproj", "-v", "q", "--", "{repo}"] },
+    { "run": ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "build/DevRun.ps1"] }
+  ]
+}

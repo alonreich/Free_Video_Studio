@@ -10,14 +10,15 @@ namespace FvsVerify.Tests;
 public sealed class SentinelListTests
 {
     [Fact]
-    public void DevVerificationPrecedesCleanupAndHasAStandaloneMode()
+    public void DevVerificationPrecedesTheLaunchAndHaltsIt()
     {
         string script = File.ReadAllText(Path.Combine(RepoRoot, "dev.cmd"));
-        int verify = script.IndexOf("dotnet run --project", StringComparison.Ordinal);
-        int halt = script.IndexOf("if errorlevel 1 exit /b 1", StringComparison.Ordinal);
-        int standalone = script.IndexOf("if /I \"%~1\"==\"verify\" exit /b 0", StringComparison.Ordinal);
-        Assert.True(verify >= 0 && halt > verify && standalone > halt);
-        Assert.True(script.IndexOf("powershell -NoProfile", StringComparison.Ordinal) > standalone);
+        string steps = File.ReadAllText(Path.Combine(RepoRoot, "build", "app.json"));
+        string bootstrap = File.ReadAllText(Path.Combine(RepoRoot, "build", "Bootstrap.ps1"));
+        int verify = steps.IndexOf("build/FvsVerify/FvsVerify.csproj", StringComparison.Ordinal);
+        int launch = steps.IndexOf("build/DevRun.ps1", StringComparison.Ordinal);
+        Assert.True(verify >= 0 && launch > verify);
+        Assert.Contains("if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }", bootstrap);
         Assert.DoesNotContain("taskkill", script);
         Assert.DoesNotContain("rd /s", script);
     }

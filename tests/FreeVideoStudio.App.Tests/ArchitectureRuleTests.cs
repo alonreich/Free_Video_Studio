@@ -343,12 +343,14 @@ public sealed class ArchitectureRuleTests
     public void DevCmdDelegatesTheSentinelCheckRatherThanParsingIt()
     {
         string text = File.ReadAllText(Path.Combine(RepoRoot.Path, "dev.cmd"));
+        string steps = File.ReadAllText(Path.Combine(RepoRoot.Path, "build", "app.json"));
+        string bootstrap = File.ReadAllText(Path.Combine(RepoRoot.Path, "build", "Bootstrap.ps1"));
 
         Assert.DoesNotContain("for %%P in (", text, StringComparison.Ordinal);
         Assert.DoesNotContain("CHECK_TAG", text, StringComparison.Ordinal);
-        Assert.Contains("FvsVerify", text, StringComparison.Ordinal);
+        Assert.Contains("FvsVerify", steps, StringComparison.Ordinal);
 
-        Assert.Contains("if errorlevel 1 exit /b 1", text, StringComparison.Ordinal);
+        Assert.Contains("if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }", bootstrap, StringComparison.Ordinal);
     }
 
     [Fact]

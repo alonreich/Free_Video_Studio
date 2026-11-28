@@ -47,7 +47,8 @@ Desktop preview:      .\tests\DesktopPreviewSmoke (real WGL/D3D pixels, seek/res
                       Output: logs\DesktopPreview_Results, logs\MergerDesktop_Results, logs\MergerSilentDesktop_Results.
 Export save retry:    .\src\FreeVideoStudio.Core\Media\FinalOutputCommit.cs (03 FFM-EXPORTLIFETIME).
 Voice gain binding:   .\src\FreeVideoStudio.App\ViewModels\VoiceOverGainViewModel.cs (02 AUD-VOICEOVER, 04 UI-THEME, 08 COMP-MVVM).
-Development runtime:  .\dev.cmd -> build\DevRun.ps1 + build\DevSandbox.ps1; .dev-run\app (incremental Release managed; `dev fresh`/`dev rebuild` for full clean).
+Command launcher:     .\dev.cmd, .\dev_build.cmd, .\build.cmd are one identical wrapper -> build\Bootstrap.ps1 (SDK check/auto-install) + build\app.json (ONECMD_01).
+Development runtime:  .\dev.cmd -> build\FvsVerify, then build\DevRun.ps1 + build\DevSandbox.ps1; .dev-run\app (incremental Release managed; a failed build retries once clean, DEVRETRY_01).
                       Core\Infrastructure\DevelopmentEnvironment.cs isolates paths/IPC and blocks installation.
                       Storage defaults and retention: 05 SYS-STORAGE-TABLE (STORAGEPATHS_01). Shared Music/Memes/Downloads; separate TEMP voice files.
                       Helper TEMP: fresh launch GUID folder; locked leftovers deferred (DEVHELPERTEMP_01).
@@ -74,7 +75,7 @@ Developer helpers:    .\developer_tools\ holds EVERY developer-only tool (DEVTOO
                       Sanitize.cmd -> Sanitize\ (Sanitize.ps1 + allowlist.txt around a git-ignored copy of
                       ai-sanitize.exe; SANITIZE_01 docs/05 SYS-SETTINGSSCHEMA; also run by the release gate)
                       (developer-only; not shipped; no spec unless named)
-Verification tool:    .\build\FvsVerify\FvsVerify.csproj; .\dev.cmd verify checks without launch cleanup (DEVVERIFY_01)
+Verification tool:    .\build\FvsVerify\FvsVerify.csproj; dotnet run --project build\FvsVerify checks without launching (DEVVERIFY_01)
 Sentinel registry:     .\build\sentinels.txt
 AI source exporter:   .\developer_tools\Pull_Code_files.py (CODEEXPORT_01; docs/05 SYS-CODEEXPORT).
                       At most ten attachments in a new dated Downloads\free_video_studio subfolder;
@@ -97,7 +98,7 @@ Controlled folders:   .\src\FreeVideoStudio.Core\Infrastructure\ControlledFolder
                       .\src\FreeVideoStudio.App\Infrastructure\ProtectedFolderGate.cs (CFASAFE_01, docs/09 SYS-CFASAFE)
 Release gate:         .\build\FvsBuild\ReleaseGate.cs (RELGATE_01: clean + pushed + linted notes + green CI + local
                       tests (RELQA_01) + protected root key (ROOTKEY_01) + no PUBLISH prompt (RELNOPROMPT_01), version commit + tag, undo
-                      on failure; --resume finishes a failed publish, RELRESUME_01) -> GitHubReleasePublisher.cs
+                      on failure; the next build.cmd finishes a failed publish, RELRESUME_02) -> GitHubReleasePublisher.cs
                       (--verify-tag, RETAIN_01/02 old files removed, pages + notes kept, BETA_01 pre-releases).
                       Withdrawn signers: .\build\revoked-signers.txt (REVOKE_01). Upgrade smoke test:
                       .\.github\workflows\upgrade-smoke.yml (UPGRADESMOKE_01). Spec: docs/09 DIST-RELEASEGATE.

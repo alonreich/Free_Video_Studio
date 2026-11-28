@@ -30,7 +30,7 @@
 | `.github/workflows/ci.yml` | CI | `SYS-CI`, `aot-publish`, `records` (`RELRECORD_01`, `CHANGELOG_02`) | Runs the ratchets; checks the release records and the change-log duty; reports the app publish size. **⚠ CO-GOVERNED BY: 08** |
 | `.github/workflows/lfs-guard.yml` | LFS guard | `SYS-REPOWEIGHT` | Proves LFS is real and stops new large files. |
 | `.gitattributes` | EOL + LFS policy | `EOL_01`, `SYS-REPOWEIGHT` | What is stored where. |
-| `Build.cmd` | Production Release Script | `dotnet run build\FvsBuild`, `--beta`, `--yes` (ignored, RELNOPROMPT_01), `--no-publish`, `--resume`, `RELGATE_01`, `RELQA_01`, `RELRESUME_01` | **STRICT AGENT BAN**: Deploys release assets and publishes publicly to GitHub Cloud, behind the release gate. Never run by autonomous agents. **⚠ CO-GOVERNED BY: 05** |
+| `build.cmd` | Production Release Script | `build\Bootstrap.ps1` → `dotnet run build\FvsBuild`, no arguments (ONECMD_01), `RELGATE_01`, `RELQA_01`, `RELRESUME_01` | **STRICT AGENT BAN**: Deploys release assets and publishes publicly to GitHub Cloud, behind the release gate. Never run by autonomous agents. **⚠ CO-GOVERNED BY: 05** |
 | `dev_build.cmd` | Local Dev Build Harness | `dotnet run build\FvsBuild -- --dev` | Local compilation check and NativeAOT publish verification. Zero git tags, zero GitHub Cloud publishing. **⚠ CO-GOVERNED BY: 05** |
 | `src/FreeVideoStudio.Core/Infrastructure/ControlledFolderAccess.cs` | `ControlledFolderAccess` | `Mode`, `IsBlocking`, `ProtectedRoots`, `IsProtectedPath`, `MayBlock`, `IsUnder`, `CFASAFE_01` | Read-only view of Windows "Controlled folder access" (SYS-CFASAFE). |
 | `src/FreeVideoStudio.App/Infrastructure/ProtectedFolderGate.cs` | `ProtectedFolderGate` | `CanWrite`, `CanWriteNow`, `FfmpegCanWrite`, `DenialIsFresh`, `ForgetDenial`, `TakePendingNotice`, `ShowNoticeAsync`, `CFASAFE_01`, `CFAFFMPEG_01` | One write attempt per protected folder, remembered refusal, the one notice (SYS-CFASAFE). |
@@ -40,13 +40,13 @@
 | `src/FreeVideoStudio.App/UpgradeProgressWindow.axaml.cs` | `UpgradeProgressWindow` | `AllowClose`, `OnClosing` | The install/update checklist window (UPGRADEUX_01). |
 | `src/FreeVideoStudio.App/Services/UpgradeFinishedNotice.cs` | `UpgradeFinishedNotice` | `Attach`, `Describe`, `KindArgument`, `FromArgument`, `UPGRADEUX_05` | First launch after install/update: "Finishing…" then "Updated from X to Y". |
 | `src/FreeVideoStudio.App/Services/ProtectedWorkerStage.cs` | `ProtectedWorkerStage` | `Create`, `IsProtectedWorkerPath`, `ExistingFolders`, `SweepStale`, `WORKERSTAGE_01` | The protected copy the elevated update worker runs from (SYS-UPGRADE-TRUST). |
-| `build/FvsBuild/CodeSigning.cs` | `CodeSigning` | `SignIfNeeded`, `FVS_SIGN_PFX`, `FVS_SIGN_PASS`, `FVS_ALLOW_UNSIGNED` | Mandatory Authenticode digital signing of the release executable. **⚠ CO-GOVERNED BY: 08**|
+| `build/FvsBuild/CodeSigning.cs` | `CodeSigning` | `SignIfNeeded`, `FVS_SIGN_PFX`, `FVS_SIGN_PASS`, `DevBuild`, `TimestampServers` (DEVSIGN_01, SIGNTSA_01) | Mandatory Authenticode digital signing of the release executable. **⚠ CO-GOVERNED BY: 08**|
 
 ---
 
 ## 0. Build Harness Disclaimers & Agent Execution Rules  {#DIST-AGENTS}
 
-> Agents never run `.\Build.cmd` (it publishes with no prompt, RELNOPROMPT_01); use `.\dev_build.cmd`. Canonical: [README §0.1](README.md#GOV-START).
+> Agents never run `.\build.cmd` (it publishes with no prompt, RELNOPROMPT_01); use `.\dev_build.cmd`. Canonical: [README §0.1](README.md#GOV-START).
 
 ---
 
@@ -298,7 +298,7 @@ installer, upgrade path, signing story.
 
 ## 3e. The Release Gate  {#DIST-RELEASEGATE}
 
-* **RELGATE_01 — WHY.** `Build.cmd` used to publish whatever was on disk: it never checked that the
+* **RELGATE_01 — WHY.** `build.cmd` used to publish whatever was on disk: it never checked that the
   working tree was committed or pushed; it rewrote five version files before building and left them
   uncommitted (a failed build left them changed too); and `gh release create <tag>` without a target
   tagged the REMOTE default branch — not the commit that was built. A release could ship code that exists
@@ -312,7 +312,7 @@ installer, upgrade path, signing story.
      releases in one minute: wait a minute); the GitHub CLI is signed in; `docs/CHANGELOG.md` has a
      `## Upcoming` section whose bullets pass `ReleaseChangelog.LintUserNotes`; `docs/changes.md` has its
      `## Unreleased` section. It then prints the version, branch, commit and the notes and publishes.
-     **RELNOPROMPT_01 (owner decision 2026-11-22):** there is no `PUBLISH` prompt; running `Build.cmd` is
+     **RELNOPROMPT_01 (owner decision 2026-11-22):** there is no `PUBLISH` prompt; running `build.cmd` is
      the confirmation. `--yes` is still accepted (ignored) for old scripts; `FVS_RELEASE_UNATTENDED` and
      RELQA_02 are retired. Every other gate check above and below still refuses a bad release.
      **RELQA_01 — required checks before publication:** the GitHub check runs of the starting commit must be green —
@@ -326,7 +326,7 @@ installer, upgrade path, signing story.
      (`CodeSigning.RootKeyIsProtected`; a key kept offline counts as protected).
      **RELRECORD_01/02:** every version heading in `docs/CHANGELOG.md` is a tag on GitHub
      (`HeadingsWithoutTags`), and (stable) the `## Upcoming` notes are not the newest published release's
-     notes again (`SameNotes`) — that is the "publish worked, promotion failed" state, finished by `--resume`.
+     notes again (`SameNotes`) — that is the "publish worked, promotion failed" state, finished by the next `build.cmd` run (RELRESUME_02).
   2. `CommitVersion` — stamps the five version files (`SynchronizeVersionFiles`), commits ONLY them as
      `release: v<version>` and creates the annotated tag on that commit. The build compiles that commit.
   3. Build. Any failure → `Undo`: `git reset --hard <starting commit>` + tag deleted. Safe by construction:
@@ -338,7 +338,7 @@ installer, upgrade path, signing story.
   6. `GitHubReleasePublisher.Publish` — draft from the pushed tag (`--verify-tag`, RELTAG_01), verify every
      asset by SHA-256, publish (stable: `--latest`; `--beta`: `--prerelease`, BETA_01), prune (RETAIN_01).
      A failure here leaves the commit and tag on GitHub without a release: exit 2, and the notes stay in
-     `## Upcoming`. **RELRESUME_01 — `Build.cmd --resume` finishes THAT release** (it used to be a dead end: a
+     `## Upcoming`. **RELRESUME_01 — finishing THAT release** (since RELRESUME_02 `build.cmd` does it by itself) (it used to be a dead end: a
      new run could only build a NEW version, leaving a tag with no release and version files naming a
      download that never existed). `PreflightResume` changes nothing until confirmed and proves: clean tree,
      HEAD is exactly the commit of `v<version.txt>`, the tag is on GitHub, `compiled\FreeVideoStudio.exe`
@@ -349,15 +349,25 @@ installer, upgrade path, signing story.
      `## Unreleased` (changes.md) to `## v<version> — <date>`, prunes both, commits
      `docs: release notes for v<version>` and pushes. Never fails the release (it is public); problems are
      warnings with the manual step named. Then NEWRELEASE_01 (§3b).
-* **Modes.** `Build.cmd --resume` = finish the last release (RELRESUME_01). `FvsBuild --protect-root-key` = give the root key its own passphrase (ROOTKEY_01, `09` SYS-SIGNING). `Build.cmd` = stable release (gate + publish). `Build.cmd --beta` = pre-release for the Beta
-  channel, from any pushed branch; its notes are the current `## Upcoming` prefixed with a beta line, and
-  nothing is promoted. `Build.cmd --no-publish` and `dev_build.cmd` (`--dev`) never touch git, GitHub or the
-  version files (the version reaches the compiler through `-p:Version=`). `--stage-only` is a diagnostic.
+* **Modes — ONECMD_01 (owner decision 2026-11-28).** `dev.cmd`, `dev_build.cmd` and `build.cmd` are one byte-identical,
+  argument-free wrapper: any argument is ignored with a note, and `build\Bootstrap.ps1` picks the action from the file
+  name. It first ensures a .NET SDK at least as new as the newest `netN.0` the repository targets: the installed one,
+  else `%LOCALAPPDATA%\Microsoft\dotnet`, else it downloads Microsoft's `dotnet-install.ps1`, runs it only if its
+  Authenticode signature is valid and Microsoft's, and installs per user without admin (SDKAUTO_01); otherwise a red
+  BLOCKED banner names the `winget` fix. `build\app.json` names the orchestrator and the `dev.cmd` steps.
+  `build.cmd` = stable release (gate + publish). **RELRESUME_02:** when HEAD is exactly the pushed release commit of
+  `v<version.txt>`, `build.cmd` finishes THAT release first (`HasUnfinishedRelease` → `PreflightResume`) instead of
+  starting a new one; `--resume`, `--beta`, `--yes` and `--no-publish` are gone. `dev_build.cmd` (`--dev`) never touches
+  git, GitHub or the version files; it runs the sentinels and both test suites first (`RunLocalChecks`, without the
+  clean-tree demand) and stamps `0.yyMM.ddHH.mm` (DEVVERSION_01), which ranks below every release, so a dev installer is
+  never mistaken for one (an installer older than the installed release may be refused as a downgrade). Internal only:
+  `--stage-only` (CI), `--dev-runtime` (`dev.cmd`), `FvsBuild --protect-root-key` (ROOTKEY_01, `09` SYS-SIGNING).
+  **RELBLOCKED_01:** every refusal prints one red `RELEASE BLOCKED` banner with numbered reasons and the fix (`BuildLog.Blocked`).
 * **Versioning.** Calendar version `yyyy.MM.dd.HHmm` (UTC). Why not SemVer: 09 SYS-AUTOUPDATE.
 * Tests: `ReleaseChangelogTests` (promotion, retention, lint, `ReleasesToPrune`, `NewVersion`),
   `ReleaseIntegrityTests` (CI verdicts incl. reruns, the gate's job names exist in the workflows, headings
   without tags, notes comparison, archive, revocation list, root-key protection). The git and GitHub steps
-  need a real repository and are verified by running `Build.cmd` (human only).
+  need a real repository and are verified by running `build.cmd` (human only).
 
 ## 3f. Release Notes: Technical Log → User Notes  {#DIST-RELEASENOTES}
 
@@ -412,7 +422,7 @@ installer, upgrade path, signing story.
 * **`LOCALAIPACK_01`.** The Local AI pack (`10` SYS-LOCALAI) is NOT part of the installer, the smart update or the program: North Star #1 and NODROPPER_01 stand. The user downloads it on purpose from Settings › AI.
 * **Where it is published:** the GitHub release `localai-v1` of this repository, created as a **pre-release** so `/releases/latest` (the app's update channel, SETNOBETA_01) can never pick it up. A new pack = a new tag (`localai-v2`) and `LocalAiPackManifest.PackVersion` / `ReleaseTag` bumped together; old packs stay downloadable for older app versions.
 * **Pinning:** the program carries every file's URL, byte length and SHA-256 (`LocalAiPackFiles.cs`, generated). A file whose bytes differ is deleted and nothing is installed; the installed copy is re-checked before each use. Replacing an asset on the release therefore breaks the pin on purpose — publish a new tag instead.
-* **Building it (human, never CI, never `Build.cmd`):**
+* **Building it (human, never CI, never `build.cmd`):**
   1. `developer_tools/local_ai_pack/export_sam2_onnx.py --checkpoint sam2.1_hiera_small.pt --out <folder>` (needs PyTorch + the `sam2` package; writes the two float16 `.onnx` files in the model contract of `LocalAiPackManifest`).
   2. `developer_tools/local_ai_pack/build_pack.py --pack <folder>` downloads `onnxruntime.dll` (NuGet `Microsoft.ML.OnnxRuntime.DirectML` 1.22.0) and `DirectML.dll` (NuGet `Microsoft.AI.DirectML` 1.15.4) from nuget.org, refuses either unless its Authenticode signature is valid and Microsoft's, writes `LocalAiPackFiles.cs`, and prints the `gh release create … --prerelease` / `gh release upload` commands. It publishes nothing.
   0. One command does steps 1–3 (`LOCALAIPACK_02`): `developer_tools\local_ai_pack\Make_Local_AI_Pack.cmd` builds a private Python environment and the pack under `developer_tools\local_ai_pack\out\` (git-ignored), writes the pins and the runtime test folder `out\ort` (DLLs + `tiny.onnx`), then asks **Publish now? [Y/N]**; only Y creates the pre-release and uploads, downloads every file back and compares size and SHA-256, and only then writes `Released = true`. `-NoPublish` stops after the local build. Once `out\pack` and `out\ort` exist, `tests\run-av-tests.cmd` runs the Local AI real-model tests by itself (LOCALAITEST_01). `build_pack.py` writes `LocalAiPackFiles.cs` without comments (NOCOMMENTS_01).
@@ -467,13 +477,14 @@ anywhere in CI. A number nobody prints is a number nobody defends; this one is o
 * **Win32 Executable Metadata:** The compiled `.exe` embeds complete production metadata (Product Name, Publisher, Assembly Version, File Version, Legal Copyright).
 * **PEIDENTITY_01 — the binary names its own file.** NativeAOT copies the version resource from the managed assembly, so the program said `OriginalFilename = InternalName = FreeVideoStudio.dll` while it is `FreeVideoStudio.exe` — the renamed-binary masquerading pattern (MITRE T1036.003) antivirus scores. The SDK has no property for these strings, so `FvsBuild` (`PeIdentity.FixOriginalFilename`) rewrites them in the VS_VERSION_INFO block of the `.rsrc` section, in place (`.dll` → `.exe` is length-preserving; no offset, size or checksum moves; nothing outside that block can change), right after the publish and BEFORE signing. Idempotent; a file without a version resource fails the build. Measured on the 2026.10.11.1008 program: exactly 6 bytes changed. `ReleaseGate.SynchronizeVersionFiles` (official releases only, inside the release commit — RELGATE_01) also stamps `app.manifest`'s `assemblyIdentity version` with the build version (it said `1.0.0.0`). The Inno Setup installer's own resource says `OriginalFilename = FreeVideoStudio.exe`, Company `Alon Reich`, the same version (09 DIST-INSTALLER). Tests: `PeIdentityTests`.
 * **Authenticode Integrity Enforcement:**
-  `Build.cmd` executes Authenticode signing when `FVS_SIGN_PFX` and `FVS_SIGN_PASS` environment variables are detected.
-  ⚠️ **Agent Restriction**: `Build.cmd` triggers public GitHub Cloud release deployment and is strictly banned for autonomous agents. For local compilation checks and signing validation, agents must run `dev_build.cmd`.
+  `build.cmd` executes Authenticode signing when `FVS_SIGN_PFX` and `FVS_SIGN_PASS` environment variables are detected.
+  ⚠️ **Agent Restriction**: `build.cmd` triggers public GitHub Cloud release deployment and is strictly banned for autonomous agents. For local compilation checks and signing validation, agents must run `dev_build.cmd`.
 * **`SIGNMANDATE_01` — AN ABSENT CERTIFICATE IS A BUILD FAILURE, NOT A DEFAULT.**
-  `CodeSigning.SignIfNeeded` previously returned success with one informational line when `FVS_SIGN_PFX` was unset, so the normal outcome of running `Build.cmd` on a machine without a certificate was a **shipped, unsigned release** — and the line saying so scrolled past between two hundred others. Two controls depended on that signature and both were silently disarmed:
+  `CodeSigning.SignIfNeeded` previously returned success with one informational line when `FVS_SIGN_PFX` was unset, so the normal outcome of running `build.cmd` on a machine without a certificate was a **shipped, unsigned release** — and the line saying so scrolled past between two hundred others. Two controls depended on that signature and both were silently disarmed:
   1. **SmartScreen.** An unsigned download gets the full *"Windows protected your PC"* wall. The Win32 metadata block (`ISSUE_03`) exists precisely so the user has something reassuring to read at that moment; unsigned, it is a publisher field with no cryptographic backing.
   2. **`UPDATETRUST_01`.** The update pin anchors on the **running executable's** publisher. An unsigned running executable is not an anchor, so the pin degraded to hash-only — and the hash came from the same GitHub JSON document that supplied the download URL. Whoever controls that response controls the payload *and* its fingerprint in one move, and the payload is launched with `--install --auto-update`, i.e. elevated.
-  An operator who genuinely wants an unsigned artifact (a local smoke test, a CI job that signs in a later stage) sets **`FVS_ALLOW_UNSIGNED=1`** and receives a loud, recorded acknowledgement. Absence of that variable **fails the build**.
+  **DEVSIGN_01 (2026-11-28, replaces `FVS_ALLOW_UNSIGNED`):** without a certificate, `dev_build.cmd` builds UNSIGNED with a yellow WARN line (never published); `build.cmd` stops with the red RELEASE BLOCKED banner (RELBLOCKED_01). There is no switch or variable to release unsigned.
+  **SIGNTSA_01:** every signature carries an RFC 3161 timestamp; `SignWithTimestamp` tries DigiCert, Sectigo, then GlobalSign, and fails rather than sign without one.
 * **`UPDATETRUST_02` — `NoAnchor` IS A REFUSAL, NOT A WARNING.**
   `UpdateService` previously logged one line on `TrustVerdict.NoAnchor` and fell through to `Process.Start`. Because production *was* the unsigned build, that degraded path was the **only** path that ever ran, and the attack `AuthenticodeVerifier` was written to close was never actually closed.
   The download is now deleted and the user is told to install the signed build by hand **once**; from then on they have an anchor and auto-update verifies normally.
@@ -622,7 +633,7 @@ anywhere in CI. A number nobody prints is a number nobody defends; this one is o
   first check `RunStartupCheckAsync` repeats `RunAutomaticCheckAsync` every `RecheckInterval` (6 h)
   while the main window is open, Updates is not "Never check" (SETUPDATEONE_01) and no update is already downloading or waiting.
   Same consent, throttle, auto-download and "skipped" rules as the first check.
-* **SETNOBETA_01 (2026-11-12) — there is one release line.** The Beta channel was removed: the app reads `/releases/latest` only and the Settings choice is gone (an old `UpdateChannel` value is ignored). `Build.cmd --beta` still publishes a pre-release for manual download (09 DIST-RELEASEGATE, BETA_01).
+* **SETNOBETA_01 (2026-11-12) — there is one release line.** The Beta channel was removed: the app reads `/releases/latest` only and the Settings choice is gone (an old `UpdateChannel` value is ignored). `build.cmd --beta` still publishes a pre-release for manual download (09 DIST-RELEASEGATE, BETA_01).
 * **UPDATESPACE_01 — free space is checked for what is really written, per drive.** `UpdatePreparer`
   used to demand the FULL installer size + 256 MB on the downloads drive before every update, so a 9 MB
   smart update failed on a nearly full disk, while the full installer's own unpacking into `%TEMP%`

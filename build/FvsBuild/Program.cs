@@ -15,27 +15,16 @@ internal static class Program
             Console.Error.WriteLine("--dev-runtime must be used alone; no release pipeline was started.");
             return ExitBuildFailed;
         }
-        bool noPublish = args.Any(a => a.Equals("--no-publish", StringComparison.OrdinalIgnoreCase));
         bool devMode = args.Any(a => a.Equals("--dev", StringComparison.OrdinalIgnoreCase));
         bool stageOnly = args.Any(a => a.Equals("--stage-only", StringComparison.OrdinalIgnoreCase));
-        bool beta = args.Any(a => a.Equals("--beta", StringComparison.OrdinalIgnoreCase));
-        bool assumeYes = args.Any(a => a.Equals("--yes", StringComparison.OrdinalIgnoreCase));
-        bool resume = args.Any(a => a.Equals("--resume", StringComparison.OrdinalIgnoreCase));
         bool protectRootKey = args.Any(a => a.Equals("--protect-root-key", StringComparison.OrdinalIgnoreCase));
         if (args.Any(a => a.Equals("--help", StringComparison.OrdinalIgnoreCase) || a.Equals("-h", StringComparison.OrdinalIgnoreCase)))
         {
-            Console.WriteLine("Usage: FvsBuild [--no-publish] [--dev] [--beta] [--yes] [--stage-only]");
-            Console.WriteLine("  (default)     official STABLE release: release gate, build, publish to GitHub as latest");
-            Console.WriteLine("  --beta        official BETA release: published as a pre-release (Beta update channel only)");
-            Console.WriteLine("  --yes         accepted for old scripts; there is no confirmation prompt (RELNOPROMPT_01)");
-            Console.WriteLine("  --resume      finish the last release whose commit + tag were pushed but whose publish or");
-            Console.WriteLine("                notes promotion failed. Builds nothing (RELRESUME_01).");
-            Console.WriteLine("  --protect-root-key  give the publisher root key its own passphrase (ROOTKEY_01).");
-            Console.WriteLine("  --no-publish  build only; GitHub and the repository's version files are not touched");
-            Console.WriteLine("  --dev         local dev build: no GitHub, and .\\compiled is not wiped first");
-            Console.WriteLine("  --stage-only  diagnostic: publish, stage dependencies and write the manifests, then stop.");
-            Console.WriteLine("                Leaves the staging folder in place for inspection.");
-            Console.WriteLine("                GitHub and .\\compiled are untouched.");
+            Console.WriteLine("build.cmd      official release: release gate, build, publish to GitHub as latest.");
+            Console.WriteLine("               An unfinished earlier release (tag pushed, release missing) is finished first (RELRESUME_02).");
+            Console.WriteLine("dev_build.cmd  local build (--dev): sentinels + tests, NativeAOT, installer; git and GitHub untouched.");
+            Console.WriteLine("Neither command takes arguments (ONECMD_01). Internal: --stage-only (CI), --dev-runtime (dev.cmd),");
+            Console.WriteLine("--protect-root-key (ROOTKEY_01 maintenance).");
             return ExitOk;
         }
 
@@ -59,13 +48,12 @@ internal static class Program
             log.WriteVerdictAndClose(protectedExit, DateTimeOffset.Now - started);
             return protectedExit;
         }
-        if (resume)
+        bool publish = !devMode && !stageOnly;
+        if (publish && ReleaseGate.HasUnfinishedRelease(log))
         {
-            int resumed = RunResume(log, beta, assumeYes, started);
-            return resumed;
+            return RunResume(log, beta: false, assumeYes: true, started);
         }
-        bool publish = !noPublish && !devMode && !stageOnly;
-        int exitCode = RunPipeline(log, publish, devMode, stageOnly, beta, assumeYes, started);
+        int exitCode = RunPipeline(log, publish, devMode, stageOnly, beta: false, assumeYes: true, started);
         return exitCode;
     }
 
@@ -85,10 +73,11 @@ internal static class Program
 
     private static int RunPipeline(BuildLog log, bool publish, bool devMode, bool stageOnly, bool beta, bool assumeYes, DateTimeOffset started)
     {
-        string buildVersion = ReleaseGate.NewVersion(DateTime.UtcNow);
+        string buildVersion = devMode ? ReleaseGate.NewDevVersion(DateTime.UtcNow) : ReleaseGate.NewVersion(DateTime.UtcNow);
         string tag = "v" + buildVersion;
         string flavor = devMode ? "Local Dev" : "NativeAOT win-x64";
         SmartUpdateBuilder.IsDevBuild = devMode;
+        CodeSigning.DevBuild = devMode || stageOnly;
         log.Info($"Build version: {buildVersion}  (tag {tag})");
 
         ReleasePlan? plan = null;
@@ -105,6 +94,18 @@ internal static class Program
         else
         {
             log.Info("[VERSION] Not an official release: the repository's version files are left unchanged.");
+            if (devMode && !stageOnly)
+            {
+                log.Info($"[VERSION] Dev build {buildVersion}: ranks below every release, so it is never mistaken for one (DEVVERSION_01).");
+                var problems = new List<string>();
+                ReleaseGate.RunLocalChecks(problems, log, requireCleanTree: false);
+                if (problems.Count > 0)
+                {
+                    log.Blocked("DEV BUILD BLOCKED - nothing was built", problems);
+                    log.WriteVerdictAndClose(ExitBuildFailed, DateTimeOffset.Now - started);
+                    return ExitBuildFailed;
+                }
+            }
         }
 
         try
@@ -170,7 +171,7 @@ internal static class Program
                 if (!devMode)
                 {
                     log.Info(string.Empty);
-                    log.Info("[PUBLISH] Skipped on request (--no-publish). GitHub was not touched.");
+                    log.Info("[PUBLISH] Skipped: not an official release. GitHub was not touched.");
                 }
                 log.WriteVerdictAndClose(ExitOk, DateTimeOffset.Now - started);
                 return ExitOk;
@@ -213,7 +214,7 @@ internal static class Program
             log.Banner("###########################################################");
             log.Warn("BUILD OK - but the release was NOT published.");
             log.Warn($"The commit and tag {tag} ARE on GitHub; only the release itself is missing (reason above).");
-            log.Warn("docs/CHANGELOG.md still has its notes under '## Upcoming'. Finish THIS release with: Build.cmd --resume (RELRESUME_01).");
+            log.Warn("docs/CHANGELOG.md still has its notes under '## Upcoming'. Run build.cmd again: it finishes THIS release first (RELRESUME_02).");
             log.Warn(".\\compiled\\FreeVideoStudio.exe is good and usable.");
             log.Banner("###########################################################");
             log.WriteVerdictAndClose(ExitPublishIncomplete, DateTimeOffset.Now - started);
@@ -240,7 +241,7 @@ internal static class Program
             log.Banner(plan.Beta ? "PUBLISHING BETA TO GITHUB (RESUMED)..." : "PUBLISHING RELEASE TO GITHUB (RESUMED)...");
             if (!GitHubReleasePublisher.Publish(Staging.CompiledExePath, plan, log))
             {
-                log.Warn($"The release {plan.Tag} is still not published (reason above). Fix it and run Build.cmd --resume again.");
+                log.Warn($"The release {plan.Tag} is still not published (reason above). Fix it and run build.cmd again.");
                 log.WriteVerdictAndClose(ExitPublishIncomplete, DateTimeOffset.Now - started);
                 return ExitPublishIncomplete;
             }

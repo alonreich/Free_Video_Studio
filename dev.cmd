@@ -1,8 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-dotnet run --project "build\FvsVerify\FvsVerify.csproj" -v q -- "%CD%"
-if errorlevel 1 exit /b 1
-if /I "%~1"=="verify" exit /b 0
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0build\DevRun.ps1" -Mode "%~1"
-exit /b %errorlevel%
+if not "%~1"=="" echo [NOTE] %~n0.cmd takes no arguments. They were ignored.
+set "PSModulePath=%ProgramFiles%\WindowsPowerShell\Modules;%SystemRoot%\system32\WindowsPowerShell\v1.0\Modules"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0build\Bootstrap.ps1" -Command "%~n0"
+exit /b %ERRORLEVEL%

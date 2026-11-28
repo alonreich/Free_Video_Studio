@@ -161,6 +161,13 @@ internal static class Cli
 
     public static bool EnsureMsvcToolchain(BuildLog log)
     {
+        string installerDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft Visual Studio", "Installer");
+        if (Directory.Exists(installerDir) && FindOnPath("vswhere.exe") is null)
+        {
+            Environment.SetEnvironmentVariable("PATH", installerDir + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH"));
+            log.Info("[Toolchain] Added the Visual Studio Installer folder to PATH so NativeAOT finds vswhere.exe (AOTVSWHERE_01).");
+        }
         if (FindOnPath("link.exe") is not null)
         {
             log.Info("Native AOT toolchain detected.");

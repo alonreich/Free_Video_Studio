@@ -11,7 +11,7 @@
 
 ## 1. Absolute Stop-and-Read Mandate
 Developers and autonomous AI agents are strictly forbidden from inspecting, generating, refactoring, or modifying code in any source file (`.cs`, `.axaml`, `.cmd`, `.ps1`) without first loading, reading, and citing its mapped specification file from `docs/`. Speculative code modifications without active specification verification are classified as critical system defects.
-Routing, the `Build.cmd` ban, build/test commands and the change-record duty (CHANGELOG_01 / RELNOTES_01 / RELRECORD_01, STORAGEPATHS_01): `docs/README.md` §0 (canonical); grep `docs/INDEX.md` for the governing spec.
+Routing, the `build.cmd` ban, build/test commands and the change-record duty (CHANGELOG_01 / RELNOTES_01 / RELRECORD_01, STORAGEPATHS_01): `docs/README.md` §0 (canonical); grep `docs/INDEX.md` for the governing spec.
 
 ## 2. Mid-Session Context Boundary Rule
 If a debugging session or feature implementation crosses from its initial domain into another (e.g., an FFmpeg export task requiring adjustments to `OutputTimeline.cs`, audio mastering filters, Avalonia UI styles, or disk recovery serialization), EXECUTION MUST HALT IMMEDIATELY.

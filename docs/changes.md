@@ -11,6 +11,8 @@ What ENGINEERS and AI agents read: every change, in technical terms, as it happe
 
 ## Unreleased
 
+- 2026-11-28 · ONECMD_01 / SDKAUTO_01 / RELBLOCKED_01 / RELRESUME_02 / DEVVERSION_01 / DEVSIGN_01 / SIGNTSA_01 / BUILDKILL_02 / DEVRETRY_01 · dev.cmd, dev_build.cmd, build.cmd are one identical argument-free wrapper over build\Bootstrap.ps1 (SDK auto-install, buildpp.json); no --beta/--resume/--yes/--no-publish; red BLOCKED banner; auto-finish unfinished release; dev build 0.x, tests, unsigned WARN; TSA fallback; dev.cmd closes repo copies; AOT finds vswhere (AOTVSWHERE_01) (09 DIST-RELEASEGATE, 05 SYS-DEVBUILD)
+
 - 2026-11-28 · HUDELEMENTS_01 / HUDREMEMBER_01 · MASK OVERLAYS pane: one switch per profile element (Crop Tools names, ellipsis + tooltip, density by count, hover highlight); `HudVisibility` drives export and previews; per-video `hud_toggles`; per-element start state in Settings. Crop Tools: NEW BLANK, generic names, game type, frozen anchors. 04 UI-GRANULAR, 01, 05, 06 (HudElements.cs, MainViewModel.Hud.cs, CropEditSession.cs)
 
 - 2026-11-28 · FAULTTIER_01 · HudPreviewController's two `OperationCanceledException` catches were empty (empty-catch count 35 > baseline 33); they now log a Debug line, so the baseline holds without being raised. Verified: Core 1254, App 1407, AV gate PASS (2772), manual run of the switchboard. 04 UI-GRANULAR (HudPreviewController.cs)

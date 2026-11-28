@@ -43,7 +43,7 @@ internal static partial class ReleaseGate
         string defaultBranch = Git(out List<string> originHead, "symbolic-ref", "--short", "refs/remotes/origin/HEAD") && originHead.Count == 1
             ? originHead[0].Replace("origin/", string.Empty, StringComparison.Ordinal) : "main";
         if (!beta && branch.Length > 0 && !string.Equals(branch, defaultBranch, StringComparison.Ordinal))
-            problems.Add($"A stable release is cut from '{defaultBranch}' only; this is '{branch}'. (Use --beta for a test build from another branch.)");
+            problems.Add($"A release is cut from '{defaultBranch}' only; this is '{branch}'. Switch to '{defaultBranch}' (git switch {defaultBranch}).");
 
         string baseSha = string.Empty;
         if (branch.Length > 0)
@@ -87,12 +87,11 @@ internal static partial class ReleaseGate
 
         if (baseSha.Length > 0) RequireGreenCi(baseSha, beta, problems);
         RequireNoLeaks(problems, log);
-        if (problems.Count == 0) RunLocalChecks(problems, log);
+        if (problems.Count == 0) RunLocalChecks(problems, log, requireCleanTree: true);
 
         if (problems.Count > 0)
         {
-            log.Error("ERROR: [RELEASE] The release was NOT started. Nothing was built, committed, tagged or published:");
-            foreach (string problem in problems) log.Error("  - " + problem);
+            log.Blocked("RELEASE BLOCKED - nothing was built, committed, tagged or published", problems);
             return null;
         }
 
@@ -122,7 +121,7 @@ internal static partial class ReleaseGate
     public static ResumePlan? PreflightResume(bool beta, bool assumeYes, BuildLog log)
     {
         var problems = new List<string>();
-        log.Info("[RELEASE] Checking what is left to finish of the last release (--resume)...");
+        log.Info("[RELEASE] The last release was not finished: finishing it first (RELRESUME_02)...");
         string version = File.Exists("version.txt") ? File.ReadAllText("version.txt").Trim() : string.Empty;
         string tag = "v" + version;
         if (!Version.TryParse(version, out _)) problems.Add("version.txt does not hold a release version.");
@@ -133,26 +132,26 @@ internal static partial class ReleaseGate
         if (branch.Length == 0) problems.Add("HEAD is detached. Check out the branch the release was made from.");
         string headSha = Git(out List<string> h, "rev-parse", "HEAD") && h.Count == 1 ? h[0] : string.Empty;
         string tagSha = Git(out List<string> t, "rev-parse", "-q", "--verify", "refs/tags/" + tag + "^{commit}") && t.Count == 1 ? t[0] : string.Empty;
-        if (tagSha.Length == 0) problems.Add($"The tag {tag} does not exist here. --resume only finishes a release whose tag was pushed.");
+        if (tagSha.Length == 0) problems.Add($"The tag {tag} does not exist here, so there is no release to finish.");
         else if (!string.Equals(headSha, tagSha, StringComparison.OrdinalIgnoreCase))
             problems.Add($"HEAD is not the release commit of {tag}. Check out {tag}'s branch at that commit (nothing may be committed after it).");
         if (!(Git(out List<string> remoteTag, "ls-remote", "--tags", "origin", "refs/tags/" + tag) && remoteTag.Count > 0))
-            problems.Add($"The tag {tag} is not on GitHub. A release that was never pushed has nothing to resume: run Build.cmd normally.");
+            problems.Add($"The tag {tag} is not on GitHub. A release that was never pushed has nothing to finish.");
         if (Cli.FindOnPath("gh.exe") is null || Cli.RunQuiet("gh", ["auth", "status"]) != 0)
             problems.Add("The GitHub CLI (gh) is missing or not signed in (`gh auth login`).");
 
-        if (!File.Exists(Staging.CompiledExePath)) problems.Add($"{Staging.CompiledExePath} is missing (a later build may have replaced it). Run Build.cmd normally.");
+        if (!File.Exists(Staging.CompiledExePath)) problems.Add($"{Staging.CompiledExePath} is missing (a later build may have replaced it). Commit something new and run build.cmd again.");
         else
         {
             string installerVersion = (System.Diagnostics.FileVersionInfo.GetVersionInfo(Staging.CompiledExePath).ProductVersion ?? string.Empty).Split('+')[0].Trim();
             if (!string.Equals(installerVersion, version, StringComparison.OrdinalIgnoreCase))
-                problems.Add($"{Staging.CompiledExePath} is version '{installerVersion}', not {version}. A later build replaced it: run Build.cmd normally.");
+                problems.Add($"{Staging.CompiledExePath} is version '{installerVersion}', not {version}. A later build replaced it: commit something new and run build.cmd again.");
         }
         string listPath = Path.Combine("obj", "ReleaseAssets", SmartUpdateManifest.FileName);
         try
         {
             if (!File.Exists(listPath) || SmartUpdateManifest.Parse(File.ReadAllBytes(listPath)).Version != version)
-                problems.Add($"{listPath} is missing or belongs to another version. Run Build.cmd normally.");
+                problems.Add($"{listPath} is missing or belongs to another version. Commit something new and run build.cmd again.");
         }
         catch (InvalidDataException ex) { problems.Add($"{listPath} is unreadable: {ex.Message}"); }
 
@@ -185,8 +184,7 @@ internal static partial class ReleaseGate
 
         if (problems.Count > 0)
         {
-            log.Error("ERROR: [RELEASE] Nothing to resume, or it cannot be resumed safely. Nothing was changed:");
-            foreach (string problem in problems) log.Error("  - " + problem);
+            log.Blocked("RELEASE BLOCKED - the unfinished last release cannot be finished safely; nothing was changed", problems);
             return null;
         }
 
@@ -231,7 +229,7 @@ internal static partial class ReleaseGate
 
     private static bool Confirm(BuildLog log)
     {
-        log.Warn($"[RELEASE] {NoPromptTag}: publishing now. Running Build.cmd is the confirmation; no PUBLISH prompt (owner decision 2026-11-22).");
+        log.Warn($"[RELEASE] {NoPromptTag}: publishing now. Running build.cmd is the confirmation; no PUBLISH prompt (owner decision 2026-11-22).");
         return true;
     }
 
@@ -444,7 +442,20 @@ internal static partial class ReleaseGate
             problems.Add("The sensitive-data scan found something that would be published, or could not run (SANITIZE_01). See the red lines above; fix with developer_tools\\Sanitize.cmd.");
     }
 
-    private static void RunLocalChecks(List<string> problems, BuildLog log)
+    internal static bool HasUnfinishedRelease(BuildLog log)
+    {
+        string version = File.Exists("version.txt") ? File.ReadAllText("version.txt").Trim() : string.Empty;
+        if (!Version.TryParse(version, out _)) return false;
+        string tag = "v" + version;
+        string headSha = Git(out List<string> h, "rev-parse", "HEAD") && h.Count == 1 ? h[0] : string.Empty;
+        string tagSha = Git(out List<string> t, "rev-parse", "-q", "--verify", "refs/tags/" + tag + "^{commit}") && t.Count == 1 ? t[0] : string.Empty;
+        if (headSha.Length == 0 || !string.Equals(headSha, tagSha, StringComparison.OrdinalIgnoreCase)) return false;
+        if (!(Git(out List<string> remoteTag, "ls-remote", "--tags", "origin", "refs/tags/" + tag) && remoteTag.Count > 0)) return false;
+        log.Info($"[RELEASE] HEAD is the pushed release commit of {tag}: checking whether that release is finished (RELRESUME_02)...");
+        return true;
+    }
+
+    internal static void RunLocalChecks(List<string> problems, BuildLog log, bool requireCleanTree)
     {
         (string What, string[] Args)[] checks =
         [
@@ -461,7 +472,7 @@ internal static partial class ReleaseGate
                 return;
             }
         }
-        if (!TreeStillClean(log)) problems.Add("Running the checks changed tracked files. Commit or revert them.");
+        if (requireCleanTree && !TreeStillClean(log)) problems.Add("Running the checks changed tracked files. Commit or revert them.");
     }
 
     private static void RequireChangelogMatchesTags(List<string> problems)
@@ -498,7 +509,7 @@ internal static partial class ReleaseGate
             string body = latest?["body"]?.GetValue<string>() ?? string.Empty;
             if (SameNotes(body, notes))
                 problems.Add($"The '## Upcoming' notes are exactly the notes of the published {latest?["tagName"]?.GetValue<string>()}. "
-                           + "Its notes were never promoted: run Build.cmd --resume to finish that release, then add new notes.");
+                           + "Its notes were never promoted: run build.cmd again to finish that release first, then add new notes.");
         }
         catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException)
         {
@@ -520,6 +531,9 @@ internal static partial class ReleaseGate
     private static bool Git(out List<string> output, params string[] args) => Cli.TryCapture("git", args, out output);
 
     internal static string NewVersion(DateTime utcNow) => utcNow.ToString("yyyy.MM.dd.HHmm", CultureInfo.InvariantCulture);
+
+    internal static string NewDevVersion(DateTime utcNow) =>
+        string.Create(CultureInfo.InvariantCulture, $"0.{utcNow.Year % 100 * 100 + utcNow.Month}.{utcNow.Day * 100 + utcNow.Hour}.{utcNow.Minute}");
 
     [GeneratedRegex(@"(<assemblyIdentity\s+version="")[^""]*("")")]
     private static partial Regex AssemblyIdentityVersion();

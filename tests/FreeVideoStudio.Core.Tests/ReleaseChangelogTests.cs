@@ -147,6 +147,23 @@ public sealed class ReleaseChangelogTests : IDisposable
     }
 
     [Fact]
+    public void DevVersion01_RanksBelowEveryRelease_AndFitsTheWindowsVersionLimits()
+    {
+        DateTime latest = new(2099, 12, 31, 23, 59, 0, DateTimeKind.Utc);
+        Assert.Equal("0.2610.723.5", ReleaseGate.NewDevVersion(new DateTime(2026, 10, 7, 23, 5, 0, DateTimeKind.Utc)));
+        Version dev = Version.Parse(ReleaseGate.NewDevVersion(latest));
+        Assert.True(dev < Version.Parse(ReleaseGate.NewVersion(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc))));
+        Assert.True(dev.Minor <= ushort.MaxValue && dev.Build <= ushort.MaxValue && dev.Revision <= ushort.MaxValue);
+    }
+
+    [Fact]
+    public void SignTsa01_SigningFallsBackAcrossSeveralTimestampServers()
+    {
+        Assert.True(CodeSigning.TimestampServers.Length >= 3);
+        Assert.All(CodeSigning.TimestampServers, s => Assert.StartsWith("http", s, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void AssetHash01_DecompressionStopsAtThePromisedSize_AndLeavesNothingBehind()
     {
         Directory.CreateDirectory(_root);

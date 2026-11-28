@@ -9,12 +9,12 @@
 
 ### 0.1 Non-negotiable mandates
 
-> ### 🛑 CRITICAL MANDATE FOR ALL AI AGENTS: NEVER EXECUTE `Build.cmd`
-> Autonomous AI agents are **STRICTLY FORBIDDEN from ever executing `.\Build.cmd` or `Build.cmd`**.
-> `Build.cmd` triggers `build/FvsBuild` in production release mode, which creates git release tags and **OFFICIALLY PUBLISHES A NEW VERSION DIRECTLY TO GITHUB CLOUD** for public download worldwide.
+> ### 🛑 CRITICAL MANDATE FOR ALL AI AGENTS: NEVER EXECUTE `build.cmd`
+> Autonomous AI agents are **STRICTLY FORBIDDEN from ever executing `.\build.cmd` or `build.cmd`**.
+> `build.cmd` triggers `build/FvsBuild` in production release mode, which creates git release tags and **OFFICIALLY PUBLISHES A NEW VERSION DIRECTLY TO GITHUB CLOUD** for public download worldwide.
 > Agents may use `dotnet build` for compilation and `dotnet test` for tests. For a full local NativeAOT and installer check, use `.\dev_build.cmd`.
-> The release gate (`09` [DIST-RELEASEGATE](09_DISTRIBUTION_AND_RELEASE.md#DIST-RELEASEGATE)) makes `Build.cmd` refuse
-> a dirty, unpushed or unreviewed release. There is no `PUBLISH` prompt any more: running `Build.cmd` publishes
+> The release gate (`09` [DIST-RELEASEGATE](09_DISTRIBUTION_AND_RELEASE.md#DIST-RELEASEGATE)) makes `build.cmd` refuse
+> a dirty, unpushed or unreviewed release. There is no `PUBLISH` prompt any more: running `build.cmd` publishes
 > (RELNOPROMPT_01, owner decision 2026-11-22). The gate protects the release; it is NOT permission for an agent to run it.
 
 * **Stop-and-Read:** never inspect or edit code without first reading and citing its mapped specification
@@ -129,14 +129,12 @@ logs\
 
 | Goal | Command | Who |
 | :--- | :--- | :--- |
-| Run the app from source | `.\dev.cmd` (incremental Release managed run; settings preserved; `dev fresh` for full-clean troubleshooting) | anyone |
-| Dev modes | `.\dev.cmd [run\|build\|rebuild\|fresh\|clean\|restore\|trace\|verify]`: build = stage, no launch; rebuild/fresh = clear dev caches, then run (settings kept); clean = clear dev caches only; restore = `dotnet restore`; trace = diagnostic logs in `.devlogs`; verify = sentinel check only. Refuses while a repo-built FreeVideoStudio/mpv/ffmpeg/ffprobe is running and stops no process (BUILDKILL_01). | anyone |
-| Full local packaging check (NativeAOT + installer, no GitHub) | `.\dev_build.cmd` | anyone |
+| Run the app from source | `.\dev.cmd` (no arguments, ONECMD_01): sentinels, then an incremental Release managed run with settings preserved. Closes copies started from this repo first (BUILDKILL_02); a failed build retries once from a clean `.dev-run` (DEVRETRY_01). | anyone |
+| Full local packaging check (sentinels + tests, NativeAOT + installer, version 0.x, no git/GitHub) | `.\dev_build.cmd` | anyone |
 | A/V regression gate (before declaring ANY change done) | `tests\run-av-tests.cmd` (§0.3a) | everyone |
 | Compile / test | `dotnet build FreeVideoStudio.sln -c Release`, `dotnet test tests/FreeVideoStudio.Core.Tests/FreeVideoStudio.Core.Tests.csproj`, `dotnet test tests/FreeVideoStudio.App.Tests/FreeVideoStudio.App.Tests.csproj` | anyone |
 | Fix sentinels | `dotnet run --project build/FvsVerify/FvsVerify.csproj` | anyone |
-| Official stable release | `.\Build.cmd` (release gate, `09` DIST-RELEASEGATE) | **human only** |
-| Beta (pre-release, manual download only: the app never offers it, SETNOBETA_01) | `.\Build.cmd --beta` | **human only** |
+| Official stable release | `.\build.cmd` (release gate, `09` DIST-RELEASEGATE) | **human only** |
 
 ### 0.5 Which document answers what
 

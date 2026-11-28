@@ -1,6 +1,6 @@
 # SYMBOL & FILE INDEX (routing lookup)
 
-> 🛑 Rules (never `Build.cmd`, Proof-of-Read, sentinels, change records, test output): [`README.md`](README.md) §0 — read it first.
+> 🛑 Rules (never `build.cmd`, Proof-of-Read, sentinels, change records, test output): [`README.md`](README.md) §0 — read it first.
 
 Flat lookup. Grep for a filename, symbol, constant or engineering tag; read ONLY the spec it names.
 Notation: `03 FFM-BINPATH` = `03_FFMPEG_EXPORT_PIPELINE.md`, section 9, stable anchor `FFM-BINPATH`.
@@ -114,8 +114,10 @@ Section NUMBERS shift as specs grow. The `{#ANCHOR}` ids are STABLE — quote an
   AudioTempoFilterBuilder.cs                 03
   CornerMemeOverlayGraph.cs                  03
   AvaloniaApp.axaml                          04
-⚠ Build.cmd                                  05 09 GOV
+⚠ build.cmd                                  05 09 GOV
   dev_build.cmd                              05 09 GOV
+  Bootstrap.ps1                              05 09 (ONECMD_01, SDKAUTO_01)
+  app.json (build/)                          05 09 (ONECMD_01)
   CanvasMath.cs                              01
   UiAccessibilityAuditTests.cs               04 UI-SAFEGUARDS / UI-COACH (DIALA11Y_01, COACHFOCUS_01, ACTIONNAME_01)
   CoachOverlay.cs                            04 UI-COACH (COACHFOCUS_01)
@@ -1241,7 +1243,7 @@ UPGRADEUX_05                                 09 SYS-UPGRADEUX   (first-launch "F
 UPGRADEUX_06                                 09 SYS-UPGRADEUX   (installer window first, worker copy in background)
 DEVDATA_01                                   05 SYS-DEVBUILD   (dev sandbox in %LOCALAPPDATA%, AI keys kept)
 DEVUPDATE_01                                 05 SYS-DEVBUILD | §6 SYS-AUTOUPDATE   (legacy explicit updater tests only; disabled for ordinary dev launches)
-DEVVERIFY_01                                 05 SYS-DEVBUILD / SYS-VERIFYTOOL (direct dev.cmd verifier invocation before cleanup; dev verify)
+DEVVERIFY_01                                 05 SYS-DEVBUILD / SYS-VERIFYTOOL (FvsVerify runs first from build/app.json and halts dev.cmd on failure)
 DEVPARITY_01 / DEVISOLATION_01 / DEVCLEAN_01   05 SYS-DEVBUILD (current-source Release runtime, isolated resources, preserved settings)
 DEVHELPERTEMP_01                            05 SYS-DEVBUILD / SYS-STORAGE-TABLE (fresh helper TEMP; defer locked leftovers)
 STORAGEPATHS_01                             05 SYS-STORAGE-TABLE (authoritative storage inventory; mandatory update on storage changes)
@@ -1266,7 +1268,17 @@ RELQA_01                                     09 DIST-RELEASEGATE   (green CI on 
 RELNOPROMPT_01                               09 DIST-RELEASEGATE   (no PUBLISH prompt; RELQA_02 retired)
 RELRECORD_01                                 09 DIST-RETENTION | §3e   (every CHANGELOG version heading is a tag; pruned sections archived)
 RELRECORD_02                                 09 DIST-RELEASEGATE   (notes equal to the last release's = unpromoted release)
-RELRESUME_01                                 09 DIST-RELEASEGATE   (Build.cmd --resume finishes a pushed-but-unpublished release)
+RELRESUME_01                                 09 DIST-RELEASEGATE   (finishing a pushed-but-unpublished release)
+RELRESUME_02                                 09 DIST-RELEASEGATE   (build.cmd finishes an unfinished release by itself; no --resume)
+RELBLOCKED_01                                09 DIST-RELEASEGATE   (red RELEASE BLOCKED banner with numbered reasons)
+ONECMD_01                                    09 DIST-RELEASEGATE   (three identical argument-free .cmd wrappers + build/Bootstrap.ps1)
+SDKAUTO_01                                   09 DIST-RELEASEGATE   (missing .NET SDK installed per user, no admin, signature checked)
+DEVVERSION_01                                09 DIST-RELEASEGATE   (dev_build version 0.yyMM.ddHH.mm ranks below releases)
+DEVSIGN_01                                   09 SYS-SIGNING   (dev build without certificate = unsigned WARN; release = blocked)
+SIGNTSA_01                                   09 SYS-SIGNING   (three timestamp servers; never signed without a timestamp)
+BUILDKILL_02                                 05 SYS-DEVBUILD   (dev.cmd closes repo-started copies, forces after 10 s)
+AOTVSWHERE_01                                09 DIST-RELEASEGATE   (VS Installer folder put on PATH so the NativeAOT link finds vswhere.exe)
+DEVRETRY_01                                  05 SYS-DEVBUILD   (failed incremental dev build retries once from a clean .dev-run)
 CHANGELOG_02                                 09 DIST-RELEASENOTES   (CI: code change without docs/changes.md fails)
 UPGRADESMOKE_01                              09 DIST-UPGRADESMOKE   (old public install → new setup, free Windows runner)
 COMPACTGONE_01                               09 DIST-SPLIT   (dormant app-only client code removed)
@@ -1336,7 +1348,7 @@ UPDATECONSENT_01                             09 SYS-AUTOUPDATE | 04 UI-SETTINGS-
 DIST-INSTALLER                               09 DIST-INSTALLER
 NOCMD_01                                     05 SYS-AVCLEAN   (whatsapp:// via shell, no cmd /c)
 AvCleanRuleTests                             05 SYS-AVCLEAN
-NEWRELEASE_01                                09 DIST-NEWRELEASE   (Build.cmd → docs/New-Release.md)
+NEWRELEASE_01                                09 DIST-NEWRELEASE   (build.cmd → docs/New-Release.md)
 ReleaseChecklist                             09 DIST-NEWRELEASE
 VERIFYHALT_01                                05 SYS-DEVBUILD
 SYS-VERIFYTOOL                               05 SYS-VERIFYTOOL

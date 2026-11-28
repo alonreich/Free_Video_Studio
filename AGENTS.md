@@ -4,7 +4,7 @@ Every autonomous AI agent (Claude, Cursor, GitHub Copilot, Google Antigravity, �
 
 The four rules that must survive even a skipped read:
 
-1. **Never run `.\Build.cmd`** — it publishes a public release. Use `.\dev_build.cmd`, `dotnet build` or `dotnet test`.
+1. **Never run `.\build.cmd`** — it publishes a public release. Use `.\dev_build.cmd`, `dotnet build` or `dotnet test`.
 2. **Read and cite the governing spec before changing code** — [docs/SPEC_GOVERNANCE.md](docs/SPEC_GOVERNANCE.md).
 3. **Before finishing a task, record it** — technical entry in [docs/changes.md](docs/changes.md) (`## Unreleased`) and plain-English user bullet in [docs/CHANGELOG.md](docs/CHANGELOG.md) (`## Upcoming`), and keep [docs/INDEX.md](docs/INDEX.md) and the repository map ([docs/REPO_MAP.md](docs/REPO_MAP.md)) in step (CHANGELOG_01).
 4. **Never declare a change done until `tests\run-av-tests.cmd` prints PASS.** Run it, wait, and read only its short output ([docs/README.md §0.3a](docs/README.md#GOV-AVGATE)).

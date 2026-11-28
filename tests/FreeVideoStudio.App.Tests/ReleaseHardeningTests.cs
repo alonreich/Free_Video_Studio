@@ -72,6 +72,25 @@ public sealed class ReleaseHardeningTests
         string devCmd = Source("dev.cmd");
         Assert.DoesNotMatch(new Regex(@"(?im)^\s*taskkill\b[^\r\n]*FreeVideoStudio"), devCmd);
         Assert.Contains("StartsWith(root, StringComparison.OrdinalIgnoreCase)", staging, StringComparison.Ordinal);
+        string devRun = Source("build", "DevRun.ps1");
+        Assert.Contains("$_.ExecutablePath.StartsWith($RepoPrefix, [StringComparison]::OrdinalIgnoreCase)", devRun, StringComparison.Ordinal);
+        Assert.Contains("CloseMainWindow()", devRun, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void OneCmd01_TheThreeCommandsAreIdenticalArgumentFreeWrappers()
+    {
+        string build = Source("build.cmd");
+        Assert.Equal(build, Source("dev.cmd"));
+        Assert.Equal(build, Source("dev_build.cmd"));
+        Assert.Contains("-Command \"%~n0\"", build, StringComparison.Ordinal);
+        Assert.DoesNotContain("%*", build, StringComparison.Ordinal);
+        string bootstrap = Source("build", "Bootstrap.ps1");
+        Assert.Contains("'dev_build'", bootstrap, StringComparison.Ordinal);
+        Assert.Contains("Get-AuthenticodeSignature", bootstrap, StringComparison.Ordinal);
+        string program = Source("build", "FvsBuild", "Program.cs");
+        Assert.DoesNotContain("--beta", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("--resume", program, StringComparison.Ordinal);
     }
 
     [Fact]

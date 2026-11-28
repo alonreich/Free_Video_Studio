@@ -1,5 +1,5 @@
 param(
-    [string]$BatchPath = '.\Build.cmd',
+    [string]$BatchPath = '.\build.cmd',
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$BatchArgs
 )

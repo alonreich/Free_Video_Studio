@@ -166,3 +166,10 @@ jobs:
             Format-Table -AutoSize
           $total = (Get-ChildItem "${{ runner.temp }}/aot" -Recurse -File | Measure-Object Length -Sum).Sum
           Write-Host ("TOTAL PAYLOAD: {0:N1} MB" -f ($total/1MB))
+
+      - name: Upload unsigned NativeAOT build
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-aot-build
+          path: ${{ runner.temp }}/aot
+          retention-days: 7

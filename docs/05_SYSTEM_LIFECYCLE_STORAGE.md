@@ -57,7 +57,7 @@
 | `src/FreeVideoStudio.App/ViewModels/UpgradeProgressViewModel.cs` | `UpgradeProgressViewModel`, `UpgradeStepItem` | `SetSteps`, `MoveTo`, `Ask`, `Succeed`, `Fail` | State of the checklist window. |
 | `build/FvsBuild/Program.cs` | `Program` | `RunPipeline`, `FailRelease`, `RunNativeAotStages`, `RELGATE_01`, `PEIDENTITY_01` | Unified build pipeline; an official release runs inside the release gate (09 DIST-RELEASEGATE). **⚠ CO-GOVERNED BY: 09** |
 | `build/FvsBuild/Staging.cs` | `Staging` | `Publish`, `RunPublish`, `StageDependencies`, `TerminateProcesses`, `BUILDKILL_01` | Build output staging, packaging, and publish validation; stops only processes that run from the repository. |
-| `Build.cmd` | Production Release Script | `dotnet run build\FvsBuild` | **STRICT AGENT BAN**: Thin entry-point triggering production release, git tagging, and live GitHub Cloud release deployment. Never execute by autonomous agents. **⚠ CO-GOVERNED BY: 09** |
+| `build.cmd` | Production Release Script | `dotnet run build\FvsBuild` | **STRICT AGENT BAN**: Thin entry-point triggering production release, git tagging, and live GitHub Cloud release deployment. Never execute by autonomous agents. **⚠ CO-GOVERNED BY: 09** |
 | `dev_build.cmd` | Dev Compile Harness | `dotnet run build\FvsBuild -- --dev` | Safe local-only build and NativeAOT publish compilation test harness. Zero git tags, zero GitHub Cloud publishing. Mandatory for agent build tests. **⚠ CO-GOVERNED BY: 09** |
 | `dev.cmd`, `build/DevRun.ps1`, `build/DevSandbox.ps1` | Developer Harness | `DEVPARITY_01`, `DEVCLEAN_01`, `DEVDATA_01`, `DEVVERIFY_01` | Incremental Release managed launch, shared production staging, safe cache cleanup and preserved development preferences. **⚠ dev.cmd CO-GOVERNED BY: 08, 09, 10** |
 | `tests/FreeVideoStudio.Core.Tests/DevelopmentEnvironmentTests.cs`, `tests/FreeVideoStudio.App.Tests/DevelopmentLaunchTests.cs`, `tests/DevHarness.Tests/DevSandbox.Tests.ps1` | Development regression tests | `DEVPARITY_01`, `DEVISOLATION_01`, `DEVCLEAN_01` | Isolation, update guards, shared staging, real cleanup and preservation checks. **⚠ CO-GOVERNED BY: 10** |
@@ -210,10 +210,10 @@
 DEVFAST_01 and ordinary launch's DEVUPDATE_01 behaviour. **DEVINCREMENTAL_01 (2026-10-21)**
 retains compiler intermediates and verified dependency assets. Development runs current source, never an installer test.
 
-* **Never execute `Build.cmd` as an agent.** It publishes a public release. `dev_build.cmd` remains
+* **Never execute `build.cmd` as an agent.** It publishes a public release. `dev_build.cmd` remains
   the separate local NativeAOT/installer check, not the normal development launcher.
 * **DEVVERIFY_01 / VERIFYHALT_01 / SYS-VERIFYTOOL:** `dev.cmd` runs `FvsVerify` first and propagates
-  failure. `dev verify` then exits without process, cache or settings changes. The sentinel registry
+  failure (the first `build/app.json` step; `dev verify` is gone, ONECMD_01). The sentinel registry
   is `build/sentinels.txt`; never move it back into batch parsing (VERIFYLOOP_01, LISTCOMMENT_01,
   BATCHPARENS_01/02). A sentinel proves a fix was not deleted; a behavioural test proves it still works.
 * **One runtime, one staging implementation:** `build/DevRun.ps1` publishes the current app project and
@@ -232,14 +232,17 @@ retains compiler intermediates and verified dependency assets. Development runs 
   the release pipeline; additional arguments are refused. Application bootstrap, UI, settings schema
   migration, preview and export code remain shared. AOT/trimming, signatures, installer transactions,
   shortcuts and machine registration still require the separate packaging/installation checks.
-* **BUILDKILL_01:** the launcher refuses while a repository-owned app/media process is still running;
-  it never force-kills unsaved work, production processes or shared MSBuild/Roslyn servers. A launch
+* **BUILDKILL_02 (owner decision 2026-11-28, replaces BUILDKILL_01's refusal):** the launcher closes app/media processes
+  started from this repository (`Close-RepoProcesses`: close request, 10 s, then forced); it never touches production
+  processes or shared MSBuild/Roslyn servers. **DEVRETRY_01:** there are no modes; a failed incremental build retries once
+  after removing `.dev-run` (settings kept), replacing `dev fresh`/`rebuild`.
+* **BUILDKILL_01 (history):** the launcher used to refuse while such a process ran. A launch
   lock serializes development builds. A cleanup, compile or staging failure stops the launch: there is
   no fallback to the last executable. `run` (the default) and `trace` use incremental compilation and verified retained assets;
   `build` does the same but stops after staging. `fresh` and `rebuild` first remove all of `.dev-run`
   for a full-clean build and launch; `clean` removes only `.dev-run`; `restore` only restores packages.
   Incremental builds depend on MSBuild input tracking: unusual timestamps, custom targets or damaged
-  intermediates may require `dev fresh`. Hash checks still read asset bytes, so copying savings do not
+  intermediates trigger the one clean retry (DEVRETRY_01). Hash checks still read asset bytes, so copying savings do not
   eliminate staging I/O. Retained intermediates use disk space; the first/full-clean build stays slow.
 * **DEVDATA_01 / STORAGEPATHS_01:** the stable development identity, profiles and recovery root is
   `%LOCALAPPDATA%/FreeVideoStudio_DEV/data`. Preferences/session/UI state and logs instead use

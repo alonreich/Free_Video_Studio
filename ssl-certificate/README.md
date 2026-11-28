@@ -1,6 +1,6 @@
 # ssl-certificate — local code-signing certificate
 
-This folder holds a **code-signing certificate** (Authenticode) for `Build.cmd`. It is not a TLS/HTTPS certificate: the app is a desktop program, so a TLS certificate would not sign anything.
+This folder holds a **code-signing certificate** (Authenticode) for `build.cmd`. It is not a TLS/HTTPS certificate: the app is a desktop program, so a TLS certificate would not sign anything.
 
 | File | Secret? | Purpose |
 |---|---|---|
@@ -18,8 +18,8 @@ This folder holds a **code-signing certificate** (Authenticode) for `Build.cmd`.
 
 ## How the build uses it
 1. Run `ssl-certificate\install-dev-root.cmd` once and confirm the Windows prompt.
-2. Run `Build.cmd`. When `FVS_SIGN_PFX` is not set, the build signs with this certificate, and `signtool verify /pa` passes on this machine.
-3. Both `Build.cmd` and `dev_build.cmd` use it (one shared step).
+2. Run `build.cmd`. When `FVS_SIGN_PFX` is not set, the build signs with this certificate, and `signtool verify /pa` passes on this machine.
+3. Both `build.cmd` and `dev_build.cmd` use it (one shared step).
 
 ## Automatic updates without buying a certificate (UPDATEPIN_01 / UPDATEPIN_02)
 - The app has this folder's **root certificate built in** (`PublisherRoot.cs`). It trusts an update only when the installer and the signed update list (`update.json` + `update.sig.json`) chain to that exact root. So in-app updates install automatically on every PC, with no purchase and no trust prompt.
@@ -28,7 +28,7 @@ This folder holds a **code-signing certificate** (Authenticode) for `Build.cmd`.
 - Copies released before UPDATEPIN_01 must be updated by hand once (download and run the installer).
 
 ## Protect the root key (ROOTKEY_01 — free)
-Until you do this, the root key opens with the password in `fvs-codesign.password.txt`, so anyone who copies this folder holds the key every installed copy trusts. The release build (`Build.cmd`) refuses to publish in that state.
+Until you do this, the root key opens with the password in `fvs-codesign.password.txt`, so anyone who copies this folder holds the key every installed copy trusts. The release build (`build.cmd`) refuses to publish in that state.
 
 1. `dotnet run --project build\FvsBuild -- --protect-root-key` and type a NEW passphrase (12+ characters, not the signing password). It is not stored anywhere — write it down somewhere safe.
 2. Copy `fvs-dev-root-ca.key.pem` to a USB stick (or other offline storage). Ideally delete it from this PC.

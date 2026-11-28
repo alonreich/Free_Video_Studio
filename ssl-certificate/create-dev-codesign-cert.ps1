@@ -25,4 +25,4 @@ Remove-Item "Cert:\CurrentUser\My\$($leaf.Thumbprint)" -DeleteKey
 Remove-Item "Cert:\CurrentUser\My\$($root.Thumbprint)" -DeleteKey
 Remove-Item (Join-Path $here 'fvs-dev-root-ca.pem'), (Join-Path $here 'fvs-dev-root-ca.key.pem'), (Join-Path $here 'fvs-codesign.pem') -ErrorAction SilentlyContinue
 
-Write-Host "Created. Next: run ssl-certificate\install-dev-root.cmd once, then Build.cmd."
+Write-Host "Created. Next: run ssl-certificate\install-dev-root.cmd once, then build.cmd."

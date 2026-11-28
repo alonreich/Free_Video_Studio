@@ -29,6 +29,25 @@ internal sealed class BuildLog : IDisposable
     public void Success(string line) => Write(line, Level.Success);
     public void Banner(string line) => Write(line, Level.Banner);
 
+    public void Blocked(string title, IEnumerable<string> reasons)
+    {
+        string bar = new('#', 75);
+        Error(string.Empty);
+        Error(bar);
+        Error(" " + title);
+        int number = 0;
+        foreach (string reason in reasons)
+        {
+            number++;
+            string[] lines = reason.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+            Error($"   {number}. {lines[0]}");
+            foreach (string more in lines.Skip(1)) Error("      " + more.Trim());
+        }
+        Error(" Fix the numbered item(s) above, then run the same command again.");
+        Error(bar);
+        Error(string.Empty);
+    }
+
     private void Write(string line, Level level)
     {
         lock (_gate)
